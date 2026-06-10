@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { redo, undo, runCommand, DeleteActorCommand } from './commands'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
+import { exportPlayable } from './exportPlayable'
 import { spawnAsset } from './spawn'
 import { useEditor } from './store'
 
@@ -69,6 +70,8 @@ export function MenuBar() {
           { label: 'New Level', action: newLevel },
           { label: 'Open Level…', action: openLevelFromFile },
           { label: 'Save Level', shortcut: 'Ctrl+S', action: saveLevelToFile },
+          { label: '', divider: true },
+          { label: 'Export Playable HTML', action: exportPlayable },
         ]}
       />
       <Menu

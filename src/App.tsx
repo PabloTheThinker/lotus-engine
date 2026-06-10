@@ -10,6 +10,7 @@ import { autosave, newLevel, restoreAutosave, saveLevelToFile } from './editor/l
 import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
 import { executeAICommands, extractCommands } from './editor/ai'
+import { buildPlayableHTML } from './editor/exportPlayable'
 import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
@@ -29,6 +30,7 @@ import { undo, redo, runCommand } from './editor/commands'
     port: import.meta.env.VITE_VEKTRA_TERMINAL_PORT ?? '24679',
   },
   ai: { executeAICommands, extractCommands },
+  buildPlayableHTML,
 }
 
 let booted = false
