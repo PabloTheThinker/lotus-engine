@@ -1,92 +1,148 @@
 import { useEffect, useRef, useState } from 'react'
-import * as THREE from 'three'
-import { world } from '../../engine/World'
-import { makeScriptApi } from '../../engine/scripting'
+import {
+  applyCompletion,
+  executeTerminalLine,
+  loadTerminalHistory,
+  saveTerminalHistory,
+  TERMINAL_HELP,
+  terminalCompletions,
+} from '../terminal'
 import { useEditor } from '../store'
 
 /**
- * Console — output log + a live JS command line (the UE ~ console analog).
- * Evaluates with world, api, THREE in scope.
+ * Console — operational in-editor terminal (UE Output Log + ~ console).
+ * Slash commands, full JS REPL with editor API, history, tab completion.
  */
 export function Console() {
   const entries = useEditor((s) => s.consoleEntries)
   const push = useEditor((s) => s.pushConsole)
   const clear = useEditor((s) => s.clearConsole)
-  const touch = useEditor((s) => s.touch)
+  const consoleFocusNonce = useEditor((s) => s.consoleFocusNonce)
   const [cmd, setCmd] = useState('')
   const [histIdx, setHistIdx] = useState(-1)
-  const history = useRef<string[]>([])
+  const [suggestion, setSuggestion] = useState<string | null>(null)
+  const history = useRef<string[]>(loadTerminalHistory())
   const bodyRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const welcomed = useRef(false)
 
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight })
   }, [entries])
+
+  useEffect(() => {
+    inputRef.current?.focus()
+    inputRef.current?.select()
+  }, [consoleFocusNonce])
+
+  useEffect(() => {
+    if (!welcomed.current && entries.length === 0) {
+      welcomed.current = true
+      push('log', 'Vektra Terminal ready — type /help or `world.actors.size`')
+    }
+  }, [entries.length, push])
 
   const run = () => {
     const source = cmd.trim()
     if (!source) return
     push('cmd', `> ${source}`)
     history.current.push(source)
+    saveTerminalHistory(history.current)
     setHistIdx(-1)
     setCmd('')
-    try {
-      const api = makeScriptApi(world.actors, () => world.playClock, () => world.pawnPosition)
-      const fn = new Function('world', 'api', 'THREE', `"use strict"; return (${source})`)
-      let result: unknown
-      try {
-        result = fn(world, api, THREE)
-      } catch {
-        // not an expression — run as statements
-        const stmt = new Function('world', 'api', 'THREE', `"use strict"; ${source}`)
-        result = stmt(world, api, THREE)
-      }
-      if (result !== undefined) {
-        push('log', typeof result === 'object' ? JSON.stringify(result, null, 1)?.slice(0, 500) ?? String(result) : String(result))
-      }
-      touch()
-    } catch (err) {
-      push('error', (err as Error).message)
-    }
+    setSuggestion(null)
+
+    const result = executeTerminalLine(source)
+    if (result.error) push('error', result.error)
+    else if (result.output) push('log', result.output)
+  }
+
+  const showHelp = () => {
+    push('log', TERMINAL_HELP)
   }
 
   return (
     <div className="console">
+      <div className="console-toolbar">
+        <span className="console-title">Terminal</span>
+        <span className="console-hint">Enter run · Shift+Enter newline · Tab complete · ` focus</span>
+        <button onClick={showHelp} title="Help (/help)">
+          ?
+        </button>
+        <button onClick={clear} title="Clear log (/clear)">
+          ⌫
+        </button>
+      </div>
       <div className="console-body" ref={bodyRef}>
-        {entries.length === 0 && (
-          <div className="panel-empty">
-            Output log + JS command line. In scope: world, api, THREE. Try: world.actors.size
-          </div>
-        )}
         {entries.map((e, i) => (
           <div key={i} className={`console-line ${e.level}`}>
             {e.message}
           </div>
         ))}
       </div>
-      <div className="console-input">
-        <span>&gt;_</span>
-        <input
-          value={cmd}
-          placeholder="world.actors.size"
-          spellCheck={false}
-          onChange={(e) => setCmd(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') run()
-            if (e.key === 'ArrowUp') {
-              const h = history.current
-              const idx = histIdx === -1 ? h.length - 1 : Math.max(0, histIdx - 1)
-              if (h[idx]) { setCmd(h[idx]); setHistIdx(idx) }
-            }
-            if (e.key === 'ArrowDown') {
-              const h = history.current
-              const idx = histIdx + 1
-              if (idx >= h.length) { setCmd(''); setHistIdx(-1) }
-              else { setCmd(h[idx]); setHistIdx(idx) }
-            }
-          }}
-        />
-        <button onClick={clear} title="Clear log">⌫</button>
+      <div className="console-input-wrap">
+        {suggestion && <div className="console-suggestion">Tab → {suggestion}</div>}
+        <div className="console-input">
+          <span>&gt;_</span>
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={cmd}
+            placeholder="world.actors.size  ·  /ls  ·  spawn('box')"
+            spellCheck={false}
+            onChange={(e) => {
+              setCmd(e.target.value)
+              const comps = terminalCompletions(e.target.value)
+              setSuggestion(comps[0] ?? null)
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                run()
+                return
+              }
+              if (e.key === 'Tab') {
+                e.preventDefault()
+                const comps = terminalCompletions(cmd)
+                if (comps[0]) {
+                  setCmd(applyCompletion(cmd, comps[0]))
+                  setSuggestion(comps[1] ?? null)
+                }
+                return
+              }
+              if (e.key === 'ArrowUp' && !e.shiftKey) {
+                e.preventDefault()
+                const h = history.current
+                const idx = histIdx === -1 ? h.length - 1 : Math.max(0, histIdx - 1)
+                if (h[idx]) {
+                  setCmd(h[idx])
+                  setHistIdx(idx)
+                }
+                return
+              }
+              if (e.key === 'ArrowDown' && !e.shiftKey) {
+                e.preventDefault()
+                const h = history.current
+                const idx = histIdx + 1
+                if (idx >= h.length) {
+                  setCmd('')
+                  setHistIdx(-1)
+                } else {
+                  setCmd(h[idx])
+                  setHistIdx(idx)
+                }
+                return
+              }
+              if (e.key === 'Escape') {
+                setSuggestion(null)
+              }
+            }}
+          />
+          <button className="console-run" onClick={run} title="Run (Enter)">
+            ↵
+          </button>
+        </div>
       </div>
     </div>
   )

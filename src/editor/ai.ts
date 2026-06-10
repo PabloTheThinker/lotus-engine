@@ -50,6 +50,8 @@ function sceneSummary(): string {
     const bits = [`${a.name} (${a.type}) pos=[${p.join(',')}]`]
     if (a.materialProps) bits.push(`color=${a.materialProps.color}`)
     if (a.physicsProps && a.physicsProps.mode !== 'none') bits.push(`physics=${a.physicsProps.mode}`)
+    if (a.mobility !== 'movable') bits.push(`mobility=${a.mobility}`)
+    if (a.tags.length) bits.push(`tags=[${a.tags.join(',')}]`)
     if (a.script) bits.push('scripted')
     return bits.join(' ')
   })
@@ -66,14 +68,16 @@ function sceneSummary(): string {
 const SYSTEM_PROMPT = `You are the AI copilot inside Vektra Engine, a Three.js game editor with an Unreal-style actor framework. You can SEE the scene (provided below) and ACT on it.
 
 To act, include ONE fenced code block labeled vektra containing a JSON array of commands. Available commands:
-- {"cmd":"spawn","what":"box|sphere|cylinder|cone|plane|torus|capsule|icosahedron|PointLight|SpotLight|DirectionalLight|AmbientLight|Camera|PlayerStart|Empty","name":"MyActor","position":[x,y,z],"color":"#hex","scale":[x,y,z],"physics":"none|static|dynamic"}
+- {"cmd":"spawn","what":"box|sphere|cylinder|cone|plane|torus|capsule|icosahedron|PointLight|SpotLight|DirectionalLight|AmbientLight|Camera|PlayerStart|Empty|Folder|PostProcessVolume","name":"MyActor","position":[x,y,z],"color":"#hex","scale":[x,y,z],"physics":"none|static|dynamic","mobility":"static|stationary|movable","tags":["Tag1"]}
 - {"cmd":"set","actor":"Name","position":[x,y,z],"rotation":[degX,degY,degZ],"scale":[x,y,z]}
 - {"cmd":"material","actor":"Name","color":"#hex","roughness":0..1,"metalness":0..1,"emissive":"#hex","emissiveIntensity":n}
 - {"cmd":"physics","actor":"Name","mode":"none|static|dynamic","mass":n}
 - {"cmd":"script","actor":"Name","code":"function onBeginPlay(){...} function onTick(dt){...}"} — JS with actor, api (api.log, api.isKeyDown(code), api.keyJustPressed, api.getActor(name), api.time()), THREE in scope. actor.root is the THREE.Object3D.
 - {"cmd":"rename","actor":"Old","name":"New"}
 - {"cmd":"delete","actor":"Name"}
-- {"cmd":"environment","sunElevation":deg,"sunAzimuth":deg,"skyEnabled":bool,"fogEnabled":bool,"fogDensity":n,"fogColor":"#hex","bloomEnabled":bool,"bloomStrength":n}
+- {"cmd":"environment","sunElevation":deg,"sunAzimuth":deg,"skyEnabled":bool,"fogEnabled":bool,"fogDensity":n,"fogColor":"#hex","bloomEnabled":bool,"bloomStrength":n,"exposure":n}
+- {"cmd":"mobility","actor":"Name","mobility":"static|stationary|movable"}
+- {"cmd":"tags","actor":"Name","tags":["Tag1","Tag2"]}
 
 Rules: ground plane is y=0; meshes are 1 unit before scale; place objects so they rest on surfaces (a unit box at rest has y=0.5*scaleY). Actor names must be unique — check the scene list. Keep prose brief; the commands are the work. Scripts run only during Play. PlayerStart pawnMode is fly by default.
 
@@ -108,6 +112,8 @@ export function executeAICommands(commands: AICommand[]): string[] {
           else if (LIGHT_TYPES.includes(what)) payload = { kind: 'light', type: what as Extract<ActorType, 'PointLight' | 'SpotLight' | 'DirectionalLight' | 'AmbientLight'> }
           else if (what === 'Camera') payload = { kind: 'camera' }
           else if (what === 'PlayerStart') payload = { kind: 'playerstart' }
+          else if (what === 'Folder') payload = { kind: 'folder' }
+          else if (what === 'PostProcessVolume') payload = { kind: 'postprocess' }
           else payload = { kind: 'empty' }
           const pos = (c.position as [number, number, number]) ?? [0, 0.5, 0]
           const sa = buildSerializedActor(payload, pos)
@@ -115,6 +121,8 @@ export function executeAICommands(commands: AICommand[]): string[] {
           if (c.scale) sa.transform.scale = c.scale as [number, number, number]
           if (c.color && sa.material) sa.material.color = String(c.color)
           if (c.physics && sa.material) sa.physics = { mode: c.physics as 'none' | 'static' | 'dynamic', mass: 1, friction: 0.5, restitution: 0.2 }
+          if (c.mobility) sa.mobility = c.mobility as 'static' | 'stationary' | 'movable'
+          if (Array.isArray(c.tags)) sa.tags = c.tags.map(String)
           runCommand(new AddActorCommand(sa))
           results.push(`spawned ${sa.name}`)
           break
@@ -190,6 +198,24 @@ export function executeAICommands(commands: AICommand[]): string[] {
           if (!actor) throw new Error(`no actor "${c.actor}"`)
           runCommand(new DeleteActorCommand(actor.id))
           results.push(`deleted ${c.actor}`)
+          break
+        }
+        case 'mobility': {
+          const actor = findActor(String(c.actor))
+          if (!actor) throw new Error(`no actor "${c.actor}"`)
+          const prev = actor.mobility
+          const next = String(c.mobility) as 'static' | 'stationary' | 'movable'
+          runCommand(new PropertyCommand(`AI mobility ${actor.name}`, () => (actor.mobility = next), () => (actor.mobility = prev)))
+          results.push(`${actor.name} mobility → ${next}`)
+          break
+        }
+        case 'tags': {
+          const actor = findActor(String(c.actor))
+          if (!actor) throw new Error(`no actor "${c.actor}"`)
+          const prev = [...actor.tags]
+          const next = Array.isArray(c.tags) ? c.tags.map(String) : []
+          runCommand(new PropertyCommand(`AI tags ${actor.name}`, () => (actor.tags = next), () => (actor.tags = prev)))
+          results.push(`tagged ${actor.name}`)
           break
         }
         case 'environment': {

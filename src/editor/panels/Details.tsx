@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import type { Actor } from '../../engine/Actor'
 import { applyMaterialProps } from '../../engine/factory'
 import { applyLightProps, world } from '../../engine/World'
-import type { Behavior, TransformSnapshot } from '../../engine/types'
+import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
@@ -97,6 +97,102 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <summary>{title}</summary>
       <div className="details-grid">{children}</div>
     </details>
+  )
+}
+
+function MobilitySection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  return (
+    <Section title="Mobility">
+      <label className="field">
+        <span>Type</span>
+        <select
+          value={actor.mobility}
+          onChange={(e) => {
+            const prev = actor.mobility
+            const next = e.target.value as Mobility
+            runCommand(
+              new PropertyCommand(
+                `Mobility: ${next}`,
+                () => (actor.mobility = next),
+                () => (actor.mobility = prev),
+              ),
+            )
+            touch()
+          }}
+        >
+          <option value="static">Static</option>
+          <option value="stationary">Stationary</option>
+          <option value="movable">Movable</option>
+        </select>
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        {actor.mobility === 'static' && 'Cannot move at runtime. Behaviors that transform are disabled during Play.'}
+        {actor.mobility === 'stationary' && 'Lights may change params at runtime; transform behaviors are disabled.'}
+        {actor.mobility === 'movable' && 'Full runtime transform. Required for dynamic physics.'}
+      </div>
+    </Section>
+  )
+}
+
+function TagsSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const raw = actor.tags.join(', ')
+  return (
+    <Section title="Actor Tags">
+      <label className="field">
+        <span>Tags</span>
+        <input
+          type="text"
+          placeholder="Gameplay, Interactable, Enemy"
+          defaultValue={raw}
+          onBlur={(e) => {
+            const next = e.target.value
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+            const prev = [...actor.tags]
+            if (next.join(',') === prev.join(',')) return
+            runCommand(
+              new PropertyCommand(
+                'Edit tags',
+                () => (actor.tags = next),
+                () => (actor.tags = prev),
+              ),
+            )
+            touch()
+          }}
+        />
+      </label>
+    </Section>
+  )
+}
+
+function PostProcessSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const props = actor.postProcessProps!
+  const set = <K extends keyof PostProcessProps>(key: K, value: PostProcessProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Post ${String(key)}`,
+        () => (props[key] = value),
+        () => (props[key] = prev),
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="Post Process">
+      <Check label="Enabled" value={props.enabled} onToggle={(v) => set('enabled', v)} />
+      <Check label="Infinite Extent" value={props.infiniteExtent} onToggle={(v) => set('infiniteExtent', v)} />
+      <Num label="Priority" value={props.priority} step={1} onLive={(v) => { props.priority = v; touch() }} onCommit={() => {}} />
+      <Num label="Blend Radius" value={props.blendRadius} step={1} min={0} onLive={(v) => { props.blendRadius = v; touch() }} onCommit={() => {}} />
+      <Num label="Exposure" value={props.exposure ?? 0.85} step={0.05} min={0.2} max={2} onLive={(v) => { props.exposure = v; touch() }} onCommit={() => {}} />
+      <Num label="Bloom Strength" value={props.bloomStrength ?? 0.35} step={0.05} min={0} max={2} onLive={(v) => { props.bloomStrength = v; touch() }} onCommit={() => {}} />
+      <Num label="Bloom Threshold" value={props.bloomThreshold ?? 1.5} step={0.05} min={0} max={3} onLive={(v) => { props.bloomThreshold = v; touch() }} onCommit={() => {}} />
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Scale the volume to set its bounds. Camera inside blends these overrides.</div>
+    </Section>
   )
 }
 
@@ -342,7 +438,9 @@ function PhysicsSection({ actor }: { actor: Actor }) {
         <select value={props.mode} onChange={(e) => setMode(e.target.value as typeof props.mode)}>
           <option value="none">None</option>
           <option value="static">Static (collides)</option>
-          <option value="dynamic">Dynamic (simulated)</option>
+          <option value="dynamic" disabled={!actor.canMoveAtRuntime()}>
+            Dynamic (simulated){!actor.canMoveAtRuntime() ? ' — needs Movable' : ''}
+          </option>
         </select>
       </label>
       {props.mode === 'dynamic' && (
@@ -463,6 +561,9 @@ export function Details() {
       </div>
       <div className="panel-body">
         <TransformSection actor={actor} />
+        <MobilitySection actor={actor} />
+        <TagsSection actor={actor} />
+        {actor.type === 'PostProcessVolume' && actor.postProcessProps && <PostProcessSection actor={actor} />}
         {actor.type === 'PlayerStart' && <PawnSection actor={actor} />}
         {actor.mesh && actor.materialProps && <MaterialSection actor={actor} />}
         {actor.light && actor.lightProps && <LightSection actor={actor} />}

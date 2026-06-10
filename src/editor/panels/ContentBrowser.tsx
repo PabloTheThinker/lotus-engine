@@ -6,7 +6,7 @@ import { useEditor } from '../store'
 interface AssetDef {
   label: string
   icon: string
-  category: 'Shapes' | 'Lights' | 'Cameras' | 'Gameplay'
+  category: 'Shapes' | 'Lights' | 'Cameras' | 'Gameplay' | 'Volumes'
   payload: AssetPayload
 }
 
@@ -26,9 +26,11 @@ const ASSETS: AssetDef[] = [
   { label: 'Camera', icon: '🎥', category: 'Cameras', payload: { kind: 'camera' } },
   { label: 'Player Start', icon: '🚩', category: 'Gameplay', payload: { kind: 'playerstart' } },
   { label: 'Empty', icon: '◇', category: 'Gameplay', payload: { kind: 'empty' } },
+  { label: 'Folder', icon: '📁', category: 'Gameplay', payload: { kind: 'folder' } },
+  { label: 'Post Process', icon: '◫', category: 'Volumes', payload: { kind: 'postprocess' } },
 ]
 
-const CATEGORIES = ['Shapes', 'Lights', 'Cameras', 'Gameplay'] as const
+const CATEGORIES = ['Shapes', 'Lights', 'Cameras', 'Gameplay', 'Volumes'] as const
 
 function importGltf() {
   const input = document.createElement('input')

@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { Input } from '../engine/Input'
 import { setScriptLogSink } from '../engine/scripting'
@@ -97,10 +98,21 @@ export function Viewport() {
       } else {
         world.scene.environment = null
       }
-      bloomPass.enabled = env.bloomEnabled
-      bloomPass.strength = env.bloomStrength
-      bloomPass.threshold = env.bloomThreshold
-      bloomPass.radius = env.bloomRadius
+      applyPostSettings({
+        bloomEnabled: env.bloomEnabled,
+        bloomStrength: env.bloomStrength,
+        bloomThreshold: env.bloomThreshold,
+        bloomRadius: env.bloomRadius,
+        exposure: env.exposure ?? 0.75,
+      })
+    }
+
+    function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
+      bloomPass.enabled = post.bloomEnabled
+      bloomPass.strength = post.bloomStrength
+      bloomPass.threshold = post.bloomThreshold
+      bloomPass.radius = post.bloomRadius
+      renderer.toneMappingExposure = post.exposure
     }
 
     // editor-only chrome
@@ -524,6 +536,10 @@ export function Viewport() {
       }
 
       syncEnvironment()
+      const activeCam = possessed ? pawn.camera : editorCamera
+      const camPos = new THREE.Vector3()
+      activeCam.getWorldPosition(camPos)
+      applyPostSettings(computeBlendedPost(camPos, world.actors.values(), world.environment))
       applyViewMode(s.viewMode, s.sceneVersion)
       controls.enabled = !possessed
       controls.update(dt)
@@ -558,12 +574,12 @@ export function Viewport() {
         if (actor.cameraHelper) actor.cameraHelper.visible = !hideChrome && actor.visible
         if (actor.lightHelper) actor.lightHelper.visible = !hideChrome
         if (actor.type === 'PlayerStart') actor.root.visible = !hideChrome && actor.visible
+        if (actor.volumeHelper) actor.volumeHelper.visible = !hideChrome && actor.visible
       }
       grid.visible = !hideChrome
       axes.visible = !hideChrome
 
       // render — pawn camera while possessed, editor camera otherwise
-      const activeCam = possessed ? pawn.camera : editorCamera
       if (possessed) {
         pawn.camera.aspect = mount.clientWidth / mount.clientHeight
         pawn.camera.updateProjectionMatrix()

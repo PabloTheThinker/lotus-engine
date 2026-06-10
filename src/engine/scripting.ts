@@ -23,6 +23,7 @@ export interface ScriptApi {
   isKeyDown: (code: string) => boolean
   keyJustPressed: (code: string) => boolean
   getActor: (name: string) => Actor | undefined
+  getActorsByTag: (tag: string) => Actor[]
   time: () => number
   /** world position of the player pawn while playing, else null */
   pawnPosition: () => THREE.Vector3 | null
@@ -51,6 +52,8 @@ export function makeScriptApi(
     isKeyDown: (code) => Input.isDown(code),
     keyJustPressed: (code) => Input.justPressed(code),
     getActor: (name) => [...actors.values()].find((a) => a.name === name),
+    getActorsByTag: (tag) =>
+      [...actors.values()].filter((a) => a.tags.some((t) => t.toLowerCase() === tag.toLowerCase())),
     time: clock,
     pawnPosition,
   }

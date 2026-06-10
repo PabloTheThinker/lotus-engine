@@ -75,6 +75,17 @@ export function WorldSettings() {
             </label>
           </>
         )}
+        <label className="field">
+          <span>Exposure</span>
+          <input
+            type="range"
+            min={0.2}
+            max={2}
+            step={0.05}
+            value={env.exposure ?? 0.75}
+            onChange={(e) => set('exposure', parseFloat(e.target.value))}
+          />
+        </label>
         <label className="field check">
           <span>Bloom</span>
           <input type="checkbox" checked={env.bloomEnabled} onChange={(e) => set('bloomEnabled', e.target.checked)} />

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
 import type { ActorType, CameraProps, GeometryKind, LightProps, MaterialProps } from './types'
-import { DEFAULT_MATERIAL, DEFAULT_PHYSICS } from './types'
+import { DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
   switch (kind) {
@@ -138,6 +138,32 @@ export function createCameraActor(name: string, id = nextActorId()): Actor {
 
 export function createEmptyActor(name: string, id = nextActorId()): Actor {
   return new Actor(id, name, 'Empty')
+}
+
+/** Folder — UE World Outliner organizational node (no renderable components). */
+export function createFolderActor(name: string, id = nextActorId()): Actor {
+  return new Actor(id, name, 'Folder')
+}
+
+/** PostProcessVolume — local post-stack overrides when the camera is inside. */
+export function createPostProcessVolumeActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'PostProcessVolume')
+  actor.postProcessProps = { ...DEFAULT_POST_PROCESS }
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0x9b59b6,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.45,
+      depthWrite: false,
+    }),
+  )
+  box.userData.isHelper = true
+  box.userData.isEditorOnly = true
+  actor.volumeHelper = box
+  actor.root.add(box)
+  return actor
 }
 
 /** PlayerStart — where the pawn spawns when Play begins (UE PlayerStart). */

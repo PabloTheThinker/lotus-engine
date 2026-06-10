@@ -10,6 +10,50 @@ export type ActorType =
   | 'Camera'
   | 'PlayerStart'
   | 'Empty'
+  | 'Folder'
+  | 'PostProcessVolume'
+
+/** UE EComponentMobility — how an actor may change at runtime. */
+export type Mobility = 'static' | 'stationary' | 'movable'
+
+export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
+  StaticMesh: 'static',
+  ImportedMesh: 'static',
+  PointLight: 'stationary',
+  SpotLight: 'stationary',
+  DirectionalLight: 'stationary',
+  AmbientLight: 'stationary',
+  Camera: 'movable',
+  PlayerStart: 'movable',
+  Empty: 'movable',
+  Folder: 'static',
+  PostProcessVolume: 'movable',
+}
+
+/** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
+export interface PostProcessProps {
+  enabled: boolean
+  /** UE "Infinite Extent (Unbound)" — affects the whole level regardless of position. */
+  infiniteExtent: boolean
+  blendRadius: number
+  priority: number
+  bloomEnabled?: boolean
+  bloomStrength?: number
+  bloomThreshold?: number
+  bloomRadius?: number
+  exposure?: number
+}
+
+export const DEFAULT_POST_PROCESS: PostProcessProps = {
+  enabled: true,
+  infiniteExtent: false,
+  blendRadius: 100,
+  priority: 0,
+  bloomStrength: 0.35,
+  bloomThreshold: 1.5,
+  bloomRadius: 0.5,
+  exposure: 0.85,
+}
 
 export type GeometryKind =
   | 'box'
@@ -96,8 +140,16 @@ export interface SerializedActor {
   receiveShadow?: boolean
   /** per-actor JavaScript (onBeginPlay / onTick hooks) */
   script?: string
+  /** visual scripting graph — compiles into the script slot */
+  blueprint?: import('./blueprint').BlueprintGraph
   /** PlayerStart only: which pawn the player possesses */
   pawnMode?: PawnMode
+  /** UE mobility — static/stationary/movable */
+  mobility?: Mobility
+  /** UE-style actor tags for filtering and gameplay queries */
+  tags?: string[]
+  /** PostProcessVolume only */
+  postProcess?: PostProcessProps
 }
 
 export type PawnMode = 'fly' | 'firstperson' | 'thirdperson'
@@ -116,6 +168,7 @@ export interface EnvironmentSettings {
   bloomStrength: number
   bloomThreshold: number
   bloomRadius: number
+  exposure: number
 }
 
 export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
@@ -130,11 +183,12 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   bloomStrength: 0.2,
   bloomThreshold: 2.0,
   bloomRadius: 0.4,
+  exposure: 0.75,
 }
 
 export interface SerializedLevel {
   engine: 'vektra'
-  version: 1 | 2
+  version: 1 | 2 | 3
   name: string
   environment: EnvironmentSettings
   // imported glTF binaries, base64-encoded, keyed by assetId

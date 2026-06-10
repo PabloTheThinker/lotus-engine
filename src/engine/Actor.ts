@@ -6,11 +6,14 @@ import type {
   GeometryKind,
   LightProps,
   MaterialProps,
+  Mobility,
   PawnMode,
   PhysicsProps,
+  PostProcessProps,
   SerializedActor,
   TransformSnapshot,
 } from './types'
+import { DEFAULT_MOBILITY } from './types'
 import { compileScript, scriptLog, type CompiledScript, type ScriptApi } from './scripting'
 
 let actorCounter = 0
@@ -46,7 +49,12 @@ export class Actor {
   physicsProps?: PhysicsProps
   assetId?: string
   script?: string
+  blueprint?: import('./blueprint').BlueprintGraph
   pawnMode?: PawnMode
+  mobility: Mobility
+  tags: string[]
+  postProcessProps?: PostProcessProps
+  volumeHelper?: THREE.Object3D
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -58,9 +66,16 @@ export class Actor {
     this.id = id
     this.name = name
     this.type = type
+    this.mobility = DEFAULT_MOBILITY[type]
+    this.tags = []
     this.root = new THREE.Group()
     this.root.name = name
     this.root.userData.actorId = id
+  }
+
+  /** Whether transform-modifying gameplay may run at runtime (UE mobility gate). */
+  canMoveAtRuntime(): boolean {
+    return this.mobility === 'movable'
   }
 
   get transform(): TransformSnapshot {
@@ -122,6 +137,7 @@ export class Actor {
         this.compiled = null
       }
     }
+    if (!this.canMoveAtRuntime()) return
     for (const b of this.behaviors) {
       switch (b.type) {
         case 'rotator':
@@ -157,7 +173,11 @@ export class Actor {
       physics: this.physicsProps ? { ...this.physicsProps } : undefined,
       assetId: this.assetId,
       script: this.script,
+      blueprint: this.blueprint ? JSON.parse(JSON.stringify(this.blueprint)) : undefined,
       pawnMode: this.pawnMode,
+      mobility: this.mobility,
+      tags: [...this.tags],
+      postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,

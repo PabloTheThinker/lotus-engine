@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import type { Actor } from '../../engine/Actor'
 import { world } from '../../engine/World'
-import { DeleteActorCommand, PropertyCommand, ReparentCommand, runCommand } from '../commands'
+import { AddActorCommand, DeleteActorCommand, PropertyCommand, ReparentCommand, runCommand } from '../commands'
+import { buildSerializedActor } from '../spawn'
 import { useEditor } from '../store'
 
 const TYPE_ICONS: Record<string, string> = {
@@ -14,9 +15,37 @@ const TYPE_ICONS: Record<string, string> = {
   Camera: '🎥',
   PlayerStart: '🚩',
   Empty: '◇',
+  Folder: '📁',
+  PostProcessVolume: '◫',
 }
 
-function OutlinerRow({ actor, depth }: { actor: Actor; depth: number }) {
+function matchesFilter(actor: Actor, query: string): boolean {
+  if (!query) return true
+  const q = query.toLowerCase()
+  if (actor.name.toLowerCase().includes(q)) return true
+  if (actor.type.toLowerCase().includes(q)) return true
+  if (actor.tags.some((t) => t.toLowerCase().includes(q))) return true
+  return false
+}
+
+function subtreeMatches(actor: Actor, query: string): boolean {
+  if (matchesFilter(actor, query)) return true
+  return world.childrenOf(actor.id).some((c) => subtreeMatches(c, query))
+}
+
+function OutlinerRow({
+  actor,
+  depth,
+  filter,
+  collapsed,
+  toggleCollapsed,
+}: {
+  actor: Actor
+  depth: number
+  filter: string
+  collapsed: Set<string>
+  toggleCollapsed: (id: string) => void
+}) {
   const selectedId = useEditor((s) => s.selectedId)
   const selectedIds = useEditor((s) => s.selectedIds)
   const select = useEditor((s) => s.select)
@@ -25,11 +54,15 @@ function OutlinerRow({ actor, depth }: { actor: Actor; depth: number }) {
   const [renaming, setRenaming] = useState(false)
   const children = world.childrenOf(actor.id)
   const isSelected = selectedIds.includes(actor.id)
+  const isFolder = actor.type === 'Folder'
+  const isCollapsed = collapsed.has(actor.id)
+
+  if (!subtreeMatches(actor, filter)) return null
 
   return (
     <>
       <div
-        className={`outliner-row ${isSelected ? 'selected' : ''} ${selectedId === actor.id ? 'primary' : ''}`}
+        className={`outliner-row ${isSelected ? 'selected' : ''} ${selectedId === actor.id ? 'primary' : ''} ${isFolder ? 'folder' : ''}`}
         style={{ paddingLeft: 8 + depth * 14 }}
         onClick={(e) => (e.ctrlKey || e.metaKey ? toggleSelect(actor.id) : select(actor.id))}
         onDoubleClick={() => setRenaming(true)}
@@ -46,6 +79,19 @@ function OutlinerRow({ actor, depth }: { actor: Actor; depth: number }) {
           }
         }}
       >
+        {isFolder ? (
+          <button
+            className="outliner-fold"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleCollapsed(actor.id)
+            }}
+          >
+            {isCollapsed ? '▸' : '▾'}
+          </button>
+        ) : (
+          <span className="outliner-fold-spacer" />
+        )}
         <span className="outliner-icon">{TYPE_ICONS[actor.type] ?? '◇'}</span>
         {renaming ? (
           <input
@@ -80,6 +126,7 @@ function OutlinerRow({ actor, depth }: { actor: Actor; depth: number }) {
           <span className="outliner-name">{actor.name}</span>
         )}
         <span className="outliner-type">{actor.type}</span>
+        {actor.tags.length > 0 && <span className="outliner-tag" title={actor.tags.join(', ')}>🏷</span>}
         <button
           className={`eye ${actor.visible ? '' : 'off'}`}
           title="Toggle visibility"
@@ -92,23 +139,59 @@ function OutlinerRow({ actor, depth }: { actor: Actor; depth: number }) {
           {actor.visible ? '👁' : '–'}
         </button>
       </div>
-      {children.map((c) => (
-        <OutlinerRow key={c.id} actor={c} depth={depth + 1} />
-      ))}
+      {!isCollapsed &&
+        children.map((c) => (
+          <OutlinerRow
+            key={c.id}
+            actor={c}
+            depth={depth + 1}
+            filter={filter}
+            collapsed={collapsed}
+            toggleCollapsed={toggleCollapsed}
+          />
+        ))}
     </>
   )
 }
 
 export function Outliner() {
-  useEditor((s) => s.sceneVersion) // re-render on world mutations
+  useEditor((s) => s.sceneVersion)
   const selectedId = useEditor((s) => s.selectedId)
   const roots = world.childrenOf(null)
+  const [filter, setFilter] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+
+  const toggleCollapsed = (id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const addFolder = () => {
+    runCommand(new AddActorCommand(buildSerializedActor({ kind: 'folder' }, [0, 0, 0])))
+  }
 
   return (
     <div className="panel outliner">
       <div className="panel-header">
         <span>World Outliner</span>
-        <span className="panel-meta">{world.actors.size} actors</span>
+        <span className="panel-meta">
+          <button className="outliner-add" title="Add Folder" onClick={addFolder}>
+            + Folder
+          </button>
+          {world.actors.size} actors
+        </span>
+      </div>
+      <div className="outliner-search">
+        <input
+          type="search"
+          placeholder="Filter by name, type, or tag…"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
       </div>
       <div
         className="panel-body"
@@ -116,19 +199,25 @@ export function Outliner() {
           if (e.dataTransfer.types.includes('vektra/actor')) e.preventDefault()
         }}
         onDrop={(e) => {
-          // dropping on empty space un-parents
           const dragged = e.dataTransfer.getData('vektra/actor')
           if (dragged) runCommand(new ReparentCommand(dragged, null))
         }}
       >
-        {roots.length === 0 && <div className="panel-empty">Empty level — drag assets in from the Content Browser.</div>}
         {roots.map((a) => (
-          <OutlinerRow key={a.id} actor={a} depth={0} />
+          <OutlinerRow
+            key={a.id}
+            actor={a}
+            depth={0}
+            filter={filter}
+            collapsed={collapsed}
+            toggleCollapsed={toggleCollapsed}
+          />
         ))}
+        {roots.length === 0 && <div className="panel-empty">No actors in level.</div>}
       </div>
       {selectedId && (
-        <div className="panel-footer">
-          <button onClick={() => runCommand(new DeleteActorCommand(selectedId))}>Delete Selected</button>
+        <div className="outliner-footer">
+          <button onClick={() => selectedId && runCommand(new DeleteActorCommand(selectedId))}>Delete Selected</button>
         </div>
       )}
     </div>

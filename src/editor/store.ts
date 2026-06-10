@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
-export type BottomTab = 'content' | 'script' | 'console' | 'ai'
+export type BottomTab = 'content' | 'script' | 'blueprint' | 'console' | 'ai'
 
 export interface ConsoleEntry {
   level: 'log' | 'error' | 'cmd' | 'ai'
@@ -80,6 +80,14 @@ interface EditorState {
   // Play From Here — spawn override consumed by the viewport at play start
   pendingSpawn: [number, number, number] | null
   setPendingSpawn: (p: [number, number, number] | null) => void
+
+  // terminal — focus request nonce (Console panel watches this)
+  consoleFocusNonce: number
+  openConsole: () => void
+
+  // external CLI bridge (dev WebSocket)
+  bridgeConnected: boolean
+  setBridgeConnected: (v: boolean) => void
 }
 
 export const useEditor = create<EditorState>((set) => ({
@@ -143,4 +151,15 @@ export const useEditor = create<EditorState>((set) => ({
 
   pendingSpawn: null,
   setPendingSpawn: (p) => set({ pendingSpawn: p }),
+
+  consoleFocusNonce: 0,
+  openConsole: () =>
+    set((s) => ({
+      bottomTab: 'console',
+      contentBrowserOpen: true,
+      consoleFocusNonce: s.consoleFocusNonce + 1,
+    })),
+
+  bridgeConnected: false,
+  setBridgeConnected: (v) => set({ bridgeConnected: v }),
 }))

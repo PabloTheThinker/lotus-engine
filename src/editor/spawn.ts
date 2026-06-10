@@ -9,6 +9,8 @@ export type AssetPayload =
   | { kind: 'light'; type: Extract<ActorType, 'PointLight' | 'SpotLight' | 'DirectionalLight' | 'AmbientLight'> }
   | { kind: 'camera' }
   | { kind: 'empty' }
+  | { kind: 'folder' }
+  | { kind: 'postprocess' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -68,6 +70,18 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
       }
     case 'empty':
       return { ...base, name: uniqueName('Empty'), type: 'Empty' }
+    case 'folder':
+      return { ...base, name: uniqueName('Folder'), type: 'Folder' }
+    case 'postprocess': {
+      const sa: SerializedActor = {
+        ...base,
+        name: uniqueName('PostProcessVolume'),
+        type: 'PostProcessVolume',
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 2), position[2]], scale: [8, 4, 8] },
+        postProcess: { enabled: true, infiniteExtent: false, blendRadius: 100, priority: 0, bloomStrength: 0.35, exposure: 0.85 },
+      }
+      return sa
+    }
     case 'playerstart':
       return {
         ...base,

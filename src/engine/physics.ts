@@ -42,6 +42,8 @@ export class PhysicsSim {
     for (const actor of actors) {
       const props = actor.physicsProps
       if (!props || props.mode === 'none' || !actor.mesh) continue
+      // UE: only Movable actors may simulate as dynamic bodies
+      if (props.mode === 'dynamic' && !actor.canMoveAtRuntime()) continue
 
       const pos = new THREE.Vector3()
       const quat = new THREE.Quaternion()

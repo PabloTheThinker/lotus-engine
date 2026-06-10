@@ -10,6 +10,8 @@ import {
   createLightActor,
   createPlayerStartActor,
   createStaticMeshActor,
+  createFolderActor,
+  createPostProcessVolumeActor,
 } from './factory'
 import { PhysicsSim } from './physics'
 import { makeScriptApi } from './scripting'
@@ -180,7 +182,7 @@ export class World {
     }
     return {
       engine: 'vektra',
-      version: 2,
+      version: 3,
       name: this.levelName,
       environment: { ...this.environment },
       assets,
@@ -259,6 +261,12 @@ export class World {
         actor = createPlayerStartActor(sa.name, sa.id)
         actor.pawnMode = sa.pawnMode ?? 'fly'
         break
+      case 'Folder':
+        actor = createFolderActor(sa.name, sa.id)
+        break
+      case 'PostProcessVolume':
+        actor = createPostProcessVolumeActor(sa.name, sa.id)
+        break
       default:
         actor = createEmptyActor(sa.name, sa.id)
     }
@@ -267,6 +275,10 @@ export class World {
     actor.behaviors = sa.behaviors.map((b) => ({ ...b }))
     if (sa.physics) actor.physicsProps = { ...sa.physics }
     if (sa.script) actor.script = sa.script
+    if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
+    if (sa.mobility) actor.mobility = sa.mobility
+    if (sa.tags?.length) actor.tags = [...sa.tags]
+    if (sa.postProcess && actor.postProcessProps) Object.assign(actor.postProcessProps, sa.postProcess)
     return actor
   }
 }

@@ -11,14 +11,24 @@ import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
 import { executeAICommands, extractCommands } from './editor/ai'
 import { useEditor } from './editor/store'
+import { terminalExec, TERMINAL_HELP } from './editor/terminal'
+import { connectTerminalBridge } from './editor/terminalBridge'
+import { undo, redo, runCommand } from './editor/commands'
 
-// dev console hook — inspect the live world from the browser console
-if (import.meta.env.DEV) {
-  ;(window as unknown as Record<string, unknown>).vektra = {
-    world,
-    useEditor,
-    ai: { executeAICommands, extractCommands },
-  }
+// Global bridge — browser devtools + external tooling can drive the live editor
+;(window as unknown as Record<string, unknown>).vektra = {
+  world,
+  useEditor,
+  runCommand,
+  undo,
+  redo,
+  terminal: {
+    exec: terminalExec,
+    help: () => TERMINAL_HELP,
+    open: () => useEditor.getState().openConsole(),
+    port: import.meta.env.VITE_VEKTRA_TERMINAL_PORT ?? '24679',
+  },
+  ai: { executeAICommands, extractCommands },
 }
 
 let booted = false
@@ -35,15 +45,24 @@ export default function App() {
     }
     const saveTimer = setInterval(autosave, 5000)
     const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable
       if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
         e.preventDefault()
         saveLevelToFile()
       }
+      // ` — UE-style console focus (skip when already typing elsewhere)
+      if (e.code === 'Backquote' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing) {
+        e.preventDefault()
+        useEditor.getState().openConsole()
+      }
     }
     window.addEventListener('keydown', onKey)
+    const disconnectBridge = connectTerminalBridge()
     return () => {
       clearInterval(saveTimer)
       window.removeEventListener('keydown', onKey)
+      disconnectBridge()
     }
   }, [])
 

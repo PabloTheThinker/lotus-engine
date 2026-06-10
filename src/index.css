@@ -355,6 +355,43 @@ input[type='checkbox'] {
   flex: 1;
 }
 
+.outliner-search {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.outliner-search input {
+  width: 100%;
+}
+.outliner-add {
+  font-size: 10px;
+  padding: 1px 6px;
+  margin-right: 6px;
+}
+.outliner-footer {
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+}
+.outliner-fold,
+.outliner-fold-spacer {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 10px;
+}
+.outliner-fold {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text-dim);
+}
+.outliner-row.folder .outliner-name {
+  font-weight: 600;
+}
+.outliner-tag {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
 /* outliner rows */
 .outliner-row {
   display: flex;
@@ -555,6 +592,16 @@ input[type='checkbox'] {
 
 /* ---------- status bar ---------- */
 
+.bridge-dot {
+  color: var(--text-dim);
+  margin-right: 6px;
+  font-size: 8px;
+  vertical-align: middle;
+}
+.bridge-dot.on {
+  color: #46a758;
+}
+
 .statusbar {
   display: flex;
   align-items: center;
@@ -696,13 +743,39 @@ input[type='checkbox'] {
   user-select: text;
 }
 
-/* ---------- console ---------- */
+/* ---------- console / terminal ---------- */
 
 .console {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+.console-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.console-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.console-hint {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.console-toolbar button {
+  padding: 1px 6px;
+  font-size: 11px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
 }
 .console-body {
   flex: 1;
@@ -726,30 +799,48 @@ input[type='checkbox'] {
 .console-line.ai {
   color: #b08df1;
 }
+.console-input-wrap {
+  border-top: 1px solid var(--border);
+}
+.console-suggestion {
+  padding: 2px 12px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
 .console-input {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
-  padding: 4px 12px;
-  border-top: 1px solid var(--border);
+  padding: 4px 12px 6px;
 }
 .console-input span {
   color: var(--accent);
   font-family: monospace;
   font-size: 11px;
+  padding-bottom: 4px;
 }
-.console-input input {
+.console-input textarea {
   flex: 1;
   background: transparent;
   border: none;
   outline: none;
-  font-family: 'JetBrains Mono', monospace;
+  resize: none;
+  min-height: 22px;
+  max-height: 120px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  user-select: text;
 }
-.console-input button {
+.console-run {
   border: none;
-  background: transparent;
-  color: var(--text-dim);
+  background: var(--accent);
+  color: #fff;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 12px;
 }
 
 /* ---------- AI chat ---------- */
@@ -900,4 +991,173 @@ input[type='checkbox'] {
 
 .outliner-row.selected:not(.primary) {
   background: rgba(47, 128, 237, 0.45);
+}
+
+/* ---------- blueprint editor ---------- */
+
+.bp-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.bp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+.bp-toolbar .apply {
+  background: #1d7a3e;
+  border-color: #1d7a3e;
+  color: #fff;
+}
+.bp-canvas {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, #20252d 1px, transparent 1px) 0 0 / 22px 22px,
+    var(--bg-0);
+  cursor: grab;
+}
+.bp-wires {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.bp-wire {
+  fill: none;
+  stroke: #e8ecf3;
+  stroke-width: 2;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.bp-wire:hover {
+  stroke: var(--danger);
+}
+.bp-wire.pending {
+  stroke: var(--accent-warm);
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+.bp-node {
+  position: absolute;
+  background: var(--bg-2);
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+  user-select: none;
+}
+.bp-node-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 5px 5px 0 0;
+  font-weight: 600;
+  color: #fff;
+  cursor: move;
+}
+.bp-node-header button {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 0 2px;
+  font-size: 10px;
+}
+.bp-node-header button:hover {
+  color: #fff;
+}
+.bp-node-body {
+  position: relative;
+  padding: 8px 10px 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 26px;
+}
+.bp-port {
+  position: absolute;
+  font-size: 13px;
+  line-height: 16px;
+  color: #e8ecf3;
+  cursor: crosshair;
+  z-index: 2;
+}
+.bp-port.in {
+  left: -7px;
+  top: 4px;
+}
+.bp-port.out {
+  right: -7px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.bp-port.out em {
+  font-size: 9px;
+  font-style: normal;
+  color: var(--text-dim);
+}
+.bp-port:hover,
+.bp-port.pending {
+  color: var(--accent-warm);
+}
+.bp-prop {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 6px;
+}
+.bp-prop span {
+  color: var(--text-dim);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bp-prop input,
+.bp-prop select {
+  font-size: 10.5px;
+  padding: 1px 4px;
+}
+.bp-add-menu {
+  position: absolute;
+  z-index: 30;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: 6px;
+  display: flex;
+  gap: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.bp-add-cat {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  margin: 2px 0 4px;
+}
+.bp-add-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 3px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.bp-add-menu button:hover {
+  background: var(--accent);
+  color: #fff;
 }
