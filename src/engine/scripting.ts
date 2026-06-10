@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { Input } from './Input'
+import { isActionDown, actionJustPressed } from './inputActions'
 import type { Actor } from './Actor'
 
 /**
@@ -22,6 +23,9 @@ export interface ScriptApi {
   log: (...args: unknown[]) => void
   isKeyDown: (code: string) => boolean
   keyJustPressed: (code: string) => boolean
+  /** named input actions (Input Map): api.isAction('Jump') */
+  isAction: (name: string) => boolean
+  actionJustPressed: (name: string) => boolean
   getActor: (name: string) => Actor | undefined
   getActorsByTag: (tag: string) => Actor[]
   time: () => number
@@ -51,6 +55,8 @@ export function makeScriptApi(
       ),
     isKeyDown: (code) => Input.isDown(code),
     keyJustPressed: (code) => Input.justPressed(code),
+    isAction: (name) => isActionDown(name),
+    actionJustPressed: (name) => actionJustPressed(name),
     getActor: (name) => [...actors.values()].find((a) => a.name === name),
     getActorsByTag: (tag) =>
       [...actors.values()].filter((a) => a.tags.some((t) => t.toLowerCase() === tag.toLowerCase())),

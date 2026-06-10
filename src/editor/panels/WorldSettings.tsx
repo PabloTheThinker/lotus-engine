@@ -1,5 +1,52 @@
+import { useState } from 'react'
 import { world } from '../../engine/World'
+import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
 import { useEditor } from '../store'
+
+function InputMapSection() {
+  const [actions, setActions] = useState<InputAction[]>(() => loadInputMap().map((a) => ({ ...a, keys: [...a.keys] })))
+  const commit = (next: InputAction[]) => {
+    setActions(next)
+    saveInputMap(next.map((a) => ({ ...a, keys: [...a.keys] })))
+  }
+  return (
+    <details className="details-section">
+      <summary>Input Map</summary>
+      <div className="details-grid">
+        {actions.map((a, i) => (
+          <label className="field" key={i}>
+            <span>{a.name}</span>
+            <input
+              value={a.keys.join(', ')}
+              spellCheck={false}
+              onKeyDown={(e) => {
+                // press a key to bind it
+                if (e.key === 'Tab' || e.key === 'Escape') return
+                e.preventDefault()
+                e.stopPropagation()
+                const next = actions.map((x, j) => (j === i ? { ...x, keys: [e.code] } : x))
+                commit(next)
+              }}
+              onChange={() => {}}
+              title="Focus and press a key to rebind"
+            />
+          </label>
+        ))}
+        <button
+          onClick={() => {
+            const name = prompt('Action name?')
+            if (name) commit([...actions, { name, keys: [] }])
+          }}
+        >
+          + Add Action
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Scripts: api.isAction('Jump') · api.actionJustPressed('Fire')
+        </div>
+      </div>
+    </details>
+  )
+}
 
 /** World Settings — environment + post stack (UE World Settings analog). */
 export function WorldSettings() {
@@ -117,6 +164,7 @@ export function WorldSettings() {
           </>
         )}
       </div>
+      <InputMapSection />
     </details>
   )
 }
