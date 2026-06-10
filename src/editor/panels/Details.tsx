@@ -5,6 +5,7 @@ import { applyMaterialProps } from '../../engine/factory'
 import { applyLightProps, world } from '../../engine/World'
 import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
+import { buildFoliageMesh } from '../../engine/factory'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
 import { WorldSettings } from './WorldSettings'
@@ -510,6 +511,53 @@ function ParticlesSection({ actor }: { actor: Actor }) {
   )
 }
 
+function FoliageSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const foliagePaint = useEditor((s) => s.foliagePaint)
+  const setFoliagePaint = useEditor((s) => s.setFoliagePaint)
+  const props = actor.foliageProps!
+  const rebuild = () => {
+    buildFoliageMesh(actor)
+    touch()
+  }
+  return (
+    <Section title="Foliage">
+      <label className="field">
+        <span>Mesh</span>
+        <select
+          value={props.geometry}
+          onChange={(e) => {
+            props.geometry = e.target.value as typeof props.geometry
+            rebuild()
+          }}
+        >
+          {['cone', 'sphere', 'cylinder', 'box', 'icosahedron', 'capsule'].map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
+        </select>
+      </label>
+      <ColorField label="Color" value={props.color} onLive={(v) => { props.color = v; rebuild() }} onCommit={() => {}} />
+      <Num label="Density" value={props.density} step={1} min={1} max={40} onLive={(v) => { props.density = v; touch() }} onCommit={() => {}} />
+      <Num label="Brush Size" value={props.brushRadius} step={0.25} min={0.25} onLive={(v) => { props.brushRadius = v; touch() }} onCommit={() => {}} />
+      <Num label="Scale Min" value={props.scaleMin} step={0.1} min={0.05} onLive={(v) => { props.scaleMin = v; touch() }} onCommit={() => {}} />
+      <Num label="Scale Max" value={props.scaleMax} step={0.1} min={0.05} onLive={(v) => { props.scaleMax = v; touch() }} onCommit={() => {}} />
+      <label className="field check">
+        <span>Paint Mode</span>
+        <input type="checkbox" checked={foliagePaint} onChange={(e) => setFoliagePaint(e.target.checked)} />
+      </label>
+      <button
+        onClick={() => {
+          props.instances = []
+          rebuild()
+        }}
+      >
+        Clear ({props.instances.length} instances)
+      </button>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Click-drag paints onto surfaces · Shift erases.</div>
+    </Section>
+  )
+}
+
 const BEHAVIOR_TEMPLATES: Record<string, Behavior> = {
   rotator: { type: 'rotator', speedX: 0, speedY: 1, speedZ: 0 },
   bobber: { type: 'bobber', amplitude: 0.5, frequency: 0.5 },
@@ -623,6 +671,7 @@ export function Details() {
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
+        {actor.foliageProps && <FoliageSection actor={actor} />}
         <BehaviorsSection actor={actor} />
         <WorldSettings />
       </div>

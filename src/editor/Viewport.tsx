@@ -7,6 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
+import { rebuildFoliage } from '../engine/factory'
 import { Input } from '../engine/Input'
 import { setScriptLogSink } from '../engine/scripting'
 import type { TransformSnapshot } from '../engine/types'
@@ -320,12 +321,106 @@ export function Viewport() {
       const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1])
       downPos = null
       const s = useEditor.getState()
+      if (s.foliagePaint) return // painting owns the mouse
       // selection allowed in editor, while ejected, and in simulate — not while possessed
       if (s.playing && !s.simulate && !s.ejected) return
       if (moved > 5 || (gizmo as unknown as { dragging: boolean }).dragging) return
       const actor = pick(e)
       if (actor && (e.ctrlKey || e.metaKey)) s.toggleSelect(actor.id)
       else s.select(actor?.id ?? null)
+    })
+
+    // ---- foliage painting (UE Foliage mode) ----
+    let painting = false
+    let strokeBefore: number[][] | null = null
+    let lastStamp: THREE.Vector3 | null = null
+
+    function paintSurfaceHit(e: MouseEvent): THREE.Intersection | null {
+      const s = useEditor.getState()
+      const layer = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (!layer?.foliageProps) return null
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, editorCamera)
+      const targets: THREE.Object3D[] = []
+      for (const a of world.actors.values()) {
+        if (a.id === layer.id) continue
+        a.root.traverse((o) => {
+          if (o instanceof THREE.Mesh && !o.userData.isHelper && !o.userData.isEditorOnly && !o.userData.isFoliage)
+            targets.push(o)
+        })
+      }
+      return raycaster.intersectObjects(targets, false)[0] ?? null
+    }
+
+    function stampFoliage(e: MouseEvent) {
+      const s = useEditor.getState()
+      const layer = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (!layer?.foliageProps || !layer.foliageMesh) return
+      const hit = paintSurfaceHit(e)
+      if (!hit) return
+      if (lastStamp && hit.point.distanceTo(lastStamp) < layer.foliageProps.brushRadius * 0.4) return
+      lastStamp = hit.point.clone()
+      const props = layer.foliageProps
+      if (e.shiftKey) {
+        // erase within brush
+        props.instances = props.instances.filter(([x, y, z]) => hit.point.distanceTo(new THREE.Vector3(x, y, z)) > props.brushRadius)
+      } else {
+        for (let i = 0; i < props.density; i++) {
+          if (props.instances.length >= 4000) break
+          const a = Math.random() * Math.PI * 2
+          const r = props.brushRadius * Math.sqrt(Math.random())
+          const px = hit.point.x + Math.cos(a) * r
+          const pz = hit.point.z + Math.sin(a) * r
+          // drop each instance onto the surface below
+          raycaster.set(new THREE.Vector3(px, hit.point.y + 5, pz), new THREE.Vector3(0, -1, 0))
+          const drop = raycaster.intersectObject(hit.object, false)[0]
+          const py = drop ? drop.point.y : hit.point.y
+          const sc = THREE.MathUtils.lerp(props.scaleMin, props.scaleMax, Math.random())
+          props.instances.push([px, py + sc * 0.5, pz, sc, Math.random() * Math.PI * 2])
+        }
+      }
+      rebuildFoliage(layer)
+      s.touch()
+    }
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      const s = useEditor.getState()
+      if (e.button !== 0 || !s.foliagePaint || s.playing) return
+      const layer = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (!layer?.foliageProps) return
+      painting = true
+      strokeBefore = layer.foliageProps.instances.map((i) => [...i])
+      lastStamp = null
+      stampFoliage(e)
+      e.stopPropagation()
+    })
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      if (painting) stampFoliage(e)
+    })
+    window.addEventListener('mouseup', () => {
+      if (!painting) return
+      painting = false
+      const s = useEditor.getState()
+      const layer = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (layer?.foliageProps && strokeBefore) {
+        const before = strokeBefore
+        const after = layer.foliageProps.instances.map((i) => [...i])
+        if (JSON.stringify(before) !== JSON.stringify(after)) {
+          runCommand({
+            label: 'Foliage stroke',
+            execute() {
+              layer.foliageProps!.instances = after.map((i) => [...i])
+              rebuildFoliage(layer)
+            },
+            undo() {
+              layer.foliageProps!.instances = before.map((i) => [...i])
+              rebuildFoliage(layer)
+            },
+          })
+        }
+      }
+      strokeBefore = null
     })
 
     // drag & drop spawning

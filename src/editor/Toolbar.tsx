@@ -22,6 +22,9 @@ export function Toolbar() {
   const toggleGizmoSpace = useEditor((s) => s.toggleGizmoSpace)
   const gameView = useEditor((s) => s.gameView)
   const toggleGameView = useEditor((s) => s.toggleGameView)
+  const foliagePaint = useEditor((s) => s.foliagePaint)
+  const setFoliagePaint = useEditor((s) => s.setFoliagePaint)
+  const selectedId = useEditor((s) => s.selectedId)
   const canUndo = useEditor((s) => s.canUndo)
   const canRedo = useEditor((s) => s.canRedo)
   const toggleContentBrowser = useEditor((s) => s.toggleContentBrowser)
@@ -58,6 +61,14 @@ export function Toolbar() {
         </button>
         <button className={gameView ? 'active' : ''} title="Game View — hide editor chrome (G)" onClick={toggleGameView}>
           👁 Game
+        </button>
+        <button
+          className={foliagePaint ? 'active' : ''}
+          title="Foliage paint — select a Foliage layer, then click-drag to paint, Shift to erase"
+          onClick={() => setFoliagePaint(!foliagePaint)}
+          disabled={!selectedId}
+        >
+          🌿 Paint
         </button>
       </div>
       <div className="toolbar-spacer" />

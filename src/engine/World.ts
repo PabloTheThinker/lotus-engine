@@ -12,6 +12,8 @@ import {
   createStaticMeshActor,
   createFolderActor,
   createParticleEmitterActor,
+  createFoliageLayerActor,
+  buildFoliageMesh,
   createPostProcessVolumeActor,
 } from './factory'
 import { PhysicsSim } from './physics'
@@ -276,6 +278,13 @@ export class World {
           actor.particleProps = { ...sa.particles }
           actor.particleSystem!.props = actor.particleProps
           actor.particleSystem!.refresh()
+        }
+        break
+      case 'FoliageLayer':
+        actor = createFoliageLayerActor(sa.name, sa.id)
+        if (sa.foliage) {
+          actor.foliageProps = { ...sa.foliage, instances: sa.foliage.instances.map((i) => [...i]) }
+          buildFoliageMesh(actor)
         }
         break
       case 'PlayerStart':

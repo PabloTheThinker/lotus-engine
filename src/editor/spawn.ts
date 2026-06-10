@@ -3,6 +3,7 @@ import { world } from '../engine/World'
 import type { ActorType, GeometryKind, SerializedActor } from '../engine/types'
 import { DEFAULT_MATERIAL } from '../engine/types'
 import { DEFAULT_PARTICLES } from '../engine/particles'
+import { DEFAULT_FOLIAGE } from '../engine/types'
 import { AddActorCommand, runCommand } from './commands'
 
 export type AssetPayload =
@@ -13,6 +14,7 @@ export type AssetPayload =
   | { kind: 'folder' }
   | { kind: 'postprocess' }
   | { kind: 'particles' }
+  | { kind: 'foliage' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -91,6 +93,14 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         type: 'ParticleEmitter',
         particles: { ...DEFAULT_PARTICLES },
         transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]] },
+      }
+    case 'foliage':
+      return {
+        ...base,
+        name: uniqueName('Foliage'),
+        type: 'FoliageLayer',
+        foliage: { ...DEFAULT_FOLIAGE, instances: [] },
+        transform: { ...base.transform, position: [0, 0, 0] },
       }
     case 'playerstart':
       return {

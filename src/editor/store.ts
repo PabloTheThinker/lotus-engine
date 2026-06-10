@@ -77,6 +77,10 @@ interface EditorState {
   pushConsole: (level: ConsoleEntry['level'], message: string) => void
   clearConsole: () => void
 
+  // foliage paint mode (UE Foliage mode)
+  foliagePaint: boolean
+  setFoliagePaint: (v: boolean) => void
+
   // Play From Here — spawn override consumed by the viewport at play start
   pendingSpawn: [number, number, number] | null
   setPendingSpawn: (p: [number, number, number] | null) => void
@@ -148,6 +152,9 @@ export const useEditor = create<EditorState>((set) => ({
   pushConsole: (level, message) =>
     set((s) => ({ consoleEntries: [...s.consoleEntries.slice(-199), { level, message }] })),
   clearConsole: () => set({ consoleEntries: [] }),
+
+  foliagePaint: false,
+  setFoliagePaint: (v) => set({ foliagePaint: v }),
 
   pendingSpawn: null,
   setPendingSpawn: (p) => set({ pendingSpawn: p }),

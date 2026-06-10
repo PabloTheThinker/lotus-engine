@@ -15,6 +15,7 @@ const TYPE_ICONS: Record<string, string> = {
   Camera: '🎥',
   PlayerStart: '🚩',
   ParticleEmitter: '✨',
+  FoliageLayer: '🌿',
   Empty: '◇',
   Folder: '📁',
   PostProcessVolume: '◫',

@@ -13,6 +13,7 @@ export type ActorType =
   | 'Folder'
   | 'PostProcessVolume'
   | 'ParticleEmitter'
+  | 'FoliageLayer'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -30,6 +31,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   Folder: 'static',
   PostProcessVolume: 'movable',
   ParticleEmitter: 'movable',
+  FoliageLayer: 'static',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -154,6 +156,30 @@ export interface SerializedActor {
   postProcess?: PostProcessProps
   /** ParticleEmitter only */
   particles?: import('./particles').ParticleProps
+  /** FoliageLayer only */
+  foliage?: FoliageProps
+}
+
+/** Foliage — UE Foliage mode analog: painted InstancedMesh scatter. */
+export interface FoliageProps {
+  geometry: GeometryKind
+  color: string
+  density: number
+  brushRadius: number
+  scaleMin: number
+  scaleMax: number
+  /** packed instances: [x, y, z, scale, rotY] */
+  instances: number[][]
+}
+
+export const DEFAULT_FOLIAGE: FoliageProps = {
+  geometry: 'cone',
+  color: '#3f7d44',
+  density: 6,
+  brushRadius: 2.5,
+  scaleMin: 0.6,
+  scaleMax: 1.6,
+  instances: [],
 }
 
 export type PawnMode = 'fly' | 'firstperson' | 'thirdperson'

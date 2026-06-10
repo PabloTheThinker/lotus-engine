@@ -2,7 +2,8 @@ import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
 import { ParticleSystem, DEFAULT_PARTICLES } from './particles'
 import type { ActorType, CameraProps, GeometryKind, LightProps, MaterialProps } from './types'
-import { DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS } from './types'
+import { DEFAULT_FOLIAGE, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS } from './types'
+import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
   switch (kind) {
@@ -159,6 +160,62 @@ export function createParticleEmitterActor(name: string, id = nextActorId()): Ac
   actor.mesh = proxy
   actor.root.add(proxy)
   return actor
+}
+
+const FOLIAGE_CAP = 4000
+const _fm = new THREE.Matrix4()
+const _fq = new THREE.Quaternion()
+const _fe = new THREE.Euler()
+const _fs = new THREE.Vector3()
+const _fp = new THREE.Vector3()
+
+/** Sync an InstancedMesh from a foliage layer's packed instance list. */
+export function rebuildFoliage(actor: Actor) {
+  const mesh = actor.foliageMesh
+  const props = actor.foliageProps
+  if (!mesh || !props) return
+  const count = Math.min(props.instances.length, FOLIAGE_CAP)
+  for (let i = 0; i < count; i++) {
+    const [x, y, z, sc, rotY] = props.instances[i]
+    _fp.set(x, y, z)
+    _fe.set(0, rotY, 0)
+    _fq.setFromEuler(_fe)
+    _fs.setScalar(sc)
+    _fm.compose(_fp, _fq, _fs)
+    mesh.setMatrixAt(i, _fm)
+  }
+  mesh.count = count
+  mesh.instanceMatrix.needsUpdate = true
+  mesh.computeBoundingSphere()
+}
+
+/** FoliageLayer — UE Foliage mode analog: paintable instanced scatter. */
+export function createFoliageLayerActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'FoliageLayer')
+  actor.foliageProps = { ...DEFAULT_FOLIAGE, instances: [] }
+  buildFoliageMesh(actor)
+  return actor
+}
+
+/** (re)create the instanced mesh after geometry/color changes */
+export function buildFoliageMesh(actor: Actor) {
+  const props = actor.foliageProps as FoliageProps
+  if (actor.foliageMesh) {
+    actor.foliageMesh.removeFromParent()
+    actor.foliageMesh.geometry.dispose()
+    ;(actor.foliageMesh.material as THREE.Material).dispose()
+  }
+  const geo = buildGeometry(props.geometry)
+  const mat = new THREE.MeshStandardMaterial({ color: props.color, roughness: 0.85 })
+  const mesh = new THREE.InstancedMesh(geo, mat, FOLIAGE_CAP)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.userData.actorId = actor.id
+  mesh.userData.isFoliage = true
+  mesh.count = 0
+  actor.foliageMesh = mesh
+  actor.root.add(mesh)
+  rebuildFoliage(actor)
 }
 
 /** Folder — UE World Outliner organizational node (no renderable components). */
