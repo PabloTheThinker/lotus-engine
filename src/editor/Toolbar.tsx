@@ -15,7 +15,13 @@ export function Toolbar() {
   const snapEnabled = useEditor((s) => s.snapEnabled)
   const toggleSnap = useEditor((s) => s.toggleSnap)
   const playing = useEditor((s) => s.playing)
-  const setPlaying = useEditor((s) => s.setPlaying)
+  const simulate = useEditor((s) => s.simulate)
+  const startPlay = useEditor((s) => s.startPlay)
+  const stopPlay = useEditor((s) => s.stopPlay)
+  const gizmoSpace = useEditor((s) => s.gizmoSpace)
+  const toggleGizmoSpace = useEditor((s) => s.toggleGizmoSpace)
+  const gameView = useEditor((s) => s.gameView)
+  const toggleGameView = useEditor((s) => s.toggleGameView)
   const canUndo = useEditor((s) => s.canUndo)
   const canRedo = useEditor((s) => s.canRedo)
   const toggleContentBrowser = useEditor((s) => s.toggleContentBrowser)
@@ -47,15 +53,29 @@ export function Toolbar() {
         <button className={snapEnabled ? 'active' : ''} title="Toggle grid snap" onClick={toggleSnap}>
           ⌗ Snap
         </button>
+        <button title="Gizmo space (T)" onClick={toggleGizmoSpace}>
+          {gizmoSpace === 'world' ? '🌐 World' : '⬚ Local'}
+        </button>
+        <button className={gameView ? 'active' : ''} title="Game View — hide editor chrome (G)" onClick={toggleGameView}>
+          👁 Game
+        </button>
       </div>
       <div className="toolbar-spacer" />
       <div className="toolbar-group">
         <button
-          className={`play-button ${playing ? 'stop' : ''}`}
-          title={playing ? 'Stop (Esc)' : 'Play In Editor'}
-          onClick={() => setPlaying(!playing)}
+          className={`play-button ${playing && !simulate ? 'stop' : ''}`}
+          title={playing ? 'Stop (Esc)' : 'Play In Editor — possess pawn at PlayerStart'}
+          onClick={() => (playing ? stopPlay() : startPlay('pie'))}
         >
-          {playing ? '■ Stop' : '▶ Play'}
+          {playing && !simulate ? '■ Stop' : '▶ Play'}
+        </button>
+        <button
+          className={`play-button simulate ${playing && simulate ? 'stop' : ''}`}
+          title={playing && simulate ? 'Stop (Esc)' : 'Simulate — run the world, keep the editor camera'}
+          onClick={() => (playing ? stopPlay() : startPlay('simulate'))}
+          disabled={playing && !simulate}
+        >
+          {playing && simulate ? '■ Stop' : '≡ Simulate'}
         </button>
       </div>
       <div className="toolbar-sep" />

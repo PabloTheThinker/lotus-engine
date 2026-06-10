@@ -6,11 +6,13 @@ import { useEditor } from '../store'
 
 const TYPE_ICONS: Record<string, string> = {
   StaticMesh: '◼',
+  ImportedMesh: '🧊',
   PointLight: '✦',
   SpotLight: '◬',
   DirectionalLight: '☀',
   AmbientLight: '◍',
   Camera: '🎥',
+  PlayerStart: '🚩',
   Empty: '◇',
 }
 

@@ -257,6 +257,37 @@ input[type='checkbox'] {
   border-radius: 3px;
   pointer-events: none;
 }
+.viewport-modes {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  gap: 2px;
+}
+.viewport-modes button {
+  font-size: 11px;
+  text-transform: capitalize;
+  background: rgba(13, 15, 18, 0.75);
+}
+.viewport-pip {
+  display: none;
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.viewport-pip span {
+  position: absolute;
+  top: -20px;
+  left: 0;
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(13, 15, 18, 0.75);
+  padding: 2px 6px;
+  border-radius: 2px;
+}
 .viewport-pie-banner {
   position: absolute;
   top: 8px;
@@ -506,6 +537,22 @@ input[type='checkbox'] {
   text-overflow: ellipsis;
 }
 
+.import-button {
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.asset-tile.imported {
+  border-color: #46a758;
+}
+
+.world-settings input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+  padding: 0;
+}
+
 /* ---------- status bar ---------- */
 
 .statusbar {
@@ -544,4 +591,16 @@ input[type='checkbox'] {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.play-button.simulate {
+  background: var(--bg-2);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 500;
+}
+.play-button.simulate.stop {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }

@@ -6,6 +6,7 @@ import type {
   GeometryKind,
   LightProps,
   MaterialProps,
+  PhysicsProps,
   SerializedActor,
   TransformSnapshot,
 } from './types'
@@ -40,6 +41,8 @@ export class Actor {
   materialProps?: MaterialProps
   lightProps?: LightProps
   cameraProps?: CameraProps
+  physicsProps?: PhysicsProps
+  assetId?: string
 
   // PIE state restore
   private editorTransform: TransformSnapshot | null = null
@@ -122,6 +125,8 @@ export class Actor {
       material: this.materialProps ? { ...this.materialProps } : undefined,
       light: this.lightProps ? { ...this.lightProps } : undefined,
       camera: this.cameraProps ? { ...this.cameraProps } : undefined,
+      physics: this.physicsProps ? { ...this.physicsProps } : undefined,
+      assetId: this.assetId,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,

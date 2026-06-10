@@ -2,11 +2,13 @@
 
 export type ActorType =
   | 'StaticMesh'
+  | 'ImportedMesh'
   | 'PointLight'
   | 'SpotLight'
   | 'DirectionalLight'
   | 'AmbientLight'
   | 'Camera'
+  | 'PlayerStart'
   | 'Empty'
 
 export type GeometryKind =
@@ -48,6 +50,22 @@ export interface CameraProps {
   far: number
 }
 
+// Physics — the Chaos analog, backed by Rapier. Runs only during Play.
+export type PhysicsMode = 'none' | 'static' | 'dynamic'
+export interface PhysicsProps {
+  mode: PhysicsMode
+  mass: number
+  friction: number
+  restitution: number
+}
+
+export const DEFAULT_PHYSICS: PhysicsProps = {
+  mode: 'none',
+  mass: 1,
+  friction: 0.5,
+  restitution: 0.2,
+}
+
 // Tick behaviors — the scripting layer that runs during Play-In-Editor.
 export type Behavior =
   | { type: 'rotator'; speedX: number; speedY: number; speedZ: number }
@@ -71,21 +89,50 @@ export interface SerializedActor {
   material?: MaterialProps
   light?: LightProps
   camera?: CameraProps
+  physics?: PhysicsProps
+  assetId?: string
   behaviors: Behavior[]
   castShadow?: boolean
   receiveShadow?: boolean
 }
 
+export interface EnvironmentSettings {
+  background: string
+  fogEnabled: boolean
+  fogColor: string
+  fogDensity: number
+  // sky atmosphere (UE SkyAtmosphere analog)
+  skyEnabled: boolean
+  sunElevation: number // degrees above horizon
+  sunAzimuth: number // degrees
+  // post-processing
+  bloomEnabled: boolean
+  bloomStrength: number
+  bloomThreshold: number
+  bloomRadius: number
+}
+
+export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
+  background: '#15181d',
+  fogEnabled: false,
+  fogColor: '#15181d',
+  fogDensity: 0.02,
+  skyEnabled: true,
+  sunElevation: 35,
+  sunAzimuth: 45,
+  bloomEnabled: true,
+  bloomStrength: 0.2,
+  bloomThreshold: 2.0,
+  bloomRadius: 0.4,
+}
+
 export interface SerializedLevel {
   engine: 'vektra'
-  version: 1
+  version: 1 | 2
   name: string
-  environment: {
-    background: string
-    fogEnabled: boolean
-    fogColor: string
-    fogDensity: number
-  }
+  environment: EnvironmentSettings
+  // imported glTF binaries, base64-encoded, keyed by assetId
+  assets?: Record<string, { name: string; data: string }>
   actors: SerializedActor[]
 }
 

@@ -1,0 +1,111 @@
+import { world } from '../../engine/World'
+import { useEditor } from '../store'
+
+/** World Settings — environment + post stack (UE World Settings analog). */
+export function WorldSettings() {
+  const touch = useEditor((s) => s.touch)
+  useEditor((s) => s.sceneVersion)
+  const env = world.environment
+
+  const set = <K extends keyof typeof env>(key: K, value: (typeof env)[K]) => {
+    env[key] = value
+    world.applyEnvironment()
+    touch()
+  }
+
+  return (
+    <details className="details-section world-settings">
+      <summary>World Settings</summary>
+      <div className="details-grid">
+        <label className="field check">
+          <span>Sky Atmosphere</span>
+          <input type="checkbox" checked={env.skyEnabled} onChange={(e) => set('skyEnabled', e.target.checked)} />
+        </label>
+        {env.skyEnabled ? (
+          <>
+            <label className="field">
+              <span>Sun Elevation</span>
+              <input
+                type="range"
+                min={-5}
+                max={90}
+                step={1}
+                value={env.sunElevation}
+                onChange={(e) => set('sunElevation', parseFloat(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span>Sun Azimuth</span>
+              <input
+                type="range"
+                min={0}
+                max={360}
+                step={1}
+                value={env.sunAzimuth}
+                onChange={(e) => set('sunAzimuth', parseFloat(e.target.value))}
+              />
+            </label>
+          </>
+        ) : (
+          <label className="field">
+            <span>Background</span>
+            <input type="color" value={env.background} onChange={(e) => set('background', e.target.value)} />
+          </label>
+        )}
+        <label className="field check">
+          <span>Fog</span>
+          <input type="checkbox" checked={env.fogEnabled} onChange={(e) => set('fogEnabled', e.target.checked)} />
+        </label>
+        {env.fogEnabled && (
+          <>
+            <label className="field">
+              <span>Fog Color</span>
+              <input type="color" value={env.fogColor} onChange={(e) => set('fogColor', e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Fog Density</span>
+              <input
+                type="range"
+                min={0.001}
+                max={0.15}
+                step={0.001}
+                value={env.fogDensity}
+                onChange={(e) => set('fogDensity', parseFloat(e.target.value))}
+              />
+            </label>
+          </>
+        )}
+        <label className="field check">
+          <span>Bloom</span>
+          <input type="checkbox" checked={env.bloomEnabled} onChange={(e) => set('bloomEnabled', e.target.checked)} />
+        </label>
+        {env.bloomEnabled && (
+          <>
+            <label className="field">
+              <span>Strength</span>
+              <input
+                type="range"
+                min={0}
+                max={2}
+                step={0.05}
+                value={env.bloomStrength}
+                onChange={(e) => set('bloomStrength', parseFloat(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span>Threshold</span>
+              <input
+                type="range"
+                min={0}
+                max={1.5}
+                step={0.05}
+                value={env.bloomThreshold}
+                onChange={(e) => set('bloomThreshold', parseFloat(e.target.value))}
+              />
+            </label>
+          </>
+        )}
+      </div>
+    </details>
+  )
+}

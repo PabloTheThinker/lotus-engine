@@ -1,46 +1,74 @@
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { Sky } from 'three/addons/objects/Sky.js'
 import { Actor } from './Actor'
 import {
   applyMaterialProps,
   createCameraActor,
   createEmptyActor,
+  createImportedMeshActor,
   createLightActor,
+  createPlayerStartActor,
   createStaticMeshActor,
 } from './factory'
-import type { SerializedActor, SerializedLevel } from './types'
-
-export interface Environment {
-  background: string
-  fogEnabled: boolean
-  fogColor: string
-  fogDensity: number
-}
+import { PhysicsSim } from './physics'
+import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
+import { DEFAULT_ENVIRONMENT } from './types'
 
 /**
  * World — the Unreal UWorld analog. Owns the Three.js scene graph,
- * the actor registry, and the Play-In-Editor lifecycle.
+ * the actor registry, the asset registry, and the PIE lifecycle
+ * (physics + behaviors only run between beginPlay and endPlay).
  */
 export class World {
   scene = new THREE.Scene()
   actors = new Map<string, Actor>()
   levelName = 'Untitled'
-  environment: Environment = {
-    background: '#15181d',
-    fogEnabled: false,
-    fogColor: '#15181d',
-    fogDensity: 0.02,
-  }
+  environment: EnvironmentSettings = { ...DEFAULT_ENVIRONMENT }
   playing = false
+  physics = new PhysicsSim()
+
+  // sky atmosphere (UE SkyAtmosphere analog)
+  sky = new Sky()
+  sunDirection = new THREE.Vector3(0, 1, 0)
+  /** bumped on every applyEnvironment so the viewport knows to rebuild IBL */
+  envVersion = 0
+
+  // imported glTF assets: raw base64 for serialization + template scene for cloning
+  assets = new Map<string, { name: string; data: string; template: THREE.Group }>()
 
   constructor() {
+    this.sky.scale.setScalar(450000)
+    this.sky.userData.isHelper = true
     this.applyEnvironment()
   }
 
   applyEnvironment() {
-    this.scene.background = new THREE.Color(this.environment.background)
-    this.scene.fog = this.environment.fogEnabled
-      ? new THREE.FogExp2(this.environment.fogColor, this.environment.fogDensity)
-      : null
+    const env = this.environment
+    if (env.skyEnabled) {
+      if (!this.sky.parent) this.scene.add(this.sky)
+      const u = this.sky.material.uniforms
+      u.turbidity.value = 4
+      u.rayleigh.value = 1.1
+      u.mieCoefficient.value = 0.004
+      u.mieDirectionalG.value = 0.8
+      const phi = THREE.MathUtils.degToRad(90 - env.sunElevation)
+      const theta = THREE.MathUtils.degToRad(env.sunAzimuth)
+      this.sunDirection.setFromSphericalCoords(1, phi, theta)
+      u.sunPosition.value.copy(this.sunDirection)
+      this.scene.background = null
+      // UE5-style atmosphere sun binding: directional lights track the sky sun
+      for (const a of this.actors.values()) {
+        if (a.type === 'DirectionalLight' && a.parentId === null) {
+          a.root.position.copy(this.sunDirection).multiplyScalar(30)
+        }
+      }
+    } else {
+      this.sky.removeFromParent()
+      this.scene.background = new THREE.Color(env.background)
+    }
+    this.scene.fog = env.fogEnabled ? new THREE.FogExp2(env.fogColor, env.fogDensity) : null
+    this.envVersion += 1
   }
 
   addActor(actor: Actor, parentId: string | null = null) {
@@ -54,7 +82,6 @@ export class World {
   removeActor(id: string) {
     const actor = this.actors.get(id)
     if (!actor) return
-    // re-parent children to scene root rather than destroying them
     for (const child of this.childrenOf(id)) {
       this.reparent(child.id, actor.parentId)
     }
@@ -67,19 +94,11 @@ export class World {
   reparent(id: string, newParentId: string | null) {
     const actor = this.actors.get(id)
     if (!actor || id === newParentId) return
-    // refuse cycles: walk up from the new parent
     let p = newParentId
     while (p) {
       if (p === id) return
       p = this.actors.get(p)?.parentId ?? null
     }
-    const worldPos = new THREE.Vector3()
-    const worldQuat = new THREE.Quaternion()
-    const worldScale = new THREE.Vector3()
-    actor.root.getWorldPosition(worldPos)
-    actor.root.getWorldQuaternion(worldQuat)
-    actor.root.getWorldScale(worldScale)
-
     actor.parentId = newParentId
     const parent = newParentId ? this.actors.get(newParentId) : undefined
     ;(parent ? parent.root : this.scene).attach(actor.root)
@@ -103,41 +122,79 @@ export class World {
     return [...this.actors.values()].find((a) => a.type === 'Camera')
   }
 
+  playerStart(): Actor | undefined {
+    return [...this.actors.values()].find((a) => a.type === 'PlayerStart')
+  }
+
   beginPlay() {
     this.playing = true
     for (const a of this.actors.values()) a.beginPlay()
+    this.physics.start(this.actors.values())
   }
 
   endPlay() {
     this.playing = false
+    this.physics.stop()
     for (const a of this.actors.values()) a.endPlay()
   }
 
   tick(dt: number) {
     if (!this.playing) return
+    this.physics.step(dt)
     for (const a of this.actors.values()) a.tick(dt)
   }
 
+  // ---- assets ----
+
+  async registerAsset(name: string, data: string): Promise<string> {
+    const assetId = `asset_${Date.now().toString(36)}_${this.assets.size}`
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+    const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '')
+    const template = gltf.scene
+    this.assets.set(assetId, { name, data, template })
+    return assetId
+  }
+
+  instantiateAsset(assetId: string, name: string, id?: string): Actor | null {
+    const asset = this.assets.get(assetId)
+    if (!asset) return null
+    return createImportedMeshActor(name, assetId, asset.template.clone(true), id)
+  }
+
+  // ---- serialization ----
+
   serialize(): SerializedLevel {
+    const assets: Record<string, { name: string; data: string }> = {}
+    // only persist assets still referenced by an actor
+    const used = new Set([...this.actors.values()].map((a) => a.assetId).filter(Boolean))
+    for (const [id, a] of this.assets) {
+      if (used.has(id)) assets[id] = { name: a.name, data: a.data }
+    }
     return {
       engine: 'vektra',
-      version: 1,
+      version: 2,
       name: this.levelName,
       environment: { ...this.environment },
+      assets,
       actors: [...this.actors.values()].map((a) => a.serialize()),
     }
   }
 
   clear() {
     for (const id of [...this.actors.keys()]) this.removeActor(id)
+    this.assets.clear()
   }
 
-  load(level: SerializedLevel) {
+  async load(level: SerializedLevel) {
     this.clear()
     this.levelName = level.name
-    this.environment = { ...level.environment }
+    this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
     this.applyEnvironment()
-    // two passes: create all actors, then wire hierarchy
+    for (const [id, asset] of Object.entries(level.assets ?? {})) {
+      const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0))
+      const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '')
+      this.assets.set(id, { ...asset, template: gltf.scene })
+    }
     for (const sa of level.actors) {
       const actor = this.instantiate(sa)
       this.actors.set(actor.id, actor)
@@ -165,6 +222,11 @@ export class World {
         if (sa.castShadow !== undefined) actor.mesh!.castShadow = sa.castShadow
         if (sa.receiveShadow !== undefined) actor.mesh!.receiveShadow = sa.receiveShadow
         break
+      case 'ImportedMesh': {
+        const fromAsset = sa.assetId ? this.instantiateAsset(sa.assetId, sa.name, sa.id) : null
+        actor = fromAsset ?? createEmptyActor(sa.name, sa.id)
+        break
+      }
       case 'PointLight':
       case 'SpotLight':
       case 'DirectionalLight':
@@ -185,12 +247,16 @@ export class World {
           actor.camera!.updateProjectionMatrix()
         }
         break
+      case 'PlayerStart':
+        actor = createPlayerStartActor(sa.name, sa.id)
+        break
       default:
         actor = createEmptyActor(sa.name, sa.id)
     }
     actor.setTransform(sa.transform)
     actor.setVisible(sa.visible)
     actor.behaviors = sa.behaviors.map((b) => ({ ...b }))
+    if (sa.physics) actor.physicsProps = { ...sa.physics }
     return actor
   }
 }

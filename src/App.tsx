@@ -7,7 +7,14 @@ import { ContentBrowser } from './editor/panels/ContentBrowser'
 import { Details } from './editor/panels/Details'
 import { Outliner } from './editor/panels/Outliner'
 import { autosave, newLevel, restoreAutosave, saveLevelToFile } from './editor/levelIO'
+import { preloadPhysics } from './engine/physics'
+import { world } from './engine/World'
 import { useEditor } from './editor/store'
+
+// dev console hook — inspect the live world from the browser console
+if (import.meta.env.DEV) {
+  ;(window as unknown as Record<string, unknown>).vektra = { world, useEditor }
+}
 
 let booted = false
 
@@ -18,7 +25,10 @@ export default function App() {
     // boot once — restore the autosaved level, or build the starter level
     if (!booted) {
       booted = true
-      if (!restoreAutosave()) newLevel()
+      preloadPhysics()
+      restoreAutosave().then((ok) => {
+        if (!ok) newLevel()
+      })
     }
     const saveTimer = setInterval(autosave, 5000)
     const onKey = (e: KeyboardEvent) => {

@@ -9,6 +9,8 @@ export type AssetPayload =
   | { kind: 'light'; type: Extract<ActorType, 'PointLight' | 'SpotLight' | 'DirectionalLight' | 'AmbientLight'> }
   | { kind: 'camera' }
   | { kind: 'empty' }
+  | { kind: 'playerstart' }
+  | { kind: 'imported'; assetId: string; name: string }
 
 const LIGHT_DEFAULTS = {
   PointLight: { color: '#ffffff', intensity: 10, distance: 0, decay: 2, castShadow: true },
@@ -66,6 +68,15 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
       }
     case 'empty':
       return { ...base, name: uniqueName('Empty'), type: 'Empty' }
+    case 'playerstart':
+      return {
+        ...base,
+        name: uniqueName('PlayerStart'),
+        type: 'PlayerStart',
+        transform: { ...base.transform, position: [position[0], 0, position[2]] },
+      }
+    case 'imported':
+      return { ...base, name: uniqueName(payload.name), type: 'ImportedMesh', assetId: payload.assetId }
   }
 }
 

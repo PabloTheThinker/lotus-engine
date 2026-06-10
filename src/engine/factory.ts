@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
 import type { ActorType, CameraProps, GeometryKind, LightProps, MaterialProps } from './types'
-import { DEFAULT_MATERIAL } from './types'
+import { DEFAULT_MATERIAL, DEFAULT_PHYSICS } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
   switch (kind) {
@@ -53,6 +53,7 @@ export function createStaticMeshActor(kind: GeometryKind, name: string, id = nex
   const actor = new Actor(id, name, 'StaticMesh')
   actor.geometryKind = kind
   actor.materialProps = { ...DEFAULT_MATERIAL }
+  actor.physicsProps = { ...DEFAULT_PHYSICS }
   const mesh = new THREE.Mesh(buildGeometry(kind), buildMaterial(actor.materialProps))
   mesh.castShadow = true
   mesh.receiveShadow = true
@@ -137,4 +138,44 @@ export function createCameraActor(name: string, id = nextActorId()): Actor {
 
 export function createEmptyActor(name: string, id = nextActorId()): Actor {
   return new Actor(id, name, 'Empty')
+}
+
+/** PlayerStart — where the pawn spawns when Play begins (UE PlayerStart). */
+export function createPlayerStartActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'PlayerStart')
+  const capsule = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.35, 1.1, 4, 12),
+    new THREE.MeshBasicMaterial({ color: 0x2f80ed, wireframe: true }),
+  )
+  capsule.position.y = 0.9
+  capsule.userData.actorId = id
+  capsule.userData.isEditorOnly = true
+  const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0.9, 0), 1, 0xf5a623, 0.3, 0.2)
+  arrow.userData.isHelper = true
+  actor.mesh = capsule // makes it pickable in the viewport
+  actor.root.add(capsule, arrow)
+  return actor
+}
+
+/** Wrap a loaded glTF scene in an actor. */
+export function createImportedMeshActor(
+  name: string,
+  assetId: string,
+  gltfScene: THREE.Object3D,
+  id = nextActorId(),
+): Actor {
+  const actor = new Actor(id, name, 'ImportedMesh')
+  actor.assetId = assetId
+  actor.physicsProps = { ...DEFAULT_PHYSICS }
+  gltfScene.traverse((o) => {
+    o.userData.actorId = id
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true
+      o.receiveShadow = true
+      // expose ONE mesh for bounding-box physics; picking traverses anyway
+      if (!actor.mesh) actor.mesh = o
+    }
+  })
+  actor.root.add(gltfScene)
+  return actor
 }

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
+export type ViewMode = 'lit' | 'unlit' | 'wireframe'
 
 interface EditorState {
   // selection
@@ -18,7 +19,26 @@ interface EditorState {
 
   // play-in-editor
   playing: boolean
+  /** Simulate runs the world without possessing a pawn (UE Alt+S). */
+  simulate: boolean
+  /** Ejected: PIE keeps running but the editor camera is back (UE F8). */
+  ejected: boolean
+  startPlay: (mode: 'pie' | 'simulate') => void
+  stopPlay: () => void
   setPlaying: (p: boolean) => void
+  setEjected: (e: boolean) => void
+
+  // viewport render mode (UE view modes: Lit / Unlit / Wireframe)
+  viewMode: ViewMode
+  setViewMode: (m: ViewMode) => void
+
+  // G — game view: hide all editor-only visuals
+  gameView: boolean
+  toggleGameView: () => void
+
+  // gizmo transform space (world/local)
+  gizmoSpace: 'world' | 'local'
+  toggleGizmoSpace: () => void
 
   // scene version — bumped whenever the world mutates so React panels re-render.
   // The Three.js scene graph stays the source of truth; React just mirrors it.
@@ -53,7 +73,21 @@ export const useEditor = create<EditorState>((set) => ({
   scaleSnap: 0.25,
 
   playing: false,
-  setPlaying: (p) => set({ playing: p }),
+  simulate: false,
+  ejected: false,
+  startPlay: (mode) => set({ playing: true, simulate: mode === 'simulate', ejected: false }),
+  stopPlay: () => set({ playing: false, simulate: false, ejected: false }),
+  setPlaying: (p) => set(p ? { playing: true, simulate: false, ejected: false } : { playing: false, simulate: false, ejected: false }),
+  setEjected: (e) => set({ ejected: e }),
+
+  viewMode: 'lit',
+  setViewMode: (m) => set({ viewMode: m }),
+
+  gameView: false,
+  toggleGameView: () => set((s) => ({ gameView: !s.gameView })),
+
+  gizmoSpace: 'world',
+  toggleGizmoSpace: () => set((s) => ({ gizmoSpace: s.gizmoSpace === 'world' ? 'local' : 'world' })),
 
   sceneVersion: 0,
   touch: () => set((s) => ({ sceneVersion: s.sceneVersion + 1 })),

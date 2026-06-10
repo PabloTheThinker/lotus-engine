@@ -16,7 +16,7 @@ export function StatusBar() {
           {selected.name} · {selected.type}
         </span>
       )}
-      <span className="status-hint">RMB+WASD fly · LMB select · Q/W/E/R tools · F focus · Ctrl+D duplicate</span>
+      <span className="status-hint">RMB+WASD fly · Q/W/E/R tools · F focus · End floor-snap · Alt+drag dup · Shift+# bookmark · G game view · F8 eject</span>
     </div>
   )
 }

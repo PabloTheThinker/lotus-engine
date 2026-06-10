@@ -6,6 +6,7 @@ import { applyLightProps, world } from '../../engine/World'
 import type { Behavior, TransformSnapshot } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { useEditor } from '../store'
+import { WorldSettings } from './WorldSettings'
 
 /**
  * Number field with commit-on-blur undo semantics: edits apply live for
@@ -287,6 +288,43 @@ function CameraSection({ actor }: { actor: Actor }) {
   )
 }
 
+function PhysicsSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const props = actor.physicsProps!
+  const setMode = (mode: typeof props.mode) => {
+    const prev = props.mode
+    runCommand(
+      new PropertyCommand(
+        `Physics: ${mode}`,
+        () => (props.mode = mode),
+        () => (props.mode = prev),
+      ),
+    )
+  }
+  return (
+    <Section title="Physics">
+      <label className="field">
+        <span>Body Type</span>
+        <select value={props.mode} onChange={(e) => setMode(e.target.value as typeof props.mode)}>
+          <option value="none">None</option>
+          <option value="static">Static (collides)</option>
+          <option value="dynamic">Dynamic (simulated)</option>
+        </select>
+      </label>
+      {props.mode === 'dynamic' && (
+        <Num label="Mass" value={props.mass} step={0.5} min={0.01} onLive={(v) => { props.mass = v; touch() }} onCommit={() => {}} />
+      )}
+      {props.mode !== 'none' && (
+        <>
+          <Num label="Friction" value={props.friction} step={0.05} min={0} max={2} onLive={(v) => { props.friction = v; touch() }} onCommit={() => {}} />
+          <Num label="Bounciness" value={props.restitution} step={0.05} min={0} max={1} onLive={(v) => { props.restitution = v; touch() }} onCommit={() => {}} />
+        </>
+      )}
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Simulates during Play.</div>
+    </Section>
+  )
+}
+
 const BEHAVIOR_TEMPLATES: Record<string, Behavior> = {
   rotator: { type: 'rotator', speedX: 0, speedY: 1, speedZ: 0 },
   bobber: { type: 'bobber', amplitude: 0.5, frequency: 0.5 },
@@ -370,7 +408,10 @@ export function Details() {
         <div className="panel-header">
           <span>Details</span>
         </div>
-        <div className="panel-empty">Select an actor to edit its properties.</div>
+        <div className="panel-body">
+          <div className="panel-empty">Select an actor to edit its properties.</div>
+          <WorldSettings />
+        </div>
       </div>
     )
   }
@@ -386,7 +427,9 @@ export function Details() {
         {actor.mesh && actor.materialProps && <MaterialSection actor={actor} />}
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
+        {actor.physicsProps && <PhysicsSection actor={actor} />}
         <BehaviorsSection actor={actor} />
+        <WorldSettings />
       </div>
     </div>
   )
