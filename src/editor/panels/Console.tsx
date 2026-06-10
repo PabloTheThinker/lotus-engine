@@ -30,7 +30,7 @@ export function Console() {
     setHistIdx(-1)
     setCmd('')
     try {
-      const api = makeScriptApi(world.actors, () => world.playClock)
+      const api = makeScriptApi(world.actors, () => world.playClock, () => world.pawnPosition)
       const fn = new Function('world', 'api', 'THREE', `"use strict"; return (${source})`)
       let result: unknown
       try {

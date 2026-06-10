@@ -130,12 +130,14 @@ export class World {
   beginPlay() {
     this.playing = true
     this.playClock = 0
-    const api = makeScriptApi(this.actors, () => this.playClock)
+    const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
     for (const a of this.actors.values()) a.beginPlay(api)
     this.physics.start(this.actors.values())
   }
 
   playClock = 0
+  /** updated by the viewport each frame while playing; null otherwise */
+  pawnPosition: THREE.Vector3 | null = null
 
   endPlay() {
     this.playing = false

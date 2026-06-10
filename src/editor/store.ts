@@ -10,9 +10,12 @@ export interface ConsoleEntry {
 }
 
 interface EditorState {
-  // selection
+  // selection — selectedId is the primary (gizmo/details target);
+  // selectedIds is the full multi-selection
   selectedId: string | null
+  selectedIds: string[]
   select: (id: string | null) => void
+  toggleSelect: (id: string) => void
 
   // gizmo
   gizmoMode: GizmoMode
@@ -81,7 +84,13 @@ interface EditorState {
 
 export const useEditor = create<EditorState>((set) => ({
   selectedId: null,
-  select: (id) => set({ selectedId: id }),
+  selectedIds: [],
+  select: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
+  toggleSelect: (id) =>
+    set((s) => {
+      const ids = s.selectedIds.includes(id) ? s.selectedIds.filter((x) => x !== id) : [...s.selectedIds, id]
+      return { selectedIds: ids, selectedId: ids[ids.length - 1] ?? null }
+    }),
 
   gizmoMode: 'select',
   setGizmoMode: (m) => set({ gizmoMode: m }),

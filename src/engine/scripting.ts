@@ -24,6 +24,8 @@ export interface ScriptApi {
   keyJustPressed: (code: string) => boolean
   getActor: (name: string) => Actor | undefined
   time: () => number
+  /** world position of the player pawn while playing, else null */
+  pawnPosition: () => THREE.Vector3 | null
 }
 
 type LogSink = (level: 'log' | 'error', message: string) => void
@@ -35,7 +37,11 @@ export function scriptLog(level: 'log' | 'error', msg: string) {
   logSink(level, msg)
 }
 
-export function makeScriptApi(actors: Map<string, Actor>, clock: () => number): ScriptApi {
+export function makeScriptApi(
+  actors: Map<string, Actor>,
+  clock: () => number,
+  pawnPosition: () => THREE.Vector3 | null = () => null,
+): ScriptApi {
   return {
     log: (...args) =>
       logSink(
@@ -46,6 +52,7 @@ export function makeScriptApi(actors: Map<string, Actor>, clock: () => number): 
     keyJustPressed: (code) => Input.justPressed(code),
     getActor: (name) => [...actors.values()].find((a) => a.name === name),
     time: clock,
+    pawnPosition,
   }
 }
 

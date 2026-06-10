@@ -4,6 +4,7 @@ import { useEditor } from './store'
 export function StatusBar() {
   const status = useEditor((s) => s.statusMessage)
   const selectedId = useEditor((s) => s.selectedId)
+  const selectedIds = useEditor((s) => s.selectedIds)
   useEditor((s) => s.sceneVersion)
   const selected = selectedId ? world.actors.get(selectedId) : null
 
@@ -13,6 +14,7 @@ export function StatusBar() {
       <span className="status-spacer" />
       {selected && (
         <span className="status-selection">
+          {selectedIds.length > 1 ? `${selectedIds.length} selected · ` : ''}
           {selected.name} · {selected.type}
         </span>
       )}

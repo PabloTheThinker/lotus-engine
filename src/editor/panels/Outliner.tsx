@@ -18,17 +18,20 @@ const TYPE_ICONS: Record<string, string> = {
 
 function OutlinerRow({ actor, depth }: { actor: Actor; depth: number }) {
   const selectedId = useEditor((s) => s.selectedId)
+  const selectedIds = useEditor((s) => s.selectedIds)
   const select = useEditor((s) => s.select)
+  const toggleSelect = useEditor((s) => s.toggleSelect)
   const touch = useEditor((s) => s.touch)
   const [renaming, setRenaming] = useState(false)
   const children = world.childrenOf(actor.id)
+  const isSelected = selectedIds.includes(actor.id)
 
   return (
     <>
       <div
-        className={`outliner-row ${selectedId === actor.id ? 'selected' : ''}`}
+        className={`outliner-row ${isSelected ? 'selected' : ''} ${selectedId === actor.id ? 'primary' : ''}`}
         style={{ paddingLeft: 8 + depth * 14 }}
-        onClick={() => select(actor.id)}
+        onClick={(e) => (e.ctrlKey || e.metaKey ? toggleSelect(actor.id) : select(actor.id))}
         onDoubleClick={() => setRenaming(true)}
         draggable
         onDragStart={(e) => e.dataTransfer.setData('vektra/actor', actor.id)}

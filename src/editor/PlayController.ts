@@ -130,6 +130,46 @@ export class PlayController {
     this.dom.requestPointerLock?.()
   }
 
+  /** current pawn world position (feet for characters, camera for fly) */
+  get position(): THREE.Vector3 {
+    return this.mode === 'fly' ? this.camera.position : this.feet
+  }
+
+  /**
+   * Wall collision: cast at knee and chest height along the move direction;
+   * on hit, slide along the wall (strip the into-wall component).
+   */
+  private collideWalls(dx: number, dz: number): [number, number] {
+    const len = Math.hypot(dx, dz)
+    if (len === 0) return [dx, dz]
+    const radius = 0.38
+    const dir = new THREE.Vector3(dx / len, 0, dz / len)
+    const colliders = this.collidables()
+    for (const h of [0.45, 1.25]) {
+      this.ray.set(this.feet.clone().add(new THREE.Vector3(0, h, 0)), dir)
+      this.ray.far = len + radius
+      for (const hit of this.ray.intersectObjects(colliders, false)) {
+        let editorOnly = false
+        let cur: THREE.Object3D | null = hit.object
+        while (cur) {
+          if (cur.userData.isEditorOnly) editorOnly = true
+          cur = cur.parent
+        }
+        if (editorOnly || !hit.face) continue
+        // steep faces only — ramps/floors stay walkable
+        const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+        if (Math.abs(n.y) > 0.55) continue
+        n.y = 0
+        n.normalize()
+        const moveV = new THREE.Vector3(dx, 0, dz)
+        const into = n.dot(moveV)
+        if (into < 0) moveV.addScaledVector(n, -into)
+        return [moveV.x, moveV.z]
+      }
+    }
+    return [dx, dz]
+  }
+
   private groundHeightAt(p: THREE.Vector3): number | null {
     this.ray.set(new THREE.Vector3(p.x, p.y + 1.2, p.z), new THREE.Vector3(0, -1, 0))
     this.ray.far = 60
@@ -195,15 +235,17 @@ export class PlayController {
     const speed = this.walkSpeed * (this.keys.has('ShiftLeft') ? 1.9 : 1)
     if (move.lengthSq() > 0) {
       move.normalize()
+      // forward = (-sinθ, 0, -cosθ), right = (cosθ, 0, -sinθ); W encodes move.z = -1
       const sin = Math.sin(this.yaw)
       const cos = Math.cos(this.yaw)
-      const dx = (move.x * cos - move.z * sin) * speed * dt
-      const dz = (move.x * -sin - move.z * cos) * speed * dt
+      let dx = (move.x * cos + move.z * sin) * speed * dt
+      let dz = (-move.x * sin + move.z * cos) * speed * dt
+      ;[dx, dz] = this.collideWalls(dx, dz)
       this.feet.x += dx
       this.feet.z += dz
-      // face the body toward travel direction in third person
-      if (this.mode === 'thirdperson') {
-        this.body.rotation.y = Math.atan2(dx, dz)
+      // face the body's -z (visor) toward travel direction in third person
+      if (this.mode === 'thirdperson' && (dx !== 0 || dz !== 0)) {
+        this.body.rotation.y = Math.atan2(-dx, -dz)
       }
     }
 

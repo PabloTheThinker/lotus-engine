@@ -133,11 +133,63 @@ export function Viewport() {
     })
     gizmo.addEventListener('objectChange', () => useEditor.getState().touch())
 
-    // selection outline
-    const selectionBox = new THREE.BoxHelper(new THREE.Object3D(), 0xf5a623)
-    selectionBox.userData.isHelper = true
-    selectionBox.visible = false
-    world.scene.add(selectionBox)
+    // selection outlines — one pooled BoxHelper per selected actor
+    const selectionBoxes = new Map<string, THREE.BoxHelper>()
+    function syncSelectionBoxes(ids: string[], show: boolean) {
+      for (const [id, box] of selectionBoxes) {
+        if (!show || !ids.includes(id) || !world.actors.has(id)) {
+          box.removeFromParent()
+          box.dispose()
+          selectionBoxes.delete(id)
+        }
+      }
+      if (!show) return
+      const s = useEditor.getState()
+      for (const id of ids) {
+        const actor = world.actors.get(id)
+        if (!actor) continue
+        let box = selectionBoxes.get(id)
+        if (!box) {
+          // primary selection is warm orange, the rest a cooler tone
+          box = new THREE.BoxHelper(actor.root, id === s.selectedId ? 0xf5a623 : 0x2f80ed)
+          box.userData.isHelper = true
+          selectionBoxes.set(id, box)
+          world.scene.add(box)
+        }
+        ;(box.material as THREE.LineBasicMaterial).color.set(id === s.selectedId ? 0xf5a623 : 0x2f80ed)
+        box.setFromObject(actor.root)
+      }
+    }
+
+    /** filter a selection down to actors whose ancestors are NOT also selected */
+    function topMost(ids: string[]): string[] {
+      const set = new Set(ids)
+      return ids.filter((id) => {
+        let p = world.actors.get(id)?.parentId ?? null
+        while (p) {
+          if (set.has(p)) return false
+          p = world.actors.get(p)?.parentId ?? null
+        }
+        return true
+      })
+    }
+
+    /** delete the whole selection as ONE undo step */
+    function deleteSelection(ids: string[]) {
+      const tops = topMost(ids).filter((id) => world.actors.has(id))
+      if (!tops.length) return
+      const cmds = tops.map((id) => new DeleteActorCommand(id))
+      runCommand({
+        label: `Delete ${tops.length > 1 ? `${tops.length} actors` : (world.actors.get(tops[0])?.name ?? 'actor')}`,
+        execute() {
+          for (const c of cmds) c.execute()
+          useEditor.getState().select(null)
+        },
+        undo() {
+          for (const c of [...cmds].reverse()) c.undo()
+        },
+      })
+    }
 
     // ---- view modes (Lit / Unlit / Wireframe) ----
     let appliedViewMode: ViewMode = 'lit'
@@ -260,7 +312,8 @@ export function Viewport() {
       if (s.playing && !s.simulate && !s.ejected) return
       if (moved > 5 || (gizmo as unknown as { dragging: boolean }).dragging) return
       const actor = pick(e)
-      s.select(actor?.id ?? null)
+      if (actor && (e.ctrlKey || e.metaKey)) s.toggleSelect(actor.id)
+      else s.select(actor?.id ?? null)
     })
 
     // drag & drop spawning
@@ -332,10 +385,12 @@ export function Viewport() {
           redo()
         } else if (e.code === 'KeyD') {
           e.preventDefault()
-          const sel = s.selectedId ? world.actors.get(s.selectedId) : null
-          if (sel) {
+          // duplicate every top-most selected actor
+          for (const id of topMost(s.selectedIds)) {
+            const sel = world.actors.get(id)
+            if (!sel) continue
             const copy = sel.serialize()
-            copy.id = `${copy.id}_dup_${Math.floor(performance.now())}`
+            copy.id = `${copy.id}_dup_${Math.floor(performance.now())}_${id.slice(-3)}`
             copy.name = `${copy.name}_Copy`
             copy.transform.position = [
               copy.transform.position[0] + 1,
@@ -413,7 +468,7 @@ export function Viewport() {
         }
         case 'Delete':
         case 'Backspace': {
-          if (s.selectedId) runCommand(new DeleteActorCommand(s.selectedId))
+          if (s.selectedIds.length) deleteSelection(s.selectedIds)
           break
         }
         case 'Escape':
@@ -488,13 +543,11 @@ export function Viewport() {
         gizmo.detach()
       }
 
-      // selection outline
-      if (selected && !possessed) {
-        selectionBox.setFromObject(selected.root)
-        selectionBox.visible = true
-      } else {
-        selectionBox.visible = false
-      }
+      // selection outlines (multi-select aware)
+      syncSelectionBoxes(s.selectedIds, !possessed)
+
+      // scripts can ask where the player is
+      world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
 
       // helpers + editor-only visuals — hidden while possessed or in Game View (G)
       const hideChrome = possessed || s.gameView
@@ -529,7 +582,7 @@ export function Viewport() {
         selected.camera.aspect = w / h
         selected.camera.updateProjectionMatrix()
         const hidden: THREE.Object3D[] = []
-        for (const o of [grid, axes, gizmoHelper, selectionBox]) {
+        for (const o of [grid, axes, gizmoHelper, ...selectionBoxes.values()]) {
           if (o.visible) {
             o.visible = false
             hidden.push(o)
@@ -574,7 +627,9 @@ export function Viewport() {
       gizmo.dispose()
       pmrem.dispose()
       composer.dispose()
-      world.scene.remove(grid, axes, gizmoHelper, selectionBox, pawn.body)
+      syncSelectionBoxes([], false)
+      world.scene.remove(grid, axes, gizmoHelper, pawn.body)
+      world.pawnPosition = null
       renderer.dispose()
       mount.removeChild(renderer.domElement)
     }

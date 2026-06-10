@@ -54,7 +54,13 @@ function sceneSummary(): string {
     return bits.join(' ')
   })
   const env = world.environment
-  return `Level "${world.levelName}" — ${world.actors.size} actors:\n${actors.join('\n')}\nEnvironment: sky=${env.skyEnabled} sunElevation=${env.sunElevation} fog=${env.fogEnabled} bloom=${env.bloomEnabled}`
+  let out = `Level "${world.levelName}" — ${world.actors.size} actors:\n${actors.join('\n')}\nEnvironment: sky=${env.skyEnabled} sunElevation=${env.sunElevation} fog=${env.fogEnabled} bloom=${env.bloomEnabled}`
+  // recent console output — lets the copilot see script errors and debug its own work
+  const entries = useEditor.getState().consoleEntries.slice(-12)
+  if (entries.length) {
+    out += `\n\nRECENT CONSOLE OUTPUT (script errors appear here):\n${entries.map((e) => `[${e.level}] ${e.message}`).join('\n')}`
+  }
+  return out
 }
 
 const SYSTEM_PROMPT = `You are the AI copilot inside Vektra Engine, a Three.js game editor with an Unreal-style actor framework. You can SEE the scene (provided below) and ACT on it.
