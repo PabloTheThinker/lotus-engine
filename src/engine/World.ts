@@ -12,6 +12,7 @@ import {
   createStaticMeshActor,
 } from './factory'
 import { PhysicsSim } from './physics'
+import { makeScriptApi } from './scripting'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
 
@@ -128,9 +129,13 @@ export class World {
 
   beginPlay() {
     this.playing = true
-    for (const a of this.actors.values()) a.beginPlay()
+    this.playClock = 0
+    const api = makeScriptApi(this.actors, () => this.playClock)
+    for (const a of this.actors.values()) a.beginPlay(api)
     this.physics.start(this.actors.values())
   }
+
+  playClock = 0
 
   endPlay() {
     this.playing = false
@@ -140,6 +145,7 @@ export class World {
 
   tick(dt: number) {
     if (!this.playing) return
+    this.playClock += dt
     this.physics.step(dt)
     for (const a of this.actors.values()) a.tick(dt)
   }
@@ -249,6 +255,7 @@ export class World {
         break
       case 'PlayerStart':
         actor = createPlayerStartActor(sa.name, sa.id)
+        actor.pawnMode = sa.pawnMode ?? 'fly'
         break
       default:
         actor = createEmptyActor(sa.name, sa.id)
@@ -257,6 +264,7 @@ export class World {
     actor.setVisible(sa.visible)
     actor.behaviors = sa.behaviors.map((b) => ({ ...b }))
     if (sa.physics) actor.physicsProps = { ...sa.physics }
+    if (sa.script) actor.script = sa.script
     return actor
   }
 }

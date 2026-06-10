@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
@@ -6,17 +6,30 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { world } from '../engine/World'
+import { Input } from '../engine/Input'
+import { setScriptLogSink } from '../engine/scripting'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
+import { instantiatePrefab, listPrefabs } from './prefabs'
 import { spawnAsset, type AssetPayload } from './spawn'
 import { useEditor, type ViewMode } from './store'
+
+interface CtxMenu {
+  x: number
+  y: number
+  point: [number, number, number]
+  actorId: string | null
+}
 
 export function Viewport() {
   const mountRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
   const pipRef = useRef<HTMLDivElement>(null)
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
+  const ctxMenuSetter = useRef(setCtxMenu)
+  ctxMenuSetter.current = setCtxMenu
 
   useEffect(() => {
     const mount = mountRef.current!
@@ -34,6 +47,18 @@ export function Viewport() {
     editorCamera.lookAt(0, 0, 0)
     const controls = new EditorCameraControls(editorCamera, renderer.domElement)
     const pawn = new PlayController(renderer.domElement)
+    world.scene.add(pawn.body)
+    pawn.collidables = () => {
+      const out: THREE.Object3D[] = []
+      for (const a of world.actors.values()) {
+        a.root.traverse((o) => {
+          if (o instanceof THREE.Mesh && !o.userData.isHelper && !o.userData.isEditorOnly) out.push(o)
+        })
+      }
+      return out
+    }
+    // route script logs into the console panel
+    setScriptLogSink((level, msg) => useEditor.getState().pushConsole(level, msg))
 
     // post stack — RenderPass → UnrealBloom → Output (tone map + sRGB)
     // ?nofx falls back to a direct render for GPUs/drivers the stack upsets
@@ -134,6 +159,15 @@ export function Viewport() {
               color: std.color ? std.color.clone() : new THREE.Color(0xcccccc),
               map: std.map ?? null,
             })
+          } else if (mode === 'detail') {
+            // UE Detail Lighting: neutral material, lighting + normals only
+            const std = orig as THREE.MeshStandardMaterial
+            o.material = new THREE.MeshStandardMaterial({
+              color: 0x9a9a9a,
+              roughness: 0.65,
+              metalness: 0,
+              normalMap: std.normalMap ?? null,
+            })
           } else {
             o.material = new THREE.MeshBasicMaterial({ color: 0x8fa3bd, wireframe: true })
           }
@@ -174,9 +208,34 @@ export function Viewport() {
     }
 
     let altLatch = false
+    let rmbDown: [number, number] | null = null
     renderer.domElement.addEventListener('mousedown', (e) => {
       altLatch = e.altKey
       if (e.button === 0) downPos = [e.clientX, e.clientY]
+      if (e.button === 2) rmbDown = [e.clientX, e.clientY]
+      ctxMenuSetter.current(null)
+    })
+
+    // RMB click (no drag) → context menu, UE-style
+    renderer.domElement.addEventListener('mouseup', (e) => {
+      if (e.button !== 2 || !rmbDown) return
+      const moved = Math.hypot(e.clientX - rmbDown[0], e.clientY - rmbDown[1])
+      rmbDown = null
+      if (moved > 4 || useEditor.getState().playing) return
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, editorCamera)
+      const hitActor = pick(e)
+      let point: [number, number, number]
+      const meshHit = hitActor?.mesh ? raycaster.intersectObject(hitActor.root, true)[0] : undefined
+      if (meshHit) {
+        point = [meshHit.point.x, meshHit.point.y, meshHit.point.z]
+      } else {
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+        const v = new THREE.Vector3()
+        point = raycaster.ray.intersectPlane(plane, v) ? [v.x, v.y, v.z] : [0, 0, 0]
+      }
+      ctxMenuSetter.current({ x: e.clientX - rect.left, y: e.clientY - rect.top, point, actorId: hitActor?.id ?? null })
     })
 
     // Alt+drag on the gizmo duplicates (UE signature gesture): clone in place,
@@ -208,15 +267,26 @@ export function Viewport() {
     renderer.domElement.addEventListener('dragover', (e) => e.preventDefault())
     renderer.domElement.addEventListener('drop', (e) => {
       e.preventDefault()
-      const raw = e.dataTransfer?.getData('vektra/asset')
-      if (!raw) return
-      const payload = JSON.parse(raw) as AssetPayload
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, editorCamera)
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
       const hit = new THREE.Vector3()
-      const pos: [number, number, number] = raycaster.ray.intersectPlane(plane, hit)
+      const onPlane = raycaster.ray.intersectPlane(plane, hit)
+
+      const prefabName = e.dataTransfer?.getData('vektra/prefab')
+      if (prefabName) {
+        const prefab = listPrefabs().find((p) => p.name === prefabName)
+        if (prefab) {
+          const y = prefab.actors[0].transform.position[1]
+          instantiatePrefab(prefab, onPlane ? [hit.x, y, hit.z] : [0, y, 0])
+        }
+        return
+      }
+      const raw = e.dataTransfer?.getData('vektra/asset')
+      if (!raw) return
+      const payload = JSON.parse(raw) as AssetPayload
+      const pos: [number, number, number] = onPlane
         ? [hit.x, payload.kind === 'mesh' ? 0.5 : hit.y, hit.z]
         : [0, 0.5, 0]
       spawnAsset(payload, pos)
@@ -283,6 +353,14 @@ export function Viewport() {
         if (e.code === 'F8' && !s.simulate) {
           e.preventDefault()
           s.setEjected(!s.ejected)
+        }
+        // K — Keep Simulation Changes (UE): adopt play-time transform
+        if (e.code === 'KeyK' && (s.simulate || s.ejected) && s.selectedId) {
+          const sel = world.actors.get(s.selectedId)
+          if (sel) {
+            sel.keepSimulationChanges()
+            s.setStatus(`Kept simulation changes: ${sel.name}`)
+          }
         }
         // while possessed, the pawn owns the keyboard
         if (!s.simulate && !s.ejected) return
@@ -373,7 +451,8 @@ export function Viewport() {
       if (s.playing && !wasPlaying) {
         world.beginPlay()
         if (!s.simulate) {
-          pawn.possess(world.playerStart())
+          pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
+          s.setPendingSpawn(null)
           s.select(null)
         }
       }
@@ -473,6 +552,8 @@ export function Viewport() {
         }
       }
 
+      Input.endFrame()
+
       // stats
       frames += 1
       fpsTimer += dt
@@ -493,7 +574,7 @@ export function Viewport() {
       gizmo.dispose()
       pmrem.dispose()
       composer.dispose()
-      world.scene.remove(grid, axes, gizmoHelper, selectionBox)
+      world.scene.remove(grid, axes, gizmoHelper, selectionBox, pawn.body)
       renderer.dispose()
       mount.removeChild(renderer.domElement)
     }
@@ -513,11 +594,13 @@ export function Viewport() {
         ? '⏏ EJECTED — F8 to possess · Esc to stop'
         : '▶ PLAYING — WASD+mouse · F8 eject · Esc stop'
 
+  const closeMenu = () => setCtxMenu(null)
+
   return (
     <div className="viewport" ref={mountRef}>
       <div className="viewport-stats" ref={statsRef} />
       <div className="viewport-modes">
-        {(['lit', 'unlit', 'wireframe'] as const).map((m) => (
+        {(['lit', 'detail', 'unlit', 'wireframe'] as const).map((m) => (
           <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => setViewMode(m)}>
             {m}
           </button>
@@ -527,6 +610,46 @@ export function Viewport() {
         <span>Camera Preview</span>
       </div>
       {banner && <div className="viewport-pie-banner">{banner}</div>}
+      {ctxMenu && (
+        <div className="viewport-ctx" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+          <button
+            onClick={() => {
+              closeMenu()
+              const s = useEditor.getState()
+              s.setPendingSpawn([ctxMenu.point[0], ctxMenu.point[1] + 0.1, ctxMenu.point[2]])
+              s.startPlay('pie')
+            }}
+          >
+            ▶ Play From Here
+          </button>
+          {ctxMenu.actorId && (
+            <>
+              <button
+                onClick={() => {
+                  closeMenu()
+                  const sel = world.actors.get(ctxMenu.actorId!)
+                  if (!sel) return
+                  const copy = sel.serialize()
+                  copy.id = `${copy.id}_dup_${Math.floor(performance.now())}`
+                  copy.name = `${copy.name}_Copy`
+                  copy.transform.position = [copy.transform.position[0] + 1, copy.transform.position[1], copy.transform.position[2] + 1]
+                  runCommand(new AddActorCommand(copy))
+                }}
+              >
+                ⧉ Duplicate
+              </button>
+              <button
+                onClick={() => {
+                  closeMenu()
+                  if (ctxMenu.actorId) runCommand(new DeleteActorCommand(ctxMenu.actorId))
+                }}
+              >
+                ✕ Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }

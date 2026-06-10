@@ -42,6 +42,7 @@ export function newLevel() {
 
   const start = buildSerializedActor({ kind: 'playerstart' }, [0, 0, 10])
   start.name = 'PlayerStart'
+  start.pawnMode = 'thirdperson'
 
   const actors = [ground, sun, fill, start]
   // 3×3 pyramid of dynamic crates

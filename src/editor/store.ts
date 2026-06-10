@@ -1,7 +1,13 @@
 import { create } from 'zustand'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
-export type ViewMode = 'lit' | 'unlit' | 'wireframe'
+export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
+export type BottomTab = 'content' | 'script' | 'console' | 'ai'
+
+export interface ConsoleEntry {
+  level: 'log' | 'error' | 'cmd' | 'ai'
+  message: string
+}
 
 interface EditorState {
   // selection
@@ -58,6 +64,19 @@ interface EditorState {
 
   contentBrowserOpen: boolean
   toggleContentBrowser: () => void
+
+  // bottom dock (Godot bottom-panel pattern)
+  bottomTab: BottomTab
+  setBottomTab: (t: BottomTab) => void
+
+  // console / output log
+  consoleEntries: ConsoleEntry[]
+  pushConsole: (level: ConsoleEntry['level'], message: string) => void
+  clearConsole: () => void
+
+  // Play From Here — spawn override consumed by the viewport at play start
+  pendingSpawn: [number, number, number] | null
+  setPendingSpawn: (p: [number, number, number] | null) => void
 }
 
 export const useEditor = create<EditorState>((set) => ({
@@ -104,4 +123,15 @@ export const useEditor = create<EditorState>((set) => ({
 
   contentBrowserOpen: true,
   toggleContentBrowser: () => set((s) => ({ contentBrowserOpen: !s.contentBrowserOpen })),
+
+  bottomTab: 'content',
+  setBottomTab: (t) => set({ bottomTab: t, contentBrowserOpen: true }),
+
+  consoleEntries: [],
+  pushConsole: (level, message) =>
+    set((s) => ({ consoleEntries: [...s.consoleEntries.slice(-199), { level, message }] })),
+  clearConsole: () => set({ consoleEntries: [] }),
+
+  pendingSpawn: null,
+  setPendingSpawn: (p) => set({ pendingSpawn: p }),
 }))

@@ -94,7 +94,13 @@ export interface SerializedActor {
   behaviors: Behavior[]
   castShadow?: boolean
   receiveShadow?: boolean
+  /** per-actor JavaScript (onBeginPlay / onTick hooks) */
+  script?: string
+  /** PlayerStart only: which pawn the player possesses */
+  pawnMode?: PawnMode
 }
+
+export type PawnMode = 'fly' | 'firstperson' | 'thirdperson'
 
 export interface EnvironmentSettings {
   background: string

@@ -3,24 +3,27 @@ import { MenuBar } from './editor/MenuBar'
 import { Toolbar } from './editor/Toolbar'
 import { StatusBar } from './editor/StatusBar'
 import { Viewport } from './editor/Viewport'
-import { ContentBrowser } from './editor/panels/ContentBrowser'
+import { BottomDock } from './editor/panels/BottomDock'
 import { Details } from './editor/panels/Details'
 import { Outliner } from './editor/panels/Outliner'
 import { autosave, newLevel, restoreAutosave, saveLevelToFile } from './editor/levelIO'
 import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
+import { executeAICommands, extractCommands } from './editor/ai'
 import { useEditor } from './editor/store'
 
 // dev console hook — inspect the live world from the browser console
 if (import.meta.env.DEV) {
-  ;(window as unknown as Record<string, unknown>).vektra = { world, useEditor }
+  ;(window as unknown as Record<string, unknown>).vektra = {
+    world,
+    useEditor,
+    ai: { executeAICommands, extractCommands },
+  }
 }
 
 let booted = false
 
 export default function App() {
-  const contentBrowserOpen = useEditor((s) => s.contentBrowserOpen)
-
   useEffect(() => {
     // boot once — restore the autosaved level, or build the starter level
     if (!booted) {
@@ -51,7 +54,7 @@ export default function App() {
       <div className="editor-main">
         <div className="editor-center">
           <Viewport />
-          {contentBrowserOpen && <ContentBrowser />}
+          <BottomDock />
         </div>
         <div className="editor-right">
           <Outliner />

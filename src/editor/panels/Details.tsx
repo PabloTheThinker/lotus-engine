@@ -5,6 +5,7 @@ import { applyMaterialProps } from '../../engine/factory'
 import { applyLightProps, world } from '../../engine/World'
 import type { Behavior, TransformSnapshot } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
+import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
 import { WorldSettings } from './WorldSettings'
 
@@ -288,6 +289,39 @@ function CameraSection({ actor }: { actor: Actor }) {
   )
 }
 
+function PawnSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  return (
+    <Section title="Pawn">
+      <label className="field">
+        <span>Mode</span>
+        <select
+          value={actor.pawnMode ?? 'fly'}
+          onChange={(e) => {
+            const prev = actor.pawnMode
+            const next = e.target.value as Actor['pawnMode']
+            runCommand(
+              new PropertyCommand(
+                `Pawn mode: ${next}`,
+                () => (actor.pawnMode = next),
+                () => (actor.pawnMode = prev),
+              ),
+            )
+            touch()
+          }}
+        >
+          <option value="fly">Fly (spectator)</option>
+          <option value="firstperson">First Person</option>
+          <option value="thirdperson">Third Person</option>
+        </select>
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        WASD move · mouse look · Space jump · Shift sprint
+      </div>
+    </Section>
+  )
+}
+
 function PhysicsSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const props = actor.physicsProps!
@@ -420,10 +454,16 @@ export function Details() {
     <div className="panel details">
       <div className="panel-header">
         <span>Details</span>
-        <span className="panel-meta">{actor.name}</span>
+        <span className="panel-meta">
+          <button className="prefab-save" title="Save this actor (and children) as a reusable prefab" onClick={() => savePrefab(actor.id)}>
+            🧩 Prefab
+          </button>
+          {actor.name}
+        </span>
       </div>
       <div className="panel-body">
         <TransformSection actor={actor} />
+        {actor.type === 'PlayerStart' && <PawnSection actor={actor} />}
         {actor.mesh && actor.materialProps && <MaterialSection actor={actor} />}
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}

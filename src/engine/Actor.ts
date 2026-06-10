@@ -6,10 +6,12 @@ import type {
   GeometryKind,
   LightProps,
   MaterialProps,
+  PawnMode,
   PhysicsProps,
   SerializedActor,
   TransformSnapshot,
 } from './types'
+import { compileScript, scriptLog, type CompiledScript, type ScriptApi } from './scripting'
 
 let actorCounter = 0
 export function nextActorId(): string {
@@ -43,6 +45,9 @@ export class Actor {
   cameraProps?: CameraProps
   physicsProps?: PhysicsProps
   assetId?: string
+  script?: string
+  pawnMode?: PawnMode
+  private compiled: CompiledScript | null = null
 
   // PIE state restore
   private editorTransform: TransformSnapshot | null = null
@@ -78,21 +83,45 @@ export class Actor {
   }
 
   /** Capture editor-time state before Play-In-Editor starts. */
-  beginPlay() {
+  beginPlay(api?: ScriptApi) {
     this.editorTransform = this.transform
     this.elapsed = 0
     this.baseY = this.root.position.y
+    this.compiled = null
+    if (this.script?.trim() && api) {
+      this.compiled = compileScript(this, this.script, api)
+      try {
+        this.compiled?.onBeginPlay?.()
+      } catch (err) {
+        scriptLog('error', `[${this.name}] onBeginPlay: ${(err as Error).message}`)
+        this.compiled = null
+      }
+    }
   }
 
   /** Restore editor-time state when PIE stops. */
   endPlay() {
     if (this.editorTransform) this.setTransform(this.editorTransform)
     this.editorTransform = null
+    this.compiled = null
+  }
+
+  /** UE "Keep Simulation Changes" (K) — adopt the current play-time transform. */
+  keepSimulationChanges() {
+    if (this.editorTransform) this.editorTransform = this.transform
   }
 
   /** Per-frame gameplay tick — only runs while the editor is in Play mode. */
   tick(dt: number) {
     this.elapsed += dt
+    if (this.compiled?.onTick) {
+      try {
+        this.compiled.onTick(dt)
+      } catch (err) {
+        scriptLog('error', `[${this.name}] onTick: ${(err as Error).message}`)
+        this.compiled = null
+      }
+    }
     for (const b of this.behaviors) {
       switch (b.type) {
         case 'rotator':
@@ -127,6 +156,8 @@ export class Actor {
       camera: this.cameraProps ? { ...this.cameraProps } : undefined,
       physics: this.physicsProps ? { ...this.physicsProps } : undefined,
       assetId: this.assetId,
+      script: this.script,
+      pawnMode: this.pawnMode,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,
