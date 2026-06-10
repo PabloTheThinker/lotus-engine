@@ -47,8 +47,10 @@ export class PhysicsSim {
 
       const pos = new THREE.Vector3()
       const quat = new THREE.Quaternion()
-      actor.root.getWorldPosition(pos)
-      actor.root.getWorldQuaternion(quat)
+      if (actor.type !== 'Landscape') {
+        actor.root.getWorldPosition(pos)
+        actor.root.getWorldQuaternion(quat)
+      }
 
       const desc =
         props.mode === 'dynamic'
@@ -71,6 +73,22 @@ export class PhysicsSim {
   /** Build a collider matched to the actor's geometry kind and world scale. */
   private colliderFor(actor: Actor): RAPIER_NS.ColliderDesc | null {
     if (!RAPIER || !actor.mesh) return null
+    // sculpted terrain — exact trimesh collider
+    if (actor.type === 'Landscape') {
+      const geo = actor.mesh.geometry
+      const verts = new Float32Array(geo.attributes.position.array.length)
+      const v = new THREE.Vector3()
+      for (let i = 0; i < geo.attributes.position.count; i++) {
+        v.fromBufferAttribute(geo.attributes.position, i)
+        actor.mesh.localToWorld(v)
+        verts[i * 3] = v.x
+        verts[i * 3 + 1] = v.y
+        verts[i * 3 + 2] = v.z
+      }
+      const idx = geo.index ? new Uint32Array(geo.index.array) : new Uint32Array(0)
+      // trimesh is in world space — pair with a fixed body at origin
+      return RAPIER.ColliderDesc.trimesh(verts, idx)
+    }
     const scale = new THREE.Vector3()
     actor.root.getWorldScale(scale)
 

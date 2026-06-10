@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type {
   ActorType,
   FoliageProps,
+  LandscapeProps,
   Behavior,
   CameraProps,
   GeometryKind,
@@ -60,6 +61,7 @@ export class Actor {
   particleSystem?: import('./particles').ParticleSystem
   foliageProps?: FoliageProps
   foliageMesh?: THREE.InstancedMesh
+  landscapeProps?: LandscapeProps
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -185,6 +187,7 @@ export class Actor {
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
+      landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights] } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,

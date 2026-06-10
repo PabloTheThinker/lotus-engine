@@ -81,6 +81,16 @@ interface EditorState {
   foliagePaint: boolean
   setFoliagePaint: (v: boolean) => void
 
+  // landscape sculpt mode (UE Landscape mode)
+  sculptActive: boolean
+  setSculptActive: (v: boolean) => void
+  sculptTool: import('../engine/types').SculptTool
+  setSculptTool: (t: import('../engine/types').SculptTool) => void
+  sculptRadius: number
+  setSculptRadius: (r: number) => void
+  sculptStrength: number
+  setSculptStrength: (v: number) => void
+
   // Play From Here — spawn override consumed by the viewport at play start
   pendingSpawn: [number, number, number] | null
   setPendingSpawn: (p: [number, number, number] | null) => void
@@ -154,7 +164,16 @@ export const useEditor = create<EditorState>((set) => ({
   clearConsole: () => set({ consoleEntries: [] }),
 
   foliagePaint: false,
-  setFoliagePaint: (v) => set({ foliagePaint: v }),
+  setFoliagePaint: (v) => set({ foliagePaint: v, sculptActive: v ? false : undefined as never }),
+
+  sculptActive: false,
+  setSculptActive: (v) => set({ sculptActive: v, foliagePaint: false }),
+  sculptTool: 'raise',
+  setSculptTool: (t) => set({ sculptTool: t }),
+  sculptRadius: 5,
+  setSculptRadius: (r) => set({ sculptRadius: r }),
+  sculptStrength: 0.35,
+  setSculptStrength: (v) => set({ sculptStrength: v }),
 
   pendingSpawn: null,
   setPendingSpawn: (p) => set({ pendingSpawn: p }),

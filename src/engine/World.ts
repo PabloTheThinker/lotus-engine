@@ -16,6 +16,7 @@ import {
   buildFoliageMesh,
   createPostProcessVolumeActor,
 } from './factory'
+import { createLandscapeActor, buildLandscapeMesh } from './landscape'
 import { PhysicsSim } from './physics'
 import { makeScriptApi } from './scripting'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
@@ -285,6 +286,13 @@ export class World {
         if (sa.foliage) {
           actor.foliageProps = { ...sa.foliage, instances: sa.foliage.instances.map((i) => [...i]) }
           buildFoliageMesh(actor)
+        }
+        break
+      case 'Landscape':
+        actor = createLandscapeActor(sa.name, sa.id)
+        if (sa.landscape) {
+          actor.landscapeProps = { ...sa.landscape, heights: [...sa.landscape.heights] }
+          buildLandscapeMesh(actor)
         }
         break
       case 'PlayerStart':

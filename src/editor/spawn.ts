@@ -4,6 +4,7 @@ import type { ActorType, GeometryKind, SerializedActor } from '../engine/types'
 import { DEFAULT_MATERIAL } from '../engine/types'
 import { DEFAULT_PARTICLES } from '../engine/particles'
 import { DEFAULT_FOLIAGE } from '../engine/types'
+import { DEFAULT_LANDSCAPE } from '../engine/landscape'
 import { AddActorCommand, runCommand } from './commands'
 
 export type AssetPayload =
@@ -15,6 +16,7 @@ export type AssetPayload =
   | { kind: 'postprocess' }
   | { kind: 'particles' }
   | { kind: 'foliage' }
+  | { kind: 'landscape' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -102,6 +104,16 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         foliage: { ...DEFAULT_FOLIAGE, instances: [] },
         transform: { ...base.transform, position: [0, 0, 0] },
       }
+    case 'landscape': {
+      const res = DEFAULT_LANDSCAPE.resolution
+      return {
+        ...base,
+        name: uniqueName('Landscape'),
+        type: 'Landscape',
+        landscape: { ...DEFAULT_LANDSCAPE, heights: new Array((res + 1) * (res + 1)).fill(0) },
+        transform: { ...base.transform, position: [0, 0, 0] },
+      }
+    }
     case 'playerstart':
       return {
         ...base,

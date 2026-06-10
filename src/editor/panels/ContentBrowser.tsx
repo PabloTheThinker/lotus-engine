@@ -30,6 +30,7 @@ const ASSETS: AssetDef[] = [
   { label: 'Post Process', icon: '◫', category: 'Volumes', payload: { kind: 'postprocess' } },
   { label: 'Particles', icon: '✨', category: 'VFX', payload: { kind: 'particles' } },
   { label: 'Foliage', icon: '🌿', category: 'VFX', payload: { kind: 'foliage' } },
+  { label: 'Landscape', icon: '⛰', category: 'VFX', payload: { kind: 'landscape' } },
 ]
 
 const CATEGORIES = ['Shapes', 'Lights', 'Cameras', 'Gameplay', 'Volumes', 'VFX'] as const

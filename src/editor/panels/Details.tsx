@@ -6,6 +6,7 @@ import { applyLightProps, world } from '../../engine/World'
 import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { buildFoliageMesh } from '../../engine/factory'
+import { syncLandscapeHeights } from '../../engine/landscape'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
 import { WorldSettings } from './WorldSettings'
@@ -558,6 +559,60 @@ function FoliageSection({ actor }: { actor: Actor }) {
   )
 }
 
+function LandscapeSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const sculptActive = useEditor((s) => s.sculptActive)
+  const setSculptActive = useEditor((s) => s.setSculptActive)
+  const sculptTool = useEditor((s) => s.sculptTool)
+  const setSculptTool = useEditor((s) => s.setSculptTool)
+  const sculptRadius = useEditor((s) => s.sculptRadius)
+  const setSculptRadius = useEditor((s) => s.setSculptRadius)
+  const sculptStrength = useEditor((s) => s.sculptStrength)
+  const setSculptStrength = useEditor((s) => s.setSculptStrength)
+  const props = actor.landscapeProps!
+  return (
+    <Section title="Landscape">
+      <label className="field check">
+        <span>Sculpt Mode</span>
+        <input type="checkbox" checked={sculptActive} onChange={(e) => setSculptActive(e.target.checked)} />
+      </label>
+      <label className="field">
+        <span>Tool</span>
+        <select value={sculptTool} onChange={(e) => setSculptTool(e.target.value as typeof sculptTool)}>
+          <option value="raise">Raise (Shift lowers)</option>
+          <option value="lower">Lower</option>
+          <option value="smooth">Smooth</option>
+          <option value="flatten">Flatten</option>
+        </select>
+      </label>
+      <Num label="Brush Size" value={sculptRadius} step={0.5} min={0.5} max={30} onLive={setSculptRadius} onCommit={() => {}} />
+      <Num label="Strength" value={sculptStrength} step={0.05} min={0.01} max={2} onLive={setSculptStrength} onCommit={() => {}} />
+      <ColorField
+        label="Color"
+        value={props.color}
+        onLive={(v) => {
+          props.color = v
+          ;(actor.mesh!.material as THREE.MeshStandardMaterial).color.set(v)
+          touch()
+        }}
+        onCommit={() => {}}
+      />
+      <button
+        onClick={() => {
+          props.heights.fill(0)
+          syncLandscapeHeights(actor)
+          touch()
+        }}
+      >
+        Flatten All
+      </button>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        {props.resolution}×{props.resolution} · {props.size}m · click-drag to sculpt
+      </div>
+    </Section>
+  )
+}
+
 const BEHAVIOR_TEMPLATES: Record<string, Behavior> = {
   rotator: { type: 'rotator', speedX: 0, speedY: 1, speedZ: 0 },
   bobber: { type: 'bobber', amplitude: 0.5, frequency: 0.5 },
@@ -672,6 +727,7 @@ export function Details() {
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
         {actor.foliageProps && <FoliageSection actor={actor} />}
+        {actor.landscapeProps && <LandscapeSection actor={actor} />}
         <BehaviorsSection actor={actor} />
         <WorldSettings />
       </div>

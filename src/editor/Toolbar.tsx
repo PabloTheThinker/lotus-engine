@@ -24,6 +24,8 @@ export function Toolbar() {
   const toggleGameView = useEditor((s) => s.toggleGameView)
   const foliagePaint = useEditor((s) => s.foliagePaint)
   const setFoliagePaint = useEditor((s) => s.setFoliagePaint)
+  const sculptActive = useEditor((s) => s.sculptActive)
+  const setSculptActive = useEditor((s) => s.setSculptActive)
   const selectedId = useEditor((s) => s.selectedId)
   const canUndo = useEditor((s) => s.canUndo)
   const canRedo = useEditor((s) => s.canRedo)
@@ -69,6 +71,14 @@ export function Toolbar() {
           disabled={!selectedId}
         >
           🌿 Paint
+        </button>
+        <button
+          className={sculptActive ? 'active' : ''}
+          title="Landscape sculpt — select a Landscape, then click-drag (Shift lowers)"
+          onClick={() => setSculptActive(!sculptActive)}
+          disabled={!selectedId}
+        >
+          ⛰ Sculpt
         </button>
       </div>
       <div className="toolbar-spacer" />

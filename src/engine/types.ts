@@ -14,6 +14,7 @@ export type ActorType =
   | 'PostProcessVolume'
   | 'ParticleEmitter'
   | 'FoliageLayer'
+  | 'Landscape'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -32,6 +33,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   PostProcessVolume: 'movable',
   ParticleEmitter: 'movable',
   FoliageLayer: 'static',
+  Landscape: 'static',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -158,7 +160,19 @@ export interface SerializedActor {
   particles?: import('./particles').ParticleProps
   /** FoliageLayer only */
   foliage?: FoliageProps
+  /** Landscape only */
+  landscape?: LandscapeProps
 }
+
+/** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
+export interface LandscapeProps {
+  size: number
+  resolution: number
+  color: string
+  heights: number[]
+}
+
+export type SculptTool = 'raise' | 'lower' | 'smooth' | 'flatten'
 
 /** Foliage — UE Foliage mode analog: painted InstancedMesh scatter. */
 export interface FoliageProps {

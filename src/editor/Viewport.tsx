@@ -8,6 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage } from '../engine/factory'
+import { sculptStamp, syncLandscapeHeights } from '../engine/landscape'
 import { Input } from '../engine/Input'
 import { setScriptLogSink } from '../engine/scripting'
 import type { TransformSnapshot } from '../engine/types'
@@ -321,13 +322,100 @@ export function Viewport() {
       const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1])
       downPos = null
       const s = useEditor.getState()
-      if (s.foliagePaint) return // painting owns the mouse
+      if (s.foliagePaint || s.sculptActive) return // painting/sculpting owns the mouse
       // selection allowed in editor, while ejected, and in simulate — not while possessed
       if (s.playing && !s.simulate && !s.ejected) return
       if (moved > 5 || (gizmo as unknown as { dragging: boolean }).dragging) return
       const actor = pick(e)
       if (actor && (e.ctrlKey || e.metaKey)) s.toggleSelect(actor.id)
       else s.select(actor?.id ?? null)
+    })
+
+    // ---- landscape sculpting (UE Landscape mode) ----
+    const brushRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.9, 1, 48),
+      new THREE.MeshBasicMaterial({ color: 0xf5a623, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthTest: false }),
+    )
+    brushRing.rotation.x = -Math.PI / 2
+    brushRing.visible = false
+    brushRing.userData.isHelper = true
+    brushRing.renderOrder = 999
+    world.scene.add(brushRing)
+
+    let sculpting = false
+    let sculptBefore: number[] | null = null
+
+    function landscapeHit(e: MouseEvent): THREE.Intersection | null {
+      const s = useEditor.getState()
+      const land = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (!land?.landscapeProps || !land.mesh) return null
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, editorCamera)
+      return raycaster.intersectObject(land.mesh, false)[0] ?? null
+    }
+
+    function sculptAt(e: MouseEvent) {
+      const s = useEditor.getState()
+      const land = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (!land?.landscapeProps) return
+      const hit = landscapeHit(e)
+      if (!hit) return
+      // Shift inverts raise→lower for fast back-and-forth, UE-style
+      const tool = e.shiftKey && s.sculptTool === 'raise' ? 'lower' : s.sculptTool
+      if (sculptStamp(land, hit.point, tool, s.sculptRadius, s.sculptStrength * 0.25)) {
+        s.touch()
+      }
+    }
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      const s = useEditor.getState()
+      if (e.button !== 0 || !s.sculptActive || s.playing) return
+      const land = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (!land?.landscapeProps) return
+      sculpting = true
+      sculptBefore = [...land.landscapeProps.heights]
+      sculptAt(e)
+      e.stopPropagation()
+    })
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      const s = useEditor.getState()
+      // brush cursor follows the terrain whenever sculpt mode is on
+      if (s.sculptActive && !s.playing) {
+        const hit = landscapeHit(e)
+        if (hit) {
+          brushRing.position.copy(hit.point).add(new THREE.Vector3(0, 0.05, 0))
+          brushRing.scale.setScalar(s.sculptRadius)
+          brushRing.visible = true
+        } else {
+          brushRing.visible = false
+        }
+      } else {
+        brushRing.visible = false
+      }
+      if (sculpting) sculptAt(e)
+    })
+    window.addEventListener('mouseup', () => {
+      if (!sculpting) return
+      sculpting = false
+      const s = useEditor.getState()
+      const land = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (land?.landscapeProps && sculptBefore) {
+        const before = sculptBefore
+        const after = [...land.landscapeProps.heights]
+        runCommand({
+          label: 'Sculpt stroke',
+          execute() {
+            land.landscapeProps!.heights = [...after]
+            syncLandscapeHeights(land)
+          },
+          undo() {
+            land.landscapeProps!.heights = [...before]
+            syncLandscapeHeights(land)
+          },
+        })
+      }
+      sculptBefore = null
     })
 
     // ---- foliage painting (UE Foliage mode) ----
@@ -661,6 +749,8 @@ export function Viewport() {
       // scripts can ask where the player is
       world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
 
+      if (!s.sculptActive || s.playing) brushRing.visible = false
+
       // helpers + editor-only visuals — hidden while possessed or in Game View (G)
       const hideChrome = possessed || s.gameView
       for (const actor of world.actors.values()) {
@@ -740,7 +830,9 @@ export function Viewport() {
       pmrem.dispose()
       composer.dispose()
       syncSelectionBoxes([], false)
-      world.scene.remove(grid, axes, gizmoHelper, pawn.body)
+      brushRing.geometry.dispose()
+      ;(brushRing.material as THREE.Material).dispose()
+      world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)
       world.pawnPosition = null
       renderer.dispose()
       mount.removeChild(renderer.domElement)
