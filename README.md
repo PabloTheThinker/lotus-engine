@@ -38,6 +38,15 @@ npm run dev
 - **Level I/O** — File → New/Open/Save (`Ctrl+S`), plus 5-second localStorage autosave with session restore.
 - Ctrl+Z/Y undo/redo, Ctrl+D duplicate, Del delete.
 
+## The full experience (v0.3)
+
+- **Scripting** — every actor has a JavaScript slot (`onBeginPlay()` / `onTick(dt)` with `actor`, `api`, `THREE` in scope) edited in the bottom-dock **Script** tab. The GDScript/Blueprint analog; compiles at Play start, errors land in the Console.
+- **Console** — Godot-style bottom panel: output log plus a live JS command line (`world`, `api`, `THREE` in scope, ↑/↓ history).
+- **Pawn modes** — PlayerStart chooses Fly (spectator), **First Person** (gravity, jump, sprint), or **Third Person** (visible character + camera boom). Ground collision via raycast; fall off the world and you respawn.
+- **AI copilot** — the ✦ AI tab chats with Ollama (local, proxied) or Anthropic. It sees every actor and the environment, and acts through `\`\`\`vektra` command blocks — spawn, move, restyle, script, delete, environment — all routed through the undo stack, so **Ctrl+Z reverts anything the AI does**.
+- **Prefabs** — Godot's best idea: 🧩 button in Details saves an actor subtree as a reusable asset; drag from the Content Browser to instance with remapped ids.
+- **Play From Here** — right-click the viewport. Plus **K** = Keep Simulation Changes while simulating/ejected, and a Detail Lighting view mode.
+
 ## Architecture notes
 
 The Three.js scene graph is the single source of truth; React panels mirror it
