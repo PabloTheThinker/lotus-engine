@@ -170,9 +170,13 @@ export interface LandscapeProps {
   resolution: number
   color: string
   heights: number[]
+  /** 4 paint layers (UE weight-blended layers, color-based) */
+  layerColors?: [string, string, string, string]
+  /** per-vertex layer weights, 4 per vertex */
+  weights?: number[]
 }
 
-export type SculptTool = 'raise' | 'lower' | 'smooth' | 'flatten'
+export type SculptTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'paint'
 
 /** Foliage — UE Foliage mode analog: painted InstancedMesh scatter. */
 export interface FoliageProps {

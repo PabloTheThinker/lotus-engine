@@ -8,7 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage } from '../engine/factory'
-import { sculptStamp, syncLandscapeHeights } from '../engine/landscape'
+import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
 import { Input } from '../engine/Input'
 import { setScriptLogSink } from '../engine/scripting'
 import type { TransformSnapshot } from '../engine/types'
@@ -343,7 +343,7 @@ export function Viewport() {
     world.scene.add(brushRing)
 
     let sculpting = false
-    let sculptBefore: number[] | null = null
+    let sculptBefore: { heights: number[]; weights: number[] } | null = null
 
     function landscapeHit(e: MouseEvent): THREE.Intersection | null {
       const s = useEditor.getState()
@@ -363,7 +363,7 @@ export function Viewport() {
       if (!hit) return
       // Shift inverts raise→lower for fast back-and-forth, UE-style
       const tool = e.shiftKey && s.sculptTool === 'raise' ? 'lower' : s.sculptTool
-      if (sculptStamp(land, hit.point, tool, s.sculptRadius, s.sculptStrength * 0.25)) {
+      if (sculptStamp(land, hit.point, tool, s.sculptRadius, s.sculptStrength * 0.25, s.paintLayer)) {
         s.touch()
       }
     }
@@ -374,7 +374,7 @@ export function Viewport() {
       const land = s.selectedId ? world.actors.get(s.selectedId) : null
       if (!land?.landscapeProps) return
       sculpting = true
-      sculptBefore = [...land.landscapeProps.heights]
+      sculptBefore = { heights: [...land.landscapeProps.heights], weights: [...(land.landscapeProps.weights ?? [])] }
       sculptAt(e)
       e.stopPropagation()
     })
@@ -402,17 +402,17 @@ export function Viewport() {
       const land = s.selectedId ? world.actors.get(s.selectedId) : null
       if (land?.landscapeProps && sculptBefore) {
         const before = sculptBefore
-        const after = [...land.landscapeProps.heights]
+        const after = { heights: [...land.landscapeProps.heights], weights: [...(land.landscapeProps.weights ?? [])] }
+        const apply = (snap: typeof before) => {
+          land.landscapeProps!.heights = [...snap.heights]
+          land.landscapeProps!.weights = [...snap.weights]
+          syncLandscapeHeights(land)
+          syncLandscapeColors(land)
+        }
         runCommand({
           label: 'Sculpt stroke',
-          execute() {
-            land.landscapeProps!.heights = [...after]
-            syncLandscapeHeights(land)
-          },
-          undo() {
-            land.landscapeProps!.heights = [...before]
-            syncLandscapeHeights(land)
-          },
+          execute: () => apply(after),
+          undo: () => apply(before),
         })
       }
       sculptBefore = null

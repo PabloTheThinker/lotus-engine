@@ -178,7 +178,21 @@ function instantiate(sa) {
     const geo = new THREE.PlaneGeometry(L.size, L.size, L.resolution, L.resolution)
     for (let i = 0; i < geo.attributes.position.count; i++) geo.attributes.position.setZ(i, L.heights[i] ?? 0)
     geo.computeVertexNormals()
-    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: L.color, roughness: 0.92 }))
+    let mat
+    if (L.weights && L.layerColors) {
+      const cols = L.layerColors.map((c) => new THREE.Color(c))
+      const vc = new Float32Array(geo.attributes.position.count * 3)
+      for (let i = 0; i < geo.attributes.position.count; i++) {
+        let r = 0, g = 0, b = 0
+        for (let l = 0; l < 4; l++) { const w = L.weights[i * 4 + l] ?? 0; r += cols[l].r * w; g += cols[l].g * w; b += cols[l].b * w }
+        vc[i * 3] = r; vc[i * 3 + 1] = g; vc[i * 3 + 2] = b
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(vc, 3))
+      mat = new THREE.MeshStandardMaterial({ color: '#fff', roughness: 0.92, vertexColors: true })
+    } else {
+      mat = new THREE.MeshStandardMaterial({ color: L.color, roughness: 0.92 })
+    }
+    const mesh = new THREE.Mesh(geo, mat)
     mesh.rotation.x = -Math.PI / 2
     mesh.receiveShadow = true
     actor.mesh = mesh

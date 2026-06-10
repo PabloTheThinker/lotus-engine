@@ -187,7 +187,7 @@ export class Actor {
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
-      landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights] } : undefined,
+      landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights], weights: this.landscapeProps.weights ? [...this.landscapeProps.weights] : undefined } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,

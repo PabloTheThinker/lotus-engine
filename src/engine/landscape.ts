@@ -14,6 +14,9 @@ export const DEFAULT_LANDSCAPE: Omit<LandscapeProps, 'heights'> = {
   color: '#46553f',
 }
 
+/** grass, rock, dirt, snow */
+export const DEFAULT_LAYERS: [string, string, string, string] = ['#46553f', '#6e6e72', '#6e5239', '#dfe7ec']
+
 export function createLandscapeActor(name: string, id = nextActorId()): Actor {
   const actor = new Actor(id, name, 'Landscape')
   const res = DEFAULT_LANDSCAPE.resolution
@@ -33,7 +36,14 @@ export function buildLandscapeMesh(actor: Actor) {
     ;(actor.mesh.material as THREE.Material).dispose()
   }
   const geo = new THREE.PlaneGeometry(props.size, props.size, props.resolution, props.resolution)
-  const mat = new THREE.MeshStandardMaterial({ color: props.color, roughness: 0.92, metalness: 0 })
+  const vcount = geo.attributes.position.count
+  if (!props.layerColors) props.layerColors = [...DEFAULT_LAYERS]
+  if (!props.weights || props.weights.length !== vcount * 4) {
+    props.weights = new Array(vcount * 4).fill(0)
+    for (let i = 0; i < vcount; i++) props.weights[i * 4] = 1
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vcount * 3), 3))
+  const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92, metalness: 0, vertexColors: true })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.rotation.x = -Math.PI / 2
   mesh.receiveShadow = true
@@ -43,6 +53,26 @@ export function buildLandscapeMesh(actor: Actor) {
   actor.mesh = mesh
   actor.root.add(mesh)
   syncLandscapeHeights(actor)
+  syncLandscapeColors(actor)
+}
+
+/** blend layer colors by per-vertex weights into the color attribute */
+export function syncLandscapeColors(actor: Actor) {
+  const props = actor.landscapeProps!
+  const colorAttr = actor.mesh!.geometry.attributes.color
+  if (!colorAttr || !props.weights || !props.layerColors) return
+  const cols = props.layerColors.map((c) => new THREE.Color(c))
+  for (let i = 0; i < colorAttr.count; i++) {
+    let r = 0, g = 0, b = 0
+    for (let l = 0; l < 4; l++) {
+      const w = props.weights[i * 4 + l]
+      r += cols[l].r * w
+      g += cols[l].g * w
+      b += cols[l].b * w
+    }
+    colorAttr.setXYZ(i, r, g, b)
+  }
+  colorAttr.needsUpdate = true
 }
 
 /** write the heights list into the geometry (plane local Z = world Y). */
@@ -67,6 +97,7 @@ export function sculptStamp(
   tool: SculptTool,
   radius: number,
   strength: number,
+  paintLayer = 0,
 ): boolean {
   const props = actor.landscapeProps!
   const mesh = actor.mesh!
@@ -97,6 +128,20 @@ export function sculptStamp(
       if (d > radius) continue
       const falloff = 1 - THREE.MathUtils.smoothstep(d / radius, 0, 1)
       const idx = gy * n + gx
+      if (tool === 'paint' && props.weights) {
+        const blend = Math.min(1, strength * 2) * falloff
+        let sum = 0
+        for (let l = 0; l < 4; l++) {
+          const cur = props.weights[idx * 4 + l]
+          const target = l === paintLayer ? 1 : 0
+          const w = THREE.MathUtils.lerp(cur, target, blend)
+          props.weights[idx * 4 + l] = w
+          sum += w
+        }
+        for (let l = 0; l < 4; l++) props.weights[idx * 4 + l] /= sum || 1
+        changed = true
+        continue
+      }
       const h = props.heights[idx]
       let next = h
       switch (tool) {
@@ -125,6 +170,9 @@ export function sculptStamp(
       }
     }
   }
-  if (changed) syncLandscapeHeights(actor)
+  if (changed) {
+    if (tool === 'paint') syncLandscapeColors(actor)
+    else syncLandscapeHeights(actor)
+  }
   return changed
 }

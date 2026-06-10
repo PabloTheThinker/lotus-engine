@@ -1161,3 +1161,21 @@ input[type='checkbox'] {
   background: var(--accent);
   color: #fff;
 }
+
+.paint-layers {
+  display: flex;
+  gap: 6px;
+}
+.paint-layer {
+  border: 2px solid transparent;
+  border-radius: 4px;
+  padding: 1px;
+  cursor: pointer;
+}
+.paint-layer.active {
+  border-color: var(--accent-warm);
+}
+.paint-layer input {
+  width: 34px;
+  height: 24px;
+}

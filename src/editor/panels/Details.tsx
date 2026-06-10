@@ -6,7 +6,7 @@ import { applyLightProps, world } from '../../engine/World'
 import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { buildFoliageMesh } from '../../engine/factory'
-import { syncLandscapeHeights } from '../../engine/landscape'
+import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
 import { WorldSettings } from './WorldSettings'
@@ -559,6 +559,33 @@ function FoliageSection({ actor }: { actor: Actor }) {
   )
 }
 
+function PaintLayerPicker({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const paintLayer = useEditor((s) => s.paintLayer)
+  const setPaintLayer = useEditor((s) => s.setPaintLayer)
+  const props = actor.landscapeProps!
+  const layers = props.layerColors ?? ['#46553f', '#6e6e72', '#6e5239', '#dfe7ec']
+  return (
+    <div className="paint-layers">
+      {layers.map((c, i) => (
+        <span key={i} className={`paint-layer ${paintLayer === i ? 'active' : ''}`} onClick={() => setPaintLayer(i)}>
+          <input
+            type="color"
+            value={c}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              layers[i] = e.target.value
+              props.layerColors = layers as [string, string, string, string]
+              syncLandscapeColors(actor)
+              touch()
+            }}
+          />
+        </span>
+      ))}
+    </div>
+  )
+}
+
 function LandscapeSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const sculptActive = useEditor((s) => s.sculptActive)
@@ -583,8 +610,10 @@ function LandscapeSection({ actor }: { actor: Actor }) {
           <option value="lower">Lower</option>
           <option value="smooth">Smooth</option>
           <option value="flatten">Flatten</option>
+          <option value="paint">Paint Layer</option>
         </select>
       </label>
+      {sculptTool === 'paint' && <PaintLayerPicker actor={actor} />}
       <Num label="Brush Size" value={sculptRadius} step={0.5} min={0.5} max={30} onLive={setSculptRadius} onCommit={() => {}} />
       <Num label="Strength" value={sculptStrength} step={0.05} min={0.01} max={2} onLive={setSculptStrength} onCommit={() => {}} />
       <ColorField

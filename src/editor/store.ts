@@ -90,6 +90,8 @@ interface EditorState {
   setSculptRadius: (r: number) => void
   sculptStrength: number
   setSculptStrength: (v: number) => void
+  paintLayer: number
+  setPaintLayer: (l: number) => void
 
   // Play From Here — spawn override consumed by the viewport at play start
   pendingSpawn: [number, number, number] | null
@@ -174,6 +176,8 @@ export const useEditor = create<EditorState>((set) => ({
   setSculptRadius: (r) => set({ sculptRadius: r }),
   sculptStrength: 0.35,
   setSculptStrength: (v) => set({ sculptStrength: v }),
+  paintLayer: 0,
+  setPaintLayer: (l) => set({ paintLayer: l }),
 
   pendingSpawn: null,
   setPendingSpawn: (p) => set({ pendingSpawn: p }),
