@@ -20,6 +20,10 @@ npm run dev
 | Transaction system | Command stack (`src/editor/commands.ts`) — full undo/redo |
 | `.umap` | `.vlevel.json` — versioned level serialization + autosave |
 | Blueprint tick | Behaviors (rotator / bobber / orbiter) — run during Play |
+| Chaos physics | Rapier (`src/engine/physics.ts`) — static/dynamic bodies, Play-only |
+| PlayerStart + pawn | `PlayerStart` actor + `PlayController` pointer-lock pawn |
+| SkyAtmosphere | Sky dome + sun-direction-bound directional lights + PMREM IBL |
+| Post stack | UnrealBloomPass + ACES output (`?nofx` to disable) |
 
 ## Editor tools
 
@@ -28,7 +32,9 @@ npm run dev
 - **World Outliner** — hierarchy tree, drag-to-reparent, rename (double-click), visibility eyes.
 - **Details panel** — transform, PBR material, light, camera, and behavior properties with commit-on-blur undo granularity.
 - **Content Browser** — drag assets into the viewport (ground-plane projected spawn) or double-click to place.
-- **Play In Editor** — ▶ runs behaviors and renders through the level camera; Esc stops and restores editor state.
+- **Play In Editor** — ▶ spawns the pawn at PlayerStart (origin fallback, per UE), possesses with pointer-lock WASD+mouse; **F8** ejects/re-possesses while the world keeps running; **Simulate** runs physics/behaviors with the editor camera; Esc stops and restores all editor state.
+- **Physics** — per-actor Body Type (None / Static / Dynamic) with mass, friction, bounciness; simulated by Rapier during Play only.
+- **Viewport ergonomics** — End snap-to-floor, Alt+drag-gizmo duplicate, Shift+0-9 / 0-9 camera bookmarks, G game view, T world/local gizmo space.
 - **Level I/O** — File → New/Open/Save (`Ctrl+S`), plus 5-second localStorage autosave with session restore.
 - Ctrl+Z/Y undo/redo, Ctrl+D duplicate, Del delete.
 
