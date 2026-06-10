@@ -14,6 +14,7 @@ const TYPE_ICONS: Record<string, string> = {
   AmbientLight: '◍',
   Camera: '🎥',
   PlayerStart: '🚩',
+  ParticleEmitter: '✨',
   Empty: '◇',
   Folder: '📁',
   PostProcessVolume: '◫',

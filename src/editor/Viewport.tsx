@@ -545,6 +545,7 @@ export function Viewport() {
       controls.update(dt)
       pawn.update(dt)
       world.tick(dt)
+      world.updateParticles(dt) // emitters preview in-editor like Niagara
 
       // gizmo sync
       const selected = s.selectedId ? world.actors.get(s.selectedId) : null

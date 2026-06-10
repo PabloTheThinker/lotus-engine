@@ -12,6 +12,7 @@ export type ActorType =
   | 'Empty'
   | 'Folder'
   | 'PostProcessVolume'
+  | 'ParticleEmitter'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -28,6 +29,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   Empty: 'movable',
   Folder: 'static',
   PostProcessVolume: 'movable',
+  ParticleEmitter: 'movable',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -150,6 +152,8 @@ export interface SerializedActor {
   tags?: string[]
   /** PostProcessVolume only */
   postProcess?: PostProcessProps
+  /** ParticleEmitter only */
+  particles?: import('./particles').ParticleProps
 }
 
 export type PawnMode = 'fly' | 'firstperson' | 'thirdperson'

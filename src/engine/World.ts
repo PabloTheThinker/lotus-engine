@@ -11,6 +11,7 @@ import {
   createPlayerStartActor,
   createStaticMeshActor,
   createFolderActor,
+  createParticleEmitterActor,
   createPostProcessVolumeActor,
 } from './factory'
 import { PhysicsSim } from './physics'
@@ -133,7 +134,12 @@ export class World {
     this.playing = true
     this.playClock = 0
     const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
-    for (const a of this.actors.values()) a.beginPlay(api)
+    for (const a of this.actors.values()) {
+      a.beginPlay(api)
+      if (a.particleSystem && a.particleProps && a.particleProps.burst > 0) {
+        a.particleSystem.burst(a.particleProps.burst)
+      }
+    }
     this.physics.start(this.actors.values())
   }
 
@@ -145,6 +151,13 @@ export class World {
     this.playing = false
     this.physics.stop()
     for (const a of this.actors.values()) a.endPlay()
+  }
+
+  /** advance all particle systems — editor preview AND play */
+  updateParticles(dt: number) {
+    for (const a of this.actors.values()) {
+      if (a.particleSystem) a.particleSystem.update(dt, a.visible)
+    }
   }
 
   tick(dt: number) {
@@ -255,6 +268,14 @@ export class World {
           actor.camera!.near = sa.camera.near
           actor.camera!.far = sa.camera.far
           actor.camera!.updateProjectionMatrix()
+        }
+        break
+      case 'ParticleEmitter':
+        actor = createParticleEmitterActor(sa.name, sa.id)
+        if (sa.particles) {
+          actor.particleProps = { ...sa.particles }
+          actor.particleSystem!.props = actor.particleProps
+          actor.particleSystem!.refresh()
         }
         break
       case 'PlayerStart':

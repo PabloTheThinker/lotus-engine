@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
+import { ParticleSystem, DEFAULT_PARTICLES } from './particles'
 import type { ActorType, CameraProps, GeometryKind, LightProps, MaterialProps } from './types'
 import { DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS } from './types'
 
@@ -138,6 +139,26 @@ export function createCameraActor(name: string, id = nextActorId()): Actor {
 
 export function createEmptyActor(name: string, id = nextActorId()): Actor {
   return new Actor(id, name, 'Empty')
+}
+
+/** ParticleEmitter — Niagara/CPUParticles3D analog with editor preview. */
+export function createParticleEmitterActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'ParticleEmitter')
+  actor.particleProps = { ...DEFAULT_PARTICLES }
+  const system = new ParticleSystem(actor.particleProps)
+  system.points.userData.actorId = id
+  actor.particleSystem = system
+  actor.root.add(system.points)
+  // editor pick proxy + icon
+  const proxy = new THREE.Mesh(
+    new THREE.SphereGeometry(0.25, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xf5a623, wireframe: true }),
+  )
+  proxy.userData.actorId = id
+  proxy.userData.isEditorOnly = true
+  actor.mesh = proxy
+  actor.root.add(proxy)
+  return actor
 }
 
 /** Folder — UE World Outliner organizational node (no renderable components). */

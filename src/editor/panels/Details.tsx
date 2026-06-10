@@ -457,6 +457,59 @@ function PhysicsSection({ actor }: { actor: Actor }) {
   )
 }
 
+function ParticlesSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const props = actor.particleProps!
+  const sys = actor.particleSystem!
+  const setNum = (key: keyof typeof props, v: number) => {
+    ;(props as unknown as Record<string, number>)[key as string] = v
+    touch()
+  }
+  return (
+    <Section title="Particle Emitter">
+      <Num label="Rate /s" value={props.rate} step={5} min={0} onLive={(v) => setNum('rate', v)} onCommit={() => {}} />
+      <Num label="Burst" value={props.burst} step={10} min={0} onLive={(v) => setNum('burst', v)} onCommit={() => {}} />
+      <Num label="Lifetime" value={props.lifetime} step={0.1} min={0.05} onLive={(v) => setNum('lifetime', v)} onCommit={() => {}} />
+      <label className="field">
+        <span>Shape</span>
+        <select
+          value={props.shape}
+          onChange={(e) => {
+            props.shape = e.target.value as typeof props.shape
+            touch()
+          }}
+        >
+          <option value="point">Point</option>
+          <option value="sphere">Sphere</option>
+          <option value="cone">Cone</option>
+          <option value="box">Box</option>
+        </select>
+      </label>
+      <Num label="Shape Size" value={props.shapeRadius} step={0.05} min={0} onLive={(v) => setNum('shapeRadius', v)} onCommit={() => {}} />
+      <Num label="Speed" value={props.speed} step={0.2} min={0} onLive={(v) => setNum('speed', v)} onCommit={() => {}} />
+      {props.shape === 'cone' && (
+        <Num label="Spread°" value={props.spreadDeg} step={1} min={0} max={90} onLive={(v) => setNum('spreadDeg', v)} onCommit={() => {}} />
+      )}
+      <Num label="Gravity" value={props.gravity} step={0.2} onLive={(v) => setNum('gravity', v)} onCommit={() => {}} />
+      <Num label="Drag" value={props.drag} step={0.1} min={0} onLive={(v) => setNum('drag', v)} onCommit={() => {}} />
+      <ColorField label="Color Start" value={props.colorStart} onLive={(v) => { props.colorStart = v; touch() }} onCommit={() => {}} />
+      <ColorField label="Color End" value={props.colorEnd} onLive={(v) => { props.colorEnd = v; touch() }} onCommit={() => {}} />
+      <Num label="Size Start" value={props.sizeStart} step={0.02} min={0.01} onLive={(v) => setNum('sizeStart', v)} onCommit={() => {}} />
+      <Num label="Size End" value={props.sizeEnd} step={0.02} min={0} onLive={(v) => setNum('sizeEnd', v)} onCommit={() => {}} />
+      <Check
+        label="Additive Glow"
+        value={props.additive}
+        onToggle={(v) => {
+          props.additive = v
+          sys.refresh()
+          touch()
+        }}
+      />
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Previews live; Burst fires at Play start.</div>
+    </Section>
+  )
+}
+
 const BEHAVIOR_TEMPLATES: Record<string, Behavior> = {
   rotator: { type: 'rotator', speedX: 0, speedY: 1, speedZ: 0 },
   bobber: { type: 'bobber', amplitude: 0.5, frequency: 0.5 },
@@ -568,7 +621,8 @@ export function Details() {
         {actor.mesh && actor.materialProps && <MaterialSection actor={actor} />}
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
-        {actor.physicsProps && <PhysicsSection actor={actor} />}
+        {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
+        {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
         <BehaviorsSection actor={actor} />
         <WorldSettings />
       </div>

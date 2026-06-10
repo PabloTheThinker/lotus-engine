@@ -2,6 +2,7 @@ import { nextActorId } from '../engine/Actor'
 import { world } from '../engine/World'
 import type { ActorType, GeometryKind, SerializedActor } from '../engine/types'
 import { DEFAULT_MATERIAL } from '../engine/types'
+import { DEFAULT_PARTICLES } from '../engine/particles'
 import { AddActorCommand, runCommand } from './commands'
 
 export type AssetPayload =
@@ -11,6 +12,7 @@ export type AssetPayload =
   | { kind: 'empty' }
   | { kind: 'folder' }
   | { kind: 'postprocess' }
+  | { kind: 'particles' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -82,6 +84,14 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
       }
       return sa
     }
+    case 'particles':
+      return {
+        ...base,
+        name: uniqueName('Emitter'),
+        type: 'ParticleEmitter',
+        particles: { ...DEFAULT_PARTICLES },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]] },
+      }
     case 'playerstart':
       return {
         ...base,

@@ -55,6 +55,8 @@ export class Actor {
   tags: string[]
   postProcessProps?: PostProcessProps
   volumeHelper?: THREE.Object3D
+  particleProps?: import('./particles').ParticleProps
+  particleSystem?: import('./particles').ParticleSystem
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -178,6 +180,7 @@ export class Actor {
       mobility: this.mobility,
       tags: [...this.tags],
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
+      particles: this.particleProps ? { ...this.particleProps } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,
@@ -185,6 +188,7 @@ export class Actor {
   }
 
   dispose() {
+    this.particleSystem?.dispose()
     this.mesh?.geometry.dispose()
     if (this.mesh && this.mesh.material instanceof THREE.Material) this.mesh.material.dispose()
     this.cameraHelper?.dispose()
