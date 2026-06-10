@@ -1,0 +1,73 @@
+import { create } from 'zustand'
+
+export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
+
+interface EditorState {
+  // selection
+  selectedId: string | null
+  select: (id: string | null) => void
+
+  // gizmo
+  gizmoMode: GizmoMode
+  setGizmoMode: (m: GizmoMode) => void
+  snapEnabled: boolean
+  toggleSnap: () => void
+  translateSnap: number
+  rotateSnapDeg: number
+  scaleSnap: number
+
+  // play-in-editor
+  playing: boolean
+  setPlaying: (p: boolean) => void
+
+  // scene version — bumped whenever the world mutates so React panels re-render.
+  // The Three.js scene graph stays the source of truth; React just mirrors it.
+  sceneVersion: number
+  touch: () => void
+
+  // undo/redo availability (mirrored from the command stack)
+  canUndo: boolean
+  canRedo: boolean
+  setHistoryState: (u: boolean, r: boolean) => void
+
+  levelName: string
+  setLevelName: (n: string) => void
+
+  statusMessage: string
+  setStatus: (m: string) => void
+
+  contentBrowserOpen: boolean
+  toggleContentBrowser: () => void
+}
+
+export const useEditor = create<EditorState>((set) => ({
+  selectedId: null,
+  select: (id) => set({ selectedId: id }),
+
+  gizmoMode: 'select',
+  setGizmoMode: (m) => set({ gizmoMode: m }),
+  snapEnabled: false,
+  toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+  translateSnap: 0.5,
+  rotateSnapDeg: 15,
+  scaleSnap: 0.25,
+
+  playing: false,
+  setPlaying: (p) => set({ playing: p }),
+
+  sceneVersion: 0,
+  touch: () => set((s) => ({ sceneVersion: s.sceneVersion + 1 })),
+
+  canUndo: false,
+  canRedo: false,
+  setHistoryState: (u, r) => set({ canUndo: u, canRedo: r }),
+
+  levelName: 'Untitled',
+  setLevelName: (n) => set({ levelName: n }),
+
+  statusMessage: 'Ready',
+  setStatus: (m) => set({ statusMessage: m }),
+
+  contentBrowserOpen: true,
+  toggleContentBrowser: () => set((s) => ({ contentBrowserOpen: !s.contentBrowserOpen })),
+}))
