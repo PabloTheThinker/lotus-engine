@@ -14,6 +14,8 @@ export function Toolbar() {
   const setGizmoMode = useEditor((s) => s.setGizmoMode)
   const snapEnabled = useEditor((s) => s.snapEnabled)
   const toggleSnap = useEditor((s) => s.toggleSnap)
+  const surfaceSnap = useEditor((s) => s.surfaceSnap)
+  const toggleSurfaceSnap = useEditor((s) => s.toggleSurfaceSnap)
   const translateSnap = useEditor((s) => s.translateSnap)
   const setTranslateSnap = useEditor((s) => s.setTranslateSnap)
   const rotateSnapDeg = useEditor((s) => s.rotateSnapDeg)
@@ -74,6 +76,13 @@ export function Toolbar() {
         ))}
         <button className={snapEnabled ? 'active' : ''} title="Toggle grid snap" onClick={toggleSnap}>
           ⌗ Snap
+        </button>
+        <button
+          className={surfaceSnap ? 'active' : ''}
+          title="Surface Snapping — released/dropped actors stick to and align with the surface below"
+          onClick={toggleSurfaceSnap}
+        >
+          ⊥ Surf
         </button>
         <select
           className="snap-size"

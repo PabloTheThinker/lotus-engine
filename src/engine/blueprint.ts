@@ -247,6 +247,34 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     props: [],
     emit: (_n, o) => `${o.first ?? ''}\n${o.second ?? ''}`,
   },
+  ForLoop: {
+    title: 'For Loop',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['loop', 'completed'],
+    props: [{ key: 'count', label: 'Count', kind: 'number', default: 5 }],
+    emit: (n, o) =>
+      `for (let __i = 0; __i < ${num(n.props.count)}; __i++) {\n${o.loop ?? ''}\n}\n${o.completed ?? ''}`,
+  },
+  DoOnce: {
+    title: 'Do Once',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['then'],
+    props: [],
+    emit: (n, o) => `if (!__once['${n.id}']) { __once['${n.id}'] = true;\n${o.then ?? ''}\n}`,
+  },
+  FlipFlop: {
+    title: 'Flip Flop',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['a', 'b'],
+    props: [],
+    emit: (n, o) => `__flip['${n.id}'] = !__flip['${n.id}'];\nif (__flip['${n.id}']) {\n${o.a ?? ''}\n} else {\n${o.b ?? ''}\n}`,
+  },
 }
 
 let bpCounter = 0
@@ -297,6 +325,8 @@ export function compileBlueprint(graph: BlueprintGraph): string {
   return `// ── compiled from Blueprint — edits here are overwritten on next compile ──
 let __dead = false
 const __near = {}
+const __once = {}
+const __flip = {}
 const __timers = []
 let __dt = 0
 function __after(s, fn) { __timers.push({ t: api.time() + s, fn }) }

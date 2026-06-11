@@ -22,6 +22,9 @@ interface EditorState {
   setGizmoMode: (m: GizmoMode) => void
   snapEnabled: boolean
   toggleSnap: () => void
+  /** UE Surface Snapping: drop/release aligns actors to the surface below */
+  surfaceSnap: boolean
+  toggleSurfaceSnap: () => void
   translateSnap: number
   setTranslateSnap: (v: number) => void
   rotateSnapDeg: number
@@ -145,6 +148,8 @@ export const useEditor = create<EditorState>((set) => ({
   setGizmoMode: (m) => set({ gizmoMode: m }),
   snapEnabled: false,
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
+  surfaceSnap: false,
+  toggleSurfaceSnap: () => set((s) => ({ surfaceSnap: !s.surfaceSnap })),
   translateSnap: 0.5,
   setTranslateSnap: (v) => set({ translateSnap: v }),
   rotateSnapDeg: 15,

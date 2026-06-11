@@ -16,7 +16,7 @@
 | Level Editor: viewport + gizmos + Q/W/E/R + Spacebar cycle | ✅ | — (v0.21) |
 | World/local gizmo space toggle | ✅ | Ctrl+` alias shipped (v0.21) |
 | Snap triplet: drag/rotation/scale toggles + preset dropdowns | ✅ | Add UE's 360-division rotation column (2.8125/5.625/11.25/22.5°) |
-| Surface Snapping (rotate-to-normal + offset) | ⏳ | Placement/move aligns actor up-vector to surface normal; toggle in toolbar |
+| Surface Snapping (rotate-to-normal) | ✅ | ⊥ Surf toolbar toggle (v0.24): translate-release sticks to the surface below + aligns to its normal. Live drag-slide + offset = polish |
 | Camera speed 1–8 + scroll-during-fly sync | ✅ | Add "Speed Scalar" multiplier field |
 | Orthographic views (Top/Front/Side) | ✅ | Alt+G/H/J/K shipped (v0.22): pseudo-ortho, pan-only nav, auto-wireframe, dark background. Bottom/Back/Left variants + zoom-to-cursor = polish |
 | Viewport layouts (quad view, maximize/restore) | ⏳ | Fake with 4 cameras + scissor viewports on one canvas; lower priority |
@@ -43,7 +43,7 @@
 | **Data pins** (typed, lazy-pulled through pure nodes) | ⏳ | The other half of the dual-graph: typed value wires, pure math/getter nodes, auto-conversion nodes |
 | Variables (get/set, instance-editable) | ⏳ | Variable panel on the BP editor; getter/setter nodes; maps to @export vars |
 | Functions / Macros (subgraphs) | ⏳ | Collapse selection to subgraph; inline at compile |
-| Flow nodes: ForLoop, Gate, DoOnce, FlipFlop, MultiGate, Switch | ⏳ | Straightforward additions to NODE_DEFS |
+| Flow nodes: ForLoop, DoOnce, FlipFlop | ✅ | Shipped (v0.24, runtime-verified). Gate/MultiGate/Switch = next |
 | Event Dispatchers / BP Interfaces | ◐ | Signals (api.emit/on) cover the runtime; add Bind/Call BP nodes |
 | Construction Script (runs on edit-time placement) | ⏳ | onConstruct hook evaluated in-editor when actor is placed/moved |
 | Blueprint debugger (exec pulse visualization, breakpoints) | ⏳ | Animate wire highlights during play; huge perceived quality |

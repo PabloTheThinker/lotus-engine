@@ -182,6 +182,30 @@ export function Viewport() {
       if (e.value && actor) {
         transformBefore = actor.transform
       } else if (!e.value && actor && transformBefore) {
+        // UE Surface Snapping: on release, stick to the surface below + align to its normal
+        const st = useEditor.getState()
+        if (st.surfaceSnap && st.gizmoMode === 'translate') {
+          const origin = new THREE.Vector3()
+          actor.root.getWorldPosition(origin)
+          const ray = new THREE.Raycaster(origin.clone().add(new THREE.Vector3(0, 0.05, 0)), new THREE.Vector3(0, -1, 0))
+          ray.far = 50
+          const targets: THREE.Object3D[] = []
+          for (const a2 of world.actors.values()) {
+            if (a2.id === actor.id) continue
+            a2.root.traverse((o) => {
+              if (o instanceof THREE.Mesh && !o.userData.isHelper && !o.userData.isEditorOnly) targets.push(o)
+            })
+          }
+          const hit = ray.intersectObjects(targets, false)[0]
+          if (hit && hit.face) {
+            const box = new THREE.Box3().setFromObject(actor.root)
+            const lift = origin.y - box.min.y
+            actor.root.position.y = hit.point.y + lift
+            const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+            const align = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), n)
+            actor.root.quaternion.premultiply(align)
+          }
+        }
         const after = actor.transform
         if (JSON.stringify(after) !== JSON.stringify(transformBefore)) {
           runCommand(new TransformCommand(actor.id, transformBefore, after))
