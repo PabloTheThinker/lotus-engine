@@ -569,51 +569,66 @@ function ParticlesSection({ actor }: { actor: Actor }) {
     ;(props as unknown as Record<string, number>)[key as string] = v
     touch()
   }
+  const moduleOff = (m: string) => props.modulesOff?.includes(m) ?? false
+  const toggleModule = (m: string) => {
+    props.modulesOff = props.modulesOff ?? []
+    props.modulesOff = moduleOff(m) ? props.modulesOff.filter((x) => x !== m) : [...props.modulesOff, m]
+    touch()
+  }
+  const Module = ({ id, title, children }: { id: string; title: string; children: React.ReactNode }) => (
+    <div className={`px-module ${moduleOff(id) ? 'off' : ''}`}>
+      <div className="px-module-head">
+        <input type="checkbox" checked={!moduleOff(id)} onChange={() => toggleModule(id)} title="Enable module" />
+        <span>{title}</span>
+      </div>
+      {!moduleOff(id) && <div className="details-grid">{children}</div>}
+    </div>
+  )
   return (
-    <Section title="Particle Emitter">
-      <Num label="Rate /s" value={props.rate} step={5} min={0} onLive={(v) => setNum('rate', v)} onCommit={() => {}} />
-      <Num label="Burst" value={props.burst} step={10} min={0} onLive={(v) => setNum('burst', v)} onCommit={() => {}} />
-      <Num label="Lifetime" value={props.lifetime} step={0.1} min={0.05} onLive={(v) => setNum('lifetime', v)} onCommit={() => {}} />
-      <label className="field">
-        <span>Shape</span>
-        <select
-          value={props.shape}
-          onChange={(e) => {
-            props.shape = e.target.value as typeof props.shape
-            touch()
-          }}
-        >
-          <option value="point">Point</option>
-          <option value="sphere">Sphere</option>
-          <option value="cone">Cone</option>
-          <option value="box">Box</option>
-        </select>
-      </label>
-      <Num label="Shape Size" value={props.shapeRadius} step={0.05} min={0} onLive={(v) => setNum('shapeRadius', v)} onCommit={() => {}} />
-      <Num label="Speed" value={props.speed} step={0.2} min={0} onLive={(v) => setNum('speed', v)} onCommit={() => {}} />
-      {props.shape === 'cone' && (
-        <Num label="Spread°" value={props.spreadDeg} step={1} min={0} max={90} onLive={(v) => setNum('spreadDeg', v)} onCommit={() => {}} />
-      )}
-      <Num label="Gravity" value={props.gravity} step={0.2} onLive={(v) => setNum('gravity', v)} onCommit={() => {}} />
-      <Num label="Drag" value={props.drag} step={0.1} min={0} onLive={(v) => setNum('drag', v)} onCommit={() => {}} />
-      <ColorField label="Color Start" value={props.colorStart} onLive={(v) => { props.colorStart = v; touch() }} onCommit={() => {}} />
-      <ColorField label="Color End" value={props.colorEnd} onLive={(v) => { props.colorEnd = v; touch() }} onCommit={() => {}} />
-      <Num label="Size Start" value={props.sizeStart} step={0.02} min={0.01} onLive={(v) => setNum('sizeStart', v)} onCommit={() => {}} />
-      <Num label="Size End" value={props.sizeEnd} step={0.02} min={0} onLive={(v) => setNum('sizeEnd', v)} onCommit={() => {}} />
-      <Check
-        label="Additive Glow"
-        value={props.additive}
-        onToggle={(v) => {
-          props.additive = v
-          sys.refresh()
-          touch()
-        }}
-      />
-      <div className="panel-empty" style={{ padding: '2px 0' }}>Previews live; Burst fires at Play start.</div>
+    <Section title="Particle Emitter (module stack)">
+      <Module id="spawn" title="Spawn">
+        <Num label="Rate /s" value={props.rate} step={5} min={0} onLive={(v) => setNum('rate', v)} onCommit={() => {}} />
+        <Num label="Burst" value={props.burst} step={10} min={0} onLive={(v) => setNum('burst', v)} onCommit={() => {}} />
+        <Num label="Lifetime" value={props.lifetime} step={0.1} min={0.05} onLive={(v) => setNum('lifetime', v)} onCommit={() => {}} />
+      </Module>
+      <Module id="shape" title="Shape Location">
+        <label className="field">
+          <span>Shape</span>
+          <select value={props.shape} onChange={(e) => { props.shape = e.target.value as typeof props.shape; touch() }}>
+            <option value="point">Point</option>
+            <option value="sphere">Sphere</option>
+            <option value="cone">Cone</option>
+            <option value="box">Box</option>
+          </select>
+        </label>
+        <Num label="Size" value={props.shapeRadius} step={0.05} min={0} onLive={(v) => setNum('shapeRadius', v)} onCommit={() => {}} />
+      </Module>
+      <Module id="velocity" title="Add Velocity">
+        <Num label="Speed" value={props.speed} step={0.2} min={0} onLive={(v) => setNum('speed', v)} onCommit={() => {}} />
+        {props.shape === 'cone' && (
+          <Num label="Spread°" value={props.spreadDeg} step={1} min={0} max={90} onLive={(v) => setNum('spreadDeg', v)} onCommit={() => {}} />
+        )}
+      </Module>
+      <Module id="forces" title="Forces (Gravity + Drag)">
+        <Num label="Gravity" value={props.gravity} step={0.2} onLive={(v) => setNum('gravity', v)} onCommit={() => {}} />
+        <Num label="Drag" value={props.drag} step={0.1} min={0} onLive={(v) => setNum('drag', v)} onCommit={() => {}} />
+      </Module>
+      <Module id="colorOverLife" title="Color Over Life">
+        <ColorField label="Start" value={props.colorStart} onLive={(v) => { props.colorStart = v; touch() }} onCommit={() => {}} />
+        <ColorField label="End" value={props.colorEnd} onLive={(v) => { props.colorEnd = v; touch() }} onCommit={() => {}} />
+      </Module>
+      <Module id="sizeOverLife" title="Size Over Life">
+        <Num label="Start" value={props.sizeStart} step={0.02} min={0.01} onLive={(v) => setNum('sizeStart', v)} onCommit={() => {}} />
+        <Num label="End" value={props.sizeEnd} step={0.02} min={0} onLive={(v) => setNum('sizeEnd', v)} onCommit={() => {}} />
+      </Module>
+      <Module id="renderer" title="Sprite Renderer">
+        <Check label="Additive Glow" value={props.additive} onToggle={(v) => { props.additive = v; sys.refresh(); touch() }} />
+        <Num label="Max Particles" value={props.maxParticles} step={50} min={10} onLive={(v) => setNum('maxParticles', v)} onCommit={() => {}} />
+      </Module>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Uncheck a module to disable it — Niagara-style stack.</div>
     </Section>
   )
 }
-
 function FoliageSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const foliagePaint = useEditor((s) => s.foliagePaint)

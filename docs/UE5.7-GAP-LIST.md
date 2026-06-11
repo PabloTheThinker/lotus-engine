@@ -91,7 +91,7 @@
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
 | Emitter + params (rate/burst/shapes/velocity/gravity/drag/color & size over life) | ✅ | — |
-| Module *stack* UI (reorderable modules) | ⏳ | Restructure Details section into a stacked-module list — the architecture is the remake |
+| Module *stack* UI | ✅ | v0.27: Spawn/Shape/Velocity/Forces/ColorOverLife/SizeOverLife/Renderer cards with enable toggles, sim-respected (A/B verified: 4.0m vs 0.4m rise) |
 | Curve-driven params (color ramp / size curve widgets) | ⏳ | Reusable gradient + curve widgets (shared with Sequencer) |
 | Ribbon / mesh renderers | ⏳ | Trail ribbons (Line2/strip), InstancedMesh renderer |
 | GPU sim | 🚫 | WebGPU compute later; CPU ≤5k fine |

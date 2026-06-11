@@ -25,6 +25,8 @@ export interface ParticleProps {
   opacityEnd: number
   maxParticles: number
   additive: boolean
+  /** Niagara-style module stack: disabled module names */
+  modulesOff?: string[]
 }
 
 export const DEFAULT_PARTICLES: ParticleProps = {
@@ -169,7 +171,8 @@ export class ParticleSystem {
 
   update(dt: number, emitting: boolean) {
     const p = this.props
-    if (emitting) {
+    const off = (m: string) => p.modulesOff?.includes(m)
+    if (emitting && !off('spawn')) {
       this.spawnAcc += p.rate * dt
       while (this.spawnAcc >= 1) {
         this.spawnAcc -= 1
@@ -177,8 +180,9 @@ export class ParticleSystem {
       }
     }
     this.cStart.set(p.colorStart)
-    this.cEnd.set(p.colorEnd)
-    const dragMul = Math.max(0, 1 - p.drag * dt)
+    this.cEnd.set(off('colorOverLife') ? p.colorStart : p.colorEnd)
+    const gravity = off('forces') ? 0 : p.gravity
+    const dragMul = off('forces') ? 1 : Math.max(0, 1 - p.drag * dt)
 
     for (let i = 0; i < this.cap; i++) {
       if (!this.alive[i]) {
@@ -192,7 +196,7 @@ export class ParticleSystem {
         continue
       }
       const i3 = i * 3
-      this.vel[i3 + 1] += p.gravity * dt
+      this.vel[i3 + 1] += gravity * dt
       this.vel[i3] *= dragMul
       this.vel[i3 + 1] *= dragMul
       this.vel[i3 + 2] *= dragMul
@@ -206,8 +210,8 @@ export class ParticleSystem {
       this.colors[i4] = this.tmp.r
       this.colors[i4 + 1] = this.tmp.g
       this.colors[i4 + 2] = this.tmp.b
-      this.colors[i4 + 3] = THREE.MathUtils.lerp(1, p.opacityEnd, t)
-      this.sizes[i] = THREE.MathUtils.lerp(p.sizeStart, p.sizeEnd, t)
+      this.colors[i4 + 3] = off('sizeOverLife') ? 1 : THREE.MathUtils.lerp(1, p.opacityEnd, t)
+      this.sizes[i] = off('sizeOverLife') ? p.sizeStart : THREE.MathUtils.lerp(p.sizeStart, p.sizeEnd, t)
     }
 
     const geo = this.points.geometry
