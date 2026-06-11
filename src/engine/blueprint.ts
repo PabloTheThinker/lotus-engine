@@ -18,9 +18,16 @@ export interface BPEdge {
   to: string
 }
 
+export interface BPVariable {
+  name: string
+  value: number
+}
+
 export interface BlueprintGraph {
   nodes: BPNode[]
   edges: BPEdge[]
+  /** typed blueprint variables (compiled as locals, set/get via nodes) */
+  variables?: BPVariable[]
 }
 
 export interface BPPropDef {
@@ -33,13 +40,19 @@ export interface BPPropDef {
 
 export interface BPNodeDef {
   title: string
-  category: 'Events' | 'Actions' | 'Flow'
+  category: 'Events' | 'Actions' | 'Flow' | 'Data'
   color: string
   hasExecIn: boolean
   execOuts: string[] // port names
   props: BPPropDef[]
-  /** emit JS given the node and the compiled code of each exec-out chain */
-  emit: (node: BPNode, outs: Record<string, string>) => string
+  /** prop keys that accept data-pin wires (expression overrides the literal) */
+  dataIns?: string[]
+  /** pure data node: no exec pins, one data output, evaluated lazily on pull */
+  pure?: boolean
+  /** emit JS given the node, exec-out chains, and data-input expressions */
+  emit: (node: BPNode, outs: Record<string, string>, ins?: Record<string, string>) => string
+  /** pure nodes: emit a JS expression given data-input expressions */
+  emitExpr?: (node: BPNode, ins: Record<string, string>) => string
 }
 
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0)
@@ -98,9 +111,10 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
       { key: 'z', label: 'Z', kind: 'number', default: 0 },
       { key: 'perSecond', label: 'Per Second', kind: 'check', default: true },
     ],
-    emit: (n, o) => {
+    dataIns: ['x', 'y', 'z'],
+    emit: (n, o, ins) => {
       const m = n.props.perSecond ? '__dt' : '1'
-      return `actor.root.position.x += ${num(n.props.x)} * ${m};\nactor.root.position.y += ${num(n.props.y)} * ${m};\nactor.root.position.z += ${num(n.props.z)} * ${m};\n${o.then ?? ''}`
+      return `actor.root.position.x += (${ins?.x ?? num(n.props.x)}) * ${m};\nactor.root.position.y += (${ins?.y ?? num(n.props.y)}) * ${m};\nactor.root.position.z += (${ins?.z ?? num(n.props.z)}) * ${m};\n${o.then ?? ''}`
     },
   },
   RotateBy: {
@@ -216,9 +230,11 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     hasExecIn: true,
     execOuts: ['true', 'false'],
     props: [
-      { key: 'condition', label: 'Condition', kind: 'select', options: ['key down', 'player near', 'visible'], default: 'key down' },
+      { key: 'condition', label: 'Condition', kind: 'select', options: ['key down', 'player near', 'visible', 'variable >'], default: 'key down' },
       { key: 'key', label: 'Key (if key)', kind: 'key', default: 'ShiftLeft' },
       { key: 'distance', label: 'Dist (if near)', kind: 'number', default: 3 },
+      { key: 'variable', label: 'Var (if var)', kind: 'text', default: 'speed' },
+      { key: 'threshold', label: 'Greater Than', kind: 'number', default: 0 },
     ],
     emit: (n, o) => {
       let cond = 'false'
@@ -226,6 +242,7 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
       else if (n.props.condition === 'player near')
         cond = `(api.pawnPosition() && api.pawnPosition().distanceTo(actor.root.position) < ${num(n.props.distance)})`
       else if (n.props.condition === 'visible') cond = 'actor.root.visible'
+      else if (n.props.condition === 'variable >') cond = `((__vars[${str(n.props.variable)}] ?? 0) > ${num(n.props.threshold)})`
       return `if (${cond}) {\n${o.true ?? ''}\n} else {\n${o.false ?? ''}\n}`
     },
   },
@@ -236,7 +253,8 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     hasExecIn: true,
     execOuts: ['then'],
     props: [{ key: 'seconds', label: 'Seconds', kind: 'number', default: 1 }],
-    emit: (n, o) => `__after(${num(n.props.seconds)}, () => {\n${o.then ?? ''}\n});`,
+    dataIns: ['seconds'],
+    emit: (n, o, ins) => `__after(${ins?.seconds ?? num(n.props.seconds)}, () => {\n${o.then ?? ''}\n});`,
   },
   Sequence: {
     title: 'Sequence',
@@ -247,6 +265,122 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     props: [],
     emit: (_n, o) => `${o.first ?? ''}\n${o.second ?? ''}`,
   },
+  // ───── Data (pure — lazily pulled through data pins) ─────
+  DataNumber: {
+    title: 'Number',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [{ key: 'value', label: 'Value', kind: 'number', default: 1 }],
+    emit: () => '',
+    emitExpr: (n) => `${num(n.props.value)}`,
+  },
+  DataVariable: {
+    title: 'Get Variable',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [{ key: 'name', label: 'Variable', kind: 'text', default: 'speed' }],
+    emit: () => '',
+    emitExpr: (n) => `(__vars[${str(n.props.name)}] ?? 0)`,
+  },
+  DataTime: {
+    title: 'Game Time',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [],
+    emit: () => '',
+    emitExpr: () => 'api.time()',
+  },
+  DataRandom: {
+    title: 'Random Range',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [
+      { key: 'min', label: 'Min', kind: 'number', default: 0 },
+      { key: 'max', label: 'Max', kind: 'number', default: 1 },
+    ],
+    emit: () => '',
+    emitExpr: (n) => `(${num(n.props.min)} + Math.random() * ${num(n.props.max) - num(n.props.min)})`,
+  },
+  DataDistanceToPlayer: {
+    title: 'Distance To Player',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [],
+    emit: () => '',
+    emitExpr: () => `(api.pawnPosition() ? api.pawnPosition().distanceTo(actor.root.position) : 9999)`,
+  },
+  DataAdd: {
+    title: 'Add (a+b)',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [
+      { key: 'a', label: 'A', kind: 'number', default: 0 },
+      { key: 'b', label: 'B', kind: 'number', default: 0 },
+    ],
+    dataIns: ['a', 'b'],
+    emit: () => '',
+    emitExpr: (n, ins) => `(${ins.a ?? num(n.props.a)} + ${ins.b ?? num(n.props.b)})`,
+  },
+  DataMultiply: {
+    title: 'Multiply (a×b)',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [
+      { key: 'a', label: 'A', kind: 'number', default: 1 },
+      { key: 'b', label: 'B', kind: 'number', default: 1 },
+    ],
+    dataIns: ['a', 'b'],
+    emit: () => '',
+    emitExpr: (n, ins) => `(${ins.a ?? num(n.props.a)} * ${ins.b ?? num(n.props.b)})`,
+  },
+  DataSine: {
+    title: 'Sine',
+    category: 'Data',
+    color: '#2e7d6e',
+    hasExecIn: false,
+    execOuts: [],
+    pure: true,
+    props: [{ key: 'in', label: 'In', kind: 'number', default: 0 }],
+    dataIns: ['in'],
+    emit: () => '',
+    emitExpr: (n, ins) => `Math.sin(${ins.in ?? num(n.props.in)})`,
+  },
+
+  SetVariable: {
+    title: 'Set Variable',
+    category: 'Actions',
+    color: '#2f6fab',
+    hasExecIn: true,
+    execOuts: ['then'],
+    props: [
+      { key: 'name', label: 'Variable', kind: 'text', default: 'speed' },
+      { key: 'value', label: 'Value', kind: 'number', default: 1 },
+    ],
+    dataIns: ['value'],
+    emit: (n, o, ins) => `__vars[${str(n.props.name)}] = ${ins?.value ?? num(n.props.value)};\n${o.then ?? ''}`,
+  },
+
   ForLoop: {
     title: 'For Loop',
     category: 'Flow',
@@ -294,9 +428,32 @@ export function emptyGraph(): BlueprintGraph {
 export function compileBlueprint(graph: BlueprintGraph): string {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
 
+  // lazy data-pin pull: walk backwards through pure nodes building an expression
+  const dataExpr = (nodeId: string, depth: number): string => {
+    if (depth > 32) return '0'
+    const node = byId.get(nodeId)
+    const def = node && NODE_DEFS[node.type]
+    if (!node || !def?.pure || !def.emitExpr) return '0'
+    const ins: Record<string, string> = {}
+    for (const key of def.dataIns ?? []) {
+      const edge = graph.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+      if (edge) ins[key] = dataExpr(edge.from.split(':')[0], depth + 1)
+    }
+    return def.emitExpr(node, ins)
+  }
+
+  const dataInsFor = (node: BPNode, def: BPNodeDef): Record<string, string> => {
+    const ins: Record<string, string> = {}
+    for (const key of def.dataIns ?? []) {
+      const edge = graph.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+      if (edge) ins[key] = dataExpr(edge.from.split(':')[0], 0)
+    }
+    return ins
+  }
+
   const follow = (nodeId: string, port: string, depth: number): string => {
     if (depth > 64) return '/* chain too deep */'
-    const edge = graph.edges.find((e) => e.from === `${nodeId}:${port}`)
+    const edge = graph.edges.find((e) => e.from === `${nodeId}:${port}` && !e.to.includes(':prop:'))
     if (!edge) return ''
     const next = byId.get(edge.to.split(':')[0])
     if (!next) return ''
@@ -308,7 +465,7 @@ export function compileBlueprint(graph: BlueprintGraph): string {
     if (!def) return `/* unknown node ${node.type} */`
     const outs: Record<string, string> = {}
     for (const port of def.execOuts) outs[port] = follow(node.id, port, depth)
-    return def.emit(node, outs)
+    return def.emit(node, outs, dataInsFor(node, def))
   }
 
   const beginChains: string[] = []
@@ -322,8 +479,14 @@ export function compileBlueprint(graph: BlueprintGraph): string {
     else tickChains.push(code)
   }
 
+  const varInit = (graph.variables ?? [])
+    .map((v) => `__vars[${JSON.stringify(v.name)}] = ${Number(v.value) || 0}`)
+    .join('\n')
+
   return `// ── compiled from Blueprint — edits here are overwritten on next compile ──
 let __dead = false
+const __vars = {}
+${varInit}
 const __near = {}
 const __once = {}
 const __flip = {}

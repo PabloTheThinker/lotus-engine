@@ -40,8 +40,8 @@
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
 | Blueprint exec-pin graph (Events/Actions/Flow) → runs in game | ✅ | — (compiles to the script slot) |
-| **Data pins** (typed, lazy-pulled through pure nodes) | ⏳ | The other half of the dual-graph: typed value wires, pure math/getter nodes, auto-conversion nodes |
-| Variables (get/set, instance-editable) | ⏳ | Variable panel on the BP editor; getter/setter nodes; maps to @export vars |
+| **Data pins** (lazy-pulled through pure nodes) | ✅ | v0.26: pure Data nodes (Number/Get Variable/Time/Random/DistanceToPlayer/Add/Multiply/Sine) wire into ◦ data inputs on actions (MoveBy xyz, Delay, SetVariable); expressions inline at compile. Typed pins + auto-conversion = polish |
+| Variables (get/set) | ✅ | v0.26: + Variable strip, Get Variable (pure) + Set Variable (action, data-wireable), Branch 'variable >' condition |
 | Functions / Macros (subgraphs) | ⏳ | Collapse selection to subgraph; inline at compile |
 | Flow nodes: ForLoop, DoOnce, FlipFlop | ✅ | Shipped (v0.24, runtime-verified). Gate/MultiGate/Switch = next |
 | Event Dispatchers / BP Interfaces | ◐ | Signals (api.emit/on) cover the runtime; add Bind/Call BP nodes |

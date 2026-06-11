@@ -126,6 +126,35 @@ export function BlueprintEditor() {
         <button onClick={(e) => { const p = canvasPoint(e as unknown as React.MouseEvent); setAddMenu({ x: p.x, y: p.y }) }}>
           + Add Node
         </button>
+        <button
+          title="Blueprint variables (read with Get Variable, write with Set Variable)"
+          onClick={() => {
+            const name = prompt('Variable name?', 'speed')
+            if (!name) return
+            const value = parseFloat(prompt('Default value?', '1') ?? '1') || 0
+            mutate((g) => {
+              g.variables = g.variables ?? []
+              g.variables = g.variables.filter((v) => v.name !== name)
+              g.variables.push({ name, value })
+            })
+          }}
+        >
+          + Variable
+        </button>
+        {(graph.variables ?? []).map((v) => (
+          <span key={v.name} className="bp-var" title="Right-click removes">
+            <em
+              onContextMenu={(e) => {
+                e.preventDefault()
+                mutate((g) => {
+                  g.variables = (g.variables ?? []).filter((x) => x.name !== v.name)
+                })
+              }}
+            >
+              {v.name}={v.value}
+            </em>
+          </span>
+        ))}
         <button onClick={() => mutate((g) => Object.assign(g, emptyGraph()))}>Clear</button>
         <button className="apply" onClick={compile}>
           ⚙ Compile
@@ -172,16 +201,24 @@ export function BlueprintEditor() {
           <g transform={`translate(${offset.x},${offset.y})`}>
             {graph.edges.map((edge, i) => {
               const [fn, fp] = edge.from.split(':')
-              const [tn] = edge.to.split(':')
+              const toParts = edge.to.split(':')
+              const tn = toParts[0]
               const a = graph.nodes.find((n) => n.id === fn)
               const b = graph.nodes.find((n) => n.id === tn)
               if (!a || !b) return null
+              const isData = toParts[1] === 'prop'
               const p1 = portPos(a, fp, true)
-              const p2 = portPos(b, 'in', false)
+              let p2 = portPos(b, 'in', false)
+              if (isData) {
+                const bdef = NODE_DEFS[b.type]
+                const propIdx = bdef?.props.findIndex((pr) => pr.key === toParts[2]) ?? 0
+                const portCount = (bdef?.hasExecIn ? 1 : 0) + (bdef?.execOuts.length ?? 0)
+                p2 = { x: b.x, y: b.y + HEADER_H + 10 + Math.max(portCount - 1, 0) * 4 + propIdx * 22 + 12 }
+              }
               return (
                 <path
                   key={i}
-                  className="bp-wire"
+                  className={`bp-wire ${isData ? 'data' : ''}`}
                   d={edgePath(p1.x, p1.y, p2.x, p2.y)}
                   onClick={() => mutate((g) => g.edges.splice(g.edges.indexOf(g.edges.find((e2) => e2.from === edge.from && e2.to === edge.to)!), 1))}
                 />
@@ -235,6 +272,16 @@ export function BlueprintEditor() {
                     ▸
                   </div>
                 )}
+                {def.pure && (
+                  <div
+                    className={`bp-port out data ${pendingFrom === `${node.id}:data` ? 'pending' : ''}`}
+                    style={{ top: 8 }}
+                    title="data out — wire into a ◦ data input"
+                    onClick={() => onPortClick(node.id, 'data', true)}
+                  >
+                    ●
+                  </div>
+                )}
                 {def.execOuts.map((port, i) => (
                   <div
                     key={port}
@@ -248,7 +295,29 @@ export function BlueprintEditor() {
                 ))}
                 {def.props.map((prop) => (
                   <label className="bp-prop" key={prop.key}>
-                    <span>{prop.label}</span>
+                    <span>
+                      {def.dataIns?.includes(prop.key) && (
+                        <button
+                          className="bp-data-in"
+                          title="data input — click after picking a data out"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            if (pendingFrom) {
+                              const from = pendingFrom
+                              mutate((g) => {
+                                g.edges = g.edges.filter((ed) => ed.to !== `${node.id}:prop:${prop.key}`)
+                                g.edges.push({ from, to: `${node.id}:prop:${prop.key}` })
+                              })
+                              setPendingFrom(null)
+                            }
+                          }}
+                        >
+                          ◦
+                        </button>
+                      )}
+                      {prop.label}
+                    </span>
                     {prop.kind === 'check' ? (
                       <input
                         type="checkbox"
@@ -296,7 +365,7 @@ export function BlueprintEditor() {
 
         {addMenu && (
           <div className="bp-add-menu" style={{ left: addMenu.x + offset.x, top: addMenu.y + offset.y }}>
-            {(['Events', 'Actions', 'Flow'] as const).map((cat) => (
+            {(['Events', 'Actions', 'Flow', 'Data'] as const).map((cat) => (
               <div key={cat}>
                 <div className="bp-add-cat">{cat}</div>
                 {Object.entries(NODE_DEFS)

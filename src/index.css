@@ -1285,3 +1285,9 @@ input[type='checkbox'] {
 
 .seq-cut, .seq-event { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10px; cursor: pointer; z-index: 2; }
 .seq-event { top: auto; bottom: 0; }
+
+.bp-wire.data { stroke: #2e d; stroke: #35c9a8; }
+.bp-port.out.data { color: #35c9a8; }
+.bp-data-in { background: transparent; border: none; color: #35c9a8; font-size: 12px; padding: 0 2px 0 0; cursor: crosshair; }
+.bp-var { font-size: 10px; color: #35c9a8; background: rgba(53,201,168,.12); border: 1px solid rgba(53,201,168,.3); border-radius: 8px; padding: 1px 7px; }
+.bp-var em { font-style: normal; cursor: context-menu; }
