@@ -138,6 +138,34 @@ function MobilitySection({ actor }: { actor: Actor }) {
   )
 }
 
+function AnimationSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const clips = (actor.animations ?? []).map((c) => c.name)
+  if (clips.length === 0) return null
+  return (
+    <Section title="Animation">
+      <label className="field">
+        <span>Auto Play</span>
+        <select
+          value={actor.autoPlayClip ?? ''}
+          onChange={(e) => {
+            actor.autoPlayClip = e.target.value || undefined
+            touch()
+          }}
+        >
+          <option value="">(none)</option>
+          {clips.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        {clips.length} clip(s). Scripts: api.playAnimation(actor, '{clips[0]}')
+      </div>
+    </Section>
+  )
+}
+
 function ProbeSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const setStatus = useEditor((s) => s.setStatus)
@@ -452,6 +480,7 @@ function PawnSection({ actor }: { actor: Actor }) {
           <option value="fly">Fly (spectator)</option>
           <option value="firstperson">First Person</option>
           <option value="thirdperson">Third Person</option>
+          <option value="vehicle">Vehicle (arcade car)</option>
         </select>
       </label>
       <div className="panel-empty" style={{ padding: '2px 0' }}>
@@ -466,11 +495,18 @@ function PhysicsSection({ actor }: { actor: Actor }) {
   const props = actor.physicsProps!
   const setMode = (mode: typeof props.mode) => {
     const prev = props.mode
+    const prevMobility = actor.mobility
     runCommand(
       new PropertyCommand(
         `Physics: ${mode}`,
-        () => (props.mode = mode),
-        () => (props.mode = prev),
+        () => {
+          props.mode = mode
+          if (mode === 'dynamic') actor.mobility = 'movable' // dynamic requires Movable
+        },
+        () => {
+          props.mode = prev
+          actor.mobility = prevMobility
+        },
       ),
     )
   }
@@ -493,6 +529,14 @@ function PhysicsSection({ actor }: { actor: Actor }) {
         <>
           <Num label="Friction" value={props.friction} step={0.05} min={0} max={2} onLive={(v) => { props.friction = v; touch() }} onCommit={() => {}} />
           <Num label="Bounciness" value={props.restitution} step={0.05} min={0} max={1} onLive={(v) => { props.restitution = v; touch() }} onCommit={() => {}} />
+        </>
+      )}
+      {props.mode === 'dynamic' && (
+        <>
+          <Check label="Breakable" value={!!props.breakable} onToggle={(v) => { props.breakable = v; touch() }} />
+          {props.breakable && (
+            <Num label="Break Force" value={props.breakThreshold ?? 6} step={0.5} min={1} onLive={(v) => { props.breakThreshold = v; touch() }} onCommit={() => {}} />
+          )}
         </>
       )}
       <div className="panel-empty" style={{ padding: '2px 0' }}>Simulates during Play.</div>
@@ -839,6 +883,7 @@ export function Details() {
         {actor.script && <ScriptVarsSection actor={actor} />}
         <StreamingSection actor={actor} />
         {actor.probeProps && <ProbeSection actor={actor} />}
+        {(actor.animations?.length ?? 0) > 0 && <AnimationSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
         {actor.foliageProps && <FoliageSection actor={actor} />}

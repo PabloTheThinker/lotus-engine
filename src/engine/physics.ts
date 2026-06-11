@@ -30,11 +30,18 @@ export function physicsReady(): boolean {
 interface BodyBinding {
   actor: Actor
   body: RAPIER_NS.RigidBody
+  prevVel?: THREE.Vector3
+}
+
+interface Fragment {
+  mesh: THREE.Mesh
+  body: RAPIER_NS.RigidBody
 }
 
 export class PhysicsSim {
   private world: RAPIER_NS.World | null = null
   private bindings: BodyBinding[] = []
+  private fragments: Fragment[] = []
 
   start(actors: Iterable<Actor>) {
     if (!RAPIER) return
@@ -116,10 +123,67 @@ export class PhysicsSim {
     }
   }
 
+  /** shatter a breakable actor into flying fragment cubes (Chaos-lite) */
+  private shatter(binding: BodyBinding) {
+    if (!RAPIER || !this.world || !binding.actor.mesh) return
+    const actor = binding.actor
+    const scene = actor.root.parent
+    if (!scene) return
+    const pos = new THREE.Vector3()
+    actor.root.getWorldPosition(pos)
+    const scale = new THREE.Vector3()
+    actor.root.getWorldScale(scale)
+    const color = (actor.mesh!.material as THREE.MeshStandardMaterial).color?.clone() ?? new THREE.Color(0x888888)
+    actor.root.visible = false
+    // drop the original body from simulation
+    this.world.removeRigidBody(binding.body)
+    this.bindings = this.bindings.filter((b) => b !== binding)
+    const n = 8
+    const frag = Math.max(0.12, (scale.x + scale.y + scale.z) / 3 / 4)
+    for (let i = 0; i < n; i++) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(frag, frag, frag),
+        new THREE.MeshStandardMaterial({ color, roughness: 0.7 }),
+      )
+      mesh.castShadow = true
+      mesh.userData.isEditorOnly = true
+      const off = new THREE.Vector3((Math.random() - 0.5), Math.random(), (Math.random() - 0.5)).multiplyScalar(0.4)
+      mesh.position.copy(pos).add(off)
+      scene.add(mesh)
+      const desc = RAPIER.RigidBodyDesc.dynamic().setTranslation(mesh.position.x, mesh.position.y, mesh.position.z)
+      const body = this.world.createRigidBody(desc)
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid(frag / 2, frag / 2, frag / 2).setRestitution(0.4), body)
+      body.applyImpulse({ x: off.x * 3, y: 1.5 + Math.random() * 2, z: off.z * 3 }, true)
+      this.fragments.push({ mesh, body })
+    }
+  }
+
   step(dt: number) {
     if (!this.world) return
     this.world.timestep = Math.min(dt, 1 / 30)
     this.world.step()
+    // breakable check: sharp velocity change = hard impact
+    for (const binding of [...this.bindings]) {
+      const props = binding.actor.physicsProps
+      if (!props?.breakable) continue
+      const lv = binding.body.linvel()
+      const vel = new THREE.Vector3(lv.x, lv.y, lv.z)
+      if (binding.prevVel) {
+        const dv = binding.prevVel.distanceTo(vel)
+        if (dv > (props.breakThreshold ?? 6)) {
+          this.shatter(binding)
+          continue
+        }
+      }
+      binding.prevVel = vel
+    }
+    // sync fragments
+    for (const f of this.fragments) {
+      const t = f.body.translation()
+      const r = f.body.rotation()
+      f.mesh.position.set(t.x, t.y, t.z)
+      f.mesh.quaternion.set(r.x, r.y, r.z, r.w)
+    }
     for (const { actor, body } of this.bindings) {
       const t = body.translation()
       const r = body.rotation()
@@ -131,6 +195,12 @@ export class PhysicsSim {
   }
 
   stop() {
+    for (const f of this.fragments) {
+      f.mesh.removeFromParent()
+      f.mesh.geometry.dispose()
+      ;(f.mesh.material as THREE.Material).dispose()
+    }
+    this.fragments = []
     this.world?.free()
     this.world = null
     this.bindings = []

@@ -120,7 +120,10 @@ export function executeAICommands(commands: AICommand[]): string[] {
           if (c.name) sa.name = String(c.name)
           if (c.scale) sa.transform.scale = c.scale as [number, number, number]
           if (c.color && sa.material) sa.material.color = String(c.color)
-          if (c.physics && sa.material) sa.physics = { mode: c.physics as 'none' | 'static' | 'dynamic', mass: 1, friction: 0.5, restitution: 0.2 }
+          if (c.physics && sa.material) {
+            sa.physics = { mode: c.physics as 'none' | 'static' | 'dynamic', mass: 1, friction: 0.5, restitution: 0.2 }
+            if (c.physics === 'dynamic') sa.mobility = 'movable' // dynamic requires Movable
+          }
           if (c.mobility) sa.mobility = c.mobility as 'static' | 'stationary' | 'movable'
           if (Array.isArray(c.tags)) sa.tags = c.tags.map(String)
           runCommand(new AddActorCommand(sa))

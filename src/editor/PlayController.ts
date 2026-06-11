@@ -27,6 +27,9 @@ export class PlayController {
 
   // character state (first/third person)
   private feet = new THREE.Vector3()
+  // vehicle state
+  private carSpeed = 0
+  private carHeading = 0
   private vy = 0
   private grounded = false
   private spawnPoint = new THREE.Vector3()
@@ -41,7 +44,7 @@ export class PlayController {
     if (!this.active || document.pointerLockElement !== this.dom) return
     this.yaw -= e.movementX * 0.0023
     this.pitch -= e.movementY * 0.0023
-    const limit = this.mode === 'thirdperson' ? Math.PI / 3 : Math.PI / 2 - 0.01
+    const limit = this.mode === 'thirdperson' || this.mode === 'vehicle' ? Math.PI / 3 : Math.PI / 2 - 0.01
     this.pitch = Math.max(-limit, Math.min(limit, this.pitch))
   }
   private onKeyDown = (e: KeyboardEvent) => this.keys.add(e.code)
@@ -96,7 +99,9 @@ export class PlayController {
       pos.set(0, 0, 0) // UE fallback: world origin
       this.yaw = 0
     }
-    this.pitch = this.mode === 'thirdperson' ? -0.25 : 0
+    this.pitch = this.mode === 'thirdperson' || this.mode === 'vehicle' ? -0.25 : 0
+    this.carSpeed = 0
+    this.carHeading = this.yaw
     this.spawnPoint.copy(pos)
     this.feet.copy(pos)
     this.vy = 0
@@ -105,7 +110,9 @@ export class PlayController {
     if (this.mode === 'fly') {
       this.camera.position.copy(pos).add(new THREE.Vector3(0, this.eyeHeight, 0))
     }
-    this.body.visible = this.mode === 'thirdperson'
+    this.body.visible = this.mode === 'thirdperson' || this.mode === 'vehicle'
+    this.body.scale.setScalar(this.mode === 'vehicle' ? 1.4 : 1)
+    this.body.rotation.x = this.mode === 'vehicle' ? -Math.PI / 2 + 0.12 : 0
     this.syncCamera()
     this.dom.requestPointerLock?.()
   }
@@ -188,6 +195,13 @@ export class PlayController {
 
   private syncCamera() {
     this.euler.set(this.pitch, this.yaw, 0)
+    if (this.mode === 'vehicle') {
+      const head = this.feet.clone().add(new THREE.Vector3(0, 1.4, 0))
+      const back = new THREE.Vector3(0, 0.35, 1).applyEuler(new THREE.Euler(0, this.carHeading, 0)).multiplyScalar(6.5)
+      this.camera.position.copy(head).add(back)
+      this.camera.lookAt(head)
+      return
+    }
     if (this.mode === 'thirdperson') {
       const head = this.feet.clone().add(new THREE.Vector3(0, 1.6, 0))
       const back = new THREE.Vector3(0, 0, 1).applyEuler(this.euler).multiplyScalar(this.boomLength)
@@ -214,6 +228,29 @@ export class PlayController {
     if (this.keys.has('KeyA')) move.x -= 1
     if (this.keys.has('KeyD')) move.x += 1
 
+    if (this.mode === 'vehicle') {
+      // arcade car: throttle/brake + speed-scaled steering, ground-following
+      const accel = 14
+      const maxSpeed = this.keys.has('ShiftLeft') ? 28 : 16
+      if (this.keys.has('KeyW')) this.carSpeed = Math.min(maxSpeed, this.carSpeed + accel * dt)
+      else if (this.keys.has('KeyS')) this.carSpeed = Math.max(-7, this.carSpeed - accel * dt)
+      else this.carSpeed *= Math.max(0, 1 - 1.4 * dt)
+      const steer = (this.keys.has('KeyA') ? 1 : 0) - (this.keys.has('KeyD') ? 1 : 0)
+      this.carHeading += steer * Math.min(1, Math.abs(this.carSpeed) / 6) * 1.9 * dt * Math.sign(this.carSpeed || 1)
+      let dx = -Math.sin(this.carHeading) * this.carSpeed * dt
+      let dz = -Math.cos(this.carHeading) * this.carSpeed * dt
+      ;[dx, dz] = this.collideWalls(dx, dz)
+      if ((dx === 0 && dz === 0) && Math.abs(this.carSpeed) > 4) this.carSpeed *= 0.4 // crash slowdown
+      this.feet.x += dx
+      this.feet.z += dz
+      const g = this.groundHeightAt(this.feet)
+      if (g !== null) this.feet.y = THREE.MathUtils.lerp(this.feet.y, g, Math.min(1, 10 * dt))
+      if (this.feet.y < -60) { this.feet.copy(this.spawnPoint); this.carSpeed = 0 }
+      this.body.position.copy(this.feet)
+      this.body.rotation.y = this.carHeading
+      this.syncCamera()
+      return
+    }
     if (this.mode === 'fly') {
       if (this.keys.has('Space')) move.y += 1
       if (this.keys.has('KeyC')) move.y -= 1

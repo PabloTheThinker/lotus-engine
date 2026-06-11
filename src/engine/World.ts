@@ -48,7 +48,7 @@ export class World {
   envVersion = 0
 
   // imported glTF assets: raw base64 for serialization + template scene for cloning
-  assets = new Map<string, { name: string; data: string; template: THREE.Group }>()
+  assets = new Map<string, { name: string; data: string; template: THREE.Group; animations?: THREE.AnimationClip[] }>()
 
   /** master Sequencer timeline (UE Sequencer analog) */
   sequence: Sequence = emptySequence()
@@ -199,7 +199,10 @@ export class World {
     if (this.sequence.autoPlay && this.sequence.tracks.length > 0) {
       sampleSequence(this, this.sequence, this.playClock % this.sequence.duration)
     }
-    for (const a of this.actors.values()) a.tick(dt)
+    for (const a of this.actors.values()) {
+      a.tick(dt)
+      a.mixer?.update(dt)
+    }
     tickGameplay(dt, scriptLog)
     if (this.playApi) {
       tickBTs(dt, () => this.pawnPosition, this.playApi.emit, (m) => scriptLog('log', m))
@@ -229,14 +232,16 @@ export class World {
     const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
     const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '')
     const template = gltf.scene
-    this.assets.set(assetId, { name, data, template })
+    this.assets.set(assetId, { name, data, template, animations: gltf.animations })
     return assetId
   }
 
   instantiateAsset(assetId: string, name: string, id?: string): Actor | null {
     const asset = this.assets.get(assetId)
     if (!asset) return null
-    return createImportedMeshActor(name, assetId, asset.template.clone(true), id)
+    const actor = createImportedMeshActor(name, assetId, asset.template.clone(true), id)
+    if (asset.animations?.length) actor.animations = asset.animations
+    return actor
   }
 
   // ---- serialization ----
@@ -278,7 +283,7 @@ export class World {
     for (const [id, asset] of Object.entries(level.assets ?? {})) {
       const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0))
       const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '')
-      this.assets.set(id, { ...asset, template: gltf.scene })
+      this.assets.set(id, { ...asset, template: gltf.scene, animations: gltf.animations })
     }
     for (const sa of level.actors) {
       const actor = this.instantiate(sa)
@@ -388,6 +393,7 @@ export class World {
     if (sa.script) actor.script = sa.script
     if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
     if (sa.cullDistance) actor.cullDistance = sa.cullDistance
+    if (sa.autoPlayClip) actor.autoPlayClip = sa.autoPlayClip
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]

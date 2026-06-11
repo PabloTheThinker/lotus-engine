@@ -113,6 +113,9 @@ export interface PhysicsProps {
   mass: number
   friction: number
   restitution: number
+  /** Chaos-lite destruction: shatter into fragments on hard impact */
+  breakable?: boolean
+  breakThreshold?: number
 }
 
 export const DEFAULT_PHYSICS: PhysicsProps = {
@@ -176,6 +179,8 @@ export interface SerializedActor {
   probe?: { radius: number }
   /** CustomMesh (CSG results) — packed geometry */
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
+  /** animation clip to play at BeginPlay */
+  autoPlayClip?: string
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
@@ -216,7 +221,7 @@ export const DEFAULT_FOLIAGE: FoliageProps = {
   instances: [],
 }
 
-export type PawnMode = 'fly' | 'firstperson' | 'thirdperson'
+export type PawnMode = 'fly' | 'firstperson' | 'thirdperson' | 'vehicle'
 
 export interface EnvironmentSettings {
   background: string

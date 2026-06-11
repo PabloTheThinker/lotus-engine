@@ -68,6 +68,12 @@ export class Actor {
   landscapeProps?: LandscapeProps
   probeProps?: { radius: number }
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
+  /** animation clips (from glTF or scripts) + play-time mixer state */
+  animations?: THREE.AnimationClip[]
+  mixer?: THREE.AnimationMixer
+  currentAction?: THREE.AnimationAction
+  /** clip to start playing at BeginPlay */
+  autoPlayClip?: string
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -110,9 +116,32 @@ export class Actor {
     this.root.visible = v
   }
 
+  /** crossfade to a named clip (UE play-montage / Godot AnimationPlayer.play) */
+  playAnimation(clipName: string, opts: { loop?: boolean; fadeIn?: number; speed?: number } = {}): boolean {
+    const clip = this.animations?.find((c) => c.name === clipName)
+    if (!clip) return false
+    if (!this.mixer) this.mixer = new THREE.AnimationMixer(this.root)
+    const action = this.mixer.clipAction(clip)
+    action.reset()
+    action.loop = opts.loop === false ? THREE.LoopOnce : THREE.LoopRepeat
+    action.clampWhenFinished = true
+    action.timeScale = opts.speed ?? 1
+    const fade = opts.fadeIn ?? 0.25
+    if (this.currentAction && this.currentAction !== action) {
+      action.crossFadeFrom(this.currentAction, fade, true)
+    }
+    action.play()
+    this.currentAction = action
+    return true
+  }
+
   /** Capture editor-time state before Play-In-Editor starts. */
   beginPlay(api?: ScriptApi) {
     this.editorTransform = this.transform
+    this.mixer?.stopAllAction()
+    this.mixer = undefined
+    this.currentAction = undefined
+    if (this.autoPlayClip) this.playAnimation(this.autoPlayClip)
     this.elapsed = 0
     this.baseY = this.root.position.y
     this.compiled = null
@@ -129,6 +158,9 @@ export class Actor {
 
   /** Restore editor-time state when PIE stops. */
   endPlay() {
+    this.mixer?.stopAllAction()
+    this.mixer = undefined
+    this.currentAction = undefined
     if (this.editorTransform) this.setTransform(this.editorTransform)
     this.editorTransform = null
     this.compiled = null
@@ -195,6 +227,7 @@ export class Actor {
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
+      autoPlayClip: this.autoPlayClip,
       probe: this.probeProps ? { ...this.probeProps } : undefined,
       customGeometry: this.customGeometry,
       landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights], weights: this.landscapeProps.weights ? [...this.landscapeProps.weights] : undefined } : undefined,

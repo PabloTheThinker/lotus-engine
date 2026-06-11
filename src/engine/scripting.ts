@@ -53,6 +53,10 @@ export interface ScriptApi {
   findPath: (from: [number, number, number], to: [number, number, number]) => [number, number, number][] | null
   /** data assets (UE DataTable analog) */
   getData: (name: string) => unknown
+  /** crossfade an actor to a named animation clip */
+  playAnimation: (actor: Actor, clip: string, opts?: { loop?: boolean; fadeIn?: number; speed?: number }) => boolean
+  /** clip names available on an actor */
+  listClips: (actor: Actor) => string[]
   /** play an imported sound: api.playSound('boom', { at: [x,y,z], volume: 0.8 }) */
   playSound: (name: string, opts?: { volume?: number; bus?: 'sfx' | 'music'; loop?: boolean; at?: [number, number, number] }) => void
   time: () => number
@@ -126,6 +130,8 @@ export function makeScriptApi(
     blackboard: (actor) => blackboardFor(actor),
     findPath: (from, to) => findPath(actors, from, to),
     getData: (name) => dataStore[name],
+    playAnimation: (actor, clip, opts) => actor.playAnimation(clip, opts),
+    listClips: (actor) => (actor.animations ?? []).map((c) => c.name),
     playSound: (name, opts = {}) =>
       playSound(name, {
         ...opts,
