@@ -57,12 +57,16 @@ export class EditorCameraControls {
     }
   }
 
+  /** notified when scroll-during-fly changes speed (syncs the UI) */
+  onSpeedChange: ((speed: number) => void) | null = null
+
   private onWheel = (e: WheelEvent) => {
     if (!this.enabled) return
     e.preventDefault()
     if (this.looking) {
       // Unreal behavior: scroll while flying changes fly speed
       this.flySpeed = THREE.MathUtils.clamp(this.flySpeed * (e.deltaY < 0 ? 1.2 : 0.8), 0.5, 200)
+      this.onSpeedChange?.(this.flySpeed)
     } else {
       const dir = new THREE.Vector3()
       this.camera.getWorldDirection(dir)

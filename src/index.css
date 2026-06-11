@@ -1239,3 +1239,11 @@ input[type='checkbox'] {
 .bp-wire.mat { stroke: #56b3c9; }
 .bp-port.in em { font-size: 9px; font-style: normal; color: var(--text-dim); margin-left: 3px; }
 .bp-port.in { display: flex; align-items: center; }
+
+.snap-size { font-size: 10.5px; padding: 2px 3px; background: var(--bg-2); }
+.cam-speed { font-size: 10.5px; background: rgba(13,15,18,.75); }
+.viewport-pilot-banner {
+  position: absolute; top: 40px; left: 50%; transform: translateX(-50%);
+  background: rgba(47, 128, 237, .92); color: #fff; font-weight: 600; font-size: 12px;
+  padding: 4px 14px; border-radius: 4px; cursor: pointer; z-index: 6;
+}

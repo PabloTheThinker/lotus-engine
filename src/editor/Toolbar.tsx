@@ -14,6 +14,13 @@ export function Toolbar() {
   const setGizmoMode = useEditor((s) => s.setGizmoMode)
   const snapEnabled = useEditor((s) => s.snapEnabled)
   const toggleSnap = useEditor((s) => s.toggleSnap)
+  const translateSnap = useEditor((s) => s.translateSnap)
+  const setTranslateSnap = useEditor((s) => s.setTranslateSnap)
+  const rotateSnapDeg = useEditor((s) => s.rotateSnapDeg)
+  const setRotateSnapDeg = useEditor((s) => s.setRotateSnapDeg)
+  const paused = useEditor((s) => s.paused)
+  const setPaused = useEditor((s) => s.setPaused)
+  const requestStep = useEditor((s) => s.requestStep)
   const playing = useEditor((s) => s.playing)
   const simulate = useEditor((s) => s.simulate)
   const startPlay = useEditor((s) => s.startPlay)
@@ -58,6 +65,26 @@ export function Toolbar() {
         <button className={snapEnabled ? 'active' : ''} title="Toggle grid snap" onClick={toggleSnap}>
           ⌗ Snap
         </button>
+        <select
+          className="snap-size"
+          title="Grid snap size (UE: 1/5/10/50/100)"
+          value={translateSnap}
+          onChange={(e) => setTranslateSnap(parseFloat(e.target.value))}
+        >
+          {[0.1, 0.25, 0.5, 1, 5, 10].map((v) => (
+            <option key={v} value={v}>{v}m</option>
+          ))}
+        </select>
+        <select
+          className="snap-size"
+          title="Rotation snap (UE: 5/10/15/30/45/60/90)"
+          value={rotateSnapDeg}
+          onChange={(e) => setRotateSnapDeg(parseFloat(e.target.value))}
+        >
+          {[5, 10, 15, 30, 45, 60, 90].map((v) => (
+            <option key={v} value={v}>{v}°</option>
+          ))}
+        </select>
         <button title="Gizmo space (T)" onClick={toggleGizmoSpace}>
           {gizmoSpace === 'world' ? '🌐 World' : '⬚ Local'}
         </button>
@@ -90,6 +117,18 @@ export function Toolbar() {
         >
           {playing && !simulate ? '■ Stop' : '▶ Play'}
         </button>
+        {playing && (
+          <>
+            <button className={paused ? 'active' : ''} title="Pause (UE toolbar pause)" onClick={() => setPaused(!paused)}>
+              ⏸
+            </button>
+            {paused && (
+              <button title="Advance one frame" onClick={requestStep}>
+                ⏭
+              </button>
+            )}
+          </>
+        )}
         <button
           className={`play-button simulate ${playing && simulate ? 'stop' : ''}`}
           title={playing && simulate ? 'Stop (Esc)' : 'Simulate — run the world, keep the editor camera'}

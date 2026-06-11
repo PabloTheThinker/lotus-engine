@@ -19,9 +19,26 @@ import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
-import { instantiatePrefab, listPrefabs } from './prefabs'
+import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
 import { spawnAsset, type AssetPayload } from './spawn'
 import { useEditor, type ViewMode } from './store'
+
+function CameraSpeed() {
+  const speed = useEditor((s) => s.cameraSpeed)
+  const setSpeed = useEditor((s) => s.setCameraSpeed)
+  return (
+    <select
+      className="cam-speed"
+      title="Camera speed (UE: 1–8; scroll while flying also adjusts)"
+      value={speed}
+      onChange={(e) => setSpeed(parseInt(e.target.value))}
+    >
+      {[1, 2, 3, 4, 5, 6, 7, 8].map((v) => (
+        <option key={v} value={v}>🎥 {v}</option>
+      ))}
+    </select>
+  )
+}
 
 interface CtxMenu {
   x: number
@@ -66,6 +83,7 @@ export function Viewport() {
     }
     // route script logs into the console panel
     setScriptLogSink((level, msg) => useEditor.getState().pushConsole(level, msg))
+    controls.onSpeedChange = (sp) => useEditor.getState().setCameraSpeed(Math.round(THREE.MathUtils.clamp(sp / 2, 1, 8)))
 
     // post stack — RenderPass → UnrealBloom → Output (tone map + sRGB)
     // ?nofx falls back to a direct render for GPUs/drivers the stack upsets
@@ -711,6 +729,7 @@ export function Viewport() {
     let frames = 0
     let fpsTimer = 0
     let wasPlaying = false
+    let stepConsumed = 0
     renderer.setAnimationLoop(() => {
       const __t0 = performance.now()
       const dt = Math.min(clock.getDelta(), 0.1)
@@ -755,10 +774,23 @@ export function Viewport() {
       applyPostSettings(computeBlendedPost(camPos, world.actors.values(), world.environment))
       applyViewMode(s.viewMode, s.sceneVersion)
       controls.enabled = !possessed
+      controls.flySpeed = s.cameraSpeed * 2
       controls.update(dt)
-      pawn.update(dt)
-      world.tick(dt)
-      world.updateParticles(dt) // emitters preview in-editor like Niagara
+      // UE pause + frame-step
+      let simDt = dt
+      if (s.playing && s.paused) {
+        if (s.stepFrames > stepConsumed) {
+          stepConsumed = s.stepFrames
+          simDt = 1 / 60
+        } else {
+          simDt = 0
+        }
+      }
+      if (simDt > 0) {
+        pawn.update(simDt)
+        world.tick(simDt)
+      }
+      world.updateParticles(s.playing && s.paused ? 0.000001 : dt) // emitters preview in-editor like Niagara
 
       // sequencer editor playback (PIE auto-play is handled in world.tick)
       if (s.seqPlaying && !s.playing && world.sequence.tracks.length > 0) {
@@ -809,6 +841,17 @@ export function Viewport() {
         activeCam.updateProjectionMatrix()
         applyShake(activeCam)
       }
+      // UE Pilot Actor: the editor camera drives the piloted actor's transform
+      if (s.pilotingId && !s.playing) {
+        const piloted = world.actors.get(s.pilotingId)
+        if (piloted) {
+          piloted.root.position.copy(editorCamera.position)
+          piloted.root.quaternion.copy(editorCamera.quaternion)
+        } else {
+          s.setPiloting(null)
+        }
+      }
+
       // distance streaming: hide actors beyond their cull distance
       {
         const camP = new THREE.Vector3()
@@ -935,6 +978,7 @@ export function Viewport() {
   }, [])
 
   const playing = useEditor((s) => s.playing)
+  const pilotingId = useEditor((s) => s.pilotingId)
   const simulate = useEditor((s) => s.simulate)
   const ejected = useEditor((s) => s.ejected)
   const viewMode = useEditor((s) => s.viewMode)
@@ -954,6 +998,7 @@ export function Viewport() {
     <div className="viewport" ref={mountRef}>
       <div className="viewport-stats" ref={statsRef} />
       <div className="viewport-modes">
+        <CameraSpeed />
         {(['lit', 'detail', 'unlit', 'wireframe'] as const).map((m) => (
           <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => setViewMode(m)}>
             {m}
@@ -964,6 +1009,11 @@ export function Viewport() {
         <span>Camera Preview</span>
       </div>
       {banner && <div className="viewport-pie-banner">{banner}</div>}
+      {pilotingId && !playing && (
+        <div className="viewport-pilot-banner" onClick={() => useEditor.getState().setPiloting(null)}>
+          🛩 Piloting {world.actors.get(pilotingId)?.name ?? '?'} — click to eject
+        </div>
+      )}
       {ctxMenu && (
         <div className="viewport-ctx" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
           <button
@@ -991,6 +1041,27 @@ export function Viewport() {
                 }}
               >
                 ⧉ Duplicate
+              </button>
+              <button
+                onClick={() => {
+                  closeMenu()
+                  const s2 = useEditor.getState()
+                  if (ctxMenu.actorId) {
+                    // UE: pilot snaps the camera into the actor first
+                    s2.setPiloting(ctxMenu.actorId)
+                    s2.setStatus(`Piloting ${world.actors.get(ctxMenu.actorId)?.name} — move the camera to fly it`)
+                  }
+                }}
+              >
+                🛩 Pilot
+              </button>
+              <button
+                onClick={() => {
+                  closeMenu()
+                  if (ctxMenu.actorId) savePrefab(ctxMenu.actorId)
+                }}
+              >
+                🧩 Save as Prefab
               </button>
               <button
                 onClick={() => {

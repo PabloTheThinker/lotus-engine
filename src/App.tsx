@@ -50,6 +50,33 @@ export default function App() {
       })
     }
     const saveTimer = setInterval(autosave, 5000)
+    // UE Content Drawer: Ctrl+Space summons; clicking the viewport collapses it
+    let drawerMode = false
+    const onDrawerKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.code === 'Space') {
+        e.preventDefault()
+        const st = useEditor.getState()
+        if (st.contentBrowserOpen && st.bottomTab === 'content') {
+          st.toggleContentBrowser()
+          drawerMode = false
+        } else {
+          st.setBottomTab('content')
+          drawerMode = true
+        }
+      }
+    }
+    const onDrawerCollapse = (e: MouseEvent) => {
+      if (!drawerMode) return
+      const el = e.target as HTMLElement
+      if (el.closest('.viewport')) {
+        const st = useEditor.getState()
+        if (st.contentBrowserOpen && st.bottomTab === 'content') st.toggleContentBrowser()
+        drawerMode = false
+      }
+    }
+    window.addEventListener('keydown', onDrawerKey)
+    window.addEventListener('mousedown', onDrawerCollapse)
+
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null
       const typing = el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.isContentEditable
@@ -67,6 +94,8 @@ export default function App() {
     const disconnectBridge = connectTerminalBridge()
     return () => {
       clearInterval(saveTimer)
+      window.removeEventListener('keydown', onDrawerKey)
+      window.removeEventListener('mousedown', onDrawerCollapse)
       window.removeEventListener('keydown', onKey)
       disconnectBridge()
     }

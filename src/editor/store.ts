@@ -23,8 +23,17 @@ interface EditorState {
   snapEnabled: boolean
   toggleSnap: () => void
   translateSnap: number
+  setTranslateSnap: (v: number) => void
   rotateSnapDeg: number
+  setRotateSnapDeg: (v: number) => void
   scaleSnap: number
+  setScaleSnap: (v: number) => void
+  /** UE camera speed (1–8) */
+  cameraSpeed: number
+  setCameraSpeed: (v: number) => void
+  /** UE Pilot Actor: editor camera drives this actor */
+  pilotingId: string | null
+  setPiloting: (id: string | null) => void
 
   // play-in-editor
   playing: boolean
@@ -34,6 +43,11 @@ interface EditorState {
   ejected: boolean
   startPlay: (mode: 'pie' | 'simulate') => void
   stopPlay: () => void
+  /** UE pause + frame-step */
+  paused: boolean
+  setPaused: (v: boolean) => void
+  stepFrames: number
+  requestStep: () => void
   setPlaying: (p: boolean) => void
   setEjected: (e: boolean) => void
 
@@ -127,14 +141,25 @@ export const useEditor = create<EditorState>((set) => ({
   snapEnabled: false,
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   translateSnap: 0.5,
+  setTranslateSnap: (v) => set({ translateSnap: v }),
   rotateSnapDeg: 15,
+  setRotateSnapDeg: (v) => set({ rotateSnapDeg: v }),
   scaleSnap: 0.25,
+  setScaleSnap: (v) => set({ scaleSnap: v }),
+  cameraSpeed: 4,
+  setCameraSpeed: (v) => set({ cameraSpeed: v }),
+  pilotingId: null,
+  setPiloting: (id) => set({ pilotingId: id }),
 
   playing: false,
   simulate: false,
   ejected: false,
-  startPlay: (mode) => set({ playing: true, simulate: mode === 'simulate', ejected: false }),
-  stopPlay: () => set({ playing: false, simulate: false, ejected: false }),
+  startPlay: (mode) => set({ playing: true, simulate: mode === 'simulate', ejected: false, paused: false }),
+  stopPlay: () => set({ playing: false, simulate: false, ejected: false, paused: false }),
+  paused: false,
+  setPaused: (v) => set({ paused: v }),
+  stepFrames: 0,
+  requestStep: () => set((st) => ({ stepFrames: st.stepFrames + 1 })),
   setPlaying: (p) => set(p ? { playing: true, simulate: false, ejected: false } : { playing: false, simulate: false, ejected: false }),
   setEjected: (e) => set({ ejected: e }),
 
