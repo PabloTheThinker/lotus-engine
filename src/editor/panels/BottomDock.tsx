@@ -6,11 +6,13 @@ import { Sequencer } from './Sequencer'
 import { Console } from './Console'
 import { AIChat } from './AIChat'
 import { DebugPanel } from './DebugPanel'
+import { MaterialEditor } from './MaterialEditor'
 
 const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'content', label: '🗄 Content' },
   { id: 'script', label: '𝒇 Script' },
   { id: 'blueprint', label: '⬡ Blueprint' },
+  { id: 'material', label: '⚛ Material' },
   { id: 'sequencer', label: '🎞 Sequencer' },
   { id: 'console', label: '>_ Console' },
   { id: 'ai', label: '✦ AI' },
@@ -49,6 +51,7 @@ export function BottomDock() {
           {tab === 'content' && <ContentBrowser />}
           {tab === 'script' && <ScriptEditor />}
           {tab === 'blueprint' && <BlueprintEditor />}
+          {tab === 'material' && <MaterialEditor />}
           {tab === 'sequencer' && <Sequencer />}
           {tab === 'console' && <Console />}
           {tab === 'ai' && <AIChat />}

@@ -1235,3 +1235,7 @@ input[type='checkbox'] {
 .palette-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
 .palette-list button { text-align: left; background: transparent; border: none; padding: 6px 10px; border-radius: 4px; }
 .palette-list button.active { background: var(--accent); color: #fff; }
+
+.bp-wire.mat { stroke: #56b3c9; }
+.bp-port.in em { font-size: 9px; font-style: normal; color: var(--text-dim); margin-left: 3px; }
+.bp-port.in { display: flex; align-items: center; }

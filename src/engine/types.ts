@@ -181,6 +181,8 @@ export interface SerializedActor {
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** animation clip to play at BeginPlay */
   autoPlayClip?: string
+  /** material node graph */
+  materialGraph?: import('./materialGraph').MaterialGraph
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */

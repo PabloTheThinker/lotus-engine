@@ -2,7 +2,7 @@
 
 Mission: the leading Three.js game engine — the tools and features of Unreal Engine 5 and Godot, native to the web.
 
-Built from a full census of both engines' documentation (78 UE5 tools, 60+ Godot tools), clustered into 34 build tasks. **17 done, 17 to go.**
+Built from a full census of both engines' documentation (78 UE5 tools, 60+ Godot tools), clustered into 34 build tasks. **ALL 34 COMPLETE** (v0.19, 2026-06-11). The next-up section below records each task's shipped v1 scope; noted upgrades (recast navmesh, FSM graph editor, raycast vehicles, property replication, meshoptimizer LODs) are the v2 backlog.
 
 ## ✅ Shipped
 

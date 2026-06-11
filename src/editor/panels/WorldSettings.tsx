@@ -2,7 +2,39 @@ import { useState } from 'react'
 import { world } from '../../engine/World'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
 import { setBusVolume } from '../../engine/audio'
+import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
 import { useEditor } from '../store'
+
+function MultiplayerSection() {
+  const [cfg, setCfg] = useState(() => loadMPSettings())
+  const update = (patch: Partial<typeof cfg>) => {
+    const next = { ...cfg, ...patch }
+    setCfg(next)
+    saveMPSettings(next)
+  }
+  return (
+    <details className="details-section">
+      <summary>Multiplayer</summary>
+      <div className="details-grid">
+        <label className="field check">
+          <span>Enabled</span>
+          <input type="checkbox" checked={cfg.enabled} onChange={(e) => update({ enabled: e.target.checked })} />
+        </label>
+        <label className="field">
+          <span>Relay URL</span>
+          <input value={cfg.url} onChange={(e) => update({ url: e.target.value })} spellCheck={false} />
+        </label>
+        <label className="field">
+          <span>Room</span>
+          <input value={cfg.room} onChange={(e) => update({ room: e.target.value })} spellCheck={false} />
+        </label>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Run the relay: node scripts/relay.mjs — peers in the same room see each other as ghost pawns during Play.
+        </div>
+      </div>
+    </details>
+  )
+}
 
 function AudioSection() {
   return (
@@ -233,6 +265,7 @@ export function WorldSettings() {
       <InputMapSection />
       <DataAssetsSection />
       <AudioSection />
+      <MultiplayerSection />
     </details>
   )
 }

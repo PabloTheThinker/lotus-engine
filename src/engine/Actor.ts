@@ -68,6 +68,8 @@ export class Actor {
   landscapeProps?: LandscapeProps
   probeProps?: { radius: number }
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
+  /** material node graph — evaluated per frame onto the material */
+  materialGraph?: import('./materialGraph').MaterialGraph
   /** animation clips (from glTF or scripts) + play-time mixer state */
   animations?: THREE.AnimationClip[]
   mixer?: THREE.AnimationMixer
@@ -228,6 +230,7 @@ export class Actor {
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
       autoPlayClip: this.autoPlayClip,
+      materialGraph: this.materialGraph ? JSON.parse(JSON.stringify(this.materialGraph)) : undefined,
       probe: this.probeProps ? { ...this.probeProps } : undefined,
       customGeometry: this.customGeometry,
       landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights], weights: this.landscapeProps.weights ? [...this.landscapeProps.weights] : undefined } : undefined,

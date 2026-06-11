@@ -12,6 +12,7 @@ import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engin
 import { sampleSequence } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
+import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
 import { setScriptLogSink } from '../engine/scripting'
 import { pushSample } from '../engine/profiler'
 import type { TransformSnapshot } from '../engine/types'
@@ -720,6 +721,7 @@ export function Viewport() {
       if (s.playing && !wasPlaying) {
         mountHud(mount) // before beginPlay so onBeginPlay scripts can draw HUD
         world.beginPlay()
+        mpConnect(world, (m) => useEditor.getState().setStatus(m))
         if (!s.simulate) {
           pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
           s.setPendingSpawn(null)
@@ -730,6 +732,7 @@ export function Viewport() {
         world.endPlay()
         pawn.unpossess()
         unmountHud()
+        mpDisconnect()
         s.touch()
       }
       wasPlaying = s.playing
@@ -782,6 +785,7 @@ export function Viewport() {
 
       // scripts can ask where the player is
       world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
+      if (s.playing) mpTick(dt, world.pawnPosition, pawn.camera.rotation.y)
 
       if (!s.sculptActive || s.playing) brushRing.visible = false
 

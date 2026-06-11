@@ -25,6 +25,7 @@ import { createTriggerVolumeActor, createReflectionProbeActor, createCustomMeshA
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { emptySequence, sampleSequence, type Sequence } from './sequencer'
+import { applyMaterialGraph } from './materialGraph'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
 
@@ -186,10 +187,14 @@ export class World {
 
   /** advance all particle systems — editor preview AND play */
   updateParticles(dt: number) {
+    this.editorClock += dt
     for (const a of this.actors.values()) {
       if (a.particleSystem) a.particleSystem.update(dt, a.visible)
+      if (a.materialGraph) applyMaterialGraph(a, this.playing ? this.playClock : this.editorClock)
     }
   }
+
+  editorClock = 0
 
   tick(dt: number) {
     if (!this.playing) return
@@ -394,6 +399,7 @@ export class World {
     if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
     if (sa.cullDistance) actor.cullDistance = sa.cullDistance
     if (sa.autoPlayClip) actor.autoPlayClip = sa.autoPlayClip
+    if (sa.materialGraph) actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]
