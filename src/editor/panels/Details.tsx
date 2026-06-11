@@ -7,6 +7,7 @@ import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '..
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { buildFoliageMesh } from '../../engine/factory'
 import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
+import { parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
 import { WorldSettings } from './WorldSettings'
@@ -642,6 +643,48 @@ function LandscapeSection({ actor }: { actor: Actor }) {
   )
 }
 
+function ScriptVarsSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const exports = parseExports(actor.script ?? '')
+  if (exports.length === 0) return null
+  return (
+    <Section title="Script Variables">
+      {exports.map((ev) => {
+        const current = actor.scriptVars?.[ev.name] ?? ev.value
+        const setVar = (v: unknown) => {
+          actor.scriptVars = { ...(actor.scriptVars ?? {}), [ev.name]: v }
+          touch()
+        }
+        if (typeof ev.value === 'boolean') {
+          return <Check key={ev.name} label={ev.name} value={Boolean(current)} onToggle={setVar} />
+        }
+        if (typeof ev.value === 'number') {
+          return <Num key={ev.name} label={ev.name} value={Number(current)} onLive={setVar} onCommit={() => {}} />
+        }
+        if (typeof ev.value === 'string' && /^#[0-9a-f]{6}$/i.test(ev.value)) {
+          return <ColorField key={ev.name} label={ev.name} value={String(current)} onLive={setVar} onCommit={() => {}} />
+        }
+        return (
+          <label className="field" key={ev.name}>
+            <span>{ev.name}</span>
+            <input
+              defaultValue={typeof current === 'string' ? current : JSON.stringify(current)}
+              onBlur={(e) => {
+                try {
+                  setVar(JSON.parse(e.target.value))
+                } catch {
+                  setVar(e.target.value)
+                }
+              }}
+            />
+          </label>
+        )
+      })}
+      <div className="panel-empty" style={{ padding: '2px 0' }}>From // @export lines — available as vars.name in the script.</div>
+    </Section>
+  )
+}
+
 const BEHAVIOR_TEMPLATES: Record<string, Behavior> = {
   rotator: { type: 'rotator', speedX: 0, speedY: 1, speedZ: 0 },
   bobber: { type: 'bobber', amplitude: 0.5, frequency: 0.5 },
@@ -753,6 +796,7 @@ export function Details() {
         {actor.mesh && actor.materialProps && <MaterialSection actor={actor} />}
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
+        {actor.script && <ScriptVarsSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
         {actor.foliageProps && <FoliageSection actor={actor} />}

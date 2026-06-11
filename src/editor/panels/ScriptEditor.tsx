@@ -55,6 +55,22 @@ function onTick(dt) {
   }
 }
 `,
+  'Path follow': `// Godot Path3D analog — follows waypoints, loops
+// @export speed = 2
+// @export points = [[0,1,0],[6,1,0],[6,1,6],[0,1,6]]
+let seg = 0
+function onTick(dt) {
+  const pts = vars.points
+  if (!pts || pts.length < 2) return
+  const target = new THREE.Vector3(...pts[(seg + 1) % pts.length])
+  const p = actor.root.position
+  const d = target.clone().sub(p)
+  if (d.length() < 0.15) { seg = (seg + 1) % pts.length; return }
+  d.normalize()
+  p.addScaledVector(d, vars.speed * dt)
+  actor.root.rotation.y = Math.atan2(d.x, d.z)
+}
+`,
   'Input mover': `// Drive this actor with the arrow keys during Play
 const SPEED = 4
 function onTick(dt) {

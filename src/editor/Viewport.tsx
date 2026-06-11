@@ -11,6 +11,7 @@ import { rebuildFoliage } from '../engine/factory'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
 import { sampleSequence } from '../engine/sequencer'
 import { Input } from '../engine/Input'
+import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
 import { setScriptLogSink } from '../engine/scripting'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
@@ -700,6 +701,7 @@ export function Viewport() {
       // PIE lifecycle
       const possessed = s.playing && !s.simulate && !s.ejected
       if (s.playing && !wasPlaying) {
+        mountHud(mount) // before beginPlay so onBeginPlay scripts can draw HUD
         world.beginPlay()
         if (!s.simulate) {
           pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
@@ -710,6 +712,7 @@ export function Viewport() {
       if (!s.playing && wasPlaying) {
         world.endPlay()
         pawn.unpossess()
+        unmountHud()
         s.touch()
       }
       wasPlaying = s.playing
@@ -720,7 +723,13 @@ export function Viewport() {
       }
 
       syncEnvironment()
-      const activeCam = possessed ? pawn.camera : editorCamera
+      let activeCam: THREE.PerspectiveCamera = possessed ? pawn.camera : editorCamera
+      // api.setViewCamera('Name') cuts to a Camera actor during play (CineCamera)
+      const viewCamName = s.playing ? getViewCamera() : null
+      if (viewCamName) {
+        const camActor = [...world.actors.values()].find((a) => a.name === viewCamName && a.camera)
+        if (camActor?.camera) activeCam = camActor.camera
+      }
       const camPos = new THREE.Vector3()
       activeCam.getWorldPosition(camPos)
       applyPostSettings(computeBlendedPost(camPos, world.actors.values(), world.environment))
@@ -774,9 +783,10 @@ export function Viewport() {
       axes.visible = !hideChrome
 
       // render — pawn camera while possessed, editor camera otherwise
-      if (possessed) {
-        pawn.camera.aspect = mount.clientWidth / mount.clientHeight
-        pawn.camera.updateProjectionMatrix()
+      if (s.playing) {
+        activeCam.aspect = mount.clientWidth / mount.clientHeight
+        activeCam.updateProjectionMatrix()
+        applyShake(activeCam)
       }
       renderPass.camera = activeCam
       if (usePostFx) composer.render()

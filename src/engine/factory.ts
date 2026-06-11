@@ -244,6 +244,20 @@ export function createPostProcessVolumeActor(name: string, id = nextActorId()): 
   return actor
 }
 
+/** TriggerVolume — unit box volume emitting enter:/exit: signals for the pawn. */
+export function createTriggerVolumeActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'TriggerVolume')
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({ color: 0x46a758, wireframe: true, transparent: true, opacity: 0.5, depthWrite: false }),
+  )
+  box.userData.actorId = id
+  box.userData.isEditorOnly = true
+  actor.mesh = box
+  actor.root.add(box)
+  return actor
+}
+
 /** PlayerStart — where the pawn spawns when Play begins (UE PlayerStart). */
 export function createPlayerStartActor(name: string, id = nextActorId()): Actor {
   const actor = new Actor(id, name, 'PlayerStart')

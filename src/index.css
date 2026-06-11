@@ -1214,3 +1214,10 @@ input[type='checkbox'] {
   position: absolute; top: 0; bottom: 0; width: 1.5px;
   background: var(--danger); pointer-events: none;
 }
+
+.game-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8;
+}

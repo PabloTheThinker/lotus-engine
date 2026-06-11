@@ -15,6 +15,7 @@ export type ActorType =
   | 'ParticleEmitter'
   | 'FoliageLayer'
   | 'Landscape'
+  | 'TriggerVolume'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -34,6 +35,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   ParticleEmitter: 'movable',
   FoliageLayer: 'static',
   Landscape: 'static',
+  TriggerVolume: 'movable',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -146,6 +148,8 @@ export interface SerializedActor {
   receiveShadow?: boolean
   /** per-actor JavaScript (onBeginPlay / onTick hooks) */
   script?: string
+  /** saved @export variable overrides */
+  scriptVars?: Record<string, unknown>
   /** visual scripting graph — compiles into the script slot */
   blueprint?: import('./blueprint').BlueprintGraph
   /** PlayerStart only: which pawn the player possesses */

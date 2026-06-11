@@ -17,8 +17,10 @@ import {
   createPostProcessVolumeActor,
 } from './factory'
 import { createLandscapeActor, buildLandscapeMesh } from './landscape'
+import { resetGameplay, tickGameplay } from './gameplay'
+import { createTriggerVolumeActor } from './factory'
 import { PhysicsSim } from './physics'
-import { makeScriptApi, resetSignals } from './scripting'
+import { makeScriptApi, resetSignals, scriptLog } from './scripting'
 import { emptySequence, sampleSequence, type Sequence } from './sequencer'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
@@ -141,7 +143,10 @@ export class World {
     this.playing = true
     this.playClock = 0
     resetSignals()
-    const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
+    resetGameplay()
+    this.triggerState.clear()
+    this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
+    const api = this.playApi ?? makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
     for (const a of this.actors.values()) {
       a.beginPlay(api)
       if (a.particleSystem && a.particleProps && a.particleProps.burst > 0) {
@@ -154,6 +159,8 @@ export class World {
   playClock = 0
   /** updated by the viewport each frame while playing; null otherwise */
   pawnPosition: THREE.Vector3 | null = null
+  playApi: ReturnType<typeof makeScriptApi> | null = null
+  private triggerState = new Map<string, boolean>()
 
   endPlay() {
     this.playing = false
@@ -177,6 +184,23 @@ export class World {
       sampleSequence(this, this.sequence, this.playClock % this.sequence.duration)
     }
     for (const a of this.actors.values()) a.tick(dt)
+    tickGameplay(dt, scriptLog)
+    // trigger volumes: pawn enter/exit → signals "enter:Name" / "exit:Name"
+    if (this.pawnPosition && this.playApi) {
+      const p = this.pawnPosition
+      const local = new THREE.Vector3()
+      for (const a of this.actors.values()) {
+        if (a.type !== 'TriggerVolume') continue
+        local.copy(p)
+        a.root.worldToLocal(local)
+        const inside = Math.abs(local.x) <= 0.5 && Math.abs(local.y) <= 0.5 && Math.abs(local.z) <= 0.5
+        const was = this.triggerState.get(a.id) ?? false
+        if (inside !== was) {
+          this.triggerState.set(a.id, inside)
+          this.playApi.emit(`${inside ? 'enter' : 'exit'}:${a.name}`, a.name)
+        }
+      }
+    }
   }
 
   // ---- assets ----
@@ -306,6 +330,9 @@ export class World {
           buildLandscapeMesh(actor)
         }
         break
+      case 'TriggerVolume':
+        actor = createTriggerVolumeActor(sa.name, sa.id)
+        break
       case 'PlayerStart':
         actor = createPlayerStartActor(sa.name, sa.id)
         actor.pawnMode = sa.pawnMode ?? 'fly'
@@ -324,6 +351,7 @@ export class World {
     actor.behaviors = sa.behaviors.map((b) => ({ ...b }))
     if (sa.physics) actor.physicsProps = { ...sa.physics }
     if (sa.script) actor.script = sa.script
+    if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]

@@ -51,6 +51,8 @@ export class Actor {
   physicsProps?: PhysicsProps
   assetId?: string
   script?: string
+  /** saved @export variable overrides */
+  scriptVars?: Record<string, unknown>
   blueprint?: import('./blueprint').BlueprintGraph
   pawnMode?: PawnMode
   mobility: Mobility
@@ -180,6 +182,7 @@ export class Actor {
       physics: this.physicsProps ? { ...this.physicsProps } : undefined,
       assetId: this.assetId,
       script: this.script,
+      scriptVars: this.scriptVars ? { ...this.scriptVars } : undefined,
       blueprint: this.blueprint ? JSON.parse(JSON.stringify(this.blueprint)) : undefined,
       pawnMode: this.pawnMode,
       mobility: this.mobility,

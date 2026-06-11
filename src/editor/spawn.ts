@@ -17,6 +17,7 @@ export type AssetPayload =
   | { kind: 'particles' }
   | { kind: 'foliage' }
   | { kind: 'landscape' }
+  | { kind: 'trigger' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -114,6 +115,13 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         transform: { ...base.transform, position: [0, 0, 0] },
       }
     }
+    case 'trigger':
+      return {
+        ...base,
+        name: uniqueName('Trigger'),
+        type: 'TriggerVolume',
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]], scale: [3, 2, 3] },
+      }
     case 'playerstart':
       return {
         ...base,

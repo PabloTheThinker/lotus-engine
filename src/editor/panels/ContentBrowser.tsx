@@ -28,6 +28,7 @@ const ASSETS: AssetDef[] = [
   { label: 'Empty', icon: '◇', category: 'Gameplay', payload: { kind: 'empty' } },
   { label: 'Folder', icon: '📁', category: 'Gameplay', payload: { kind: 'folder' } },
   { label: 'Post Process', icon: '◫', category: 'Volumes', payload: { kind: 'postprocess' } },
+  { label: 'Trigger', icon: '⏚', category: 'Volumes', payload: { kind: 'trigger' } },
   { label: 'Particles', icon: '✨', category: 'VFX', payload: { kind: 'particles' } },
   { label: 'Foliage', icon: '🌿', category: 'VFX', payload: { kind: 'foliage' } },
   { label: 'Landscape', icon: '⛰', category: 'VFX', payload: { kind: 'landscape' } },

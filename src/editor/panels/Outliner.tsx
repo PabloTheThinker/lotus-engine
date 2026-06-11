@@ -17,6 +17,7 @@ const TYPE_ICONS: Record<string, string> = {
   ParticleEmitter: '✨',
   FoliageLayer: '🌿',
   Landscape: '⛰',
+  TriggerVolume: '⏚',
   Empty: '◇',
   Folder: '📁',
   PostProcessVolume: '◫',
