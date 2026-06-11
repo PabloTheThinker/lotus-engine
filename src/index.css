@@ -1282,3 +1282,6 @@ input[type='checkbox'] {
   font-size: 11px; padding: 0 2px; line-height: 1;
 }
 .reset-default:hover { color: #fff; }
+
+.seq-cut, .seq-event { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10px; cursor: pointer; z-index: 2; }
+.seq-event { top: auto; bottom: 0; }

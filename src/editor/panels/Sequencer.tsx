@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { world } from '../../engine/World'
-import { sampleSequence, setKey, type SeqTrack } from '../../engine/sequencer'
+import { keyableProperties, sampleSequence, setKey, type SeqKey, type SeqProperty, type SeqTrack } from '../../engine/sequencer'
 import { runCommand, PropertyCommand } from '../commands'
 import { useEditor } from '../store'
 
@@ -51,6 +51,59 @@ export function Sequencer() {
         () => (seq.tracks = JSON.parse(before)),
       ),
     )
+  }
+
+  const currentValueOf = (prop: SeqProperty): SeqKey['v'] | null => {
+    const actor = selectedId ? world.actors.get(selectedId) : null
+    if (!actor) return null
+    switch (prop) {
+      case 'visible': return actor.visible
+      case 'color': return actor.materialProps?.color ?? `#${actor.light?.color.getHexString() ?? 'ffffff'}`
+      case 'opacity': return actor.materialProps?.opacity ?? 1
+      case 'emissiveIntensity': return actor.materialProps?.emissiveIntensity ?? 1
+      case 'intensity': return actor.light?.intensity ?? 1
+      case 'fov': return actor.camera?.fov ?? 60
+      default: return null
+    }
+  }
+
+  const keyProperty = (prop: SeqProperty) => {
+    if (!selectedId) return
+    const v = currentValueOf(prop)
+    if (v === null) return
+    const before = JSON.stringify(seq.tracks)
+    setKey(seq, selectedId, prop, seqTime, v)
+    const after = JSON.stringify(seq.tracks)
+    runCommand(
+      new PropertyCommand(
+        `Key ${prop} @ ${seqTime.toFixed(2)}s`,
+        () => (seq.tracks = JSON.parse(after)),
+        () => (seq.tracks = JSON.parse(before)),
+      ),
+    )
+  }
+
+  const addCameraCut = () => {
+    const actor = selectedId ? world.actors.get(selectedId) : null
+    if (!actor?.camera) return
+    seq.cameraCuts = seq.cameraCuts ?? []
+    seq.cameraCuts.push({ t: seqTime, cameraName: actor.name })
+    seq.cameraCuts.sort((a, b) => a.t - b.t)
+    touch()
+  }
+
+  const addEvent = () => {
+    const name = prompt('Signal name to emit?', 'cue')
+    if (!name) return
+    seq.events = seq.events ?? []
+    seq.events.push({ t: seqTime, signal: name })
+    seq.events.sort((a, b) => a.t - b.t)
+    touch()
+  }
+
+  const cycleInterp = (key: SeqKey) => {
+    key.interp = key.interp === 'smooth' ? 'step' : key.interp === 'step' ? 'linear' : 'smooth'
+    touch()
   }
 
   const deleteKey = (track: SeqTrack, keyIndex: number) => {
@@ -122,6 +175,27 @@ export function Sequencer() {
         <button className="seq-key" onClick={keySelected} disabled={!selectedId} title="Keyframe the selected actor's transform at the playhead">
           ◆ Key Selected
         </button>
+        <select
+          className="snap-size"
+          value=""
+          title="Key a property of the selected actor at the playhead"
+          disabled={!selectedId}
+          onChange={(e) => {
+            if (e.target.value) keyProperty(e.target.value as SeqProperty)
+            e.target.value = ''
+          }}
+        >
+          <option value="">+ Property…</option>
+          {(selectedId ? keyableProperties(world.actors.get(selectedId) ?? {}) : []).map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <button onClick={addCameraCut} disabled={!selectedId || !world.actors.get(selectedId ?? '')?.camera} title="Camera Cut: switch the view to the selected Camera at the playhead (PIE)">
+          🎬 Cut
+        </button>
+        <button onClick={addEvent} title="Event key: emit a signal at the playhead (PIE)">
+          ⚡ Event
+        </button>
       </div>
       <div className="seq-body">
         <div className="seq-names">
@@ -160,6 +234,36 @@ export function Sequencer() {
                 {t}s
               </span>
             ))}
+            {(seq.cameraCuts ?? []).map((c, i) => (
+              <span
+                key={`cut${i}`}
+                className="seq-cut"
+                style={{ left: pct(c.t) }}
+                title={`Camera Cut → ${c.cameraName} (right-click removes)`}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  seq.cameraCuts!.splice(i, 1)
+                  touch()
+                }}
+              >
+                🎬
+              </span>
+            ))}
+            {(seq.events ?? []).map((ev, i) => (
+              <span
+                key={`ev${i}`}
+                className="seq-event"
+                style={{ left: pct(ev.t) }}
+                title={`Event: ${ev.signal} (right-click removes)`}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  seq.events!.splice(i, 1)
+                  touch()
+                }}
+              >
+                ⚡
+              </span>
+            ))}
           </div>
           {[...byActor.entries()].map(([actorId, tracks]) => (
             <div key={actorId}>
@@ -171,19 +275,23 @@ export function Sequencer() {
                       key={i}
                       className="seq-keyframe"
                       style={{ left: pct(k.t) }}
-                      title={`${tr.property} @ ${k.t.toFixed(2)}s — right-click deletes`}
+                      title={`${tr.property} @ ${k.t.toFixed(2)}s — click jumps · Shift+click cycles interp (◆ linear ● smooth ■ step) · right-click deletes`}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         deleteKey(tr, i)
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
+                        if (e.shiftKey) {
+                          cycleInterp(k)
+                          return
+                        }
                         setSeqTime(k.t)
                         sampleSequence(world, seq, k.t)
                         touch()
                       }}
                     >
-                      ◆
+                      {k.interp === 'smooth' ? '●' : k.interp === 'step' ? '■' : '◆'}
                     </span>
                   ))}
                 </div>

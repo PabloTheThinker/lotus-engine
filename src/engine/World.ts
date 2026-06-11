@@ -24,7 +24,8 @@ import { registerSound, stopAllSounds } from './audio'
 import { createTriggerVolumeActor, createReflectionProbeActor, createCustomMeshActor } from './factory'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
-import { emptySequence, sampleSequence, type Sequence } from './sequencer'
+import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
+import { setViewCamera } from './gameplay'
 import { applyMaterialGraph } from './materialGraph'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
@@ -159,6 +160,8 @@ export class World {
     resetGameplay()
     resetBTs()
     resetNav()
+    this.lastCameraCut = null
+    this.lastSeqTime = 0
     setDataStore(this.dataTables)
     this.triggerState.clear()
     this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
@@ -176,6 +179,8 @@ export class World {
   /** updated by the viewport each frame while playing; null otherwise */
   pawnPosition: THREE.Vector3 | null = null
   playApi: ReturnType<typeof makeScriptApi> | null = null
+  private lastCameraCut: string | null = null
+  private lastSeqTime = 0
   private triggerState = new Map<string, boolean>()
 
   endPlay() {
@@ -200,9 +205,21 @@ export class World {
     if (!this.playing) return
     this.playClock += dt
     this.physics.step(dt)
-    // Sequencer auto-play loops during PIE
-    if (this.sequence.autoPlay && this.sequence.tracks.length > 0) {
-      sampleSequence(this, this.sequence, this.playClock % this.sequence.duration)
+    // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
+    if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
+      const st = this.playClock % this.sequence.duration
+      sampleSequence(this, this.sequence, st)
+      const cut = cameraCutAt(this.sequence, st)
+      if (cut !== this.lastCameraCut) {
+        this.lastCameraCut = cut
+        setViewCamera(cut)
+      }
+      if (this.playApi) {
+        for (const ev of eventsBetween(this.sequence, this.lastSeqTime, st)) {
+          this.playApi.emit(ev.signal)
+        }
+      }
+      this.lastSeqTime = st
     }
     for (const a of this.actors.values()) {
       a.tick(dt)

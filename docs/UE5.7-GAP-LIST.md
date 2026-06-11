@@ -102,10 +102,10 @@
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
 | Sequencer: transform tracks + keys + scrub + autoplay | ✅ | — |
-| Property tracks (key ANY property) | ⏳ | Track type addressing material/light/visibility props |
-| Curve editor (bezier tangents, per-key interp) | ⏳ | The credibility core of Sequencer phase 2 |
-| Camera Cut track | ⏳ | Track that drives api.setViewCamera over time (primitive exists) |
-| Event/audio/visibility tracks | ⏳ | Call-method keys → signals; audio keys → playSound |
+| Property tracks (key ANY property) | ✅ | v0.25: visible/color/opacity/emissiveIntensity/intensity/fov + transform; + Property dropdown in toolbar |
+| Curve editor / per-key interpolation | ◐ | Per-key interp shipped v0.25 (linear ◆ / smooth ● / step ■, Shift+click cycles). Graphical bezier-tangent editor = remaining polish |
+| Camera Cut track | ✅ | v0.25: 🎬 Cut keys on the ruler, drives setViewCamera in PIE |
+| Event/visibility tracks | ✅ | v0.25: ⚡ Event keys emit signals (scripts subscribe via api.on); visibility is a property track. Audio keys = wire signal → playSound in a script |
 | glTF clip playback + crossfade | ✅ | — |
 | Anim state machine editor (FSM graph) | ⏳ | Graph UI over the existing crossfade primitive |
 | Blend spaces 1D/2D | ⏳ | 1D lerp weights (easy); 2D triangulation |
