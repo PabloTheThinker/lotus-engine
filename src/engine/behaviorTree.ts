@@ -1,0 +1,158 @@
+import * as THREE from 'three'
+import type { Actor } from './Actor'
+
+/**
+ * Behavior Trees — the UE BT + Blackboard analog. Trees are plain JSON
+ * (serializable, AI-copilot-authorable); scripts attach them with
+ * api.runBT(tree). Composites: selector / sequence. Leaves: conditions
+ * and tasks over a per-actor blackboard.
+ */
+
+export type BTStatus = 'success' | 'failure' | 'running'
+
+export type BTNode =
+  | { selector: BTNode[] }
+  | { sequence: BTNode[] }
+  | { invert: BTNode }
+  | { condition: 'playerNear'; distance: number }
+  | { condition: 'blackboard'; key: string; equals?: unknown; greaterThan?: number }
+  | { task: 'moveToPlayer'; speed?: number; stopAt?: number }
+  | { task: 'moveTo'; point: [number, number, number]; speed?: number; stopAt?: number }
+  | { task: 'moveToBlackboard'; key: string; speed?: number; stopAt?: number }
+  | { task: 'wait'; seconds: number }
+  | { task: 'lookAtPlayer' }
+  | { task: 'set'; key: string; value: unknown }
+  | { task: 'emit'; signal: string }
+  | { task: 'log'; text: string }
+
+export interface BTContext {
+  actor: Actor
+  bb: Record<string, unknown>
+  pawn: () => THREE.Vector3 | null
+  emit: (signal: string, ...args: unknown[]) => void
+  log: (msg: string) => void
+  dt: number
+}
+
+interface BTState {
+  waitUntil?: number
+  elapsed: number
+}
+
+const states = new WeakMap<object, BTState>()
+
+function stateFor(node: object): BTState {
+  let st = states.get(node)
+  if (!st) {
+    st = { elapsed: 0 }
+    states.set(node, st)
+  }
+  return st
+}
+
+function moveToward(actor: Actor, target: THREE.Vector3, speed: number, stopAt: number, dt: number): BTStatus {
+  const p = actor.root.position
+  const d = new THREE.Vector3(target.x - p.x, 0, target.z - p.z)
+  if (d.length() <= stopAt) return 'success'
+  d.normalize()
+  p.x += d.x * speed * dt
+  p.z += d.z * speed * dt
+  actor.root.rotation.y = Math.atan2(d.x, d.z)
+  return 'running'
+}
+
+export function tickBT(node: BTNode, ctx: BTContext): BTStatus {
+  if ('selector' in node) {
+    for (const child of node.selector) {
+      const r = tickBT(child, ctx)
+      if (r !== 'failure') return r
+    }
+    return 'failure'
+  }
+  if ('sequence' in node) {
+    for (const child of node.sequence) {
+      const r = tickBT(child, ctx)
+      if (r !== 'success') return r
+    }
+    return 'success'
+  }
+  if ('invert' in node) {
+    const r = tickBT(node.invert, ctx)
+    return r === 'running' ? 'running' : r === 'success' ? 'failure' : 'success'
+  }
+  if ('condition' in node) {
+    if (node.condition === 'playerNear') {
+      const p = ctx.pawn()
+      return p && p.distanceTo(ctx.actor.root.position) < node.distance ? 'success' : 'failure'
+    }
+    const v = ctx.bb[node.key]
+    if (node.greaterThan !== undefined) return Number(v) > node.greaterThan ? 'success' : 'failure'
+    if (node.equals !== undefined) return v === node.equals ? 'success' : 'failure'
+    return v ? 'success' : 'failure'
+  }
+  // tasks
+  switch (node.task) {
+    case 'moveToPlayer': {
+      const p = ctx.pawn()
+      if (!p) return 'failure'
+      return moveToward(ctx.actor, p, node.speed ?? 2.5, node.stopAt ?? 1.2, ctx.dt)
+    }
+    case 'moveTo':
+      return moveToward(ctx.actor, new THREE.Vector3(...node.point), node.speed ?? 2.5, node.stopAt ?? 0.3, ctx.dt)
+    case 'moveToBlackboard': {
+      const v = ctx.bb[node.key] as [number, number, number] | undefined
+      if (!v) return 'failure'
+      return moveToward(ctx.actor, new THREE.Vector3(...v), node.speed ?? 2.5, node.stopAt ?? 0.3, ctx.dt)
+    }
+    case 'wait': {
+      const st = stateFor(node)
+      st.elapsed += ctx.dt
+      if (st.elapsed >= node.seconds) {
+        st.elapsed = 0
+        return 'success'
+      }
+      return 'running'
+    }
+    case 'lookAtPlayer': {
+      const p = ctx.pawn()
+      if (!p) return 'failure'
+      const d = new THREE.Vector3(p.x - ctx.actor.root.position.x, 0, p.z - ctx.actor.root.position.z)
+      ctx.actor.root.rotation.y = Math.atan2(d.x, d.z)
+      return 'success'
+    }
+    case 'set':
+      ctx.bb[node.key] = node.value
+      return 'success'
+    case 'emit':
+      ctx.emit(node.signal, ctx.actor.name)
+      return 'success'
+    case 'log':
+      ctx.log(node.text)
+      return 'success'
+  }
+  return 'failure'
+}
+
+// ---- per-play-session BT registry ----
+interface ActiveBT {
+  actor: Actor
+  tree: BTNode
+  bb: Record<string, unknown>
+}
+let active: ActiveBT[] = []
+
+export function resetBTs() {
+  active = []
+}
+
+export function runBT(actor: Actor, tree: BTNode, bb: Record<string, unknown>) {
+  active = active.filter((a) => a.actor !== actor)
+  active.push({ actor, tree, bb })
+}
+
+export function tickBTs(dt: number, pawn: () => THREE.Vector3 | null, emit: BTContext['emit'], log: (m: string) => void) {
+  for (const a of active) {
+    if (!a.actor.root.visible) continue
+    tickBT(a.tree, { actor: a.actor, bb: a.bb, pawn, emit, log: (m) => log(m), dt })
+  }
+}

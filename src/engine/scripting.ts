@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { Input } from './Input'
 import { isActionDown, actionJustPressed } from './inputActions'
 import { cameraShake, hud, raycastActors, setTimer, setViewCamera } from './gameplay'
+import { runBT, type BTNode } from './behaviorTree'
+import { findPath } from './nav'
 import type { Actor } from './Actor'
 
 /**
@@ -42,9 +44,32 @@ export interface ScriptApi {
   cameraShake: (intensity: number, duration: number) => void
   /** render through a named Camera actor (null = pawn camera) */
   setViewCamera: (actorName: string | null) => void
+  /** UE Behavior Tree: attach a JSON tree to this actor, ticked every frame */
+  runBT: (actor: Actor, tree: import('./behaviorTree').BTNode) => void
+  /** per-actor blackboard (shared with its behavior tree) */
+  blackboard: (actor: Actor) => Record<string, unknown>
+  /** navmesh-lite: A* waypoints over baked walkability grid */
+  findPath: (from: [number, number, number], to: [number, number, number]) => [number, number, number][] | null
+  /** data assets (UE DataTable analog) */
+  getData: (name: string) => unknown
   time: () => number
   /** world position of the player pawn while playing, else null */
   pawnPosition: () => THREE.Vector3 | null
+}
+
+// per-actor blackboards + level data store (set by World)
+const blackboards = new WeakMap<object, Record<string, unknown>>()
+function blackboardFor(actor: Actor): Record<string, unknown> {
+  let bb = blackboards.get(actor)
+  if (!bb) {
+    bb = {}
+    blackboards.set(actor, bb)
+  }
+  return bb
+}
+export let dataStore: Record<string, unknown> = {}
+export function setDataStore(d: Record<string, unknown>) {
+  dataStore = d
 }
 
 // signal bus — reset at every beginPlay so stale handlers never leak between sessions
@@ -94,6 +119,10 @@ export function makeScriptApi(
       signalHandlers.get(signal)!.push(handler)
     },
     setTimer: (seconds, fn, loop) => setTimer(seconds, fn, !!loop),
+    runBT: (actor, tree) => runBT(actor, tree as BTNode, blackboardFor(actor)),
+    blackboard: (actor) => blackboardFor(actor),
+    findPath: (from, to) => findPath(actors, from, to),
+    getData: (name) => dataStore[name],
     raycast: (origin, dir, maxDist) => raycastActors(actors, origin, dir, maxDist),
     hud,
     cameraShake,

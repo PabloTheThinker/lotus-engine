@@ -18,9 +18,11 @@ import {
 } from './factory'
 import { createLandscapeActor, buildLandscapeMesh } from './landscape'
 import { resetGameplay, tickGameplay } from './gameplay'
+import { resetBTs, tickBTs } from './behaviorTree'
+import { resetNav } from './nav'
 import { createTriggerVolumeActor } from './factory'
 import { PhysicsSim } from './physics'
-import { makeScriptApi, resetSignals, scriptLog } from './scripting'
+import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { emptySequence, sampleSequence, type Sequence } from './sequencer'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
@@ -49,6 +51,9 @@ export class World {
 
   /** master Sequencer timeline (UE Sequencer analog) */
   sequence: Sequence = emptySequence()
+
+  /** data assets (UE DataTables) — name → JSON */
+  dataTables: Record<string, unknown> = {}
 
   constructor() {
     this.sky.scale.setScalar(450000)
@@ -144,6 +149,9 @@ export class World {
     this.playClock = 0
     resetSignals()
     resetGameplay()
+    resetBTs()
+    resetNav()
+    setDataStore(this.dataTables)
     this.triggerState.clear()
     this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
     const api = this.playApi ?? makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
@@ -185,6 +193,9 @@ export class World {
     }
     for (const a of this.actors.values()) a.tick(dt)
     tickGameplay(dt, scriptLog)
+    if (this.playApi) {
+      tickBTs(dt, () => this.pawnPosition, this.playApi.emit, (m) => scriptLog('log', m))
+    }
     // trigger volumes: pawn enter/exit → signals "enter:Name" / "exit:Name"
     if (this.pawnPosition && this.playApi) {
       const p = this.pawnPosition
@@ -237,6 +248,7 @@ export class World {
       assets,
       actors: [...this.actors.values()].map((a) => a.serialize()),
       sequence: JSON.parse(JSON.stringify(this.sequence)),
+      data: JSON.parse(JSON.stringify(this.dataTables)),
     }
   }
 
@@ -250,6 +262,7 @@ export class World {
     this.levelName = level.name
     this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
+    this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {
       const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0))

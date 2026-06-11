@@ -248,6 +248,8 @@ export interface SerializedLevel {
   actors: SerializedActor[]
   /** master Sequencer timeline */
   sequence?: import('./sequencer').Sequence
+  /** data assets (UE DataTables) — name → arbitrary JSON */
+  data?: Record<string, unknown>
 }
 
 export const DEFAULT_MATERIAL: MaterialProps = {

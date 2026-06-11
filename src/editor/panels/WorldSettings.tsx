@@ -3,6 +3,54 @@ import { world } from '../../engine/World'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
 import { useEditor } from '../store'
 
+function DataAssetsSection() {
+  const touch = useEditor((s) => s.touch)
+  useEditor((s) => s.sceneVersion)
+  const names = Object.keys(world.dataTables)
+  return (
+    <details className="details-section">
+      <summary>Data Assets</summary>
+      <div className="details-grid">
+        {names.map((n) => (
+          <label className="field" key={n} style={{ gridTemplateColumns: '70px 1fr 20px', display: 'grid' }}>
+            <span>{n}</span>
+            <input
+              defaultValue={JSON.stringify(world.dataTables[n])}
+              spellCheck={false}
+              onBlur={(e) => {
+                try {
+                  world.dataTables[n] = JSON.parse(e.target.value)
+                  touch()
+                } catch { /* keep prior on bad JSON */ }
+              }}
+            />
+            <button
+              onClick={() => {
+                delete world.dataTables[n]
+                touch()
+              }}
+            >
+              ✕
+            </button>
+          </label>
+        ))}
+        <button
+          onClick={() => {
+            const n = prompt('Data asset name?')
+            if (n) {
+              world.dataTables[n] = []
+              touch()
+            }
+          }}
+        >
+          + Add Data Asset
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>JSON tables — scripts read api.getData('name').</div>
+      </div>
+    </details>
+  )
+}
+
 function InputMapSection() {
   const [actions, setActions] = useState<InputAction[]>(() => loadInputMap().map((a) => ({ ...a, keys: [...a.keys] })))
   const commit = (next: InputAction[]) => {
@@ -165,6 +213,7 @@ export function WorldSettings() {
         )}
       </div>
       <InputMapSection />
+      <DataAssetsSection />
     </details>
   )
 }
