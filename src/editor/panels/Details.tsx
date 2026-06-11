@@ -138,6 +138,26 @@ function MobilitySection({ actor }: { actor: Actor }) {
   )
 }
 
+function StreamingSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  return (
+    <Section title="Streaming">
+      <Num
+        label="Cull Distance"
+        value={actor.cullDistance}
+        step={5}
+        min={0}
+        onLive={(v) => {
+          actor.cullDistance = v
+          touch()
+        }}
+        onCommit={() => {}}
+      />
+      <div className="panel-empty" style={{ padding: '2px 0' }}>0 = always visible. Hidden beyond this range from the camera.</div>
+    </Section>
+  )
+}
+
 function TagsSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const raw = actor.tags.join(', ')
@@ -797,6 +817,7 @@ export function Details() {
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
         {actor.script && <ScriptVarsSection actor={actor} />}
+        <StreamingSection actor={actor} />
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
         {actor.foliageProps && <FoliageSection actor={actor} />}

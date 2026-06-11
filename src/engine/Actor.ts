@@ -57,6 +57,8 @@ export class Actor {
   pawnMode?: PawnMode
   mobility: Mobility
   tags: string[]
+  /** world streaming: hide when farther than this from the camera (0 = off) */
+  cullDistance = 0
   postProcessProps?: PostProcessProps
   volumeHelper?: THREE.Object3D
   particleProps?: import('./particles').ParticleProps
@@ -187,6 +189,7 @@ export class Actor {
       pawnMode: this.pawnMode,
       mobility: this.mobility,
       tags: [...this.tags],
+      cullDistance: this.cullDistance || undefined,
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,

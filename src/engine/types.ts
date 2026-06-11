@@ -158,6 +158,8 @@ export interface SerializedActor {
   mobility?: Mobility
   /** UE-style actor tags for filtering and gameplay queries */
   tags?: string[]
+  /** distance streaming: hide beyond this range from the camera (0 = never) */
+  cullDistance?: number
   /** PostProcessVolume only */
   postProcess?: PostProcessProps
   /** ParticleEmitter only */
@@ -192,6 +194,8 @@ export interface FoliageProps {
   scaleMax: number
   /** packed instances: [x, y, z, scale, rotY] */
   instances: number[][]
+  /** GridMap mode: snap painting to integer cells, one instance per cell */
+  snap?: boolean
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {

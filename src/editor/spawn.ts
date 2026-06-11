@@ -18,6 +18,7 @@ export type AssetPayload =
   | { kind: 'foliage' }
   | { kind: 'landscape' }
   | { kind: 'trigger' }
+  | { kind: 'gridmap' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -115,6 +116,14 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         transform: { ...base.transform, position: [0, 0, 0] },
       }
     }
+    case 'gridmap':
+      return {
+        ...base,
+        name: uniqueName('GridMap'),
+        type: 'FoliageLayer',
+        foliage: { ...DEFAULT_FOLIAGE, geometry: 'box', color: '#7a8699', density: 1, brushRadius: 0.4, scaleMin: 1, scaleMax: 1, instances: [], snap: true },
+        transform: { ...base.transform, position: [0, 0, 0] },
+      }
     case 'trigger':
       return {
         ...base,

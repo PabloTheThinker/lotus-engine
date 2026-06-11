@@ -13,6 +13,7 @@ import { sampleSequence } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
 import { setScriptLogSink } from '../engine/scripting'
+import { pushSample } from '../engine/profiler'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
@@ -452,6 +453,21 @@ export function Viewport() {
       if (lastStamp && hit.point.distanceTo(lastStamp) < layer.foliageProps.brushRadius * 0.4) return
       lastStamp = hit.point.clone()
       const props = layer.foliageProps
+      if (props.snap) {
+        // GridMap: one instance per integer cell
+        const cx = Math.round(hit.point.x)
+        const cy = Math.round(hit.point.y)
+        const cz = Math.round(hit.point.z)
+        const at = props.instances.findIndex(([x, y, z]) => x === cx && Math.abs(y - (cy + 0.5)) < 0.6 && z === cz)
+        if (e.shiftKey) {
+          if (at >= 0) props.instances.splice(at, 1)
+        } else if (at === -1 && props.instances.length < 4000) {
+          props.instances.push([cx, cy + 0.5, cz, 1, 0])
+        }
+        rebuildFoliage(layer)
+        s.touch()
+        return
+      }
       if (e.shiftKey) {
         // erase within brush
         props.instances = props.instances.filter(([x, y, z]) => hit.point.distanceTo(new THREE.Vector3(x, y, z)) > props.brushRadius)
@@ -695,6 +711,7 @@ export function Viewport() {
     let fpsTimer = 0
     let wasPlaying = false
     renderer.setAnimationLoop(() => {
+      const __t0 = performance.now()
       const dt = Math.min(clock.getDelta(), 0.1)
       const s = useEditor.getState()
 
@@ -788,7 +805,18 @@ export function Viewport() {
         activeCam.updateProjectionMatrix()
         applyShake(activeCam)
       }
+      // distance streaming: hide actors beyond their cull distance
+      {
+        const camP = new THREE.Vector3()
+        activeCam.getWorldPosition(camP)
+        for (const actor of world.actors.values()) {
+          if (actor.cullDistance > 0) {
+            actor.root.visible = actor.visible && actor.root.position.distanceTo(camP) < actor.cullDistance
+          }
+        }
+      }
       renderPass.camera = activeCam
+      const __t1 = performance.now()
       if (usePostFx) composer.render()
       else renderer.render(world.scene, activeCam)
 
@@ -826,6 +854,15 @@ export function Viewport() {
       }
 
       Input.endFrame()
+
+      pushSample({
+        fps: dt > 0 ? 1 / dt : 0,
+        tickMs: __t1 - __t0,
+        renderMs: performance.now() - __t1,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        actors: world.actors.size,
+      })
 
       // stats
       frames += 1

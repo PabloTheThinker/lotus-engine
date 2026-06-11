@@ -32,6 +32,7 @@ const ASSETS: AssetDef[] = [
   { label: 'Particles', icon: '✨', category: 'VFX', payload: { kind: 'particles' } },
   { label: 'Foliage', icon: '🌿', category: 'VFX', payload: { kind: 'foliage' } },
   { label: 'Landscape', icon: '⛰', category: 'VFX', payload: { kind: 'landscape' } },
+  { label: 'Grid Tiles', icon: '🧱', category: 'VFX', payload: { kind: 'gridmap' } },
 ]
 
 const CATEGORIES = ['Shapes', 'Lights', 'Cameras', 'Gameplay', 'Volumes', 'VFX'] as const

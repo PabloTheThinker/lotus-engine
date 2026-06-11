@@ -1221,3 +1221,17 @@ input[type='checkbox'] {
   pointer-events: none;
   z-index: 8;
 }
+
+.dbg-panel { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; overflow: auto; }
+.dbg-graphs { display: flex; gap: 18px; flex-wrap: wrap; }
+.dbg-graph-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); margin-bottom: 3px; }
+.dbg-graph-label em { color: var(--text); font-style: normal; font-weight: 700; }
+.dbg-graph svg { background: var(--bg-0); border: 1px solid var(--border); border-radius: 4px; }
+.dbg-stats { display: flex; gap: 22px; font-size: 11.5px; color: var(--text-dim); }
+.dbg-stats em { color: var(--text); font-style: normal; font-weight: 600; }
+.palette-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.35); display: flex; justify-content: center; }
+.palette { margin-top: 90px; width: 480px; height: fit-content; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 16px 48px rgba(0,0,0,.6); padding: 8px; }
+.palette input { width: 100%; padding: 7px 10px; font-size: 14px; margin-bottom: 6px; }
+.palette-list { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; }
+.palette-list button { text-align: left; background: transparent; border: none; padding: 6px 10px; border-radius: 4px; }
+.palette-list button.active { background: var(--accent); color: #fff; }

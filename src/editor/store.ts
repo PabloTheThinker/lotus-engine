@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
-export type BottomTab = 'content' | 'script' | 'blueprint' | 'sequencer' | 'console' | 'ai'
+export type BottomTab = 'content' | 'script' | 'blueprint' | 'sequencer' | 'console' | 'ai' | 'debug'
 
 export interface ConsoleEntry {
   level: 'log' | 'error' | 'cmd' | 'ai'

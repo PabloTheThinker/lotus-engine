@@ -365,6 +365,7 @@ export class World {
     if (sa.physics) actor.physicsProps = { ...sa.physics }
     if (sa.script) actor.script = sa.script
     if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
+    if (sa.cullDistance) actor.cullDistance = sa.cullDistance
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]

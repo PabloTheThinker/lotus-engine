@@ -5,6 +5,7 @@ import { BlueprintEditor } from './BlueprintEditor'
 import { Sequencer } from './Sequencer'
 import { Console } from './Console'
 import { AIChat } from './AIChat'
+import { DebugPanel } from './DebugPanel'
 
 const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'content', label: '🗄 Content' },
@@ -13,6 +14,7 @@ const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'sequencer', label: '🎞 Sequencer' },
   { id: 'console', label: '>_ Console' },
   { id: 'ai', label: '✦ AI' },
+  { id: 'debug', label: '📈 Debug' },
 ]
 
 /** Bottom dock — Godot-style tabbed drawer under the viewport. */
@@ -50,6 +52,7 @@ export function BottomDock() {
           {tab === 'sequencer' && <Sequencer />}
           {tab === 'console' && <Console />}
           {tab === 'ai' && <AIChat />}
+          {tab === 'debug' && <DebugPanel />}
         </div>
       )}
     </div>

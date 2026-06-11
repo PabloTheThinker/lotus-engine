@@ -15,6 +15,7 @@ import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
 import { undo, redo, runCommand } from './editor/commands'
+import { CommandPalette, installPlugin, loadUserPlugins, registerPlugin } from './editor/palette'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 ;(window as unknown as Record<string, unknown>).vektra = {
@@ -31,6 +32,8 @@ import { undo, redo, runCommand } from './editor/commands'
   },
   ai: { executeAICommands, extractCommands },
   buildPlayableHTML,
+  registerPlugin,
+  installPlugin,
 }
 
 let booted = false
@@ -41,6 +44,7 @@ export default function App() {
     if (!booted) {
       booted = true
       preloadPhysics()
+      loadUserPlugins()
       restoreAutosave().then((ok) => {
         if (!ok) newLevel()
       })
@@ -83,6 +87,7 @@ export default function App() {
         </div>
       </div>
       <StatusBar />
+      <CommandPalette />
     </div>
   )
 }
