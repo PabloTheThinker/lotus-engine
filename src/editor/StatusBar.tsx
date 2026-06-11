@@ -1,5 +1,8 @@
 import { world } from '../engine/World'
 import { useEditor } from './store'
+import { execConsoleCommand } from './consoleCommands'
+import * as THREE from 'three'
+import { makeScriptApi } from '../engine/scripting'
 
 export function StatusBar() {
   const status = useEditor((s) => s.statusMessage)
@@ -18,6 +21,35 @@ export function StatusBar() {
           </span>
         )}
         {status}
+      </span>
+      <span className="status-cmd">
+        Cmd{' '}
+        <input
+          placeholder="Enter Console Command"
+          spellCheck={false}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key !== 'Enter') return
+            const el = e.target as HTMLInputElement
+            const src = el.value.trim()
+            if (!src) return
+            const push = useEditor.getState().pushConsole
+            push('cmd', `> ${src}`)
+            const handled = execConsoleCommand(src)
+            if (handled !== null) push('log', handled)
+            else {
+              try {
+                const api = makeScriptApi(world.actors, () => world.playClock, () => world.pawnPosition)
+                const fn = new Function('world', 'api', 'THREE', `"use strict"; return (${src})`)
+                const r = fn(world, api, THREE)
+                if (r !== undefined) push('log', String(r))
+              } catch (err) {
+                push('error', (err as Error).message)
+              }
+            }
+            el.value = ''
+          }}
+        />
       </span>
       <span className="status-spacer" />
       {selected && (

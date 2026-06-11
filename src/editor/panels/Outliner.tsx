@@ -12,6 +12,7 @@ const TYPE_ICONS: Record<string, string> = {
   SpotLight: '◬',
   DirectionalLight: '☀',
   AmbientLight: '◍',
+  RectLight: '▤',
   Camera: '🎥',
   PlayerStart: '🚩',
   ParticleEmitter: '✨',
@@ -27,11 +28,20 @@ const TYPE_ICONS: Record<string, string> = {
 
 function matchesFilter(actor: Actor, query: string): boolean {
   if (!query) return true
-  const q = query.toLowerCase()
-  if (actor.name.toLowerCase().includes(q)) return true
-  if (actor.type.toLowerCase().includes(q)) return true
-  if (actor.tags.some((t) => t.toLowerCase().includes(q))) return true
-  return false
+  // UE Outliner operators: -term excludes, +term exact-matches, terms AND together
+  const hay = [actor.name, actor.type, ...actor.tags].map((x) => x.toLowerCase())
+  for (const raw of query.toLowerCase().split(/\s+/).filter(Boolean)) {
+    if (raw.startsWith('-')) {
+      const t = raw.slice(1)
+      if (t && hay.some((h) => h.includes(t))) return false
+    } else if (raw.startsWith('+')) {
+      const t = raw.slice(1)
+      if (t && !hay.some((h) => h === t)) return false
+    } else {
+      if (!hay.some((h) => h.includes(raw))) return false
+    }
+  }
+  return true
 }
 
 function subtreeMatches(actor: Actor, query: string): boolean {

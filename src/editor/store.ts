@@ -81,6 +81,8 @@ interface EditorState {
 
   contentBrowserOpen: boolean
   toggleContentBrowser: () => void
+  placeActorsOpen: boolean
+  togglePlaceActors: () => void
 
   // bottom dock (Godot bottom-panel pattern)
   bottomTab: BottomTab
@@ -187,6 +189,8 @@ export const useEditor = create<EditorState>((set) => ({
 
   contentBrowserOpen: true,
   toggleContentBrowser: () => set((s) => ({ contentBrowserOpen: !s.contentBrowserOpen })),
+  placeActorsOpen: true,
+  togglePlaceActors: () => set((s) => ({ placeActorsOpen: !s.placeActorsOpen })),
 
   bottomTab: 'content',
   setBottomTab: (t) => set({ bottomTab: t, contentBrowserOpen: true }),

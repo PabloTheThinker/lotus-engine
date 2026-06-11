@@ -67,6 +67,7 @@ export function createStaticMeshActor(kind: GeometryKind, name: string, id = nex
 }
 
 const DEFAULT_LIGHT: Record<string, LightProps> = {
+  RectLight: { color: '#ffffff', intensity: 8, width: 3, height: 2 },
   PointLight: { color: '#ffffff', intensity: 10, distance: 0, decay: 2, castShadow: true },
   SpotLight: { color: '#ffffff', intensity: 20, distance: 0, decay: 2, angle: 0.5, penumbra: 0.3, castShadow: true },
   DirectionalLight: { color: '#ffffff', intensity: 2, castShadow: true },
@@ -105,6 +106,17 @@ export function createLightActor(type: ActorType, name: string, id = nextActorId
       l.shadow.camera.top = 20
       l.shadow.camera.bottom = -20
       helper = new THREE.DirectionalLightHelper(l, 0.5)
+      light = l
+      break
+    }
+    case 'RectLight': {
+      const l = new THREE.RectAreaLight(props.color, props.intensity, props.width ?? 3, props.height ?? 2)
+      l.lookAt(0, -1, 0)
+      helper = new THREE.Mesh(
+        new THREE.PlaneGeometry(props.width ?? 3, props.height ?? 2),
+        new THREE.MeshBasicMaterial({ color: props.color, wireframe: true }),
+      )
+      helper.rotation.x = -Math.PI / 2
       light = l
       break
     }

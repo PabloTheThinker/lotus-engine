@@ -871,6 +871,25 @@ export function Details() {
           {actor.name}
         </span>
       </div>
+      <div className="outliner-search">
+        <input
+          type="search"
+          placeholder="Search Details"
+          onChange={(e) => {
+            // UE Search Details: hide non-matching sections/rows
+            const q = e.target.value.toLowerCase()
+            const body = (e.target as HTMLElement).closest('.details')?.querySelector('.panel-body')
+            body?.querySelectorAll<HTMLElement>('.details-section').forEach((sec) => {
+              if (!q) {
+                sec.style.display = ''
+                return
+              }
+              const match = sec.textContent?.toLowerCase().includes(q)
+              sec.style.display = match ? '' : 'none'
+            })
+          }}
+        />
+      </div>
       <div className="panel-body">
         <TransformSection actor={actor} />
         <MobilitySection actor={actor} />

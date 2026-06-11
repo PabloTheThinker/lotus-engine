@@ -9,7 +9,7 @@ import { AddActorCommand, runCommand } from './commands'
 
 export type AssetPayload =
   | { kind: 'mesh'; geometry: GeometryKind }
-  | { kind: 'light'; type: Extract<ActorType, 'PointLight' | 'SpotLight' | 'DirectionalLight' | 'AmbientLight'> }
+  | { kind: 'light'; type: Extract<ActorType, 'PointLight' | 'SpotLight' | 'DirectionalLight' | 'AmbientLight' | 'RectLight'> }
   | { kind: 'camera' }
   | { kind: 'empty' }
   | { kind: 'folder' }
@@ -24,6 +24,7 @@ export type AssetPayload =
   | { kind: 'imported'; assetId: string; name: string }
 
 const LIGHT_DEFAULTS = {
+  RectLight: { color: '#ffffff', intensity: 8, width: 3, height: 2 },
   PointLight: { color: '#ffffff', intensity: 10, distance: 0, decay: 2, castShadow: true },
   SpotLight: { color: '#ffffff', intensity: 20, distance: 0, decay: 2, angle: 0.5, penumbra: 0.3, castShadow: true },
   DirectionalLight: { color: '#ffffff', intensity: 2, castShadow: true },
@@ -151,6 +152,9 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
       return { ...base, name: uniqueName(payload.name), type: 'ImportedMesh', assetId: payload.assetId }
   }
 }
+
+/** live drag payload — dataTransfer can't be read during dragover */
+export const dragGhost: { payload: AssetPayload | null } = { payload: null }
 
 export function spawnAsset(payload: AssetPayload, position: [number, number, number] = [0, 0.5, 0]) {
   runCommand(new AddActorCommand(buildSerializedActor(payload, position)))

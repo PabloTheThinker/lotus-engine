@@ -1,3 +1,4 @@
+import { execConsoleCommand } from './consoleCommands'
 import * as THREE from 'three'
 
 import { world } from '../engine/World'
@@ -287,6 +288,12 @@ function executeJavaScript(source: string): TerminalResult {
 
 /** Execute one terminal line (slash command or JavaScript). */
 export function executeTerminalLine(source: string): TerminalResult {
+  // UE console commands (stat fps, stat unit, slomo, t.MaxFPS, r.ScreenPercentage)
+  {
+    const ueHandled = execConsoleCommand(source)
+    if (ueHandled !== null) return { output: ueHandled, error: null, level: 'log' }
+  }
+
   const trimmed = source.trim()
   if (!trimmed) return { output: null, error: null, level: 'log' }
   if (trimmed.startsWith('/')) {

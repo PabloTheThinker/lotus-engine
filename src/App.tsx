@@ -4,6 +4,7 @@ import { Toolbar } from './editor/Toolbar'
 import { StatusBar } from './editor/StatusBar'
 import { Viewport } from './editor/Viewport'
 import { BottomDock } from './editor/panels/BottomDock'
+import { PlaceActors } from './editor/panels/PlaceActors'
 import { Details } from './editor/panels/Details'
 import { Outliner } from './editor/panels/Outliner'
 import { autosave, newLevel, restoreAutosave, saveLevelToFile } from './editor/levelIO'
@@ -85,6 +86,12 @@ export default function App() {
         saveLevelToFile()
       }
       // ` — UE-style console focus (skip when already typing elsewhere)
+      // Ctrl+Backquote — UE world/local gizmo space toggle
+      if (e.code === 'Backquote' && (e.ctrlKey || e.metaKey) && !typing) {
+        e.preventDefault()
+        useEditor.getState().toggleGizmoSpace()
+        return
+      }
       if (e.code === 'Backquote' && !e.ctrlKey && !e.metaKey && !e.altKey && !typing) {
         e.preventDefault()
         useEditor.getState().openConsole()
@@ -106,6 +113,7 @@ export default function App() {
       <MenuBar />
       <Toolbar />
       <div className="editor-main">
+        <PlaceActors />
         <div className="editor-center">
           <Viewport />
           <BottomDock />

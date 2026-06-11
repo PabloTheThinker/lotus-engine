@@ -1247,3 +1247,30 @@ input[type='checkbox'] {
   background: rgba(47, 128, 237, .92); color: #fff; font-weight: 600; font-size: 12px;
   padding: 4px 14px; border-radius: 4px; cursor: pointer; z-index: 6;
 }
+
+.place-actors {
+  width: 200px; flex-shrink: 0; display: flex; flex-direction: column;
+  border-right: 1px solid var(--border); background: var(--bg-1); min-height: 0;
+}
+.place-search { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.place-search input { width: 100%; }
+.place-body { flex: 1; display: flex; min-height: 0; }
+.place-cats { display: flex; flex-direction: column; gap: 2px; padding: 6px 4px; border-right: 1px solid var(--border); }
+.place-cats button { background: transparent; border: none; font-size: 14px; padding: 6px 7px; border-radius: 4px; }
+.place-cats button.active { background: var(--accent); }
+.place-list { flex: 1; overflow-y: auto; padding: 6px; }
+.place-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px;
+  border: 1px solid var(--border); border-radius: 4px; margin-bottom: 4px;
+  background: var(--bg-2); cursor: grab; white-space: nowrap; overflow: hidden;
+}
+.place-item:hover { border-color: var(--accent); }
+.place-icon { font-size: 14px; width: 18px; text-align: center; }
+
+.stat-hud {
+  position: absolute; top: 36px; left: 10px; z-index: 7;
+  font: 600 13px/1.5 'JetBrains Mono', monospace; color: #9fe870;
+  text-shadow: 0 1px 2px #000; white-space: pre; pointer-events: none;
+}
+.status-cmd { display: flex; align-items: center; gap: 5px; color: var(--text-dim); }
+.status-cmd input { width: 190px; font-size: 11px; padding: 1px 6px; background: var(--bg-1); }

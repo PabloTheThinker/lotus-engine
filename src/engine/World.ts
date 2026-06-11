@@ -326,6 +326,7 @@ export class World {
       case 'SpotLight':
       case 'DirectionalLight':
       case 'AmbientLight':
+      case 'RectLight':
         actor = createLightActor(sa.type, sa.name, sa.id)
         if (sa.light) {
           actor.lightProps = { ...sa.light }
@@ -424,6 +425,10 @@ export function applyLightProps(actor: Actor, props: NonNullable<Actor['lightPro
   }
   if (light instanceof THREE.DirectionalLight) {
     light.castShadow = !!props.castShadow
+  }
+  if (light instanceof THREE.RectAreaLight) {
+    light.width = props.width ?? 3
+    light.height = props.height ?? 2
   }
   if (actor.lightHelper && 'update' in actor.lightHelper) {
     ;(actor.lightHelper as THREE.PointLightHelper).update()

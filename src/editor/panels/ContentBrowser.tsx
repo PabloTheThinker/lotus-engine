@@ -1,6 +1,6 @@
 import { world } from '../../engine/World'
 import { deletePrefab, instantiatePrefab, listPrefabs } from '../prefabs'
-import { spawnAsset, type AssetPayload } from '../spawn'
+import { dragGhost, spawnAsset, type AssetPayload } from '../spawn'
 import { useEditor } from '../store'
 
 interface AssetDef {
@@ -105,7 +105,11 @@ export function ContentBrowser() {
                 className="asset-tile"
                 title={`Drag into viewport or double-click to place ${a.label}`}
                 draggable
-                onDragStart={(e) => e.dataTransfer.setData('vektra/asset', JSON.stringify(a.payload))}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('vektra/asset', JSON.stringify(a.payload))
+                  dragGhost.payload = a.payload
+                }}
+                onDragEnd={() => (dragGhost.payload = null)}
                 onDoubleClick={() => spawnAsset(a.payload)}
               >
                 <div className="asset-icon">{a.icon}</div>

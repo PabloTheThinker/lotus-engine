@@ -10,22 +10,32 @@ import * as THREE from 'three'
 export class EditorCameraControls {
   enabled = true
   flySpeed = 8
+  /** orbit pivot — set by F (Frame Selected), orbited with Alt+LMB */
+  pivot = new THREE.Vector3()
 
   private camera: THREE.PerspectiveCamera
   private dom: HTMLElement
   private keys = new Set<string>()
   private looking = false
   private panning = false
+  private orbiting = false
+  private dollying = false
   private yaw = 0
   private pitch = 0
   private readonly euler = new THREE.Euler(0, 0, 0, 'YXZ')
 
   private onMouseDown = (e: MouseEvent) => {
     if (!this.enabled) return
-    if (e.button === 2) {
+    if (e.button === 2 && e.altKey) {
+      this.dollying = true
+      e.preventDefault()
+    } else if (e.button === 2) {
       this.looking = true
       this.dom.requestPointerLock?.()
-    } else if (e.button === 1 || (e.button === 0 && e.altKey)) {
+    } else if (e.button === 0 && e.altKey) {
+      this.orbiting = true
+      e.preventDefault()
+    } else if (e.button === 1) {
       this.panning = true
       e.preventDefault()
     }
@@ -34,9 +44,11 @@ export class EditorCameraControls {
   private onMouseUp = (e: MouseEvent) => {
     if (e.button === 2) {
       this.looking = false
+      this.dollying = false
       if (document.pointerLockElement === this.dom) document.exitPointerLock()
     }
-    if (e.button === 1 || e.button === 0) this.panning = false
+    if (e.button === 1) this.panning = false
+    if (e.button === 0) this.orbiting = false
   }
 
   private onMouseMove = (e: MouseEvent) => {
@@ -46,6 +58,23 @@ export class EditorCameraControls {
       this.pitch -= e.movementY * 0.0022
       this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch))
       this.applyRotation()
+    } else if (this.orbiting) {
+      // UE Maya-style Alt+LMB: orbit around the focus pivot
+      const offset = this.camera.position.clone().sub(this.pivot)
+      const sph = new THREE.Spherical().setFromVector3(offset)
+      sph.theta -= e.movementX * 0.006
+      sph.phi = THREE.MathUtils.clamp(sph.phi + e.movementY * 0.006, 0.05, Math.PI - 0.05)
+      this.camera.position.copy(this.pivot).add(new THREE.Vector3().setFromSpherical(sph))
+      this.camera.lookAt(this.pivot)
+      this.euler.setFromQuaternion(this.camera.quaternion)
+      this.yaw = this.euler.y
+      this.pitch = this.euler.x
+    } else if (this.dollying) {
+      // UE Alt+RMB: dolly toward/away from the orbit pivot
+      const toPivot = this.pivot.clone().sub(this.camera.position)
+      const dist = toPivot.length()
+      const amount = (e.movementX + e.movementY) * 0.004 * Math.max(dist, 1)
+      if (dist - amount > 0.3) this.camera.position.addScaledVector(toPivot.normalize(), amount)
     } else if (this.panning) {
       const dist = Math.max(this.camera.position.length(), 5)
       const panScale = dist * 0.0012
@@ -107,7 +136,7 @@ export class EditorCameraControls {
   }
 
   get isNavigating() {
-    return this.looking || this.panning
+    return this.looking || this.panning || this.orbiting || this.dollying
   }
 
   private applyRotation() {
@@ -130,6 +159,7 @@ export class EditorCameraControls {
     const dir = new THREE.Vector3()
     this.camera.getWorldDirection(dir)
     this.camera.position.copy(center).addScaledVector(dir, -radius * 3)
+    this.pivot.copy(center) // F sets the orbit pivot (UE behavior)
   }
 
   update(dt: number) {

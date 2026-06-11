@@ -7,6 +7,7 @@ export type ActorType =
   | 'SpotLight'
   | 'DirectionalLight'
   | 'AmbientLight'
+  | 'RectLight'
   | 'Camera'
   | 'PlayerStart'
   | 'Empty'
@@ -29,6 +30,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   SpotLight: 'stationary',
   DirectionalLight: 'stationary',
   AmbientLight: 'stationary',
+  RectLight: 'stationary',
   Camera: 'movable',
   PlayerStart: 'movable',
   Empty: 'movable',
@@ -91,6 +93,9 @@ export interface MaterialProps {
 export interface LightProps {
   color: string
   intensity: number
+  // rect light
+  width?: number
+  height?: number
   // point / spot
   distance?: number
   decay?: number

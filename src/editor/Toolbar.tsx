@@ -18,6 +18,8 @@ export function Toolbar() {
   const setTranslateSnap = useEditor((s) => s.setTranslateSnap)
   const rotateSnapDeg = useEditor((s) => s.rotateSnapDeg)
   const setRotateSnapDeg = useEditor((s) => s.setRotateSnapDeg)
+  const scaleSnap = useEditor((s) => s.scaleSnap)
+  const setScaleSnap = useEditor((s) => s.setScaleSnap)
   const paused = useEditor((s) => s.paused)
   const setPaused = useEditor((s) => s.setPaused)
   const requestStep = useEditor((s) => s.requestStep)
@@ -37,6 +39,8 @@ export function Toolbar() {
   const canUndo = useEditor((s) => s.canUndo)
   const canRedo = useEditor((s) => s.canRedo)
   const toggleContentBrowser = useEditor((s) => s.toggleContentBrowser)
+  const placeActorsOpen = useEditor((s) => s.placeActorsOpen)
+  const togglePlaceActors = useEditor((s) => s.togglePlaceActors)
 
   return (
     <div className="toolbar">
@@ -44,6 +48,12 @@ export function Toolbar() {
         <button title="New Level" onClick={newLevel}>🗋 New</button>
         <button title="Open Level" onClick={openLevelFromFile}>📂 Open</button>
         <button title="Save Level" onClick={saveLevelToFile}>💾 Save</button>
+      </div>
+      <div className="toolbar-sep" />
+      <div className="toolbar-group">
+        <button className={placeActorsOpen ? 'active' : ''} title="Place Actors panel" onClick={togglePlaceActors}>
+          ⊞ Place
+        </button>
       </div>
       <div className="toolbar-sep" />
       <div className="toolbar-group">
@@ -71,7 +81,7 @@ export function Toolbar() {
           value={translateSnap}
           onChange={(e) => setTranslateSnap(parseFloat(e.target.value))}
         >
-          {[0.1, 0.25, 0.5, 1, 5, 10].map((v) => (
+          {[0.01, 0.05, 0.1, 0.5, 1, 5, 10].map((v) => (
             <option key={v} value={v}>{v}m</option>
           ))}
         </select>
@@ -81,8 +91,18 @@ export function Toolbar() {
           value={rotateSnapDeg}
           onChange={(e) => setRotateSnapDeg(parseFloat(e.target.value))}
         >
-          {[5, 10, 15, 30, 45, 60, 90].map((v) => (
+          {[5, 10, 15, 30, 45, 60, 90, 120].map((v) => (
             <option key={v} value={v}>{v}°</option>
+          ))}
+        </select>
+        <select
+          className="snap-size"
+          title="Scale snap (UE: 10/1/0.5/0.25/0.125)"
+          value={scaleSnap}
+          onChange={(e) => setScaleSnap(parseFloat(e.target.value))}
+        >
+          {[10, 1, 0.5, 0.25, 0.125].map((v) => (
+            <option key={v} value={v}>×{v}</option>
           ))}
         </select>
         <button title="Gizmo space (T)" onClick={toggleGizmoSpace}>

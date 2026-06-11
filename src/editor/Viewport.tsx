@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
@@ -14,13 +15,14 @@ import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
 import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
 import { setScriptLogSink } from '../engine/scripting'
-import { pushSample } from '../engine/profiler'
+import { pushSample, latest } from '../engine/profiler'
+import { consoleState } from './consoleCommands'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
-import { spawnAsset, type AssetPayload } from './spawn'
+import { dragGhost, spawnAsset, type AssetPayload } from './spawn'
 import { useEditor, type ViewMode } from './store'
 
 function CameraSpeed() {
@@ -50,6 +52,7 @@ interface CtxMenu {
 export function Viewport() {
   const mountRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
+  const statHudRef = useRef<HTMLDivElement>(null)
   const pipRef = useRef<HTMLDivElement>(null)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
   const ctxMenuSetter = useRef(setCtxMenu)
@@ -57,6 +60,7 @@ export function Viewport() {
 
   useEffect(() => {
     const mount = mountRef.current!
+    RectAreaLightUniformsLib.init()
     const renderer = new THREE.WebGLRenderer({ antialias: true })
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFShadowMap
@@ -171,6 +175,7 @@ export function Viewport() {
 
     // selection outlines — one pooled BoxHelper per selected actor
     const selectionBoxes = new Map<string, THREE.BoxHelper>()
+    const collisionHelpers = new Map<string, THREE.BoxHelper>()
     function syncSelectionBoxes(ids: string[], show: boolean) {
       for (const [id, box] of selectionBoxes) {
         if (!show || !ids.includes(id) || !world.actors.has(id)) {
@@ -548,10 +553,69 @@ export function Viewport() {
       strokeBefore = null
     })
 
-    // drag & drop spawning
-    renderer.domElement.addEventListener('dragover', (e) => e.preventDefault())
+    // drag & drop spawning — UE surface-tracking ghost preview
+    let ghostMesh: THREE.Mesh | null = null
+    let ghostKind = ''
+    function ensureGhost(payload: AssetPayload): THREE.Mesh {
+      const kind = payload.kind === 'mesh' ? payload.geometry : 'box'
+      if (!ghostMesh || ghostKind !== kind) {
+        ghostMesh?.removeFromParent()
+        ghostMesh?.geometry.dispose()
+        const geo =
+          payload.kind === 'mesh'
+            ? (() => {
+                switch (payload.geometry) {
+                  case 'sphere': return new THREE.SphereGeometry(0.5, 16, 12)
+                  case 'cylinder': return new THREE.CylinderGeometry(0.5, 0.5, 1, 16)
+                  case 'cone': return new THREE.ConeGeometry(0.5, 1, 16)
+                  case 'torus': return new THREE.TorusGeometry(0.5, 0.2, 8, 24)
+                  case 'capsule': return new THREE.CapsuleGeometry(0.3, 0.6, 4, 8)
+                  default: return new THREE.BoxGeometry(1, 1, 1)
+                }
+              })()
+            : new THREE.SphereGeometry(0.35, 10, 8)
+        ghostMesh = new THREE.Mesh(
+          geo,
+          new THREE.MeshBasicMaterial({ color: 0x2f80ed, transparent: true, opacity: 0.45, depthWrite: false }),
+        )
+        ghostMesh.userData.isHelper = true
+        ghostKind = kind
+        world.scene.add(ghostMesh)
+      }
+      return ghostMesh
+    }
+    function surfacePointAt(e: { clientX: number; clientY: number }): THREE.Vector3 | null {
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, editorCamera)
+      const targets: THREE.Object3D[] = []
+      for (const a of world.actors.values()) {
+        a.root.traverse((o) => {
+          if (o instanceof THREE.Mesh && !o.userData.isHelper && !o.userData.isEditorOnly) targets.push(o)
+        })
+      }
+      const hit = raycaster.intersectObjects(targets, false)[0]
+      if (hit) return hit.point
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+      const v = new THREE.Vector3()
+      return raycaster.ray.intersectPlane(plane, v) ? v : null
+    }
+    renderer.domElement.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      if (!dragGhost.payload) return
+      const p = surfacePointAt(e)
+      if (!p) return
+      const g = ensureGhost(dragGhost.payload)
+      g.visible = true
+      g.position.set(p.x, dragGhost.payload.kind === 'mesh' ? p.y + 0.5 : p.y + 0.4, p.z)
+    })
+    renderer.domElement.addEventListener('dragleave', () => {
+      if (ghostMesh) ghostMesh.visible = false
+    })
     renderer.domElement.addEventListener('drop', (e) => {
       e.preventDefault()
+      if (ghostMesh) ghostMesh.visible = false
+      dragGhost.payload = null
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, editorCamera)
@@ -571,9 +635,12 @@ export function Viewport() {
       const raw = e.dataTransfer?.getData('vektra/asset')
       if (!raw) return
       const payload = JSON.parse(raw) as AssetPayload
-      const pos: [number, number, number] = onPlane
-        ? [hit.x, payload.kind === 'mesh' ? 0.5 : hit.y, hit.z]
-        : [0, 0.5, 0]
+      const sp = surfacePointAt(e)
+      const pos: [number, number, number] = sp
+        ? [sp.x, payload.kind === 'mesh' ? sp.y + 0.5 : Math.max(sp.y + 0.5, 1), sp.z]
+        : onPlane
+          ? [hit.x, payload.kind === 'mesh' ? 0.5 : hit.y, hit.z]
+          : [0, 0.5, 0]
       spawnAsset(payload, pos)
     })
 
@@ -657,8 +724,19 @@ export function Viewport() {
         }
         return
       }
+      // UE: Spacebar cycles transform tools; Alt+2/3/4/5 = view modes (before bookmarks)
+      if (e.code === 'Space' && !e.ctrlKey) {
+        const order = ['select', 'translate', 'rotate', 'scale'] as const
+        s.setGizmoMode(order[(order.indexOf(s.gizmoMode) + 1) % order.length])
+        return
+      }
+      if (e.altKey && ['Digit2', 'Digit3', 'Digit4', 'Digit5'].includes(e.code)) {
+        e.preventDefault()
+        s.setViewMode(e.code === 'Digit2' ? 'wireframe' : e.code === 'Digit3' ? 'unlit' : e.code === 'Digit4' ? 'lit' : 'detail')
+        return
+      }
       // camera bookmarks
-      if (/^Digit[0-9]$/.test(e.code)) {
+      if (!e.altKey && /^Digit[0-9]$/.test(e.code)) {
         const slot = parseInt(e.code.slice(5), 10)
         if (e.shiftKey) {
           bookmarks[slot] = { p: editorCamera.position.clone(), q: editorCamera.quaternion.clone() }
@@ -668,6 +746,18 @@ export function Viewport() {
           editorCamera.quaternion.copy(bookmarks[slot]!.q)
           s.setStatus(`Bookmark ${slot}`)
         }
+        return
+      }
+      if (e.code === 'F11') {
+        e.preventDefault()
+        const el = mountRef.current
+        if (document.fullscreenElement) void document.exitFullscreen()
+        else void el?.requestFullscreen()
+        return
+      }
+      if (e.altKey && e.code === 'KeyP') {
+        e.preventDefault()
+        s.startPlay('pie')
         return
       }
       switch (e.code) {
@@ -730,8 +820,11 @@ export function Viewport() {
     let fpsTimer = 0
     let wasPlaying = false
     let stepConsumed = 0
+    let lastFrameAt = 0
     renderer.setAnimationLoop(() => {
       const __t0 = performance.now()
+      if (consoleState.maxFPS > 0 && __t0 - lastFrameAt < 1000 / consoleState.maxFPS) return
+      lastFrameAt = __t0
       const dt = Math.min(clock.getDelta(), 0.1)
       const s = useEditor.getState()
 
@@ -788,7 +881,7 @@ export function Viewport() {
       }
       if (simDt > 0) {
         pawn.update(simDt)
-        world.tick(simDt)
+        world.tick(simDt * consoleState.timeDilation)
       }
       world.updateParticles(s.playing && s.paused ? 0.000001 : dt) // emitters preview in-editor like Niagara
 
@@ -852,6 +945,28 @@ export function Viewport() {
         }
       }
 
+      // `show collision` — wireframe outlines on physics-enabled actors
+      collisionHelpers.forEach((h, id) => {
+        const a = world.actors.get(id)
+        if (!consoleState.showCollision || !a || a.physicsProps?.mode === 'none') {
+          h.removeFromParent()
+          h.dispose()
+          collisionHelpers.delete(id)
+        } else {
+          h.setFromObject(a.root)
+        }
+      })
+      if (consoleState.showCollision) {
+        for (const a of world.actors.values()) {
+          if (a.physicsProps && a.physicsProps.mode !== 'none' && !collisionHelpers.has(a.id)) {
+            const h = new THREE.BoxHelper(a.root, 0x33ff66)
+            h.userData.isHelper = true
+            collisionHelpers.set(a.id, h)
+            world.scene.add(h)
+          }
+        }
+      }
+
       // distance streaming: hide actors beyond their cull distance
       {
         const camP = new THREE.Vector3()
@@ -861,6 +976,12 @@ export function Viewport() {
             actor.root.visible = actor.visible && actor.root.position.distanceTo(camP) < actor.cullDistance
           }
         }
+      }
+      // r.ScreenPercentage — scale the render resolution
+      const targetPR = Math.min(window.devicePixelRatio, 2) * (consoleState.screenPercentage / 100)
+      if (Math.abs(renderer.getPixelRatio() - targetPR) > 0.01) {
+        renderer.setPixelRatio(targetPR)
+        composer.setSize(mount.clientWidth, mount.clientHeight)
       }
       renderPass.camera = activeCam
       const __t1 = performance.now()
@@ -947,6 +1068,24 @@ export function Viewport() {
         actors: world.actors.size,
       })
 
+      // UE stat HUD (stat fps / stat unit)
+      if (statHudRef.current) {
+        if (consoleState.statMode === 'none') {
+          statHudRef.current.style.display = 'none'
+        } else {
+          statHudRef.current.style.display = 'block'
+          const sample = latest()
+          if (sample) {
+            if (consoleState.statMode === 'fps') {
+              statHudRef.current.textContent = `${sample.fps.toFixed(0)} FPS  ${(1000 / Math.max(1, sample.fps)).toFixed(2)} ms`
+            } else {
+              const frame = sample.tickMs + sample.renderMs
+              statHudRef.current.textContent = `Frame: ${frame.toFixed(2)} ms\nGame: ${sample.tickMs.toFixed(2)} ms\nDraw: ${sample.renderMs.toFixed(2)} ms\nGPU: n/a (web)`
+            }
+          }
+        }
+      }
+
       // stats
       frames += 1
       fpsTimer += dt
@@ -997,6 +1136,7 @@ export function Viewport() {
   return (
     <div className="viewport" ref={mountRef}>
       <div className="viewport-stats" ref={statsRef} />
+      <div className="stat-hud" ref={statHudRef} style={{ display: 'none' }} />
       <div className="viewport-modes">
         <CameraSpeed />
         {(['lit', 'detail', 'unlit', 'wireframe'] as const).map((m) => (
