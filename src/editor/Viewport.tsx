@@ -10,7 +10,7 @@ import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage } from '../engine/factory'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
-import { sampleSequence } from '../engine/sequencer'
+import { sampleSequence, setKey } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
 import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
@@ -894,6 +894,7 @@ export function Viewport() {
     let fpsTimer = 0
     let wasPlaying = false
     let stepConsumed = 0
+    let takeAcc = 0
     let lastFrameAt = 0
     renderer.setAnimationLoop(() => {
       const __t0 = performance.now()
@@ -961,6 +962,21 @@ export function Viewport() {
         world.tick(simDt * consoleState.timeDilation)
       }
       world.updateParticles(s.playing && s.paused ? 0.000001 : dt) // emitters preview in-editor like Niagara
+
+      // Take Recorder: sample the selected actor into sequencer keys at 10 Hz
+      if (s.takeRecording && s.playing && s.selectedId && !s.paused) {
+        takeAcc += dt
+        if (takeAcc >= 0.1) {
+          takeAcc = 0
+          const rec = world.actors.get(s.selectedId)
+          if (rec) {
+            const t = Math.min(world.playClock, world.sequence.duration)
+            const tr = rec.transform
+            setKey(world.sequence, rec.id, 'position', t, tr.position)
+            setKey(world.sequence, rec.id, 'rotation', t, tr.rotation)
+          }
+        }
+      }
 
       // sequencer editor playback (PIE auto-play is handled in world.tick)
       if (s.seqPlaying && !s.playing && world.sequence.tracks.length > 0) {

@@ -101,6 +101,41 @@ export function Sequencer() {
     touch()
   }
 
+  const renderMovie = () => {
+    const canvas = document.querySelector<HTMLCanvasElement>('.viewport canvas')
+    if (!canvas) return
+    const stream = canvas.captureStream(60)
+    const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' })
+    const chunks: Blob[] = []
+    rec.ondataavailable = (e) => chunks.push(e.data)
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: 'video/webm' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `${useEditor.getState().levelName || 'sequence'}.webm`
+      a.click()
+      URL.revokeObjectURL(a.href)
+      useEditor.getState().setStatus(`Rendered ${a.download} (${(blob.size / 1024 / 1024).toFixed(1)} MB)`)
+    }
+    // play the timeline from 0 and record one full pass
+    setSeqTime(0)
+    sampleSequence(world, seq, 0)
+    setSeqPlaying(true)
+    rec.start()
+    useEditor.getState().setStatus('Rendering movie…')
+    setTimeout(() => {
+      rec.stop()
+      setSeqPlaying(false)
+    }, seq.duration * 1000 + 200)
+  }
+
+  const toggleTakeRecord = () => {
+    const st = useEditor.getState()
+    st.setTakeRecording(!st.takeRecording)
+    st.setStatus(st.takeRecording ? 'Take recording armed off' : 'Take armed — Play/Simulate to record the selected actor')
+  }
+  const recording = useEditor((s) => s.takeRecording)
+
   const cycleInterp = (key: SeqKey) => {
     key.interp = key.interp === 'smooth' ? 'step' : key.interp === 'step' ? 'linear' : 'smooth'
     touch()
@@ -195,6 +230,17 @@ export function Sequencer() {
         </button>
         <button onClick={addEvent} title="Event key: emit a signal at the playhead (PIE)">
           ⚡ Event
+        </button>
+        <button onClick={renderMovie} title="Movie Render Queue: play the timeline once and export a .webm video of the viewport">
+          🎥 Render
+        </button>
+        <button
+          className={recording ? 'active' : ''}
+          onClick={toggleTakeRecord}
+          disabled={!selectedId}
+          title="Take Recorder: while playing, sample the selected actor's transform into keyframes (toggle, then Play/Simulate)"
+        >
+          {recording ? '⏺ Recording…' : '⏺ Take'}
         </button>
       </div>
       <div className="seq-body">

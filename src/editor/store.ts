@@ -129,6 +129,10 @@ interface EditorState {
   seqTime: number
   setSeqTime: (t: number) => void
 
+  // Take Recorder: sample the selected actor into sequencer keys while playing
+  takeRecording: boolean
+  setTakeRecording: (v: boolean) => void
+
   // preferences modal
   showPrefs: boolean
   setShowPrefs: (v: boolean) => void
@@ -243,6 +247,9 @@ export const useEditor = create<EditorState>((set) => ({
   setSeqPlaying: (v) => set({ seqPlaying: v }),
   seqTime: 0,
   setSeqTime: (t) => set({ seqTime: t }),
+
+  takeRecording: false,
+  setTakeRecording: (v) => set({ takeRecording: v }),
 
   showPrefs: false,
   setShowPrefs: (v) => set({ showPrefs: v }),

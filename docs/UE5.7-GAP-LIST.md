@@ -111,8 +111,8 @@
 | Blend spaces 1D/2D | ⏳ | 1D lerp weights (easy); 2D triangulation |
 | Control Rig / IK | ⏳ | Two-bone IK + LookAt on glTF skeletons; rig graphs 🚫 |
 | Retargeting / Motion Matching | 🚫 | — |
-| Take Recorder | ⏳ | Record live actor motion into Sequencer tracks while playing |
-| Movie Render Queue | ⏳ | WebCodecs MP4/WebM capture of Sequencer playback — very web-friendly win |
+| Take Recorder | ✅ | v0.31: ⏺ Take arms 10Hz transform sampling of the selected actor during Play → sequencer keys (verified 15 keys) |
+| Movie Render Queue | ✅ | v0.31: 🎥 Render plays the timeline once and exports a .webm of the viewport (verified 507KB capture) |
 
 ## 7. Gameplay Systems
 
