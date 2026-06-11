@@ -4,6 +4,7 @@ import { isActionDown, actionJustPressed } from './inputActions'
 import { cameraShake, hud, raycastActors, setTimer, setViewCamera } from './gameplay'
 import { runBT, type BTNode } from './behaviorTree'
 import { findPath } from './nav'
+import { playSound } from './audio'
 import type { Actor } from './Actor'
 
 /**
@@ -52,6 +53,8 @@ export interface ScriptApi {
   findPath: (from: [number, number, number], to: [number, number, number]) => [number, number, number][] | null
   /** data assets (UE DataTable analog) */
   getData: (name: string) => unknown
+  /** play an imported sound: api.playSound('boom', { at: [x,y,z], volume: 0.8 }) */
+  playSound: (name: string, opts?: { volume?: number; bus?: 'sfx' | 'music'; loop?: boolean; at?: [number, number, number] }) => void
   time: () => number
   /** world position of the player pawn while playing, else null */
   pawnPosition: () => THREE.Vector3 | null
@@ -123,6 +126,14 @@ export function makeScriptApi(
     blackboard: (actor) => blackboardFor(actor),
     findPath: (from, to) => findPath(actors, from, to),
     getData: (name) => dataStore[name],
+    playSound: (name, opts = {}) =>
+      playSound(name, {
+        ...opts,
+        listener: () => {
+          const p = pawnPosition()
+          return p ? [p.x, p.y, p.z] : null
+        },
+      }),
     raycast: (origin, dir, maxDist) => raycastActors(actors, origin, dir, maxDist),
     hud,
     cameraShake,

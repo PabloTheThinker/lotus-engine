@@ -138,6 +138,26 @@ function MobilitySection({ actor }: { actor: Actor }) {
   )
 }
 
+function ProbeSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const setStatus = useEditor((s) => s.setStatus)
+  const props = actor.probeProps!
+  return (
+    <Section title="Reflection Probe">
+      <Num label="Radius" value={props.radius} step={1} min={1} onLive={(v) => { props.radius = v; touch() }} onCommit={() => {}} />
+      <button
+        onClick={() => {
+          world.probeBakeQueue.push(actor.id)
+          setStatus('Bake queued…')
+        }}
+      >
+        🔮 Bake Cubemap
+      </button>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Bakes a cubemap here and feeds it to PBR meshes within the radius.</div>
+    </Section>
+  )
+}
+
 function StreamingSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   return (
@@ -818,6 +838,7 @@ export function Details() {
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
         {actor.script && <ScriptVarsSection actor={actor} />}
         <StreamingSection actor={actor} />
+        {actor.probeProps && <ProbeSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}
         {actor.foliageProps && <FoliageSection actor={actor} />}

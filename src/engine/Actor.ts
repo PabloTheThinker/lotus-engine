@@ -66,6 +66,8 @@ export class Actor {
   foliageProps?: FoliageProps
   foliageMesh?: THREE.InstancedMesh
   landscapeProps?: LandscapeProps
+  probeProps?: { radius: number }
+  customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -193,6 +195,8 @@ export class Actor {
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
+      probe: this.probeProps ? { ...this.probeProps } : undefined,
+      customGeometry: this.customGeometry,
       landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights], weights: this.landscapeProps.weights ? [...this.landscapeProps.weights] : undefined } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,

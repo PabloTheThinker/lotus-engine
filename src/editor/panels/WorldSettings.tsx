@@ -1,7 +1,25 @@
 import { useState } from 'react'
 import { world } from '../../engine/World'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
+import { setBusVolume } from '../../engine/audio'
 import { useEditor } from '../store'
+
+function AudioSection() {
+  return (
+    <details className="details-section">
+      <summary>Audio Buses</summary>
+      <div className="details-grid">
+        {(['master', 'sfx', 'music'] as const).map((bus) => (
+          <label className="field" key={bus}>
+            <span>{bus}</span>
+            <input type="range" min={0} max={1.5} step={0.05} defaultValue={1} onChange={(e) => setBusVolume(bus, parseFloat(e.target.value))} />
+          </label>
+        ))}
+        <div className="panel-empty" style={{ padding: '2px 0' }}>Import sounds in the Content Browser; scripts call api.playSound(name).</div>
+      </div>
+    </details>
+  )
+}
 
 function DataAssetsSection() {
   const touch = useEditor((s) => s.touch)
@@ -214,6 +232,7 @@ export function WorldSettings() {
       </div>
       <InputMapSection />
       <DataAssetsSection />
+      <AudioSection />
     </details>
   )
 }

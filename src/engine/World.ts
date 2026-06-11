@@ -20,7 +20,8 @@ import { createLandscapeActor, buildLandscapeMesh } from './landscape'
 import { resetGameplay, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
-import { createTriggerVolumeActor } from './factory'
+import { registerSound, stopAllSounds } from './audio'
+import { createTriggerVolumeActor, createReflectionProbeActor, createCustomMeshActor } from './factory'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { emptySequence, sampleSequence, type Sequence } from './sequencer'
@@ -54,6 +55,12 @@ export class World {
 
   /** data assets (UE DataTables) — name → JSON */
   dataTables: Record<string, unknown> = {}
+
+  /** imported audio (base64) — registered with the audio engine on load */
+  sounds: Record<string, string> = {}
+
+  /** probe ids awaiting a cubemap bake (processed by the viewport) */
+  probeBakeQueue: string[] = []
 
   constructor() {
     this.sky.scale.setScalar(450000)
@@ -172,6 +179,7 @@ export class World {
 
   endPlay() {
     this.playing = false
+    stopAllSounds()
     this.physics.stop()
     for (const a of this.actors.values()) a.endPlay()
   }
@@ -249,6 +257,7 @@ export class World {
       actors: [...this.actors.values()].map((a) => a.serialize()),
       sequence: JSON.parse(JSON.stringify(this.sequence)),
       data: JSON.parse(JSON.stringify(this.dataTables)),
+      sounds: { ...this.sounds },
     }
   }
 
@@ -263,6 +272,8 @@ export class World {
     this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
+    this.sounds = level.sounds ? { ...level.sounds } : {}
+    for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {
       const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0))
@@ -341,6 +352,17 @@ export class World {
         if (sa.landscape) {
           actor.landscapeProps = { ...sa.landscape, heights: [...sa.landscape.heights] }
           buildLandscapeMesh(actor)
+        }
+        break
+      case 'ReflectionProbe':
+        actor = createReflectionProbeActor(sa.name, sa.id)
+        if (sa.probe) actor.probeProps = { ...sa.probe }
+        break
+      case 'CustomMesh':
+        actor = createCustomMeshActor(sa.name, sa.customGeometry ?? { positions: [], normals: [] }, sa.id)
+        if (sa.material && actor.mesh) {
+          actor.materialProps = { ...sa.material }
+          applyMaterialProps(actor.mesh.material as THREE.MeshStandardMaterial, sa.material)
         }
         break
       case 'TriggerVolume':

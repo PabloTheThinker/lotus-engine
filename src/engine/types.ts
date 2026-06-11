@@ -16,6 +16,8 @@ export type ActorType =
   | 'FoliageLayer'
   | 'Landscape'
   | 'TriggerVolume'
+  | 'ReflectionProbe'
+  | 'CustomMesh'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -36,6 +38,8 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   FoliageLayer: 'static',
   Landscape: 'static',
   TriggerVolume: 'movable',
+  ReflectionProbe: 'stationary',
+  CustomMesh: 'static',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -168,6 +172,10 @@ export interface SerializedActor {
   foliage?: FoliageProps
   /** Landscape only */
   landscape?: LandscapeProps
+  /** ReflectionProbe only */
+  probe?: { radius: number }
+  /** CustomMesh (CSG results) — packed geometry */
+  customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
@@ -254,6 +262,8 @@ export interface SerializedLevel {
   sequence?: import('./sequencer').Sequence
   /** data assets (UE DataTables) — name → arbitrary JSON */
   data?: Record<string, unknown>
+  /** imported audio clips, base64 */
+  sounds?: Record<string, string>
 }
 
 export const DEFAULT_MATERIAL: MaterialProps = {

@@ -29,6 +29,7 @@ const ASSETS: AssetDef[] = [
   { label: 'Folder', icon: '📁', category: 'Gameplay', payload: { kind: 'folder' } },
   { label: 'Post Process', icon: '◫', category: 'Volumes', payload: { kind: 'postprocess' } },
   { label: 'Trigger', icon: '⏚', category: 'Volumes', payload: { kind: 'trigger' } },
+  { label: 'Refl. Probe', icon: '🔮', category: 'Volumes', payload: { kind: 'probe' } },
   { label: 'Particles', icon: '✨', category: 'VFX', payload: { kind: 'particles' } },
   { label: 'Foliage', icon: '🌿', category: 'VFX', payload: { kind: 'foliage' } },
   { label: 'Landscape', icon: '⛰', category: 'VFX', payload: { kind: 'landscape' } },
@@ -36,6 +37,28 @@ const ASSETS: AssetDef[] = [
 ]
 
 const CATEGORIES = ['Shapes', 'Lights', 'Cameras', 'Gameplay', 'Volumes', 'VFX'] as const
+
+function importAudio() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'audio/*'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    const s = useEditor.getState()
+    const buf = await file.arrayBuffer()
+    let binary = ''
+    const bytes = new Uint8Array(buf)
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    const name = file.name.replace(/\.[^.]+$/, '')
+    world.sounds[name] = btoa(binary)
+    const { registerSound } = await import('../../engine/audio')
+    await registerSound(name, world.sounds[name])
+    s.setStatus(`Sound imported: ${name} — api.playSound('${name}')`)
+    s.touch()
+  }
+  input.click()
+}
 
 function importGltf() {
   const input = document.createElement('input')
@@ -154,6 +177,10 @@ export function ContentBrowser() {
           <div className="asset-tile" onClick={importGltf} title="Import a .glb/.gltf model">
             <div className="asset-icon">⭱</div>
             <div className="asset-label">glTF…</div>
+          </div>
+          <div className="asset-tile" onClick={importAudio} title="Import a sound — play with api.playSound(name)">
+            <div className="asset-icon">🔊</div>
+            <div className="asset-label">Audio…</div>
           </div>
         </div>
       </div>

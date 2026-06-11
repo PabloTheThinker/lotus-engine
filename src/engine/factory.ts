@@ -244,6 +244,45 @@ export function createPostProcessVolumeActor(name: string, id = nextActorId()): 
   return actor
 }
 
+/** ReflectionProbe — bakes a local cubemap and feeds nearby PBR materials. */
+export function createReflectionProbeActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'ReflectionProbe')
+  actor.probeProps = { radius: 8 }
+  const gizmo = new THREE.Mesh(
+    new THREE.SphereGeometry(0.35, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x56b3c9, wireframe: true }),
+  )
+  gizmo.userData.actorId = id
+  gizmo.userData.isEditorOnly = true
+  actor.mesh = gizmo
+  actor.root.add(gizmo)
+  return actor
+}
+
+/** CustomMesh — arbitrary geometry (CSG results) with PBR material. */
+export function createCustomMeshActor(
+  name: string,
+  geom: { positions: number[]; normals: number[]; index?: number[] },
+  id = nextActorId(),
+): Actor {
+  const actor = new Actor(id, name, 'CustomMesh')
+  actor.customGeometry = geom
+  actor.materialProps = { ...DEFAULT_MATERIAL }
+  actor.physicsProps = { ...DEFAULT_PHYSICS }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(geom.positions, 3))
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(geom.normals, 3))
+  if (geom.index) g.setIndex(geom.index)
+  g.computeBoundingSphere()
+  const mesh = new THREE.Mesh(g, buildMaterial(actor.materialProps))
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.userData.actorId = id
+  actor.mesh = mesh
+  actor.root.add(mesh)
+  return actor
+}
+
 /** TriggerVolume — unit box volume emitting enter:/exit: signals for the pawn. */
 export function createTriggerVolumeActor(name: string, id = nextActorId()): Actor {
   const actor = new Actor(id, name, 'TriggerVolume')

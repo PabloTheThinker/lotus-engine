@@ -855,6 +855,42 @@ export function Viewport() {
 
       Input.endFrame()
 
+      // bake queued reflection probes (one per frame)
+      if (world.probeBakeQueue.length > 0) {
+        const probeId = world.probeBakeQueue.shift()!
+        const probe = world.actors.get(probeId)
+        if (probe?.probeProps) {
+          const rt = new THREE.WebGLCubeRenderTarget(256, { generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter })
+          const cubeCam = new THREE.CubeCamera(0.1, 500, rt)
+          probe.root.getWorldPosition(cubeCam.position)
+          const hiddenP: THREE.Object3D[] = []
+          for (const o of [grid, axes, gizmoHelper, ...selectionBoxes.values()]) {
+            if (o.visible) { o.visible = false; hiddenP.push(o) }
+          }
+          if (probe.mesh?.visible) { probe.mesh.visible = false; hiddenP.push(probe.mesh) }
+          cubeCam.update(renderer, world.scene)
+          for (const o of hiddenP) o.visible = true
+          const radius = probe.probeProps.radius
+          const pPos = new THREE.Vector3()
+          probe.root.getWorldPosition(pPos)
+          let affected = 0
+          for (const a of world.actors.values()) {
+            if (!a.mesh || a.id === probeId || a.mesh.userData.isEditorOnly) continue
+            const mp = new THREE.Vector3()
+            a.root.getWorldPosition(mp)
+            if (mp.distanceTo(pPos) <= radius) {
+              const mat = a.mesh.material as THREE.MeshStandardMaterial
+              if ('envMap' in mat) {
+                mat.envMap = rt.texture
+                mat.needsUpdate = true
+                affected++
+              }
+            }
+          }
+          useEditor.getState().setStatus(`Probe ${probe.name} baked → ${affected} meshes`)
+        }
+      }
+
       pushSample({
         fps: dt > 0 ? 1 / dt : 0,
         tickMs: __t1 - __t0,

@@ -19,6 +19,7 @@ export type AssetPayload =
   | { kind: 'landscape' }
   | { kind: 'trigger' }
   | { kind: 'gridmap' }
+  | { kind: 'probe' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -123,6 +124,14 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         type: 'FoliageLayer',
         foliage: { ...DEFAULT_FOLIAGE, geometry: 'box', color: '#7a8699', density: 1, brushRadius: 0.4, scaleMin: 1, scaleMax: 1, instances: [], snap: true },
         transform: { ...base.transform, position: [0, 0, 0] },
+      }
+    case 'probe':
+      return {
+        ...base,
+        name: uniqueName('ReflectionProbe'),
+        type: 'ReflectionProbe',
+        probe: { radius: 8 },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 2), position[2]] },
       }
     case 'trigger':
       return {

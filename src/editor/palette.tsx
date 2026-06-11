@@ -4,6 +4,8 @@ import { exportPlayable } from './exportPlayable'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
 import { spawnAsset, type AssetPayload } from './spawn'
 import { useEditor } from './store'
+import { runCSG } from './csg'
+import { world } from '../engine/World'
 
 /**
  * Command palette (Ctrl+Shift+P) + plugin API — the web-native extensibility
@@ -81,6 +83,16 @@ function buildCommands(): PaletteCommand[] {
     { label: 'Open Blueprint Editor', run: () => s.setBottomTab('blueprint') },
     { label: 'Open AI Copilot', run: () => s.setBottomTab('ai') },
     { label: 'Open Debug Panel', run: () => s.setBottomTab('debug') },
+    { label: 'CSG: Union (2 selected)', run: () => runCSG('union') },
+    { label: 'CSG: Subtract (2 selected)', run: () => runCSG('subtract') },
+    { label: 'CSG: Intersect (2 selected)', run: () => runCSG('intersect') },
+    {
+      label: 'Bake Reflection Probes',
+      run: () => {
+        for (const a of world.actors.values()) if (a.type === 'ReflectionProbe') world.probeBakeQueue.push(a.id)
+        s.setStatus('Probe bake queued')
+      },
+    },
     ...SPAWNABLES.map(([label, payload]): PaletteCommand => ({ label: `Place: ${label}`, run: () => spawnAsset(payload) })),
     ...pluginCommands,
   ]
