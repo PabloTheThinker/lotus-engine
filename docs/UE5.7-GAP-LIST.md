@@ -13,21 +13,21 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Level Editor: viewport + gizmos + Q/W/E/R + Spacebar cycle | ◐ | Spacebar/Alt+2-5 hotkeys coded but intercepted by the bookmark-digit handler — **fix handler order** (one-line) |
-| World/local gizmo space toggle | ✅ | UE uses Ctrl+` — add as alias to T |
+| Level Editor: viewport + gizmos + Q/W/E/R + Spacebar cycle | ✅ | — (v0.21) |
+| World/local gizmo space toggle | ✅ | Ctrl+` alias shipped (v0.21) |
 | Snap triplet: drag/rotation/scale toggles + preset dropdowns | ✅ | Add UE's 360-division rotation column (2.8125/5.625/11.25/22.5°) |
 | Surface Snapping (rotate-to-normal + offset) | ⏳ | Placement/move aligns actor up-vector to surface normal; toggle in toolbar |
 | Camera speed 1–8 + scroll-during-fly sync | ✅ | Add "Speed Scalar" multiplier field |
-| Orthographic views (Top/Bottom/Left/Right/Front/Back) | ⏳ | Alt+G/H/J/K camera-mode swap on the single canvas: ortho camera, pan-only nav, wireframe default, zoom-to-cursor |
+| Orthographic views (Top/Front/Side) | ✅ | Alt+G/H/J/K shipped (v0.22): pseudo-ortho, pan-only nav, auto-wireframe, dark background. Bottom/Back/Left variants + zoom-to-cursor = polish |
 | Viewport layouts (quad view, maximize/restore) | ⏳ | Fake with 4 cameras + scissor viewports on one canvas; lower priority |
-| F11 immersive viewport | ⏳ | Fullscreen API on the viewport div (trivial) |
+| F11 immersive viewport | ✅ | — (v0.21) |
 | Game View (G) | ✅ | — |
 | Camera bookmarks | ◐ | Shipped as Shift+0-9 set / 0-9 recall (Ctrl+digits is browser-reserved); persist bookmarks in the level file |
 | Pilot Actor + eject banner | ✅ | Move banner top-left per UE; letterbox preview when piloting a Camera |
-| Frame Selected (F) sets orbit pivot; Alt+LMB orbit / Alt+RMB dolly | ◐ | F-pivot + Alt+LMB orbit shipped; **add Alt+RMB dolly + Alt+MMB track** |
+| Frame Selected (F) sets orbit pivot; Alt+LMB orbit / Alt+RMB dolly | ✅ | Alt+RMB dolly shipped (v0.21); Alt+MMB track = polish |
 | Content Drawer (Ctrl+Space, auto-collapse, Dock in Layout) | ◐ | Summon + auto-collapse shipped; **add "Dock in Layout" pin button**; color-coded type stripes on tiles; asset right-click menu (Rename F2, Duplicate) |
-| Details: Search box + categories | ✅ | **Add yellow reset-to-default arrows** on modified properties; right-click property Copy/Paste/Reset; "Multiple Values" on multi-select; panel lock (padlock) |
-| Outliner: tree, Type column, eyes, search, drag-attach, folders | ◐ | **Add `-term` exclude / `+term` exact search operators**; pin column; full sectioned right-click menu (Edit / Play From Here / Pilot / Snapping / Transform / Visibility H & Ctrl+H / Select / Attach / Bookmarks) |
+| Details: Search box + categories + reset-to-default arrows | ✅ | Arrows shipped on material fields (v0.23) — extend to light/physics fields; right-click Copy/Paste; multi-select "Multiple Values"; panel lock |
+| Outliner: tree, Type column, eyes, search + operators, drag-attach, folders | ✅ | `-`/`+` operators shipped (v0.21); pin column + full right-click menu = polish |
 | Main toolbar exact order (Save → Modes → Add → Blueprints → Cinematics → Play cluster → Platforms → Settings) | ◐ | Reorder ours to match; add **Modes dropdown** (Select/Landscape/Foliage/Paint as modes rather than toggle buttons); Quick Settings six-group dropdown |
 | Bottom status bar: drawer button + Cmd console + save status | ◐ | Cmd field shipped; add Content Drawer button + autosave/save-status indicator |
 | Place Actors panel (Recently Placed/Basic/Lights/Shapes/Cinematic/VFX/Volumes + search) | ✅ | Add "All Classes" category |
@@ -64,9 +64,9 @@
 | Nanite | 🚫 | meshoptimizer LOD chains + BatchedMesh when three.js lands virtual geometry |
 | Lightmass baking | ⏳ | Stretch: three-gpu-pathtracer AO/lightmap bake to second UV set |
 | Reflection captures | ✅ | Add box projection + auto re-bake on Build |
-| TSR / anti-aliasing | ◐ | MSAA via renderer; add FXAA pass + r.ScreenPercentage render-scale (cvar exists — **wire it to composer setSize**) |
+| TSR / anti-aliasing | ◐ | r.ScreenPercentage wired to render targets (v0.21); FXAA pass = polish |
 | View modes: Lit/Unlit/Wireframe/Detail | ✅ | Add Buffer Visualization (World Normal / Depth / Base Color) via MeshNormalMaterial & depth override |
-| Light types | ◐ | Directional/Point/Spot/Ambient shipped; **add RectAreaLight** |
+| Light types | ✅ | RectLight shipped (v0.21) |
 | Path tracer mode | ⏳ | three-gpu-pathtracer toggle; flagship screenshot feature |
 | HDRI backdrop | ⏳ | Equirect HDR import → environment + background |
 
@@ -160,7 +160,7 @@
 | Profiler (FPS/tick/render graphs, draw calls) | ✅ | Per-actor tick timings (flame list) = upgrade |
 | PIE: pause / frame-step / eject / possess | ✅ | "Click for Mouse Control" + "Shift+F1 for cursor" overlay text; Alt+P play hotkey |
 | Simulate / Play From Here / Keep Sim Changes | ✅ | — |
-| Collision/navmesh debug draw (`show collision`) | ◐ | Flag exists; render collider wireframes when on |
+| Collision/navmesh debug draw (`show collision`) | ✅ | Wireframe outlines shipped (v0.21) |
 
 ## 11. Sharing & Releasing
 
@@ -182,9 +182,9 @@
 
 ## Priority queue (next 10, by recognition × effort)
 
-1. **Fix hotkey order** — Spacebar cycle + Alt+2/3/4/5 land after the bookmark handler (one-line, already diagnosed)
-2. **Ortho views** (Alt+G/H/J/K) — the biggest remaining "feels like UE" gap on the list
-3. **Details reset-to-default arrows** + right-click property menu
+1. ~~Fix hotkey order~~ ✅ v0.21
+2. ~~Ortho views~~ ✅ v0.22
+3. ~~Details reset-to-default arrows~~ ✅ v0.23 (right-click property menu remains)
 4. **Material editor v2** — per-pixel TSL nodes (TextureSample/UV/Fresnel/Noise) + material assets with instances
 5. **Sequencer phase 2** — property tracks + camera-cut track + curve editor
 6. **Niagara module-stack UI** + curve/gradient widgets (shared with Sequencer)

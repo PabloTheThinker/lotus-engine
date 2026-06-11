@@ -4,6 +4,7 @@ import type { Actor } from '../../engine/Actor'
 import { applyMaterialProps } from '../../engine/factory'
 import { applyLightProps, world } from '../../engine/World'
 import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
+import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { buildFoliageMesh } from '../../engine/factory'
 import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
@@ -24,6 +25,7 @@ function Num({
   max,
   onLive,
   onCommit,
+  defaultValue,
 }: {
   label: string
   value: number
@@ -32,8 +34,10 @@ function Num({
   max?: number
   onLive: (v: number) => void
   onCommit: (before: number, after: number) => void
+  defaultValue?: number
 }) {
   const before = useRef(value)
+  const modified = defaultValue !== undefined && Math.abs(value - defaultValue) > 1e-6
   return (
     <label className="field">
       <span>{label}</span>
@@ -53,6 +57,11 @@ function Num({
           if (Number.isFinite(v) && v !== before.current) onCommit(before.current, v)
         }}
       />
+      {modified && (
+        <button className="reset-default" title={`Reset to ${defaultValue}`} onClick={(e) => { e.preventDefault(); onLive(defaultValue!); onCommit(value, defaultValue!) }}>
+          ⟲
+        </button>
+      )}
     </label>
   )
 }
@@ -62,13 +71,16 @@ function ColorField({
   value,
   onLive,
   onCommit,
+  defaultValue,
 }: {
   label: string
   value: string
   onLive: (v: string) => void
   onCommit: (before: string, after: string) => void
+  defaultValue?: string
 }) {
   const before = useRef(value)
+  const modified = defaultValue !== undefined && value.toLowerCase() !== defaultValue.toLowerCase()
   return (
     <label className="field">
       <span>{label}</span>
@@ -81,6 +93,11 @@ function ColorField({
           if (e.target.value !== before.current) onCommit(before.current, e.target.value)
         }}
       />
+      {modified && (
+        <button className="reset-default" title={`Reset to ${defaultValue}`} onClick={(e) => { e.preventDefault(); onLive(defaultValue!); onCommit(value, defaultValue!) }}>
+          ⟲
+        </button>
+      )}
     </label>
   )
 }
@@ -361,9 +378,9 @@ function MaterialSection({ actor }: { actor: Actor }) {
 
   return (
     <Section title="Material">
-      <ColorField label="Base Color" value={props.color} onLive={(v) => liveSet('color', v)} onCommit={(b, a) => commitSet('color', b, a)} />
-      <Num label="Roughness" value={props.roughness} step={0.05} min={0} max={1} onLive={(v) => liveSet('roughness', v)} onCommit={(b, a) => commitSet('roughness', b, a)} />
-      <Num label="Metalness" value={props.metalness} step={0.05} min={0} max={1} onLive={(v) => liveSet('metalness', v)} onCommit={(b, a) => commitSet('metalness', b, a)} />
+      <ColorField label="Base Color" value={props.color} defaultValue={DEFAULT_MATERIAL.color} onLive={(v) => liveSet('color', v)} onCommit={(b, a) => commitSet('color', b, a)} />
+      <Num label="Roughness" value={props.roughness} defaultValue={DEFAULT_MATERIAL.roughness} step={0.05} min={0} max={1} onLive={(v) => liveSet('roughness', v)} onCommit={(b, a) => commitSet('roughness', b, a)} />
+      <Num label="Metalness" value={props.metalness} defaultValue={DEFAULT_MATERIAL.metalness} step={0.05} min={0} max={1} onLive={(v) => liveSet('metalness', v)} onCommit={(b, a) => commitSet('metalness', b, a)} />
       <ColorField label="Emissive" value={props.emissive} onLive={(v) => liveSet('emissive', v)} onCommit={(b, a) => commitSet('emissive', b, a)} />
       <Num label="Emissive ×" value={props.emissiveIntensity} step={0.1} min={0} onLive={(v) => liveSet('emissiveIntensity', v)} onCommit={(b, a) => commitSet('emissiveIntensity', b, a)} />
       <Num label="Opacity" value={props.opacity} step={0.05} min={0} max={1} onLive={(v) => liveSet('opacity', v)} onCommit={(b, a) => commitSet('opacity', b, a)} />

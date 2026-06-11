@@ -1274,3 +1274,11 @@ input[type='checkbox'] {
 }
 .status-cmd { display: flex; align-items: center; gap: 5px; color: var(--text-dim); }
 .status-cmd input { width: 190px; font-size: 11px; padding: 1px 6px; background: var(--bg-1); }
+
+.field { position: relative; }
+.reset-default {
+  position: absolute; right: -2px; top: 50%; transform: translateY(-50%);
+  background: transparent; border: none; color: var(--accent-warm);
+  font-size: 11px; padding: 0 2px; line-height: 1;
+}
+.reset-default:hover { color: #fff; }
