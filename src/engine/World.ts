@@ -18,7 +18,7 @@ import {
 } from './factory'
 import { createLandscapeActor, buildLandscapeMesh } from './landscape'
 import { PhysicsSim } from './physics'
-import { makeScriptApi } from './scripting'
+import { makeScriptApi, resetSignals } from './scripting'
 import { emptySequence, sampleSequence, type Sequence } from './sequencer'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
@@ -140,6 +140,7 @@ export class World {
   beginPlay() {
     this.playing = true
     this.playClock = 0
+    resetSignals()
     const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
     for (const a of this.actors.values()) {
       a.beginPlay(api)

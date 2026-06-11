@@ -28,9 +28,18 @@ export interface ScriptApi {
   actionJustPressed: (name: string) => boolean
   getActor: (name: string) => Actor | undefined
   getActorsByTag: (tag: string) => Actor[]
+  /** Godot-style signals: decoupled events between scripts */
+  emit: (signal: string, ...args: unknown[]) => void
+  on: (signal: string, handler: (...args: unknown[]) => void) => void
   time: () => number
   /** world position of the player pawn while playing, else null */
   pawnPosition: () => THREE.Vector3 | null
+}
+
+// signal bus — reset at every beginPlay so stale handlers never leak between sessions
+let signalHandlers = new Map<string, Array<(...args: unknown[]) => void>>()
+export function resetSignals() {
+  signalHandlers = new Map()
 }
 
 type LogSink = (level: 'log' | 'error', message: string) => void
@@ -60,6 +69,19 @@ export function makeScriptApi(
     getActor: (name) => [...actors.values()].find((a) => a.name === name),
     getActorsByTag: (tag) =>
       [...actors.values()].filter((a) => a.tags.some((t) => t.toLowerCase() === tag.toLowerCase())),
+    emit: (signal, ...args) => {
+      for (const h of signalHandlers.get(signal) ?? []) {
+        try {
+          h(...args)
+        } catch (err) {
+          logSink('error', `signal "${signal}" handler: ${(err as Error).message}`)
+        }
+      }
+    },
+    on: (signal, handler) => {
+      if (!signalHandlers.has(signal)) signalHandlers.set(signal, [])
+      signalHandlers.get(signal)!.push(handler)
+    },
     time: clock,
     pawnPosition,
   }
