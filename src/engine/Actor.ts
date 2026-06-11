@@ -67,6 +67,9 @@ export class Actor {
   foliageMesh?: THREE.InstancedMesh
   landscapeProps?: LandscapeProps
   probeProps?: { radius: number }
+  waterProps?: import('./types').WaterProps
+  pcgProps?: import('./types').PCGProps
+  pcgMesh?: THREE.InstancedMesh
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** material node graph — evaluated per frame onto the material */
   materialGraph?: import('./materialGraph').MaterialGraph
@@ -232,6 +235,8 @@ export class Actor {
       autoPlayClip: this.autoPlayClip,
       materialGraph: this.materialGraph ? JSON.parse(JSON.stringify(this.materialGraph)) : undefined,
       probe: this.probeProps ? { ...this.probeProps } : undefined,
+      water: this.waterProps ? { ...this.waterProps } : undefined,
+      pcg: this.pcgProps ? { ...this.pcgProps } : undefined,
       customGeometry: this.customGeometry,
       landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights], weights: this.landscapeProps.weights ? [...this.landscapeProps.weights] : undefined } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),

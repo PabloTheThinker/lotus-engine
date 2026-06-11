@@ -20,6 +20,8 @@ const TYPE_ICONS: Record<string, string> = {
   Landscape: '⛰',
   TriggerVolume: '⏚',
   ReflectionProbe: '🔮',
+  Water: '🌊',
+  PCGVolume: '🎲',
   CustomMesh: '🗿',
   Empty: '◇',
   Folder: '📁',

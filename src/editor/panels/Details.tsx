@@ -8,6 +8,8 @@ import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, TransformCommand, runCommand } from '../commands'
 import { buildFoliageMesh } from '../../engine/factory'
 import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
+import { buildWaterMesh } from '../../engine/water'
+import { regeneratePCG } from '../../engine/pcg'
 import { parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
@@ -179,6 +181,53 @@ function AnimationSection({ actor }: { actor: Actor }) {
       <div className="panel-empty" style={{ padding: '2px 0' }}>
         {clips.length} clip(s). Scripts: api.playAnimation(actor, '{clips[0]}')
       </div>
+    </Section>
+  )
+}
+
+function WaterSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const props = actor.waterProps!
+  const rebuild = () => {
+    buildWaterMesh(actor)
+    touch()
+  }
+  return (
+    <Section title="Water">
+      <Num label="Size" value={props.size} step={5} min={5} onLive={(v) => { props.size = v; rebuild() }} onCommit={() => {}} />
+      <ColorField label="Color" value={props.color} onLive={(v) => { props.color = v; rebuild() }} onCommit={() => {}} />
+      <Num label="Opacity" value={props.opacity} step={0.05} min={0.1} max={1} onLive={(v) => { props.opacity = v; rebuild() }} onCommit={() => {}} />
+      <Num label="Wave Height" value={props.waveHeight} step={0.05} min={0} onLive={(v) => { props.waveHeight = v; touch() }} onCommit={() => {}} />
+      <Num label="Wave Length" value={props.waveLength} step={0.5} min={1} onLive={(v) => { props.waveLength = v; touch() }} onCommit={() => {}} />
+      <Num label="Speed" value={props.speed} step={0.1} min={0} onLive={(v) => { props.speed = v; touch() }} onCommit={() => {}} />
+    </Section>
+  )
+}
+
+function PCGSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const props = actor.pcgProps!
+  const regen = () => {
+    regeneratePCG(actor, world.actors)
+    touch()
+  }
+  return (
+    <Section title="PCG Scatter (sample → filter → spawn)">
+      <label className="field">
+        <span>Mesh</span>
+        <select value={props.geometry} onChange={(e) => { props.geometry = e.target.value as typeof props.geometry; regen() }}>
+          {['cone', 'sphere', 'box', 'cylinder', 'icosahedron', 'capsule'].map((g) => <option key={g} value={g}>{g}</option>)}
+        </select>
+      </label>
+      <ColorField label="Color" value={props.color} onLive={(v) => { props.color = v; regen() }} onCommit={() => {}} />
+      <Num label="Density" value={props.density} step={1} min={1} onLive={(v) => { props.density = v; regen() }} onCommit={() => {}} />
+      <Num label="Seed" value={props.seed} step={1} onLive={(v) => { props.seed = Math.round(v); regen() }} onCommit={() => {}} />
+      <Num label="Scale Min" value={props.scaleMin} step={0.1} min={0.05} onLive={(v) => { props.scaleMin = v; regen() }} onCommit={() => {}} />
+      <Num label="Scale Max" value={props.scaleMax} step={0.1} min={0.05} onLive={(v) => { props.scaleMax = v; regen() }} onCommit={() => {}} />
+      <Num label="Max Slope°" value={props.maxSlopeDeg} step={5} min={0} max={89} onLive={(v) => { props.maxSlopeDeg = v; regen() }} onCommit={() => {}} />
+      <Check label="Align to Normal" value={props.alignToNormal} onToggle={(v) => { props.alignToNormal = v; regen() }} />
+      <button onClick={regen}>🎲 Regenerate</button>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>Scatters onto surfaces inside the volume. Scale the volume to set bounds; seed makes it deterministic.</div>
     </Section>
   )
 }
@@ -975,6 +1024,8 @@ export function Details() {
         {actor.script && <ScriptVarsSection actor={actor} />}
         <StreamingSection actor={actor} />
         {actor.probeProps && <ProbeSection actor={actor} />}
+        {actor.waterProps && <WaterSection actor={actor} />}
+        {actor.pcgProps && <PCGSection actor={actor} />}
         {(actor.animations?.length ?? 0) > 0 && <AnimationSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}

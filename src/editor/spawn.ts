@@ -5,6 +5,8 @@ import { DEFAULT_MATERIAL } from '../engine/types'
 import { DEFAULT_PARTICLES } from '../engine/particles'
 import { DEFAULT_FOLIAGE } from '../engine/types'
 import { DEFAULT_LANDSCAPE } from '../engine/landscape'
+import { DEFAULT_WATER } from '../engine/water'
+import { DEFAULT_PCG } from '../engine/pcg'
 import { AddActorCommand, runCommand } from './commands'
 
 export type AssetPayload =
@@ -20,6 +22,8 @@ export type AssetPayload =
   | { kind: 'trigger' }
   | { kind: 'gridmap' }
   | { kind: 'probe' }
+  | { kind: 'water' }
+  | { kind: 'pcg' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
 
@@ -133,6 +137,22 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         type: 'ReflectionProbe',
         probe: { radius: 8 },
         transform: { ...base.transform, position: [position[0], Math.max(position[1], 2), position[2]] },
+      }
+    case 'water':
+      return {
+        ...base,
+        name: uniqueName('Water'),
+        type: 'Water',
+        water: { ...DEFAULT_WATER },
+        transform: { ...base.transform, position: [position[0], 0.3, position[2]] },
+      }
+    case 'pcg':
+      return {
+        ...base,
+        name: uniqueName('PCGVolume'),
+        type: 'PCGVolume',
+        pcg: { ...DEFAULT_PCG },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 2), position[2]], scale: [20, 6, 20] },
       }
     case 'trigger':
       return {

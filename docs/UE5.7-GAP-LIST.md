@@ -77,10 +77,10 @@
 | Landscape sculpt (Raise/Lower/Smooth/Flatten) | ✅ | Add Ramp + Noise brushes; Erosion = stretch |
 | Landscape paint layers | ✅ | Texture-based splat (vs vertex color) when texture import lands |
 | Foliage painting | ✅ | Slope/height filters; multi-type painting in one stroke |
-| Water system | ⏳ | Single ocean/lake plane with Gerstner waves actor |
+| Water system | ✅ | v0.32: Water actor — animated Gerstner-lite surface, size/color/wave props, serialized (verified vertex animation) |
 | World Partition / streaming | ◐ | Cull-distance streaming shipped; grid-chunked auto load/unload around camera = upgrade |
 | Level instances (nested prefabs) | ◐ | Prefabs ✅; nested prefab-in-prefab + per-instance overrides (Godot editable children) = upgrade |
-| PCG graph | ⏳ | 10-node subset: sample surface → filter density/slope → transform → spawn InstancedMesh, live regen |
+| PCG (sample→filter→spawn) | ✅ | v0.32: PCG Scatter volume — seeded jittered-grid sampling, surface raycast + slope filter, scale/rotation jitter + normal alignment, live regen, deterministic (verified 24 instances). Full node-graph editor = v2 |
 | Modeling mode (CSG/booleans) | ◐ | Union/Subtract/Intersect shipped; add Mirror, Merge, meshopt Simplify; poly editing 🚫 v1 |
 | Fracture mode | ◐ | Breakable shatter shipped (8 fragments); Voronoi pre-fracture = upgrade |
 | GridMap blockout | ✅ | Mesh-library palettes (multiple tile types per layer) |

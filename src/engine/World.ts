@@ -17,6 +17,8 @@ import {
   createPostProcessVolumeActor,
 } from './factory'
 import { createLandscapeActor, buildLandscapeMesh } from './landscape'
+import { createWaterActor, buildWaterMesh, updateWater } from './water'
+import { createPCGVolumeActor } from './pcg'
 import { hud, resetGameplay, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
@@ -119,6 +121,7 @@ export class World {
       this.reparent(child.id, actor.parentId)
     }
     actor.root.removeFromParent()
+    if (actor.pcgMesh) actor.pcgMesh.removeFromParent()
     if (actor.cameraHelper) actor.cameraHelper.removeFromParent()
     actor.dispose()
     this.actors.delete(id)
@@ -206,9 +209,11 @@ export class World {
   /** advance all particle systems — editor preview AND play */
   updateParticles(dt: number) {
     this.editorClock += dt
+    const t = this.playing ? this.playClock : this.editorClock
     for (const a of this.actors.values()) {
       if (a.particleSystem) a.particleSystem.update(dt, a.visible)
-      if (a.materialGraph) applyMaterialGraph(a, this.playing ? this.playClock : this.editorClock)
+      if (a.materialGraph) applyMaterialGraph(a, t)
+      if (a.waterProps) updateWater(a, t)
     }
   }
 
@@ -409,6 +414,17 @@ export class World {
           actor.materialProps = { ...sa.material }
           applyMaterialProps(actor.mesh.material as THREE.MeshStandardMaterial, sa.material)
         }
+        break
+      case 'Water':
+        actor = createWaterActor(sa.name, sa.id)
+        if (sa.water) {
+          actor.waterProps = { ...sa.water }
+          buildWaterMesh(actor)
+        }
+        break
+      case 'PCGVolume':
+        actor = createPCGVolumeActor(sa.name, sa.id)
+        if (sa.pcg) actor.pcgProps = { ...sa.pcg }
         break
       case 'TriggerVolume':
         actor = createTriggerVolumeActor(sa.name, sa.id)

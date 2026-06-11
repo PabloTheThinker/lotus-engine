@@ -19,6 +19,8 @@ export type ActorType =
   | 'TriggerVolume'
   | 'ReflectionProbe'
   | 'CustomMesh'
+  | 'Water'
+  | 'PCGVolume'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -42,6 +44,8 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   TriggerVolume: 'movable',
   ReflectionProbe: 'stationary',
   CustomMesh: 'static',
+  Water: 'static',
+  PCGVolume: 'static',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -185,6 +189,10 @@ export interface SerializedActor {
   landscape?: LandscapeProps
   /** ReflectionProbe only */
   probe?: { radius: number }
+  /** Water only */
+  water?: WaterProps
+  /** PCGVolume only */
+  pcg?: PCGProps
   /** CustomMesh (CSG results) — packed geometry */
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** animation clip to play at BeginPlay */
@@ -206,6 +214,28 @@ export interface LandscapeProps {
 }
 
 export type SculptTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'paint'
+
+/** Water — Gerstner-lite animated surface */
+export interface WaterProps {
+  size: number
+  color: string
+  opacity: number
+  waveHeight: number
+  waveLength: number
+  speed: number
+}
+
+/** PCG-lite — procedural scatter volume (sample → filter → spawn) */
+export interface PCGProps {
+  geometry: GeometryKind
+  color: string
+  density: number // instances per 10x10 area
+  seed: number
+  scaleMin: number
+  scaleMax: number
+  maxSlopeDeg: number
+  alignToNormal: boolean
+}
 
 /** Foliage — UE Foliage mode analog: painted InstancedMesh scatter. */
 export interface FoliageProps {

@@ -35,6 +35,8 @@ const ITEMS: PlaceItem[] = [
   { label: 'Foliage Layer', icon: '🌿', category: 'Visual Effects', payload: { kind: 'foliage' } },
   { label: 'Landscape', icon: '⛰', category: 'Visual Effects', payload: { kind: 'landscape' } },
   { label: 'Grid Tiles', icon: '🧱', category: 'Visual Effects', payload: { kind: 'gridmap' } },
+  { label: 'Water', icon: '🌊', category: 'Visual Effects', payload: { kind: 'water' } },
+  { label: 'PCG Scatter', icon: '🎲', category: 'Visual Effects', payload: { kind: 'pcg' } },
   // Volumes
   { label: 'Post Process Volume', icon: '◫', category: 'Volumes', payload: { kind: 'postprocess' } },
   { label: 'Reflection Probe', icon: '🔮', category: 'Volumes', payload: { kind: 'probe' } },
