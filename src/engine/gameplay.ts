@@ -149,6 +149,20 @@ export const hud = {
     fill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
     fill.style.background = opts.color ?? '#46a758'
   },
+  button(id: string, label: string, onClick: () => void, opts: HudOpts = {}) {
+    if (!hudRoot) return
+    const el = hudEl(id, 'button')
+    el.textContent = label
+    el.style.font = `600 ${opts.size ?? 14}px system-ui, sans-serif`
+    el.style.color = '#fff'
+    el.style.background = opts.color ?? 'rgba(47,128,237,.85)'
+    el.style.padding = '6px 16px'
+    el.style.borderRadius = '6px'
+    el.style.cursor = 'pointer'
+    el.style.pointerEvents = 'auto'
+    el.onclick = onClick
+    place(el, opts)
+  },
   remove(id: string) {
     hudRoot?.querySelector(`[data-hud="${id}"]`)?.remove()
   },

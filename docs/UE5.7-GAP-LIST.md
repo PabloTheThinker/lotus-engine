@@ -147,8 +147,8 @@
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
 | HUD runtime (text/bars via api.hud) | ✅ | — |
-| Widget *designer* (drag-drop hierarchy, anchors) | ⏳ | Visual editor over DOM widgets; anchors→CSS — the browser is the UI engine |
-| Buttons/interaction routing into scripts | ⏳ | api.hud.button(id, label, onClick) + pointer-unlock interplay |
+| Widget designer (anchors, authored widgets) | ✅ | v0.29: HUD Widgets section — text/bar/button rows with anchor/color/signal, serialized in levels, rendered at Play. Drag-drop canvas layout = polish |
+| Buttons/interaction routing into scripts | ✅ | v0.29: button widgets emit signals on click; scripts subscribe via api.on (verified) |
 | Widget animations | ⏳ | Reuse Sequencer on DOM properties |
 | 3D world-space widgets | ⏳ | CSS3DRenderer or render-to-texture plane |
 

@@ -17,7 +17,7 @@ import {
   createPostProcessVolumeActor,
 } from './factory'
 import { createLandscapeActor, buildLandscapeMesh } from './landscape'
-import { resetGameplay, tickGameplay } from './gameplay'
+import { hud, resetGameplay, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
 import { registerSound, stopAllSounds } from './audio'
@@ -27,7 +27,7 @@ import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scriptin
 import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
 import { setViewCamera } from './gameplay'
 import { applyMaterialGraph } from './materialGraph'
-import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
+import type { EnvironmentSettings, HudWidget, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
 
 /**
@@ -60,6 +60,9 @@ export class World {
 
   /** imported audio (base64) — registered with the audio engine on load */
   sounds: Record<string, string> = {}
+
+  /** authored HUD widgets (UMG designer) */
+  hudWidgets: HudWidget[] = []
 
   /** probe ids awaiting a cubemap bake (processed by the viewport) */
   probeBakeQueue: string[] = []
@@ -173,6 +176,13 @@ export class World {
       }
     }
     this.physics.start(this.actors.values())
+    // authored HUD widgets (UMG designer)
+    for (const w of this.hudWidgets) {
+      const opts = { anchor: w.anchor, x: w.x, y: w.y, size: w.size, color: w.color }
+      if (w.type === 'text') hud.text(w.id, w.text, opts)
+      else if (w.type === 'bar') hud.bar(w.id, w.value ?? 1, opts)
+      else if (w.type === 'button') hud.button(w.id, w.text, () => this.playApi?.emit(w.signal ?? w.id), opts)
+    }
   }
 
   playClock = 0
@@ -285,6 +295,7 @@ export class World {
       sequence: JSON.parse(JSON.stringify(this.sequence)),
       data: JSON.parse(JSON.stringify(this.dataTables)),
       sounds: { ...this.sounds },
+      hud: JSON.parse(JSON.stringify(this.hudWidgets)),
     }
   }
 
@@ -300,6 +311,7 @@ export class World {
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.sounds = level.sounds ? { ...level.sounds } : {}
+    this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
     for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {

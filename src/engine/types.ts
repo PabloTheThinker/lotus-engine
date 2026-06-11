@@ -279,6 +279,24 @@ export interface SerializedLevel {
   data?: Record<string, unknown>
   /** imported audio clips, base64 */
   sounds?: Record<string, string>
+  /** authored HUD widgets (UMG designer) */
+  hud?: HudWidget[]
+}
+
+/** UMG-lite authored widget */
+export interface HudWidget {
+  id: string
+  type: 'text' | 'bar' | 'button'
+  text: string
+  anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center'
+  x: number
+  y: number
+  size: number
+  color: string
+  /** buttons: signal emitted on click */
+  signal?: string
+  /** bars: initial fraction */
+  value?: number
 }
 
 export const DEFAULT_MATERIAL: MaterialProps = {

@@ -1300,3 +1300,7 @@ input[type='checkbox'] {
 .layer-mask { display: flex; gap: 2px; }
 .layer-mask button { font-size: 9px; padding: 1px 5px; }
 .layer-mask button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.hud-widget-row { display: flex; gap: 4px; align-items: center; }
+.hud-widget-row input, .hud-widget-row select { font-size: 10.5px; flex: 1; min-width: 0; }
+.hud-widget-row input[type=color] { flex: 0 0 28px; }

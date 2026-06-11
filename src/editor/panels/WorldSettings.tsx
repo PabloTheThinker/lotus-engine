@@ -5,6 +5,46 @@ import { setBusVolume } from '../../engine/audio'
 import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
 import { useEditor } from '../store'
 
+function HudDesignerSection() {
+  const touch = useEditor((s) => s.touch)
+  useEditor((s) => s.sceneVersion)
+  const widgets = world.hudWidgets
+  return (
+    <details className="details-section">
+      <summary>HUD Widgets (UMG)</summary>
+      <div className="details-grid">
+        {widgets.map((w, i) => (
+          <div className="hud-widget-row" key={w.id}>
+            <select value={w.type} onChange={(e) => { w.type = e.target.value as typeof w.type; touch() }}>
+              <option value="text">Text</option>
+              <option value="bar">Bar</option>
+              <option value="button">Button</option>
+            </select>
+            <input value={w.text} placeholder="label" onChange={(e) => { w.text = e.target.value; touch() }} />
+            <select value={w.anchor} onChange={(e) => { w.anchor = e.target.value as typeof w.anchor; touch() }}>
+              {['tl', 'tr', 'bl', 'br', 'center'].map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+            {w.type === 'button' && (
+              <input value={w.signal ?? ''} placeholder="signal" title="Signal emitted on click — api.on(signal, fn)" onChange={(e) => { w.signal = e.target.value; touch() }} />
+            )}
+            <input type="color" value={w.color} onChange={(e) => { w.color = e.target.value; touch() }} />
+            <button onClick={() => { widgets.splice(i, 1); touch() }}>✕</button>
+          </div>
+        ))}
+        <button
+          onClick={() => {
+            widgets.push({ id: `w${Date.now().toString(36)}`, type: 'text', text: 'New Widget', anchor: 'tl', x: 16, y: 16, size: 16, color: '#ffffff' })
+            touch()
+          }}
+        >
+          + Add Widget
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>Rendered during Play. Buttons emit their signal; scripts update via api.hud with the same ids.</div>
+      </div>
+    </details>
+  )
+}
+
 function MultiplayerSection() {
   const [cfg, setCfg] = useState(() => loadMPSettings())
   const update = (patch: Partial<typeof cfg>) => {
@@ -266,6 +306,7 @@ export function WorldSettings() {
       <DataAssetsSection />
       <AudioSection />
       <MultiplayerSection />
+      <HudDesignerSection />
     </details>
   )
 }
