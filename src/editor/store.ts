@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
-export type BottomTab = 'content' | 'script' | 'blueprint' | 'console' | 'ai'
+export type BottomTab = 'content' | 'script' | 'blueprint' | 'sequencer' | 'console' | 'ai'
 
 export interface ConsoleEntry {
   level: 'log' | 'error' | 'cmd' | 'ai'
@@ -101,6 +101,12 @@ interface EditorState {
   consoleFocusNonce: number
   openConsole: () => void
 
+  // sequencer transport
+  seqPlaying: boolean
+  setSeqPlaying: (v: boolean) => void
+  seqTime: number
+  setSeqTime: (t: number) => void
+
   // external CLI bridge (dev WebSocket)
   bridgeConnected: boolean
   setBridgeConnected: (v: boolean) => void
@@ -189,6 +195,11 @@ export const useEditor = create<EditorState>((set) => ({
       contentBrowserOpen: true,
       consoleFocusNonce: s.consoleFocusNonce + 1,
     })),
+
+  seqPlaying: false,
+  setSeqPlaying: (v) => set({ seqPlaying: v }),
+  seqTime: 0,
+  setSeqTime: (t) => set({ seqTime: t }),
 
   bridgeConnected: false,
   setBridgeConnected: (v) => set({ bridgeConnected: v }),

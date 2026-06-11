@@ -372,6 +372,29 @@ async function boot() {
         if (b.type === 'rotator') { a.root.rotation.x += b.speedX * dt; a.root.rotation.y += b.speedY * dt; a.root.rotation.z += b.speedZ * dt }
       }
     }
+    const seq = LEVEL.sequence
+    if (seq && seq.autoPlay && seq.tracks.length) {
+      const t = clock % seq.duration
+      for (const tr of seq.tracks) {
+        const a = actors.get(tr.actorId)
+        if (!a || !tr.keys.length) continue
+        let v
+        const ks = tr.keys
+        if (t <= ks[0].t) v = ks[0].v
+        else if (t >= ks[ks.length - 1].t) v = ks[ks.length - 1].v
+        else for (let i = 0; i < ks.length - 1; i++) {
+          if (t >= ks[i].t && t <= ks[i + 1].t) {
+            const f = (t - ks[i].t) / (ks[i + 1].t - ks[i].t || 1)
+            v = [0, 1, 2].map((j) => ks[i].v[j] + (ks[i + 1].v[j] - ks[i].v[j]) * f)
+            break
+          }
+        }
+        if (!v) continue
+        if (tr.property === 'position') a.root.position.fromArray(v)
+        else if (tr.property === 'rotation') a.root.rotation.set(v[0], v[1], v[2])
+        else a.root.scale.fromArray(v)
+      }
+    }
     for (const ps of particleSystems) ps.update(dt)
     updatePawn(dt)
     pressed.clear()

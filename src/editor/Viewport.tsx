@@ -9,6 +9,7 @@ import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage } from '../engine/factory'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
+import { sampleSequence } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { setScriptLogSink } from '../engine/scripting'
 import type { TransformSnapshot } from '../engine/types'
@@ -729,6 +730,13 @@ export function Viewport() {
       pawn.update(dt)
       world.tick(dt)
       world.updateParticles(dt) // emitters preview in-editor like Niagara
+
+      // sequencer editor playback (PIE auto-play is handled in world.tick)
+      if (s.seqPlaying && !s.playing && world.sequence.tracks.length > 0) {
+        const nt = (s.seqTime + dt) % world.sequence.duration
+        s.setSeqTime(nt)
+        sampleSequence(world, world.sequence, nt)
+      }
 
       // gizmo sync
       const selected = s.selectedId ? world.actors.get(s.selectedId) : null

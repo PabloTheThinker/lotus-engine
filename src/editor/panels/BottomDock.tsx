@@ -2,6 +2,7 @@ import { useEditor, type BottomTab } from '../store'
 import { ContentBrowser } from './ContentBrowser'
 import { ScriptEditor } from './ScriptEditor'
 import { BlueprintEditor } from './BlueprintEditor'
+import { Sequencer } from './Sequencer'
 import { Console } from './Console'
 import { AIChat } from './AIChat'
 
@@ -9,6 +10,7 @@ const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'content', label: '🗄 Content' },
   { id: 'script', label: '𝒇 Script' },
   { id: 'blueprint', label: '⬡ Blueprint' },
+  { id: 'sequencer', label: '🎞 Sequencer' },
   { id: 'console', label: '>_ Console' },
   { id: 'ai', label: '✦ AI' },
 ]
@@ -45,6 +47,7 @@ export function BottomDock() {
           {tab === 'content' && <ContentBrowser />}
           {tab === 'script' && <ScriptEditor />}
           {tab === 'blueprint' && <BlueprintEditor />}
+          {tab === 'sequencer' && <Sequencer />}
           {tab === 'console' && <Console />}
           {tab === 'ai' && <AIChat />}
         </div>

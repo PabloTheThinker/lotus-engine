@@ -242,6 +242,8 @@ export interface SerializedLevel {
   // imported glTF binaries, base64-encoded, keyed by assetId
   assets?: Record<string, { name: string; data: string }>
   actors: SerializedActor[]
+  /** master Sequencer timeline */
+  sequence?: import('./sequencer').Sequence
 }
 
 export const DEFAULT_MATERIAL: MaterialProps = {

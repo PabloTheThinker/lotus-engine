@@ -19,6 +19,7 @@ import {
 import { createLandscapeActor, buildLandscapeMesh } from './landscape'
 import { PhysicsSim } from './physics'
 import { makeScriptApi } from './scripting'
+import { emptySequence, sampleSequence, type Sequence } from './sequencer'
 import type { EnvironmentSettings, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
 
@@ -43,6 +44,9 @@ export class World {
 
   // imported glTF assets: raw base64 for serialization + template scene for cloning
   assets = new Map<string, { name: string; data: string; template: THREE.Group }>()
+
+  /** master Sequencer timeline (UE Sequencer analog) */
+  sequence: Sequence = emptySequence()
 
   constructor() {
     this.sky.scale.setScalar(450000)
@@ -167,6 +171,10 @@ export class World {
     if (!this.playing) return
     this.playClock += dt
     this.physics.step(dt)
+    // Sequencer auto-play loops during PIE
+    if (this.sequence.autoPlay && this.sequence.tracks.length > 0) {
+      sampleSequence(this, this.sequence, this.playClock % this.sequence.duration)
+    }
     for (const a of this.actors.values()) a.tick(dt)
   }
 
@@ -203,6 +211,7 @@ export class World {
       environment: { ...this.environment },
       assets,
       actors: [...this.actors.values()].map((a) => a.serialize()),
+      sequence: JSON.parse(JSON.stringify(this.sequence)),
     }
   }
 
@@ -215,6 +224,7 @@ export class World {
     this.clear()
     this.levelName = level.name
     this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
+    this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {
       const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0))
