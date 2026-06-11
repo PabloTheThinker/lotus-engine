@@ -7,11 +7,55 @@ import * as THREE from 'three'
  *  - Scroll (without RMB): dolly toward look direction
  *  - F: focus selected handled by the viewport (calls focusOn)
  */
+export type OrthoAxis = 'top' | 'front' | 'side' | null
+
 export class EditorCameraControls {
   enabled = true
   flySpeed = 8
   /** orbit pivot — set by F (Frame Selected), orbited with Alt+LMB */
   pivot = new THREE.Vector3()
+  /** UE ortho views — narrow-FOV pseudo-ortho keeps gizmos/raycasts unchanged */
+  orthoAxis: OrthoAxis = null
+  private orthoDist = 60
+  private savedPose: { p: THREE.Vector3; q: THREE.Quaternion; fov: number } | null = null
+
+  setProjection(axis: OrthoAxis) {
+    if (axis === this.orthoAxis) return
+    if (axis && !this.savedPose) {
+      this.savedPose = { p: this.camera.position.clone(), q: this.camera.quaternion.clone(), fov: this.camera.fov }
+    }
+    this.orthoAxis = axis
+    if (!axis) {
+      if (this.savedPose) {
+        this.camera.position.copy(this.savedPose.p)
+        this.camera.quaternion.copy(this.savedPose.q)
+        this.camera.fov = this.savedPose.fov
+        this.camera.updateProjectionMatrix()
+        this.euler.setFromQuaternion(this.camera.quaternion)
+        this.yaw = this.euler.y
+        this.pitch = this.euler.x
+        this.savedPose = null
+      }
+      return
+    }
+    this.applyOrtho()
+  }
+
+  private orthoDir(): THREE.Vector3 {
+    switch (this.orthoAxis) {
+      case 'top': return new THREE.Vector3(0.0001, 1, 0.0001).normalize()
+      case 'front': return new THREE.Vector3(0, 0.0001, 1).normalize()
+      default: return new THREE.Vector3(1, 0.0001, 0).normalize()
+    }
+  }
+
+  private applyOrtho() {
+    if (!this.orthoAxis) return
+    this.camera.fov = 12 // narrow FOV ≈ orthographic
+    this.camera.position.copy(this.pivot).addScaledVector(this.orthoDir(), this.orthoDist * 5)
+    this.camera.lookAt(this.pivot)
+    this.camera.updateProjectionMatrix()
+  }
 
   private camera: THREE.PerspectiveCamera
   private dom: HTMLElement
@@ -26,7 +70,10 @@ export class EditorCameraControls {
 
   private onMouseDown = (e: MouseEvent) => {
     if (!this.enabled) return
-    if (e.button === 2 && e.altKey) {
+    if (this.orthoAxis && (e.button === 2 || e.button === 1)) {
+      this.panning = true
+      e.preventDefault()
+    } else if (e.button === 2 && e.altKey) {
       this.dollying = true
       e.preventDefault()
     } else if (e.button === 2) {
@@ -76,13 +123,17 @@ export class EditorCameraControls {
       const amount = (e.movementX + e.movementY) * 0.004 * Math.max(dist, 1)
       if (dist - amount > 0.3) this.camera.position.addScaledVector(toPivot.normalize(), amount)
     } else if (this.panning) {
-      const dist = Math.max(this.camera.position.length(), 5)
-      const panScale = dist * 0.0012
+      const dist = this.orthoAxis ? this.orthoDist : Math.max(this.camera.position.length(), 5)
+      const panScale = dist * (this.orthoAxis ? 0.0022 : 0.0012)
       const right = new THREE.Vector3()
       const up = new THREE.Vector3()
       this.camera.matrix.extractBasis(right, up, new THREE.Vector3())
       this.camera.position.addScaledVector(right, -e.movementX * panScale)
       this.camera.position.addScaledVector(up, e.movementY * panScale)
+      if (this.orthoAxis) {
+        this.pivot.addScaledVector(right, -e.movementX * panScale)
+        this.pivot.addScaledVector(up, e.movementY * panScale)
+      }
     }
   }
 
@@ -92,6 +143,12 @@ export class EditorCameraControls {
   private onWheel = (e: WheelEvent) => {
     if (!this.enabled) return
     e.preventDefault()
+    if (this.orthoAxis) {
+      // ortho zoom
+      this.orthoDist = THREE.MathUtils.clamp(this.orthoDist * (e.deltaY > 0 ? 1.15 : 0.87), 2, 400)
+      this.applyOrtho()
+      return
+    }
     if (this.looking) {
       // Unreal behavior: scroll while flying changes fly speed
       this.flySpeed = THREE.MathUtils.clamp(this.flySpeed * (e.deltaY < 0 ? 1.2 : 0.8), 0.5, 200)
@@ -163,6 +220,7 @@ export class EditorCameraControls {
   }
 
   update(dt: number) {
+    if (this.orthoAxis) return
     if (!this.enabled || !this.looking) return
     const move = new THREE.Vector3()
     if (this.keys.has('KeyW')) move.z -= 1

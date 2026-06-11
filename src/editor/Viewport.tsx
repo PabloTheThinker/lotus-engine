@@ -25,6 +25,24 @@ import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
 import { dragGhost, spawnAsset, type AssetPayload } from './spawn'
 import { useEditor, type ViewMode } from './store'
 
+function Projection() {
+  const proj = useEditor((s) => s.viewProjection)
+  const setProj = useEditor((s) => s.setViewProjection)
+  return (
+    <select
+      className="cam-speed"
+      title="Projection (Alt+G/H/J/K)"
+      value={proj}
+      onChange={(e) => setProj(e.target.value as 'perspective' | 'top' | 'front' | 'side')}
+    >
+      <option value="perspective">Perspective</option>
+      <option value="top">Top</option>
+      <option value="front">Front</option>
+      <option value="side">Side</option>
+    </select>
+  )
+}
+
 function CameraSpeed() {
   const speed = useEditor((s) => s.cameraSpeed)
   const setSpeed = useEditor((s) => s.setCameraSpeed)
@@ -748,6 +766,15 @@ export function Viewport() {
         }
         return
       }
+      // UE Alt+G/H/J/K = Perspective/Front/Side/Top
+      if (e.altKey && ['KeyG', 'KeyH', 'KeyJ', 'KeyK'].includes(e.code)) {
+        e.preventDefault()
+        s.setViewProjection(e.code === 'KeyG' ? 'perspective' : e.code === 'KeyH' ? 'front' : e.code === 'KeyJ' ? 'side' : 'top')
+        // UE: ortho panes default to wireframe
+        if (e.code !== 'KeyG' && s.viewMode === 'lit') s.setViewMode('wireframe')
+        if (e.code === 'KeyG' && s.viewMode === 'wireframe') s.setViewMode('lit')
+        return
+      }
       if (e.code === 'F11') {
         e.preventDefault()
         const el = mountRef.current
@@ -855,6 +882,9 @@ export function Viewport() {
       }
 
       syncEnvironment()
+      controls.setProjection(s.viewProjection === 'perspective' ? null : s.viewProjection)
+      // ortho panes: flat dark background instead of the sky dome interior
+      world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
       let activeCam: THREE.PerspectiveCamera = possessed ? pawn.camera : editorCamera
       // api.setViewCamera('Name') cuts to a Camera actor during play (CineCamera)
       const viewCamName = s.playing ? getViewCamera() : null
@@ -1138,6 +1168,7 @@ export function Viewport() {
       <div className="viewport-stats" ref={statsRef} />
       <div className="stat-hud" ref={statHudRef} style={{ display: 'none' }} />
       <div className="viewport-modes">
+        <Projection />
         <CameraSpeed />
         {(['lit', 'detail', 'unlit', 'wireframe'] as const).map((m) => (
           <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => setViewMode(m)}>

@@ -54,6 +54,9 @@ interface EditorState {
   // viewport render mode (UE view modes: Lit / Unlit / Wireframe)
   viewMode: ViewMode
   setViewMode: (m: ViewMode) => void
+  /** UE viewport projection (Alt+G/H/J/K) */
+  viewProjection: 'perspective' | 'top' | 'front' | 'side'
+  setViewProjection: (p: 'perspective' | 'top' | 'front' | 'side') => void
 
   // G — game view: hide all editor-only visuals
   gameView: boolean
@@ -167,6 +170,8 @@ export const useEditor = create<EditorState>((set) => ({
 
   viewMode: 'lit',
   setViewMode: (m) => set({ viewMode: m }),
+  viewProjection: 'perspective',
+  setViewProjection: (p) => set({ viewProjection: p }),
 
   gameView: false,
   toggleGameView: () => set((s) => ({ gameView: !s.gameView })),
