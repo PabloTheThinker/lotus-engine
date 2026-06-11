@@ -129,6 +129,10 @@ interface EditorState {
   seqTime: number
   setSeqTime: (t: number) => void
 
+  // preferences modal
+  showPrefs: boolean
+  setShowPrefs: (v: boolean) => void
+
   // external CLI bridge (dev WebSocket)
   bridgeConnected: boolean
   setBridgeConnected: (v: boolean) => void
@@ -239,6 +243,9 @@ export const useEditor = create<EditorState>((set) => ({
   setSeqPlaying: (v) => set({ seqPlaying: v }),
   seqTime: 0,
   setSeqTime: (t) => set({ seqTime: t }),
+
+  showPrefs: false,
+  setShowPrefs: (v) => set({ showPrefs: v }),
 
   bridgeConnected: false,
   setBridgeConnected: (v) => set({ bridgeConnected: v }),

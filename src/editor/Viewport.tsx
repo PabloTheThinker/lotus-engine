@@ -129,7 +129,30 @@ export function Viewport() {
     // image-based lighting from the sky dome (rebuilt when environment changes)
     const pmrem = new THREE.PMREMGenerator(renderer)
     let envApplied = -1
+    let hdriApplied: string | null = null
     function syncEnvironment() {
+      // HDRI backdrop overrides the sky (UE HDRI Backdrop)
+      if (world.hdri && world.hdri !== hdriApplied) {
+        hdriApplied = world.hdri
+        const bytes = Uint8Array.from(atob(world.hdri), (c) => c.charCodeAt(0))
+        void import('three/addons/loaders/RGBELoader.js').then(({ RGBELoader }) => {
+          const tex = new RGBELoader().parse(bytes.buffer)
+          const dt = new THREE.DataTexture(tex.data, tex.width, tex.height, THREE.RGBAFormat, tex.type)
+          dt.mapping = THREE.EquirectangularReflectionMapping
+          dt.needsUpdate = true
+          const rt = pmrem.fromEquirectangular(dt)
+          world.scene.environment = rt.texture
+          world.scene.background = dt
+          world.sky.removeFromParent()
+        })
+        envApplied = world.envVersion
+        return
+      }
+      if (!world.hdri && hdriApplied) {
+        hdriApplied = null
+        world.scene.background = null
+        envApplied = -1 // force sky rebuild
+      }
       if (world.envVersion === envApplied) return
       envApplied = world.envVersion
       const env = world.environment

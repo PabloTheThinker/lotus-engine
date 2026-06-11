@@ -80,6 +80,8 @@ export function MenuBar() {
           { label: 'Undo', shortcut: 'Ctrl+Z', action: undo },
           { label: 'Redo', shortcut: 'Ctrl+Y', action: redo },
           { label: '', divider: true },
+          { label: 'Editor Preferences…', action: () => useEditor.getState().setShowPrefs(true) },
+          { label: '', divider: true },
           {
             label: 'Delete Selected',
             shortcut: 'Del',

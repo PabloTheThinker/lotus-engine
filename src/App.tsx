@@ -17,6 +17,7 @@ import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
 import { undo, redo, runCommand } from './editor/commands'
 import { CommandPalette, installPlugin, loadUserPlugins, registerPlugin } from './editor/palette'
+import { PreferencesModal, loadPrefs } from './editor/Preferences'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 ;(window as unknown as Record<string, unknown>).vektra = {
@@ -50,7 +51,7 @@ export default function App() {
         if (!ok) newLevel()
       })
     }
-    const saveTimer = setInterval(autosave, 5000)
+    const saveTimer = setInterval(autosave, loadPrefs().autosaveSeconds * 1000)
     // UE Content Drawer: Ctrl+Space summons; clicking the viewport collapses it
     let drawerMode = false
     const onDrawerKey = (e: KeyboardEvent) => {
@@ -125,6 +126,14 @@ export default function App() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <PrefsHost />
     </div>
   )
+}
+
+function PrefsHost() {
+  const show = useEditor((s) => s.showPrefs)
+  const setShow = useEditor((s) => s.setShowPrefs)
+  if (!show) return null
+  return <PreferencesModal onClose={() => setShow(false)} />
 }

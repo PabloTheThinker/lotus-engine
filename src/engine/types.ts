@@ -281,6 +281,8 @@ export interface SerializedLevel {
   sounds?: Record<string, string>
   /** authored HUD widgets (UMG designer) */
   hud?: HudWidget[]
+  /** HDRI environment (base64 .hdr) — overrides the sky when set */
+  hdri?: string
 }
 
 /** UMG-lite authored widget */

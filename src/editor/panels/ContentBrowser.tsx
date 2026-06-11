@@ -60,6 +60,25 @@ function importAudio() {
   input.click()
 }
 
+function importHdri() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.hdr'
+  input.onchange = async () => {
+    const file = input.files?.[0]
+    if (!file) return
+    const s = useEditor.getState()
+    const buf = await file.arrayBuffer()
+    let binary = ''
+    const bytes = new Uint8Array(buf)
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    world.hdri = btoa(binary)
+    s.setStatus(`HDRI environment set: ${file.name}`)
+    s.touch()
+  }
+  input.click()
+}
+
 function importGltf() {
   const input = document.createElement('input')
   input.type = 'file'
@@ -185,6 +204,10 @@ export function ContentBrowser() {
           <div className="asset-tile" onClick={importAudio} title="Import a sound — play with api.playSound(name)">
             <div className="asset-icon">🔊</div>
             <div className="asset-label">Audio…</div>
+          </div>
+          <div className="asset-tile" onClick={importHdri} title="Import an .hdr environment (replaces the sky + IBL)">
+            <div className="asset-icon">🌅</div>
+            <div className="asset-label">HDRI…</div>
           </div>
         </div>
       </div>

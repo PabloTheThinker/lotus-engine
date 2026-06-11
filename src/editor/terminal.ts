@@ -1,4 +1,4 @@
-import { execConsoleCommand } from './consoleCommands'
+import { consoleSuggestions, execConsoleCommand } from './consoleCommands'
 import * as THREE from 'three'
 
 import { world } from '../engine/World'
@@ -304,6 +304,12 @@ export function executeTerminalLine(source: string): TerminalResult {
 
 /** Tab-completion candidates for the current partial input. */
 export function terminalCompletions(partial: string): string[] {
+  // UE console commands first
+  {
+    const ue = consoleSuggestions(partial)
+    if (ue.length) return ue
+  }
+
   const actorNames = [...world.actors.values()].map((a) => `"${a.name}"`)
   const builtins = [
     'world',

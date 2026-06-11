@@ -64,6 +64,9 @@ export class World {
   /** authored HUD widgets (UMG designer) */
   hudWidgets: HudWidget[] = []
 
+  /** HDRI environment (base64 .hdr) — overrides the sky when set */
+  hdri: string | null = null
+
   /** probe ids awaiting a cubemap bake (processed by the viewport) */
   probeBakeQueue: string[] = []
 
@@ -296,6 +299,7 @@ export class World {
       data: JSON.parse(JSON.stringify(this.dataTables)),
       sounds: { ...this.sounds },
       hud: JSON.parse(JSON.stringify(this.hudWidgets)),
+      hdri: this.hdri ?? undefined,
     }
   }
 
@@ -312,6 +316,7 @@ export class World {
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.sounds = level.sounds ? { ...level.sounds } : {}
     this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
+    this.hdri = level.hdri ?? null
     for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {

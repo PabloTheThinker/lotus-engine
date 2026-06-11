@@ -31,7 +31,7 @@
 | Main toolbar exact order (Save → Modes → Add → Blueprints → Cinematics → Play cluster → Platforms → Settings) | ◐ | Reorder ours to match; add **Modes dropdown** (Select/Landscape/Foliage/Paint as modes rather than toggle buttons); Quick Settings six-group dropdown |
 | Bottom status bar: drawer button + Cmd console + save status | ◐ | Cmd field shipped; add Content Drawer button + autosave/save-status indicator |
 | Place Actors panel (Recently Placed/Basic/Lights/Shapes/Cinematic/VFX/Volumes + search) | ✅ | Add "All Classes" category |
-| Editor Preferences (camera speed/invert, autosave frequency + warning toast, snap preset arrays) | ⏳ | Single Preferences modal; persist in localStorage |
+| Editor Preferences | ✅ | v0.30: Edit → Editor Preferences modal — invert look Y, camera speed, autosave interval (localStorage) |
 | Keyboard shortcut editor (rebindable) | ⏳ | Reuse Input Map UI pattern for editor hotkeys |
 | Multiple Outliner/Details/Content instances (up to 4) | 🚫 | Single-instance panels are fine for web v1 |
 
@@ -68,7 +68,7 @@
 | View modes: Lit/Unlit/Wireframe/Detail | ✅ | Add Buffer Visualization (World Normal / Depth / Base Color) via MeshNormalMaterial & depth override |
 | Light types | ✅ | RectLight shipped (v0.21) |
 | Path tracer mode | ⏳ | three-gpu-pathtracer toggle; flagship screenshot feature |
-| HDRI backdrop | ⏳ | Equirect HDR import → environment + background |
+| HDRI backdrop | ✅ | v0.30: Import HDRI… tile — .hdr → PMREM environment + background, replaces sky, serialized in level |
 
 ## 4. Building Virtual Worlds
 
@@ -156,7 +156,7 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Console (`, Cmd field, stat fps/unit, slomo, t.MaxFPS, r.ScreenPercentage) | ✅ | Autocomplete popup with arrow-key navigation; `cvar ?` help; r.ScreenPercentage → actually scale render targets |
+| Console (`, Cmd field, stat commands, cvars, autocomplete) | ✅ | v0.30: UE commands in Tab-completion; screen percentage scales targets (v0.21) |
 | Profiler (FPS/tick/render graphs, draw calls) | ✅ | Per-actor tick timings (flame list) = upgrade |
 | PIE: pause / frame-step / eject / possess | ✅ | "Click for Mouse Control" + "Shift+F1 for cursor" overlay text; Alt+P play hotkey |
 | Simulate / Play From Here / Keep Sim Changes | ✅ | — |
