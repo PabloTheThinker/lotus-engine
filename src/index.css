@@ -1296,3 +1296,7 @@ input[type='checkbox'] {
 .px-module.off { opacity: .55; }
 .px-module-head { display: flex; align-items: center; gap: 7px; padding: 4px 8px; background: var(--bg-2); font-size: 11px; font-weight: 600; border-radius: 5px 5px 0 0; }
 .px-module .details-grid { padding: 6px 8px; }
+
+.layer-mask { display: flex; gap: 2px; }
+.layer-mask button { font-size: 9px; padding: 1px 5px; }
+.layer-mask button.active { background: var(--accent); border-color: var(--accent); color: #fff; }

@@ -72,6 +72,10 @@ export class PhysicsSim {
         continue
       }
       collider.setFriction(props.friction).setRestitution(props.restitution)
+      // UE collision presets → Rapier groups: membership << 16 | filter mask
+      const layer = props.layer ?? 0
+      const mask = props.collidesWith ?? 0xffff
+      collider.setCollisionGroups(((1 << layer) << 16) | mask)
       this.world.createCollider(collider, body)
       if (props.mode === 'dynamic') this.bindings.push({ actor, body })
     }

@@ -548,6 +548,47 @@ function PhysicsSection({ actor }: { actor: Actor }) {
           <Num label="Bounciness" value={props.restitution} step={0.05} min={0} max={1} onLive={(v) => { props.restitution = v; touch() }} onCommit={() => {}} />
         </>
       )}
+      {props.mode !== 'none' && (
+        <>
+          <label className="field">
+            <span>Layer</span>
+            <select
+              value={props.layer ?? 0}
+              onChange={(e) => {
+                props.layer = parseInt(e.target.value)
+                touch()
+              }}
+            >
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((l) => (
+                <option key={l} value={l}>Layer {l}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Collides</span>
+            <span className="layer-mask">
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((l) => {
+                const mask = props.collidesWith ?? 0xffff
+                const on = (mask & (1 << l)) !== 0
+                return (
+                  <button
+                    key={l}
+                    className={on ? 'active' : ''}
+                    title={`Collides with layer ${l}`}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      props.collidesWith = on ? mask & ~(1 << l) : mask | (1 << l)
+                      touch()
+                    }}
+                  >
+                    {l}
+                  </button>
+                )
+              })}
+            </span>
+          </label>
+        </>
+      )}
       {props.mode === 'dynamic' && (
         <>
           <Check label="Breakable" value={!!props.breakable} onToggle={(v) => { props.breakable = v; touch() }} />

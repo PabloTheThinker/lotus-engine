@@ -120,16 +120,16 @@
 |---|---|---|
 | GameMode / pawn possession / PlayerStart | ✅ | GameMode asset (default pawn class picker) in World Settings |
 | Pawn types: fly / first / third / vehicle | ✅ | Raycast-suspension vehicle = upgrade |
-| Enhanced Input (actions, rebind) | ◐ | Actions + rebind shipped; add mapping contexts (priority stacks), hold/tap triggers, gamepad axes |
+| Enhanced Input (actions, rebind, hold) | ✅ | v0.28: api.actionHeldTime (Hold trigger). Mapping-context stacks + gamepad = polish |
 | Behavior Trees + Blackboard | ✅ | Graph editor UI + live execution highlight = upgrade |
 | Navmesh + pathfinding | ◐ | Grid A* shipped; recast-navigation-js polygon navmesh + crowd avoidance = upgrade |
-| EQS | ⏳ | Point generator + scoring with debug spheres |
-| AI Perception (sight cones) | ⏳ | Cone + raycast sight check helper in api |
+| EQS | ✅ | v0.28: api.queryBestPoint (ring generator, far/near-player + near-point scoring) |
+| AI Perception (sight) | ✅ | v0.28: api.canSeePlayer (FOV cone + occlusion raycast) |
 | Physics: rigid bodies, mobility gate, trimesh terrain | ✅ | Physics layers/masks matrix; joints as actor links |
-| Collision presets (Block/Overlap/Ignore matrix) | ⏳ | Rapier collision groups + named-layer settings UI |
+| Collision layers/masks | ✅ | v0.28: per-actor Layer 0-7 + collides-with bitmask buttons → Rapier groups (verified: filtered ball fell through ground) |
 | Destruction | ✅ (lite) | Voronoi fracture, strain propagation = upgrade |
 | Gameplay Ability System | ⏳ | Simplified: attributes + abilities with cooldown/cost + effect stacks over tags (tags ✅) |
-| Gameplay Tags (hierarchical) | ◐ | Flat tags shipped; dot-notation hierarchy + match queries |
+| Gameplay Tags (hierarchical) | ✅ | v0.28: 'Enemy.Boss' prefix-matches 'Enemy.Boss.Fire' in getActorsByTag |
 | Data tables / curve assets | ◐ | JSON tables shipped; grid editor UI + curve assets |
 | Networking / replication | ◐ | Pawn co-presence relay shipped; per-actor property replication checklist (Synchronizer), spawner replication, ownership |
 

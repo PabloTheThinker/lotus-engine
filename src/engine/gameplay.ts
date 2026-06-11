@@ -161,6 +161,65 @@ function hudClear() {
   if (hudRoot) hudRoot.innerHTML = ''
 }
 
+// ---- EQS-lite (UE Environment Query System) ----
+export interface EQSOpts {
+  around: [number, number, number]
+  radius?: number
+  count?: number
+  scoreBy?: 'farFromPlayer' | 'nearPlayer' | 'nearPoint'
+  point?: [number, number, number]
+}
+
+/** generate ring points around a location, score them, return the best */
+export function queryBestPoint(
+  pawn: () => THREE.Vector3 | null,
+  opts: EQSOpts,
+): [number, number, number] | null {
+  const radius = opts.radius ?? 6
+  const count = Math.max(4, opts.count ?? 12)
+  const p = pawn()
+  let best: [number, number, number] | null = null
+  let bestScore = -Infinity
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2
+    const x = opts.around[0] + Math.cos(a) * radius
+    const z = opts.around[2] + Math.sin(a) * radius
+    let score = 0
+    if (opts.scoreBy === 'farFromPlayer' && p) score = Math.hypot(x - p.x, z - p.z)
+    else if (opts.scoreBy === 'nearPlayer' && p) score = -Math.hypot(x - p.x, z - p.z)
+    else if (opts.scoreBy === 'nearPoint' && opts.point) score = -Math.hypot(x - opts.point[0], z - opts.point[2])
+    else score = Math.random()
+    if (score > bestScore) {
+      bestScore = score
+      best = [x, opts.around[1], z]
+    }
+  }
+  return best
+}
+
+// ---- AI perception (UE sight sense) ----
+export function canSeePoint(
+  actors: Map<string, import('./Actor').Actor>,
+  from: import('./Actor').Actor,
+  target: THREE.Vector3,
+  fovDeg = 90,
+  maxDist = 20,
+): boolean {
+  const origin = new THREE.Vector3()
+  from.root.getWorldPosition(origin)
+  origin.y += 1
+  const to = target.clone().sub(origin)
+  const dist = to.length()
+  if (dist > maxDist) return false
+  // facing check against the actor's -Z forward
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(from.root.quaternion)
+  const angle = forward.angleTo(to.clone().normalize())
+  if (angle > THREE.MathUtils.degToRad(fovDeg / 2)) return false
+  // occlusion
+  const hit = raycastActors(actors, [origin.x, origin.y, origin.z], [to.x, to.y, to.z], dist - 0.6)
+  return !hit || hit.actor === from
+}
+
 // ---- raycast helper (Godot RayCast3D) ----
 const _ray = new THREE.Raycaster()
 export function raycastActors(

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Input } from './Input'
-import { isActionDown, actionJustPressed } from './inputActions'
-import { cameraShake, hud, raycastActors, setTimer, setViewCamera } from './gameplay'
+import { isActionDown, actionJustPressed, actionHeldTime } from './inputActions'
+import { cameraShake, canSeePoint, hud, queryBestPoint, raycastActors, setTimer, setViewCamera } from './gameplay'
 import { runBT, type BTNode } from './behaviorTree'
 import { findPath } from './nav'
 import { playSound } from './audio'
@@ -30,6 +30,8 @@ export interface ScriptApi {
   /** named input actions (Input Map): api.isAction('Jump') */
   isAction: (name: string) => boolean
   actionJustPressed: (name: string) => boolean
+  /** UE Hold trigger: seconds the action has been held */
+  actionHeldTime: (name: string) => number
   getActor: (name: string) => Actor | undefined
   getActorsByTag: (tag: string) => Actor[]
   /** Godot-style signals: decoupled events between scripts */
@@ -49,6 +51,10 @@ export interface ScriptApi {
   runBT: (actor: Actor, tree: import('./behaviorTree').BTNode) => void
   /** per-actor blackboard (shared with its behavior tree) */
   blackboard: (actor: Actor) => Record<string, unknown>
+  /** EQS-lite: best ring point around a location by score */
+  queryBestPoint: (opts: import('./gameplay').EQSOpts) => [number, number, number] | null
+  /** AI sight: can this actor see the player? (FOV cone + occlusion raycast) */
+  canSeePlayer: (actor: Actor, fovDeg?: number, maxDist?: number) => boolean
   /** navmesh-lite: A* waypoints over baked walkability grid */
   findPath: (from: [number, number, number], to: [number, number, number]) => [number, number, number][] | null
   /** data assets (UE DataTable analog) */
@@ -109,9 +115,18 @@ export function makeScriptApi(
     keyJustPressed: (code) => Input.justPressed(code),
     isAction: (name) => isActionDown(name),
     actionJustPressed: (name) => actionJustPressed(name),
+    actionHeldTime: (name) => actionHeldTime(name),
     getActor: (name) => [...actors.values()].find((a) => a.name === name),
-    getActorsByTag: (tag) =>
-      [...actors.values()].filter((a) => a.tags.some((t) => t.toLowerCase() === tag.toLowerCase())),
+    getActorsByTag: (tag) => {
+      // UE Gameplay Tags: 'Enemy.Boss' matches tag 'Enemy.Boss.Fire' (prefix hierarchy)
+      const q = tag.toLowerCase()
+      return [...actors.values()].filter((a) =>
+        a.tags.some((t) => {
+          const tl = t.toLowerCase()
+          return tl === q || tl.startsWith(q + '.')
+        }),
+      )
+    },
     emit: (signal, ...args) => {
       for (const h of signalHandlers.get(signal) ?? []) {
         try {
@@ -129,6 +144,11 @@ export function makeScriptApi(
     runBT: (actor, tree) => runBT(actor, tree as BTNode, blackboardFor(actor)),
     blackboard: (actor) => blackboardFor(actor),
     findPath: (from, to) => findPath(actors, from, to),
+    queryBestPoint: (opts) => queryBestPoint(pawnPosition, opts),
+    canSeePlayer: (actor, fovDeg, maxDist) => {
+      const p = pawnPosition()
+      return p ? canSeePoint(actors, actor, p, fovDeg, maxDist) : false
+    },
     getData: (name) => dataStore[name],
     playAnimation: (actor, clip, opts) => actor.playAnimation(clip, opts),
     listClips: (actor) => (actor.animations ?? []).map((c) => c.name),

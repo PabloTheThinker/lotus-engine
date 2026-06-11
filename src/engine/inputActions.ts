@@ -45,6 +45,13 @@ export function isActionDown(name: string): boolean {
   return !!a && a.keys.some((k) => Input.isDown(k))
 }
 
+/** UE Hold trigger: seconds the action's key has been held */
+export function actionHeldTime(name: string): number {
+  const a = loadInputMap().find((x) => x.name.toLowerCase() === name.toLowerCase())
+  if (!a) return 0
+  return Math.max(...a.keys.map((k) => Input.heldTime(k)), 0)
+}
+
 export function actionJustPressed(name: string): boolean {
   const a = loadInputMap().find((x) => x.name.toLowerCase() === name.toLowerCase())
   return !!a && a.keys.some((k) => Input.justPressed(k))

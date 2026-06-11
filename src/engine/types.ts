@@ -121,6 +121,9 @@ export interface PhysicsProps {
   /** Chaos-lite destruction: shatter into fragments on hard impact */
   breakable?: boolean
   breakThreshold?: number
+  /** collision layer (0-7) and bitmask of layers this collides with */
+  layer?: number
+  collidesWith?: number
 }
 
 export const DEFAULT_PHYSICS: PhysicsProps = {
