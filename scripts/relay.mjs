@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 /* Vektra multiplayer relay — room-based WebSocket broadcast.
-   Usage: node scripts/relay.mjs [port]   (default 24690) */
+   Usage: node scripts/relay.mjs [port]   (default 24690)
+   Message types (JSON, relay forwards verbatim):
+     join    { t:'join', room, id }           — join a room
+     leave   { t:'leave', id }                — emitted on disconnect
+     pose    { t:'pose', id, p:[x,y,z], ry }  — host pawn co-presence
+     input   { t:'input', id, p?, ry? }       — client pawn uplink
+     sync    { t:'sync', id, aid, props }     — host property deltas (10 Hz)
+     spawn   { t:'spawn', id, actor }         — host spawner replication
+     despawn { t:'despawn', id, aid }         — host removes replicated actor */
 import { WebSocketServer } from 'ws'
 
 const port = Number(process.argv[2] ?? 24690)
@@ -21,9 +29,16 @@ wss.on('connection', (ws) => {
       room = String(msg.room ?? 'default')
       id = String(msg.id ?? Math.random().toString(36).slice(2))
       if (!rooms.has(room)) rooms.set(room, new Set())
-      rooms.get(room).add(ws)
+      const peers = rooms.get(room)
+      // notify existing peers so host election can converge quickly
+      for (const peer of peers) {
+        if (peer !== ws && peer.readyState === 1) {
+          peer.send(JSON.stringify({ t: 'join', room, id }))
+        }
+      }
+      peers.add(ws)
       ws._vid = id
-      console.log(`[relay] ${id} joined ${room} (${rooms.get(room).size} peers)`)
+      console.log(`[relay] ${id} joined ${room} (${peers.size} peers)`)
       return
     }
     if (!room) return

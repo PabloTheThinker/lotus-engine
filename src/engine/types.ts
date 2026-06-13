@@ -185,6 +185,8 @@ export interface SerializedActor {
   abilityIds?: string[]
   /** distance streaming: hide beyond this range from the camera (0 = never) */
   cullDistance?: number
+  /** world-partition cell [cx, cz] — auto-assigned from position on save */
+  streamCell?: [number, number]
   /** PostProcessVolume only */
   postProcess?: PostProcessProps
   /** ParticleEmitter only */
@@ -207,6 +209,8 @@ export interface SerializedActor {
   animStateMachine?: import('./animStateMachine').AnimStateMachine
   /** 1D blend space — locomotion-style clip blending */
   blendSpace1D?: import('./animStateMachine').BlendSpace1D
+  /** 2D blend space — speed×direction style clip blending */
+  blendSpace2D?: import('./animStateMachine').BlendSpace2D
   /** runtime animation parameters (speed, direction, etc.) */
   animParams?: Record<string, number>
   /** material node graph */
@@ -227,6 +231,10 @@ export interface SerializedActor {
   trigger?: TriggerProps
   /** SoundEmitter only */
   soundEmitter?: SoundEmitterProps
+  /** MultiplayerSynchronizer-lite: property names to replicate (position, rotation, visible, script var names) */
+  syncProperties?: string[]
+  /** MultiplayerSpawner-lite: host replicates spawn/despawn of this actor during Play */
+  syncSpawn?: boolean
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
@@ -332,6 +340,24 @@ export interface EnvironmentSettings {
   exposure: number
 }
 
+/** Grid-chunked world streaming (UE World Partition analog). */
+export interface StreamingSettings {
+  enabled: boolean
+  /** meters per grid cell (default 64) */
+  gridSize: number
+  /** load actors in cells within this Chebyshev radius of the camera */
+  loadRadius: number
+  /** export playable splits actors into per-cell JSON for api.loadCell */
+  exportByCell: boolean
+}
+
+export const DEFAULT_STREAMING: StreamingSettings = {
+  enabled: true,
+  gridSize: 64,
+  loadRadius: 2,
+  exportByCell: false,
+}
+
 export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   background: '#15181d',
   fogEnabled: false,
@@ -374,7 +400,12 @@ export interface SerializedLevel {
   hdri?: string
   /** bundled linked levels for multi-level export + api.loadLevel */
   levelLinks?: LevelLink[]
+  /** grid-chunked streaming settings */
+  streaming?: StreamingSettings
 }
+
+/** CSS properties keyable on authored HUD widgets (sequencer tracks). */
+export type SeqHudProperty = 'opacity' | 'left' | 'top' | 'width' | 'color'
 
 /** UMG-lite authored widget */
 export interface HudWidget {

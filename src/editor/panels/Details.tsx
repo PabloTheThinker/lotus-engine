@@ -21,6 +21,7 @@ import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
 import { collectAnimParams } from '../../engine/animStateMachine'
 import { getActorAttributes, listAbilities, listAttributeSets } from '../../engine/gameplayAbilities'
+import { mpConnected, mpEnabled, mpIsHost } from '../../engine/multiplayer'
 import { parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
@@ -237,8 +238,15 @@ function AnimationSection({ actor }: { actor: Actor }) {
   if (actor.blendSpace1D?.param && !paramNames.includes(actor.blendSpace1D.param)) {
     paramNames.push(actor.blendSpace1D.param)
   }
+  if (actor.blendSpace2D?.paramX && !paramNames.includes(actor.blendSpace2D.paramX)) {
+    paramNames.push(actor.blendSpace2D.paramX)
+  }
+  if (actor.blendSpace2D?.paramY && !paramNames.includes(actor.blendSpace2D.paramY)) {
+    paramNames.push(actor.blendSpace2D.paramY)
+  }
   const hasFsm = (actor.animStateMachine?.states.length ?? 0) > 0
-  const hasBlend = (actor.blendSpace1D?.samples.length ?? 0) > 0
+  const hasBlend1d = (actor.blendSpace1D?.samples.length ?? 0) > 0
+  const hasBlend2d = (actor.blendSpace2D?.samples.length ?? 0) > 0
   const setAnimParam = (name: string, value: number) => {
     if (!actor.animParams) actor.animParams = {}
     actor.animParams[name] = value
@@ -248,11 +256,13 @@ function AnimationSection({ actor }: { actor: Actor }) {
       <button type="button" onClick={() => setBottomTab('anim')}>
         Open Animation Editor
       </button>
-      {(hasFsm || hasBlend) && (
+      {(hasFsm || hasBlend1d || hasBlend2d) && (
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           {hasFsm && `FSM: ${actor.animStateMachine!.states.length} state(s)`}
-          {hasFsm && hasBlend && ' · '}
-          {hasBlend && `Blend: ${actor.blendSpace1D!.samples.length} sample(s)`}
+          {hasFsm && (hasBlend1d || hasBlend2d) && ' · '}
+          {hasBlend1d && `Blend 1D: ${actor.blendSpace1D!.samples.length} sample(s)`}
+          {hasBlend1d && hasBlend2d && ' · '}
+          {hasBlend2d && `Blend 2D: ${actor.blendSpace2D!.samples.length} sample(s)`}
         </div>
       )}
       <label className="field">
@@ -458,10 +468,87 @@ function SoundEmitterSection({ actor }: { actor: Actor }) {
   )
 }
 
+const SYNC_BUILTIN = ['position', 'rotation', 'visible'] as const
+
+function NetworkSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const playing = useEditor((s) => s.playing)
+  if (!mpEnabled()) return null
+
+  const synced = new Set(actor.syncProperties ?? [])
+  const scriptExports = parseExports(actor.script ?? '').map((e) => e.name)
+  const options = [...SYNC_BUILTIN, ...scriptExports.filter((n) => !SYNC_BUILTIN.includes(n as (typeof SYNC_BUILTIN)[number]))]
+
+  const toggleProp = (name: string, on: boolean) => {
+    const prev = actor.syncProperties ? [...actor.syncProperties] : undefined
+    const next = new Set(synced)
+    if (on) next.add(name)
+    else next.delete(name)
+    const arr = [...next]
+    runCommand(
+      new PropertyCommand(
+        on ? `Sync ${name}` : `Unsync ${name}`,
+        () => (actor.syncProperties = arr.length ? arr : undefined),
+        () => (actor.syncProperties = prev),
+      ),
+    )
+    touch()
+  }
+
+  return (
+    <Section title="Network (MultiplayerSynchronizer)">
+      <Check
+        label="Sync Spawn"
+        value={actor.syncSpawn}
+        onToggle={(v) => {
+          const prev = actor.syncSpawn
+          runCommand(
+            new PropertyCommand(
+              v ? 'Enable sync spawn' : 'Disable sync spawn',
+              () => (actor.syncSpawn = v),
+              () => (actor.syncSpawn = prev),
+            ),
+          )
+          touch()
+        }}
+      />
+      {options.map((name) => (
+        <Check key={name} label={name} value={synced.has(name)} onToggle={(v) => toggleProp(name, v)} />
+      ))}
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Host broadcasts checked properties at 10 Hz; clients interpolate position/rotation.
+        {playing && mpConnected() ? ` This session: ${mpIsHost() ? 'host (authority)' : 'client'}.` : ''}
+      </div>
+    </Section>
+  )
+}
+
 function StreamingSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
+  const grid = world.streaming.gridSize
+  const autoCell =
+    world.streaming.enabled && grid > 0
+      ? `[${Math.floor(actor.root.position.x / grid)}, ${Math.floor(actor.root.position.z / grid)}]`
+      : '—'
   return (
     <Section title="Streaming">
+      <label className="field">
+        <span>Stream Cell</span>
+        <input
+          value={actor.streamCell ? `${actor.streamCell[0]}, ${actor.streamCell[1]}` : ''}
+          placeholder={`auto ${autoCell}`}
+          spellCheck={false}
+          onChange={(e) => {
+            const parts = e.target.value.split(/[,\s]+/).map((p) => parseInt(p.trim(), 10))
+            if (parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1])) {
+              actor.streamCell = [parts[0], parts[1]]
+            } else if (!e.target.value.trim()) {
+              actor.streamCell = undefined
+            }
+            touch()
+          }}
+        />
+      </label>
       <Num
         label="Cull Distance"
         value={actor.cullDistance}
@@ -473,7 +560,9 @@ function StreamingSection({ actor }: { actor: Actor }) {
         }}
         onCommit={() => {}}
       />
-      <div className="panel-empty" style={{ padding: '2px 0' }}>0 = always visible. Hidden beyond this range from the camera.</div>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Cell auto-assigned on save from position. 0 cull distance = no per-actor distance cull.
+      </div>
     </Section>
   )
 }
@@ -1639,6 +1728,7 @@ export function Details() {
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
         {actor.script && <ScriptVarsSection actor={actor} />}
+        <NetworkSection actor={actor} />
         <StreamingSection actor={actor} />
         {actor.probeProps && <ProbeSection actor={actor} />}
         {actor.waterProps && <WaterSection actor={actor} />}

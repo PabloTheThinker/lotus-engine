@@ -9,6 +9,8 @@ import { Sky } from 'three/addons/objects/Sky.js'
 const LEVELS = window.__VEKTRA_LEVELS__ ?? (window.__VEKTRA_LEVEL__ ? { main: window.__VEKTRA_LEVEL__ } : null)
 const MAIN_KEY = window.__VEKTRA_MAIN__ ?? 'main'
 const EXPORT = window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
+const CELL_MANIFEST = window.__VEKTRA_CELLS__ ?? null
+const ALWAYS_LOADED = new Set(['DirectionalLight', 'AmbientLight', 'PlayerStart'])
 if (!LEVELS || !LEVELS[MAIN_KEY]) throw new Error('Vektra: no level data')
 
 let LEVEL = LEVELS[MAIN_KEY]
@@ -37,6 +39,45 @@ let physWorld = null
 let bindings = []
 let clock = 0
 let loadingLevel = false
+const loadedCells = new Set()
+const cellActorIds = new Map()
+
+function streamSettings() {
+  const s = LEVEL.streaming ?? {}
+  return {
+    enabled: s.enabled !== false,
+    gridSize: Math.max(8, s.gridSize ?? 64),
+    loadRadius: Math.max(0, s.loadRadius ?? 2),
+  }
+}
+
+function worldToCell(x, z, gridSize) {
+  return [Math.floor(x / gridSize), Math.floor(z / gridSize)]
+}
+
+function cellKey(cx, cz) { return `${cx},${cz}` }
+
+function isCellInRadius(acx, acz, ccx, ccz, r) {
+  return Math.abs(acx - ccx) <= r && Math.abs(acz - ccz) <= r
+}
+
+function actorStreamVisible(sa, camPos) {
+  const cfg = streamSettings()
+  if (!cfg.enabled) return true
+  if (ALWAYS_LOADED.has(sa.type) || !sa.streamCell) return true
+  const camCell = worldToCell(camPos.x, camPos.z, cfg.gridSize)
+  return isCellInRadius(sa.streamCell[0], sa.streamCell[1], camCell[0], camCell[1], cfg.loadRadius)
+}
+
+function applyStreamingVisibility(camPos) {
+  const cfg = streamSettings()
+  for (const a of actors.values()) {
+    const sa = a.data
+    const streamOk = actorStreamVisible(sa, camPos)
+    const cullOk = !sa.cullDistance || a.root.position.distanceTo(camPos) < sa.cullDistance
+    a.root.visible = (sa.visible !== false) && streamOk && cullOk
+  }
+}
 
 // ---- environment ----
 function applyEnvironment() {
@@ -237,10 +278,76 @@ function teardownActors() {
   physWorld = null
 }
 
-function spawnLevelActors(level) {
-  for (const sa of level.actors) instantiate(sa)
-  for (const sa of level.actors) {
+function spawnActorsList(list) {
+  for (const sa of list) instantiate(sa)
+  for (const sa of list) {
     if (sa.parentId && actors.has(sa.parentId)) actors.get(sa.parentId).root.add(actors.get(sa.id).root)
+  }
+}
+
+function spawnLevelActors(level) {
+  spawnActorsList(level.actors)
+}
+
+function unloadCell(cx, cz) {
+  const key = cellKey(cx, cz)
+  const ids = cellActorIds.get(key)
+  if (!ids) return
+  for (const id of ids) {
+    const a = actors.get(id)
+    if (!a || a.autoload) continue
+    scene.remove(a.root)
+    actors.delete(id)
+    ticks = ticks.filter(([act]) => act.id !== id)
+    bindings = bindings.filter(([act]) => act.id !== id)
+    particleSystems = particleSystems.filter((ps) => ps.points.parent !== a.root)
+  }
+  cellActorIds.delete(key)
+  loadedCells.delete(key)
+}
+
+function loadCellActors(cx, cz) {
+  if (!CELL_MANIFEST) return false
+  const key = cellKey(cx, cz)
+  if (loadedCells.has(key)) return true
+  const list = CELL_MANIFEST[key]
+  if (!list?.length) return false
+  spawnActorsList(list)
+  loadedCells.add(key)
+  cellActorIds.set(key, list.map((sa) => sa.id))
+  for (const sa of list) {
+    const a = actors.get(sa.id)
+    if (!a?.data.script) continue
+    try {
+      const fn = new Function('actor', 'api', 'THREE', `"use strict";\n${a.data.script}\nreturn { b: typeof onBeginPlay === 'function' ? onBeginPlay : null, t: typeof onTick === 'function' ? onTick : null }`)
+      const h = fn(a, api, THREE)
+      if (h.b) h.b()
+      if (h.t) ticks.push([a, h.t])
+    } catch (e) { console.warn(a.name, 'script error', e) }
+  }
+  return true
+}
+
+function syncCellsAround(camPos) {
+  if (!CELL_MANIFEST) return
+  const cfg = streamSettings()
+  if (!cfg.enabled) return
+  const camCell = worldToCell(camPos.x, camPos.z, cfg.gridSize)
+  const want = new Set()
+  for (let dx = -cfg.loadRadius; dx <= cfg.loadRadius; dx++) {
+    for (let dz = -cfg.loadRadius; dz <= cfg.loadRadius; dz++) {
+      want.add(cellKey(camCell[0] + dx, camCell[1] + dz))
+    }
+  }
+  for (const key of want) {
+    const p = key.split(',')
+    loadCellActors(parseInt(p[0], 10), parseInt(p[1], 10))
+  }
+  for (const key of [...loadedCells]) {
+    if (!want.has(key)) {
+      const p = key.split(',')
+      unloadCell(parseInt(p[0], 10), parseInt(p[1], 10))
+    }
   }
 }
 
@@ -373,6 +480,12 @@ const api = {
   getActor: (n) => [...actors.values()].find((a) => a.name === n),
   time: () => clock,
   pawnPosition: () => (pawnMode === 'fly' ? pawnCam.position : feet),
+  async loadCell(cx, cz) {
+    const ok = loadCellActors(cx, cz)
+    if (!ok) api.log('loadCell: empty or missing', cx, cz)
+    else api.log('loadCell:', cx, cz)
+    return ok
+  },
   async loadLevel(name) {
     if (loadingLevel) return false
     const key = String(name).trim().toLowerCase()
@@ -420,6 +533,11 @@ const overlay = document.getElementById('overlay')
 async function boot() {
   await loadAssets(LEVEL)
   spawnLevelActors(LEVEL)
+  if (CELL_MANIFEST) {
+    const start = LEVEL.actors.find((a) => a.type === 'PlayerStart')
+    const p = start ? new THREE.Vector3(...start.transform.position) : feet.clone()
+    syncCellsAround(p)
+  }
   resetPawnFromStart()
   await startPhysics()
   compileScripts()
@@ -468,6 +586,8 @@ async function boot() {
     }
     for (const ps of particleSystems) ps.update(dt)
     updatePawn(dt)
+    if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
+    applyStreamingVisibility(pawnCam.position)
     pressed.clear()
     renderer.render(scene, pawnCam)
   })

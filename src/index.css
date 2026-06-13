@@ -323,6 +323,24 @@ input[type='checkbox'] {
   text-transform: capitalize;
   background: rgba(13, 15, 18, 0.75);
 }
+.viewport-modes .view-mode-select {
+  min-width: 118px;
+}
+.viewport-pt-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #f5a623;
+  background: rgba(13, 15, 18, 0.85);
+  border: 1px solid #f5a623;
+  padding: 2px 7px;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 3;
+}
 .viewport-pip {
   display: none;
   position: absolute;
@@ -1755,4 +1773,67 @@ input[type='checkbox'] {
 .anim-blend-sample button {
   font-size: 9px;
   padding: 0 4px;
+}
+.anim-blend2d-canvas {
+  flex-direction: column;
+  padding: 12px;
+  cursor: default;
+  min-height: 280px;
+}
+.anim-blend2d-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-end;
+}
+.anim-blend2d-plot-wrap {
+  flex: 1;
+  min-height: 200px;
+}
+.anim-blend2d-plot {
+  position: relative;
+}
+.anim-blend2d-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.anim-blend2d-bounds {
+  fill: rgba(30, 40, 55, 0.5);
+  stroke: #4a5568;
+  stroke-width: 1;
+}
+.anim-blend2d-tri {
+  fill: rgba(134, 59, 255, 0.08);
+  stroke: rgba(134, 59, 255, 0.35);
+  stroke-width: 1;
+}
+.anim-blend2d-axis-label {
+  fill: var(--text-dim);
+  font-size: 9px;
+}
+.anim-blend2d-sample {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 104px;
+  cursor: grab;
+  z-index: 2;
+}
+.anim-blend2d-sample select {
+  font-size: 9px;
+  width: 100%;
+}
+.anim-blend2d-sample button {
+  font-size: 9px;
+  padding: 0 4px;
+}
+.anim-blend2d-hint {
+  position: absolute;
+  left: 48px;
+  bottom: 4px;
+  padding: 0;
+  pointer-events: none;
 }

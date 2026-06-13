@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { Actor } from './Actor'
+import type { HudWidget, SeqHudProperty } from './types'
 
 /**
  * Gameplay services — timers, HUD, camera shake, view-camera override.
@@ -80,6 +81,62 @@ export function mountHud(parent: HTMLElement) {
 export function unmountHud() {
   hudRoot?.remove()
   hudRoot = null
+}
+
+export function isHudMounted() {
+  return hudRoot !== null
+}
+
+export function getHudElement(id: string): HTMLElement | null {
+  return hudRoot?.querySelector<HTMLElement>(`[data-hud="${id}"]`) ?? null
+}
+
+/** Spawn or refresh authored HUD widgets from World Settings. */
+export function syncAuthoredHud(widgets: HudWidget[], onButtonClick?: (signal: string) => void) {
+  if (!hudRoot) return
+  for (const w of widgets) {
+    const opts = { anchor: w.anchor, x: w.x, y: w.y, size: w.size, color: w.color }
+    if (w.type === 'text') hud.text(w.id, w.text, opts)
+    else if (w.type === 'bar') hud.bar(w.id, w.value ?? 1, opts)
+    else if (w.type === 'button') hud.button(w.id, w.text, () => onButtonClick?.(w.signal ?? w.id), opts)
+  }
+}
+
+/** Apply a sequenced CSS property to a HUD widget element. */
+export function applyHudCssProperty(widgetId: string, property: SeqHudProperty, value: number | boolean | string | number[]) {
+  const el = getHudElement(widgetId)
+  if (!el) return
+  switch (property) {
+    case 'opacity':
+      if (typeof value === 'number') el.style.opacity = String(Math.max(0, value))
+      break
+    case 'left':
+      if (typeof value === 'number') {
+        el.style.left = `${value}px`
+        el.style.right = ''
+      }
+      break
+    case 'top':
+      if (typeof value === 'number') {
+        el.style.top = `${value}px`
+        el.style.bottom = ''
+      }
+      break
+    case 'width':
+      if (typeof value === 'number') el.style.width = `${Math.max(0, value)}px`
+      break
+    case 'color':
+      if (typeof value === 'string') {
+        el.style.color = value
+        if (el.dataset.kind === 'bar') {
+          const fill = el.firstElementChild as HTMLElement | null
+          if (fill) fill.style.background = value
+        } else if (el.dataset.kind === 'button') {
+          el.style.background = value
+        }
+      }
+      break
+  }
 }
 
 function hudEl(id: string, kind: string): HTMLElement {

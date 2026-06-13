@@ -1,4 +1,5 @@
 import runtimeSource from '../export/runtime.js?raw'
+import { splitLevelByCells } from '../engine/streaming'
 import { sanitizeLevelKey, world } from '../engine/World'
 import type { SerializedLevel } from '../engine/types'
 import { loadPrefs, type ExportQuality } from './Preferences'
@@ -84,7 +85,13 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const prefs = loadPrefs()
   const quality = opts.quality ?? prefs.exportQuality
   world.levelName = s.levelName
-  const mainLevel = applyQualityToLevel(world.serialize(), quality)
+  let mainLevel = applyQualityToLevel(world.serialize(), quality)
+  let cellsJSON = 'null'
+  if (mainLevel.streaming?.exportByCell) {
+    const split = splitLevelByCells(mainLevel)
+    mainLevel = { ...mainLevel, actors: split.globalActors }
+    cellsJSON = escapeJsonForScript(JSON.stringify(split.cells))
+  }
   const { levels, main } = buildLevelsManifest(mainLevel)
   const levelsJSON = escapeJsonForScript(JSON.stringify(levels))
   const exportJSON = escapeJsonForScript(JSON.stringify({ quality, pixelRatio: quality === 'mobile' ? 1 : undefined }))
@@ -124,7 +131,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 <body>
 <div id="overlay">Loading…</div>
 <div id="badge">VEKTRA ENGINE${pwa ? ' · PWA' : ''}</div>
-<script>window.__VEKTRA_LEVELS__ = ${levelsJSON}; window.__VEKTRA_MAIN__ = '${main}'; window.__VEKTRA_EXPORT__ = ${exportJSON};</script>
+<script>window.__VEKTRA_LEVELS__ = ${levelsJSON}; window.__VEKTRA_MAIN__ = '${main}'; window.__VEKTRA_EXPORT__ = ${exportJSON}; window.__VEKTRA_CELLS__ = ${cellsJSON};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

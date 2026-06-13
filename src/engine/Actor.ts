@@ -67,6 +67,8 @@ export class Actor {
   abilityIds: string[] = []
   /** world streaming: hide when farther than this from the camera (0 = off) */
   cullDistance = 0
+  /** grid cell [cx, cz] — auto-assigned from position on save */
+  streamCell?: [number, number]
   postProcessProps?: PostProcessProps
   volumeHelper?: THREE.Object3D
   particleProps?: import('./particles').ParticleProps
@@ -91,6 +93,7 @@ export class Actor {
   autoPlayClip?: string
   animStateMachine?: import('./animStateMachine').AnimStateMachine
   blendSpace1D?: import('./animStateMachine').BlendSpace1D
+  blendSpace2D?: import('./animStateMachine').BlendSpace2D
   animParams?: Record<string, number>
   /** prefab instance root: source prefab asset name */
   prefabSource?: string
@@ -102,6 +105,10 @@ export class Actor {
   triggerProps?: import('./types').TriggerProps
   /** SoundEmitter — procedural/imported sound playback */
   soundEmitterProps?: import('./types').SoundEmitterProps
+  /** Godot MultiplayerSynchronizer-lite — replicated property checklist */
+  syncProperties?: string[]
+  /** Godot MultiplayerSpawner-lite — host replicates instantiation */
+  syncSpawn = false
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -170,7 +177,12 @@ export class Actor {
     this.mixer = undefined
     this.currentAction = undefined
     resetAnimRuntime(this)
-    if (!this.animStateMachine && !this.blendSpace1D?.samples.length && this.autoPlayClip) {
+    if (
+      !this.animStateMachine &&
+      !this.blendSpace2D?.samples.length &&
+      !this.blendSpace1D?.samples.length &&
+      this.autoPlayClip
+    ) {
       this.playAnimation(this.autoPlayClip)
     }
     this.elapsed = 0
@@ -263,6 +275,7 @@ export class Actor {
       attributeSetId: this.attributeSetId,
       abilityIds: this.abilityIds.length ? [...this.abilityIds] : undefined,
       cullDistance: this.cullDistance || undefined,
+      streamCell: this.streamCell ? [this.streamCell[0], this.streamCell[1]] : undefined,
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
@@ -271,6 +284,7 @@ export class Actor {
         ? JSON.parse(JSON.stringify(this.animStateMachine))
         : undefined,
       blendSpace1D: this.blendSpace1D ? JSON.parse(JSON.stringify(this.blendSpace1D)) : undefined,
+      blendSpace2D: this.blendSpace2D ? JSON.parse(JSON.stringify(this.blendSpace2D)) : undefined,
       animParams:
         this.animParams && Object.keys(this.animParams).length
           ? { ...this.animParams }
@@ -294,6 +308,8 @@ export class Actor {
         : undefined,
       trigger: this.triggerProps ? { ...this.triggerProps } : undefined,
       soundEmitter: this.soundEmitterProps ? { ...this.soundEmitterProps } : undefined,
+      syncProperties: this.syncProperties?.length ? [...this.syncProperties] : undefined,
+      syncSpawn: this.syncSpawn || undefined,
     }
   }
 

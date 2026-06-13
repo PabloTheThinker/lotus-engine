@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { applyHudCssProperty } from './gameplay'
+import type { HudWidget, SeqHudProperty } from './types'
 import type { World } from './World'
 
 /**
@@ -19,6 +21,7 @@ export type SeqProperty =
   | 'intensity'
   | 'fov'
 
+export type { SeqHudProperty } from './types'
 export type SeqInterp = 'linear' | 'smooth' | 'step' | 'bezier'
 
 /** Cubic-bezier tangent handle offset from key (time, value). */
@@ -36,8 +39,10 @@ export interface SeqKey {
 }
 
 export interface SeqTrack {
+  /** 'hud' for DOM widget tracks; omitted or 'actor' for scene actors */
+  trackType?: 'actor' | 'hud'
   actorId: string
-  property: SeqProperty
+  property: SeqProperty | SeqHudProperty
   keys: SeqKey[]
 }
 
@@ -64,6 +69,16 @@ export function emptySequence(): Sequence {
 }
 
 /** which extra properties are keyable on an actor */
+export const HUD_PROPERTIES: SeqHudProperty[] = ['opacity', 'left', 'top', 'width', 'color']
+
+export function isHudTrack(track: SeqTrack): boolean {
+  return track.trackType === 'hud'
+}
+
+export function hasHudTracks(seq: Sequence): boolean {
+  return seq.tracks.some(isHudTrack)
+}
+
 export function keyableProperties(actor: { mesh?: unknown; light?: unknown; camera?: unknown; materialProps?: unknown }): SeqProperty[] {
   const out: SeqProperty[] = ['visible']
   if (actor.materialProps) out.push('color', 'opacity', 'emissiveIntensity')
@@ -72,15 +87,32 @@ export function keyableProperties(actor: { mesh?: unknown; light?: unknown; came
   return [...new Set(out)]
 }
 
-export function findTrack(seq: Sequence, actorId: string, property: SeqProperty): SeqTrack | undefined {
-  return seq.tracks.find((tr) => tr.actorId === actorId && tr.property === property)
+/** which CSS properties are keyable on a HUD widget */
+export function keyableHudProperties(_widget: HudWidget): SeqHudProperty[] {
+  return HUD_PROPERTIES
+}
+
+export function findTrack(
+  seq: Sequence,
+  id: string,
+  property: SeqProperty | SeqHudProperty,
+  trackType: 'actor' | 'hud' = 'actor',
+): SeqTrack | undefined {
+  return seq.tracks.find((tr) => (tr.trackType ?? 'actor') === trackType && tr.actorId === id && tr.property === property)
 }
 
 /** insert or replace a key (keys stay sorted by t) */
-export function setKey(seq: Sequence, actorId: string, property: SeqProperty, t: number, v: SeqKey['v']) {
-  let track = findTrack(seq, actorId, property)
+export function setKey(
+  seq: Sequence,
+  id: string,
+  property: SeqProperty | SeqHudProperty,
+  t: number,
+  v: SeqKey['v'],
+  trackType: 'actor' | 'hud' = 'actor',
+) {
+  let track = findTrack(seq, id, property, trackType)
   if (!track) {
-    track = { actorId, property, keys: [] }
+    track = { trackType, actorId: id, property, keys: [] }
     seq.tracks.push(track)
   }
   const clone = Array.isArray(v) ? [...v] : v
@@ -224,13 +256,17 @@ export function sampleTrack(track: SeqTrack, t: number): SeqKey['v'] | null {
   return null
 }
 
-/** apply the sequence at time t to the world's actors */
+/** apply the sequence at time t to the world's actors and HUD widgets */
 export function sampleSequence(world: World, seq: Sequence, t: number) {
   for (const track of seq.tracks) {
-    const actor = world.actors.get(track.actorId)
-    if (!actor) continue
     const v = sampleTrack(track, t)
     if (v === null) continue
+    if (isHudTrack(track)) {
+      applyHudCssProperty(track.actorId, track.property as SeqHudProperty, v)
+      continue
+    }
+    const actor = world.actors.get(track.actorId)
+    if (!actor) continue
     switch (track.property) {
       case 'position':
         if (Array.isArray(v)) actor.root.position.set(v[0], v[1], v[2])

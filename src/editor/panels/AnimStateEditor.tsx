@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import {
+  delaunayTriangulate,
   emptyAnimStateMachine,
   emptyBlendSpace1D,
+  emptyBlendSpace2D,
   type AnimStateMachine,
   type AnimTransition,
   type BlendSpace1D,
+  type BlendSpace2D,
 } from '../../engine/animStateMachine'
 import { PropertyCommand, runCommand } from '../commands'
 import { useEditor } from '../store'
@@ -18,12 +21,15 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
-type EditorMode = 'fsm' | 'blend'
+type EditorMode = 'fsm' | 'blend' | 'blend2d'
+
+const BLEND2D_PAD = 48
 
 /**
- * Animation state machine + 1D blend space editor.
+ * Animation state machine + 1D/2D blend space editor.
  * FSM: draggable state nodes with transition arrows.
- * Blend: horizontal axis with clip samples lerped by a param at runtime.
+ * Blend 1D: horizontal axis with clip samples lerped by a param at runtime.
+ * Blend 2D: UE-style canvas with draggable samples and Delaunay triangulation.
  */
 export function AnimStateEditor() {
   const selectedId = useEditor((s) => s.selectedId)
@@ -34,6 +40,7 @@ export function AnimStateEditor() {
   const [mode, setMode] = useState<EditorMode>('fsm')
   const [sm, setSm] = useState<AnimStateMachine | null>(null)
   const [blend, setBlend] = useState<BlendSpace1D | null>(null)
+  const [blend2d, setBlend2d] = useState<BlendSpace2D | null>(null)
   const [dirty, setDirty] = useState(false)
   const [pendingFrom, setPendingFrom] = useState<string | null>(null)
   const [selState, setSelState] = useState<string | null>(null)
@@ -43,6 +50,16 @@ export function AnimStateEditor() {
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ id: string; dx: number; dy: number } | null>(null)
   const blendDrag = useRef<{ idx: number; startX: number; startVal: number; axisW: number; min: number; max: number } | null>(null)
+  const blend2dDrag = useRef<{
+    idx: number
+    pad: number
+    plotW: number
+    plotH: number
+    minX: number
+    maxX: number
+    minY: number
+    maxY: number
+  } | null>(null)
 
   useEffect(() => {
     if (actor && actor.id !== lastActor.current) {
@@ -58,6 +75,11 @@ export function AnimStateEditor() {
           ? (JSON.parse(JSON.stringify(actor.blendSpace1D)) as BlendSpace1D)
           : emptyBlendSpace1D('speed'),
       )
+      setBlend2d(
+        actor.blendSpace2D
+          ? (JSON.parse(JSON.stringify(actor.blendSpace2D)) as BlendSpace2D)
+          : emptyBlendSpace2D('speed', 'direction'),
+      )
       setDirty(false)
       setPendingFrom(null)
       setSelState(null)
@@ -66,10 +88,10 @@ export function AnimStateEditor() {
     if (!actor) lastActor.current = null
   }, [actor, clips.join('|')])
 
-  if (!actor || !sm || !blend) {
+  if (!actor || !sm || !blend || !blend2d) {
     return (
       <div className="panel-empty">
-        Select an imported mesh with glTF animation clips to edit its animation state machine or 1D blend space.
+        Select an imported mesh with glTF animation clips to edit its animation state machine or blend space.
       </div>
     )
   }
@@ -91,21 +113,32 @@ export function AnimStateEditor() {
     setDirty(true)
   }
 
+  const mutateBlend2d = (fn: (b: BlendSpace2D) => void) => {
+    const next = JSON.parse(JSON.stringify(blend2d)) as BlendSpace2D
+    fn(next)
+    setBlend2d(next)
+    setDirty(true)
+  }
+
   const apply = () => {
     const prevSm = actor.animStateMachine
     const prevBlend = actor.blendSpace1D
+    const prevBlend2d = actor.blendSpace2D
     const nextSm = JSON.parse(JSON.stringify(sm)) as AnimStateMachine
     const nextBlend = JSON.parse(JSON.stringify(blend)) as BlendSpace1D
+    const nextBlend2d = JSON.parse(JSON.stringify(blend2d)) as BlendSpace2D
     runCommand(
       new PropertyCommand(
         `Animation ${actor.name}`,
         () => {
           actor.animStateMachine = nextSm.states.some((s) => s.clipName) ? nextSm : undefined
           actor.blendSpace1D = nextBlend.samples.length ? nextBlend : undefined
+          actor.blendSpace2D = nextBlend2d.samples.length ? nextBlend2d : undefined
         },
         () => {
           actor.animStateMachine = prevSm
           actor.blendSpace1D = prevBlend
+          actor.blendSpace2D = prevBlend2d
         },
       ),
     )
@@ -169,6 +202,23 @@ export function AnimStateEditor() {
 
   const valueToX = (v: number, w: number) => 40 + ((v - blendMin) / blendSpan) * (w - 80)
 
+  const blend2dMinX = blend2d.samples.length ? Math.min(...blend2d.samples.map((s) => s.x), 0) : 0
+  const blend2dMaxX = blend2d.samples.length ? Math.max(...blend2d.samples.map((s) => s.x), 1) : 1
+  const blend2dMinY = blend2d.samples.length ? Math.min(...blend2d.samples.map((s) => s.y), 0) : 0
+  const blend2dMaxY = blend2d.samples.length ? Math.max(...blend2d.samples.map((s) => s.y), 1) : 1
+  const blend2dSpanX = Math.max(0.001, blend2dMaxX - blend2dMinX)
+  const blend2dSpanY = Math.max(0.001, blend2dMaxY - blend2dMinY)
+
+  const paramToCanvas = (px: number, py: number, plotW: number, plotH: number) => ({
+    x: BLEND2D_PAD + ((px - blend2dMinX) / blend2dSpanX) * plotW,
+    y: BLEND2D_PAD + plotH - ((py - blend2dMinY) / blend2dSpanY) * plotH,
+  })
+
+  const canvasToParam = (cx: number, cy: number, plotW: number, plotH: number) => ({
+    x: blend2dMinX + ((cx - BLEND2D_PAD) / plotW) * blend2dSpanX,
+    y: blend2dMinY + ((BLEND2D_PAD + plotH - cy) / plotH) * blend2dSpanY,
+  })
+
   return (
     <div className="bp-editor anim-editor">
       <div className="bp-toolbar">
@@ -181,6 +231,9 @@ export function AnimStateEditor() {
         <button className={mode === 'blend' ? 'active' : ''} onClick={() => setMode('blend')}>
           Blend 1D
         </button>
+        <button className={mode === 'blend2d' ? 'active' : ''} onClick={() => setMode('blend2d')}>
+          Blend 2D
+        </button>
         {mode === 'fsm' && <button onClick={addState}>+ State</button>}
         {mode === 'blend' && (
           <button
@@ -192,12 +245,165 @@ export function AnimStateEditor() {
             + Sample
           </button>
         )}
+        {mode === 'blend2d' && (
+          <button
+            onClick={() => {
+              const cx = (blend2dMinX + blend2dMaxX) / 2
+              const cy = (blend2dMinY + blend2dMaxY) / 2
+              mutateBlend2d((b) => b.samples.push({ x: cx, y: cy, clipName: clips[0] ?? '' }))
+            }}
+          >
+            + Sample
+          </button>
+        )}
         <button className="apply" disabled={!dirty} onClick={apply}>
           Apply
         </button>
       </div>
 
-      {mode === 'fsm' ? (
+      {mode === 'blend2d' ? (
+        <div
+          className="bp-canvas anim-blend2d-canvas"
+          ref={canvasRef}
+          onMouseMove={(e) => {
+            if (!blend2dDrag.current || !canvasRef.current) return
+            const rect = canvasRef.current.getBoundingClientRect()
+            const cx = e.clientX - rect.left
+            const cy = e.clientY - rect.top
+            const { idx, plotW, plotH } = blend2dDrag.current
+            const p = canvasToParam(cx, cy, plotW, plotH)
+            mutateBlend2d((b) => {
+              if (b.samples[idx]) {
+                b.samples[idx].x = p.x
+                b.samples[idx].y = p.y
+              }
+            })
+          }}
+          onMouseUp={() => {
+            blend2dDrag.current = null
+          }}
+          onMouseLeave={() => {
+            blend2dDrag.current = null
+          }}
+        >
+          <div className="anim-blend-panel anim-blend2d-panel">
+            <label className="field">
+              <span>Param X</span>
+              <input
+                value={blend2d.paramX}
+                onChange={(e) => mutateBlend2d((b) => (b.paramX = e.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span>Param Y</span>
+              <input
+                value={blend2d.paramY}
+                onChange={(e) => mutateBlend2d((b) => (b.paramY = e.target.value))}
+              />
+            </label>
+            <div className="panel-empty">
+              Runtime: animParams.{blend2d.paramX} × animParams.{blend2d.paramY} drive barycentric blend.
+            </div>
+          </div>
+          <div className="anim-blend2d-plot-wrap">
+            {(() => {
+              const w = canvasRef.current?.clientWidth ?? 640
+              const h = Math.max(220, canvasRef.current?.clientHeight ?? 280) - 100
+              const plotW = w - BLEND2D_PAD * 2
+              const plotH = h - BLEND2D_PAD
+              const points = blend2d.samples.map((s) => ({ x: s.x, y: s.y }))
+              const tris = delaunayTriangulate(points)
+              return (
+                <div className="anim-blend2d-plot" style={{ width: w, height: h }}>
+                  <svg className="anim-blend2d-grid" width={w} height={h}>
+                    <rect
+                      x={BLEND2D_PAD}
+                      y={BLEND2D_PAD}
+                      width={plotW}
+                      height={plotH}
+                      className="anim-blend2d-bounds"
+                    />
+                    {tris.map((tri, ti) => {
+                      const [i0, i1, i2] = tri
+                      const p0 = paramToCanvas(blend2d.samples[i0].x, blend2d.samples[i0].y, plotW, plotH)
+                      const p1 = paramToCanvas(blend2d.samples[i1].x, blend2d.samples[i1].y, plotW, plotH)
+                      const p2 = paramToCanvas(blend2d.samples[i2].x, blend2d.samples[i2].y, plotW, plotH)
+                      return (
+                        <polygon
+                          key={ti}
+                          points={`${p0.x},${p0.y} ${p1.x},${p1.y} ${p2.x},${p2.y}`}
+                          className="anim-blend2d-tri"
+                        />
+                      )
+                    })}
+                    <text x={BLEND2D_PAD} y={h - 8} className="anim-blend2d-axis-label">
+                      {blend2dMinX.toFixed(1)}
+                    </text>
+                    <text x={BLEND2D_PAD + plotW} y={h - 8} className="anim-blend2d-axis-label" textAnchor="end">
+                      {blend2dMaxX.toFixed(1)} ({blend2d.paramX})
+                    </text>
+                    <text x={8} y={BLEND2D_PAD + 4} className="anim-blend2d-axis-label">
+                      {blend2dMaxY.toFixed(1)}
+                    </text>
+                    <text x={8} y={BLEND2D_PAD + plotH} className="anim-blend2d-axis-label">
+                      {blend2dMinY.toFixed(1)} ({blend2d.paramY})
+                    </text>
+                  </svg>
+                  {blend2d.samples.map((s, i) => {
+                    const c = paramToCanvas(s.x, s.y, plotW, plotH)
+                    return (
+                      <div
+                        key={i}
+                        className="anim-blend2d-sample"
+                        style={{ left: c.x - 52, top: c.y - 8 }}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          blend2dDrag.current = {
+                            idx: i,
+                            pad: BLEND2D_PAD,
+                            plotW,
+                            plotH,
+                            minX: blend2dMinX - 1,
+                            maxX: blend2dMaxX + 1,
+                            minY: blend2dMinY - 1,
+                            maxY: blend2dMaxY + 1,
+                          }
+                        }}
+                      >
+                        <div className="anim-blend-handle" title={`(${s.x.toFixed(2)}, ${s.y.toFixed(2)})`} />
+                        <select
+                          value={s.clipName}
+                          onChange={(e) =>
+                            mutateBlend2d((b) => {
+                              if (b.samples[i]) b.samples[i].clipName = e.target.value
+                            })
+                          }
+                        >
+                          {clips.map((cname) => (
+                            <option key={cname} value={cname}>
+                              {cname}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => mutateBlend2d((b) => b.samples.splice(i, 1))}
+                          title="Remove sample"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )
+                  })}
+                  <div className="panel-empty anim-blend2d-hint">
+                    Drag samples on the 2D canvas. Delaunay triangles show runtime barycentric blend regions.
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      ) : mode === 'fsm' ? (
         <div
           className="bp-canvas"
           ref={canvasRef}

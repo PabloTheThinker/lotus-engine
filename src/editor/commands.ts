@@ -1,4 +1,5 @@
 import { applyMaterialProps } from '../engine/factory'
+import { mpConnected, mpIsHost, mpNotifyDespawn, mpNotifySpawn } from '../engine/multiplayer'
 import { world } from '../engine/World'
 import { runConstructScript } from '../engine/scripting'
 import type { SerializedActor, TransformSnapshot } from '../engine/types'
@@ -75,12 +76,19 @@ export class AddActorCommand implements Command {
     this.label = `Add ${data.name}`
   }
   execute() {
+    const playing = useEditor.getState().playing
+    if (playing && this.data.syncSpawn && mpConnected() && !mpIsHost()) {
+      useEditor.getState().setStatus('Only the host can spawn syncSpawn actors during Play')
+      return
+    }
     const actor = world.instantiate(this.data)
     world.addActor(actor, this.data.parentId)
     runConstructScript(actor, world.actors, (lvl, msg) => useEditor.getState().pushConsole(lvl, msg))
     useEditor.getState().select(actor.id)
+    if (playing && this.data.syncSpawn) mpNotifySpawn(this.data)
   }
   undo() {
+    if (useEditor.getState().playing && this.data.syncSpawn) mpNotifyDespawn(this.data.id)
     world.removeActor(this.data.id)
     const s = useEditor.getState()
     if (s.selectedId === this.data.id) s.select(null)
@@ -102,6 +110,11 @@ export class DeleteActorCommand implements Command {
   }
   execute() {
     // delete leaves first so removeActor's reparenting never fires
+    if (useEditor.getState().playing) {
+      for (const snap of this.snapshots) {
+        if (snap.syncSpawn) mpNotifyDespawn(snap.id)
+      }
+    }
     for (const snap of [...this.snapshots].reverse()) world.removeActor(snap.id)
     const s = useEditor.getState()
     if (this.snapshots.some((x) => x.id === s.selectedId)) s.select(null)

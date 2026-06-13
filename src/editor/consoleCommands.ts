@@ -15,6 +15,7 @@ export const consoleState = {
   screenPercentage: 100,
   showCollision: false,
   showNavMesh: false,
+  showStreaming: false,
 }
 
 export const CONSOLE_COMMANDS = [
@@ -24,8 +25,10 @@ export const CONSOLE_COMMANDS = [
   'slomo ',
   't.MaxFPS ',
   'r.ScreenPercentage ',
+  'r.PathTracer ',
   'show collision',
   'show navmesh',
+  'show streaming',
 ]
 
 /** returns a response string if the input was a console command, else null */
@@ -70,6 +73,18 @@ export function execConsoleCommand(raw: string): string | null {
     }
     return `r.ScreenPercentage = ${consoleState.screenPercentage}`
   }
+  if (lower.startsWith('r.pathtracer')) {
+    const v = parseInt(input.split(/\s+/)[1], 10)
+    if (v === 1) {
+      useEditor.getState().setViewMode('pathtraced')
+      return 'r.PathTracer = 1 (Path Traced view mode — preview may be slow)'
+    }
+    if (v === 0) {
+      useEditor.getState().setViewMode('lit')
+      return 'r.PathTracer = 0'
+    }
+    return `r.PathTracer = ${useEditor.getState().viewMode === 'pathtraced' ? 1 : 0}`
+  }
   if (lower === 'show collision') {
     consoleState.showCollision = !consoleState.showCollision
     return `show collision ${consoleState.showCollision ? 'ON' : 'OFF'}`
@@ -77,6 +92,10 @@ export function execConsoleCommand(raw: string): string | null {
   if (lower === 'show navmesh') {
     consoleState.showNavMesh = !consoleState.showNavMesh
     return `show navmesh ${consoleState.showNavMesh ? 'ON' : 'OFF'}`
+  }
+  if (lower === 'show streaming') {
+    consoleState.showStreaming = !consoleState.showStreaming
+    return `show streaming ${consoleState.showStreaming ? 'ON' : 'OFF'}`
   }
   if (lower === 'help' || lower === '?') {
     const pluginLines = getPluginConsoleCommands().map((c) => `${c.name} — ${c.help}`)

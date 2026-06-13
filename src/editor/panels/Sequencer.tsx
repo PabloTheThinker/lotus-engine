@@ -1,10 +1,14 @@
 import { useRef, useState } from 'react'
 import { world } from '../../engine/World'
+import { getHudElement } from '../../engine/gameplay'
 import {
   ensureBezierTangents,
+  isHudTrack,
+  keyableHudProperties,
   keyableProperties,
   sampleSequence,
   setKey,
+  type SeqHudProperty,
   type SeqKey,
   type SeqProperty,
   type SeqTrack,
@@ -89,6 +93,84 @@ export function Sequencer() {
     runCommand(
       new PropertyCommand(
         `Key ${prop} @ ${seqTime.toFixed(2)}s`,
+        () => (seq.tracks = JSON.parse(after)),
+        () => (seq.tracks = JSON.parse(before)),
+      ),
+    )
+  }
+
+  const currentHudValueOf = (widgetId: string, prop: SeqHudProperty): SeqKey['v'] | null => {
+    const w = world.hudWidgets.find((x) => x.id === widgetId)
+    const el = getHudElement(widgetId)
+    switch (prop) {
+      case 'opacity':
+        if (el?.style.opacity) return parseFloat(el.style.opacity)
+        return 1
+      case 'left':
+        if (el?.style.left) return parseFloat(el.style.left)
+        return w?.x ?? 16
+      case 'top':
+        if (el?.style.top) return parseFloat(el.style.top)
+        return w?.y ?? 16
+      case 'width':
+        if (el?.style.width) return parseFloat(el.style.width)
+        return w?.type === 'bar' ? 180 : 0
+      case 'color':
+        if (el?.style.color) return el.style.color
+        return w?.color ?? '#ffffff'
+      default:
+        return null
+    }
+  }
+
+  const addHudTrack = (widgetId: string, property: SeqHudProperty) => {
+    const existing = seq.tracks.find(
+      (tr) => isHudTrack(tr) && tr.actorId === widgetId && tr.property === property,
+    )
+    if (existing) {
+      setCurveTrack(existing)
+      setCurveOpen(true)
+      return
+    }
+    const v = currentHudValueOf(widgetId, property)
+    if (v === null) return
+    const label = world.hudWidgets.find((w) => w.id === widgetId)?.text ?? widgetId
+    const before = JSON.stringify(seq.tracks)
+    setKey(seq, widgetId, property, seqTime, v, 'hud')
+    const after = JSON.stringify(seq.tracks)
+    const track = seq.tracks.find((tr) => isHudTrack(tr) && tr.actorId === widgetId && tr.property === property)
+    if (track) {
+      setCurveTrack(track)
+      setCurveOpen(true)
+    }
+    runCommand(
+      new PropertyCommand(
+        `HUD track ${label} · ${property}`,
+        () => (seq.tracks = JSON.parse(after)),
+        () => (seq.tracks = JSON.parse(before)),
+      ),
+    )
+  }
+
+  const keyCurveTrack = () => {
+    if (!curveTrack) return
+    const v = isHudTrack(curveTrack)
+      ? currentHudValueOf(curveTrack.actorId, curveTrack.property as SeqHudProperty)
+      : currentValueOf(curveTrack.property as SeqProperty)
+    if (v === null) return
+    const before = JSON.stringify(seq.tracks)
+    setKey(
+      seq,
+      curveTrack.actorId,
+      curveTrack.property,
+      seqTime,
+      v,
+      curveTrack.trackType ?? 'actor',
+    )
+    const after = JSON.stringify(seq.tracks)
+    runCommand(
+      new PropertyCommand(
+        `Key ${curveTrack.property} @ ${seqTime.toFixed(2)}s`,
         () => (seq.tracks = JSON.parse(after)),
         () => (seq.tracks = JSON.parse(before)),
       ),
@@ -181,12 +263,21 @@ export function Sequencer() {
     )
   }
 
-  // group tracks by actor for display
+  // group tracks by actor / HUD widget for display
   const byActor = new Map<string, SeqTrack[]>()
+  const byWidget = new Map<string, SeqTrack[]>()
   for (const tr of seq.tracks) {
-    if (!byActor.has(tr.actorId)) byActor.set(tr.actorId, [])
-    byActor.get(tr.actorId)!.push(tr)
+    if (isHudTrack(tr)) {
+      if (!byWidget.has(tr.actorId)) byWidget.set(tr.actorId, [])
+      byWidget.get(tr.actorId)!.push(tr)
+    } else {
+      if (!byActor.has(tr.actorId)) byActor.set(tr.actorId, [])
+      byActor.get(tr.actorId)!.push(tr)
+    }
   }
+
+  const widgetLabel = (widgetId: string) =>
+    world.hudWidgets.find((w) => w.id === widgetId)?.text || widgetId
 
   const ruler: number[] = []
   for (let t = 0; t <= seq.duration; t += RULER_STEP) ruler.push(t)
@@ -251,6 +342,37 @@ export function Sequencer() {
             <option key={p} value={p}>{p}</option>
           ))}
         </select>
+        <select
+          className="snap-size"
+          value=""
+          title="Add a HUD widget track (lists widgets from World Settings)"
+          disabled={world.hudWidgets.length === 0}
+          onChange={(e) => {
+            const raw = e.target.value
+            if (raw) {
+              const [widgetId, property] = raw.split(':') as [string, SeqHudProperty]
+              addHudTrack(widgetId, property)
+            }
+            e.target.value = ''
+          }}
+        >
+          <option value="">+ HUD Track…</option>
+          {world.hudWidgets.flatMap((w) =>
+            keyableHudProperties(w).map((p) => (
+              <option key={`${w.id}:${p}`} value={`${w.id}:${p}`}>
+                {w.text || w.id} · {p}
+              </option>
+            )),
+          )}
+        </select>
+        <button
+          className="seq-key"
+          onClick={keyCurveTrack}
+          disabled={!curveTrack}
+          title="Keyframe the selected track at the playhead"
+        >
+          ◆ Key Track
+        </button>
         <button onClick={addCameraCut} disabled={!selectedId || !world.actors.get(selectedId ?? '')?.camera} title="Camera Cut: switch the view to the selected Camera at the playhead (PIE)">
           🎬 Cut
         </button>
@@ -297,7 +419,26 @@ export function Sequencer() {
               ))}
             </div>
           ))}
-          {byActor.size === 0 && <div className="panel-empty">Select an actor, move the playhead, hit ◆ Key.</div>}
+          {[...byWidget.entries()].map(([widgetId, tracks]) => (
+            <div key={`hud-${widgetId}`}>
+              <div className="seq-actor-row seq-hud-row" title="HUD widget track">
+                🖥 {widgetLabel(widgetId)}
+              </div>
+              {tracks.map((tr) => (
+                <div
+                  key={tr.property}
+                  className={`seq-track-name ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                  title="Click to open curve editor"
+                >
+                  {tr.property}
+                </div>
+              ))}
+            </div>
+          ))}
+          {byActor.size === 0 && byWidget.size === 0 && (
+            <div className="panel-empty">Select an actor or add a HUD track, move the playhead, hit ◆ Key.</div>
+          )}
         </div>
         <div
           className="seq-timeline"
@@ -388,6 +529,44 @@ export function Sequencer() {
               ))}
             </div>
           ))}
+          {[...byWidget.entries()].map(([widgetId, tracks]) => (
+            <div key={`hud-lane-${widgetId}`}>
+              <div className="seq-actor-lane seq-hud-lane" />
+              {tracks.map((tr) => (
+                <div
+                  key={tr.property}
+                  className={`seq-lane ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                >
+                  {tr.keys.map((k, i) => (
+                    <span
+                      key={i}
+                      className="seq-keyframe"
+                      style={{ left: pct(k.t) }}
+                      title={`${tr.property} @ ${k.t.toFixed(2)}s — click jumps · Shift+click cycles interp · right-click deletes`}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        deleteKey(tr, i)
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        selectTrack(tr)
+                        if (e.shiftKey) {
+                          cycleInterp(k, tr, i)
+                          return
+                        }
+                        setSeqTime(k.t)
+                        sampleSequence(world, seq, k.t)
+                        touch()
+                      }}
+                    >
+                      {interpIcon(k.interp)}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
           <div className="seq-playhead" style={{ left: pct(seqTime) }} />
         </div>
       </div>
@@ -395,7 +574,10 @@ export function Sequencer() {
         <div className="seq-curve-panel">
           <div className="seq-curve-header">
             <span>
-              {world.actors.get(curveTrack.actorId)?.name ?? '(deleted)'} · {curveTrack.property}
+              {isHudTrack(curveTrack)
+                ? `🖥 ${widgetLabel(curveTrack.actorId)}`
+                : (world.actors.get(curveTrack.actorId)?.name ?? '(deleted)')}{' '}
+              · {curveTrack.property}
             </span>
             {isVectorTrack(curveTrack) && (
               <label className="seq-curve-channel">

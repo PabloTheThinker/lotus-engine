@@ -79,6 +79,8 @@ export interface ScriptApi {
   pawnPosition: () => THREE.Vector3 | null
   /** switch to a linked level (PIE + exported playable) — returns false if unknown */
   loadLevel: (name: string) => boolean | Promise<boolean>
+  /** lazy-load a grid cell's actors (exported playable + PIE) */
+  loadCell: (cx: number, cz: number) => boolean | Promise<boolean>
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -117,6 +119,7 @@ export function makeScriptApi(
   pawnPosition: () => THREE.Vector3 | null = () => null,
   loadLevel: (name: string) => boolean | Promise<boolean> = () => false,
   boundActor?: Actor,
+  loadCell: (cx: number, cz: number) => boolean | Promise<boolean> = () => false,
 ): ScriptApi {
   const api: ScriptApi = {
     log: (...args) =>
@@ -181,6 +184,7 @@ export function makeScriptApi(
     time: clock,
     pawnPosition,
     loadLevel,
+    loadCell,
     activateAbility: (abilityId) => (boundActor ? activateAbility(boundActor, abilityId, api) : false),
     getAttribute: (name) => (boundActor ? getAttribute(boundActor, name) : null),
     setAttribute: (name, value) => (boundActor ? setAttribute(boundActor, name, value) : false),
@@ -268,6 +272,7 @@ export const DEFAULT_SCRIPT = `// Vektra script — runs during Play.
 function onBeginPlay() {
   api.log(actor.name + ' ready')
   // api.loadLevel('dungeon') — switch to a linked level (World Settings)
+  // api.loadCell(0, 0) — lazy-load a grid cell (exported playable)
 }
 
 function onTick(dt) {

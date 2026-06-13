@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
-export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
+export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail' | 'pathtraced'
 export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug'
 export type BottomTab = BuiltinBottomTab | `plugin:${string}`
 

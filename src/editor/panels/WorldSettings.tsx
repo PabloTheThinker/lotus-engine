@@ -55,18 +55,23 @@ function HudDesignerSection() {
         >
           + Add Widget
         </button>
-        <div className="panel-empty" style={{ padding: '2px 0' }}>Rendered during Play. Buttons emit their signal; scripts update via api.hud with the same ids.</div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Rendered during Play. Buttons emit their signal; scripts update via api.hud with the same ids.
+          Animate widgets in Sequencer: add a Button, then + HUD Track → pick the button → opacity — key 0 at 0s and 1 at 1s for a fade-in (enable Auto Play or scrub the timeline).
+        </div>
       </div>
     </details>
   )
 }
 
 function MultiplayerSection() {
+  const touch = useEditor((s) => s.touch)
   const [cfg, setCfg] = useState(() => loadMPSettings())
   const update = (patch: Partial<typeof cfg>) => {
     const next = { ...cfg, ...patch }
     setCfg(next)
     saveMPSettings(next)
+    touch()
   }
   return (
     <details className="details-section">
@@ -85,7 +90,11 @@ function MultiplayerSection() {
           <input value={cfg.room} onChange={(e) => update({ room: e.target.value })} spellCheck={false} />
         </label>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Run the relay: node scripts/relay.mjs — peers in the same room see each other as ghost pawns during Play.
+          Run the relay: <code>node scripts/relay.mjs</code> — same room + Play shows ghost pawns.
+          Enable Network on actors (Details) for property sync @ 10 Hz and spawner replication.
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>leave</code>
         </div>
       </div>
     </details>
@@ -227,6 +236,69 @@ function InputMapSection() {
         </button>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           Scripts: api.isAction('Jump') · api.actionJustPressed('Fire')
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function StreamingSection() {
+  const touch = useEditor((s) => s.touch)
+  const s = world.streaming
+
+  const set = <K extends keyof typeof s>(key: K, value: (typeof s)[K]) => {
+    world.streaming[key] = value
+    touch()
+  }
+
+  return (
+    <details className="details-section">
+      <summary>World Streaming</summary>
+      <div className="details-grid">
+        <label className="field check">
+          <span>Enabled</span>
+          <input type="checkbox" checked={s.enabled} onChange={(e) => set('enabled', e.target.checked)} />
+        </label>
+        <label className="field">
+          <span>Grid Size (m)</span>
+          <input
+            type="number"
+            min={8}
+            max={512}
+            step={8}
+            value={s.gridSize}
+            onChange={(e) => set('gridSize', Math.max(8, parseFloat(e.target.value) || 64))}
+          />
+        </label>
+        <label className="field">
+          <span>Load Radius (cells)</span>
+          <input
+            type="number"
+            min={0}
+            max={16}
+            step={1}
+            value={s.loadRadius}
+            onChange={(e) => set('loadRadius', Math.max(0, parseInt(e.target.value, 10) || 0))}
+          />
+        </label>
+        <label className="field check">
+          <span>Export By Cell</span>
+          <input type="checkbox" checked={s.exportByCell} onChange={(e) => set('exportByCell', e.target.checked)} />
+        </label>
+        <label className="field check">
+          <span>Show Grid Overlay</span>
+          <input
+            type="checkbox"
+            checked={consoleState.showStreaming}
+            onChange={(e) => {
+              consoleState.showStreaming = e.target.checked
+              touch()
+            }}
+          />
+        </label>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Actors are assigned streamCell on save. Only cells within radius of the camera are visible during edit and play.
+          Console: show streaming · Scripts: api.loadCell(cx, cz)
         </div>
       </div>
     </details>
@@ -622,6 +694,7 @@ export function WorldSettings() {
         )}
       </div>
       <LinkedLevelsSection />
+      <StreamingSection />
       <NavigationSection />
       <InputMapSection />
       <DataAssetsSection />

@@ -4,6 +4,19 @@ Notable changes to Vektra Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — v0.53 World streaming (grid-chunked)
+
+### Added
+- **v0.53 Grid streaming:** World Settings → grid size (64m), load radius, export-by-cell; actors tagged `streamCell: [cx,cz]` (auto on save); camera-radius cell visibility in editor + play; `show streaming` console grid overlay; optional per-cell export manifest + `api.loadCell(cx,cz)` in playable runtime
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/vektra-engine"
+npm run build   # exit 0
+```
+
+---
+
 ## 2026-06-13 — Agent swarm wave 2: v0.38–v0.43 (animation, audio, export, plugins, GAS)
 
 ### Added

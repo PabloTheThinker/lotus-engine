@@ -7,18 +7,20 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage } from '../engine/factory'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
-import { sampleSequence, setKey } from '../engine/sequencer'
+import { hasHudTracks, sampleSequence, setKey } from '../engine/sequencer'
 import { Input } from '../engine/Input'
-import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
+import { applyShake, getViewCamera, isHudMounted, mountHud, syncAuthoredHud, unmountHud } from '../engine/gameplay'
 import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
 import { runConstructScript, setScriptLogSink } from '../engine/scripting'
 import { pushSample, latest } from '../engine/profiler'
 import { getNavMesh } from '../engine/nav'
 import { NavMeshHelper } from '@recast-navigation/three'
+import { applyActorStreamingVisibility, updateStreamingGridHelper } from '../engine/streaming'
 import { consoleState } from './consoleCommands'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
@@ -150,6 +152,31 @@ function CameraSpeed() {
     >
       {[1, 2, 3, 4, 5, 6, 7, 8].map((v) => (
         <option key={v} value={v}>🎥 {v}</option>
+      ))}
+    </select>
+  )
+}
+
+const VIEW_MODE_LABELS: Record<ViewMode, string> = {
+  lit: 'Lit',
+  detail: 'Detail Lighting',
+  unlit: 'Unlit',
+  wireframe: 'Wireframe',
+  pathtraced: 'Path Traced',
+}
+
+function ViewModeSelect() {
+  const viewMode = useEditor((s) => s.viewMode)
+  const setViewMode = useEditor((s) => s.setViewMode)
+  return (
+    <select
+      className="cam-speed view-mode-select"
+      title="View Mode (Alt+2–5)"
+      value={viewMode}
+      onChange={(e) => setViewMode(e.target.value as ViewMode)}
+    >
+      {(Object.keys(VIEW_MODE_LABELS) as ViewMode[]).map((m) => (
+        <option key={m} value={m}>{VIEW_MODE_LABELS[m]}</option>
       ))}
     </select>
   )
@@ -312,6 +339,15 @@ export function Viewport() {
     composer.addPass(bloomPass)
     composer.addPass(outputPass)
 
+    // Path Traced preview — three-gpu-pathtracer (honest label, not Lumen)
+    const pathTracer = new WebGLPathTracer(renderer)
+    pathTracer.bounces = 6
+    pathTracer.tiles.set(2, 2)
+    pathTracer.renderDelay = 32
+    pathTracer.dynamicLowRes = true
+    pathTracer.lowResScale = 0.15
+    pathTracer.minSamples = 2
+
     // image-based lighting from the sky dome (rebuilt when environment changes)
     const pmrem = new THREE.PMREMGenerator(renderer)
     let envApplied = -1
@@ -429,6 +465,7 @@ export function Viewport() {
     const selectionBoxes = new Map<string, THREE.BoxHelper>()
     const collisionHelpers = new Map<string, THREE.BoxHelper>()
     let navMeshHelper: NavMeshHelper | null = null
+    let streamingGridHelper: THREE.LineSegments | null = null
     function syncSelectionBoxes(ids: string[], show: boolean) {
       for (const [id, box] of selectionBoxes) {
         if (!show || !ids.includes(id) || !world.actors.has(id)) {
@@ -485,9 +522,13 @@ export function Viewport() {
       })
     }
 
-    // ---- view modes (Lit / Unlit / Wireframe) ----
+    // ---- view modes (Lit / Unlit / Wireframe / Path Traced) ----
     let appliedViewMode: ViewMode = 'lit'
     let appliedViewVersion = -1
+    let ptSceneVersion = -1
+    let ptEnvVersion = -1
+    const ptCamPos = new THREE.Vector3()
+    const ptCamQuat = new THREE.Quaternion()
     function applyViewMode(mode: ViewMode, sceneVersion: number) {
       if (mode === appliedViewMode && sceneVersion === appliedViewVersion) return
       appliedViewMode = mode
@@ -497,7 +538,7 @@ export function Viewport() {
           if (!(o instanceof THREE.Mesh) || o.userData.isHelper || o.userData.isEditorOnly) return
           const orig = (o.userData.origMaterial as THREE.Material | undefined) ?? (o.material as THREE.Material)
           if (!o.userData.origMaterial) o.userData.origMaterial = orig
-          if (mode === 'lit') {
+          if (mode === 'lit' || mode === 'pathtraced') {
             o.material = orig
           } else if (mode === 'unlit') {
             const std = orig as THREE.MeshStandardMaterial
@@ -1168,6 +1209,7 @@ export function Viewport() {
     let takeAcc = 0
     let liveBumpAcc = 0
     let lastFrameAt = 0
+    let lastHudPreviewVersion = -1
     renderer.setAnimationLoop(() => {
       const __t0 = performance.now()
       if (consoleState.maxFPS > 0 && __t0 - lastFrameAt < 1000 / consoleState.maxFPS) return
@@ -1196,6 +1238,20 @@ export function Viewport() {
         s.touch()
       }
       wasPlaying = s.playing
+
+      // HUD preview for Sequencer scrub (editor only — PIE mounts HUD in beginPlay)
+      const previewHud = !s.playing && hasHudTracks(world.sequence)
+      if (previewHud) {
+        if (!isHudMounted()) mountHud(mount)
+        if (lastHudPreviewVersion !== s.sceneVersion) {
+          syncAuthoredHud(world.hudWidgets)
+          lastHudPreviewVersion = s.sceneVersion
+        }
+      } else if (!s.playing && isHudMounted()) {
+        unmountHud()
+        lastHudPreviewVersion = -1
+      }
+
       // eject / re-possess transitions
       if (s.playing && !s.simulate) {
         if (pawn.active && !possessed) pawn.suspend()
@@ -1300,8 +1356,10 @@ export function Viewport() {
         gizmo.detach()
       }
 
+      const pathTraceActive = s.viewMode === 'pathtraced' && !quadMode && s.viewProjection === 'perspective'
+
       // selection outlines (multi-select aware)
-      syncSelectionBoxes(s.selectedIds, !possessed)
+      syncSelectionBoxes(s.selectedIds, !possessed && !pathTraceActive)
 
       // scripts can ask where the player is
       world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
@@ -1319,8 +1377,8 @@ export function Viewport() {
 
       if (!s.sculptActive || s.playing) brushRing.visible = false
 
-      // helpers + editor-only visuals — hidden while possessed or in Game View (G)
-      const hideChrome = possessed || s.gameView
+      // helpers + editor-only visuals — hidden while possessed, Game View (G), or path tracing
+      const hideChrome = possessed || s.gameView || pathTraceActive
       for (const actor of world.actors.values()) {
         const h = actor.lightHelper as { update?: () => void } | undefined
         h?.update?.()
@@ -1332,6 +1390,7 @@ export function Viewport() {
       }
       grid.visible = !hideChrome
       axes.visible = !hideChrome
+      gizmoHelper.visible = !hideChrome
 
       // render — pawn camera while possessed, editor camera otherwise
       if (s.playing) {
@@ -1353,7 +1412,7 @@ export function Viewport() {
       // `show collision` — wireframe outlines on physics-enabled actors
       collisionHelpers.forEach((h, id) => {
         const a = world.actors.get(id)
-        if (!consoleState.showCollision || !a || a.physicsProps?.mode === 'none') {
+        if (!consoleState.showCollision || pathTraceActive || !a || a.physicsProps?.mode === 'none') {
           h.removeFromParent()
           h.dispose()
           collisionHelpers.delete(id)
@@ -1361,7 +1420,7 @@ export function Viewport() {
           h.setFromObject(a.root)
         }
       })
-      if (consoleState.showCollision) {
+      if (consoleState.showCollision && !pathTraceActive) {
         for (const a of world.actors.values()) {
           if (a.physicsProps && a.physicsProps.mode !== 'none' && !collisionHelpers.has(a.id)) {
             const h = new THREE.BoxHelper(a.root, 0x33ff66)
@@ -1375,7 +1434,7 @@ export function Viewport() {
       // `show navmesh` — Recast polygon wireframe overlay
       {
         const baked = getNavMesh()
-        if (!consoleState.showNavMesh || !baked) {
+        if (!consoleState.showNavMesh || pathTraceActive || !baked) {
           if (navMeshHelper) {
             world.scene.remove(navMeshHelper)
             navMeshHelper.navMeshGeometry.dispose()
@@ -1402,13 +1461,30 @@ export function Viewport() {
         }
       }
 
-      // distance streaming: hide actors beyond their cull distance
+      // grid + distance streaming: hide actors outside camera cell radius / cull distance
       {
         const camP = new THREE.Vector3()
         activeCam.getWorldPosition(camP)
         for (const actor of world.actors.values()) {
-          if (actor.cullDistance > 0) {
-            actor.root.visible = actor.visible && actor.root.position.distanceTo(camP) < actor.cullDistance
+          applyActorStreamingVisibility(actor, camP, world.streaming)
+        }
+      }
+
+      // `show streaming` — grid cell overlay
+      {
+        const camP = new THREE.Vector3()
+        activeCam.getWorldPosition(camP)
+        if (!consoleState.showStreaming) {
+          if (streamingGridHelper) {
+            world.scene.remove(streamingGridHelper)
+            streamingGridHelper.geometry.dispose()
+            ;(streamingGridHelper.material as THREE.Material).dispose()
+            streamingGridHelper = null
+          }
+        } else {
+          streamingGridHelper = updateStreamingGridHelper(streamingGridHelper, camP, world.streaming)
+          if (streamingGridHelper && !streamingGridHelper.parent) {
+            world.scene.add(streamingGridHelper)
           }
         }
       }
@@ -1452,8 +1528,41 @@ export function Viewport() {
       } else {
         world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
         renderPass.camera = activeCam
-        if (usePostFx) composer.render()
-        else renderer.render(world.scene, activeCam)
+        if (pathTraceActive) {
+          const needsScene = ptSceneVersion !== s.sceneVersion
+          const needsEnv = ptEnvVersion !== world.envVersion
+          const camMoved =
+            ptCamPos.distanceToSquared(activeCam.position) > 1e-6 ||
+            ptCamQuat.angleTo(activeCam.quaternion) > 1e-4
+          if (needsScene) {
+            pathTracer.setScene(world.scene, activeCam)
+            ptSceneVersion = s.sceneVersion
+            ptEnvVersion = world.envVersion
+            ptCamPos.copy(activeCam.position)
+            ptCamQuat.copy(activeCam.quaternion)
+            pathTracer.reset()
+          } else {
+            if (needsEnv) {
+              pathTracer.updateEnvironment()
+              ptEnvVersion = world.envVersion
+              pathTracer.reset()
+            }
+            if (camMoved) {
+              pathTracer.updateCamera()
+              ptCamPos.copy(activeCam.position)
+              ptCamQuat.copy(activeCam.quaternion)
+              pathTracer.reset()
+            }
+          }
+          pathTracer.renderSample()
+        } else {
+          if (ptSceneVersion !== -1) {
+            ptSceneVersion = -1
+            ptEnvVersion = -1
+          }
+          if (usePostFx) composer.render()
+          else renderer.render(world.scene, activeCam)
+        }
       }
 
       // camera PiP preview when a camera actor is selected
@@ -1577,6 +1686,7 @@ export function Viewport() {
       pawn.dispose()
       gizmo.dispose()
       pmrem.dispose()
+      pathTracer.dispose()
       composer.dispose()
       syncSelectionBoxes([], false)
       if (navMeshHelper) {
@@ -1599,7 +1709,9 @@ export function Viewport() {
   const simulate = useEditor((s) => s.simulate)
   const ejected = useEditor((s) => s.ejected)
   const viewMode = useEditor((s) => s.viewMode)
-  const setViewMode = useEditor((s) => s.setViewMode)
+  const viewportLayout = useEditor((s) => s.viewportLayout)
+  const viewProjection = useEditor((s) => s.viewProjection)
+  const showPtBadge = viewMode === 'pathtraced' && viewportLayout === 'single' && viewProjection === 'perspective'
 
   const banner = !playing
     ? null
@@ -1622,12 +1734,9 @@ export function Viewport() {
         <ViewportLayoutSelect />
         <Projection />
         <CameraSpeed />
-        {(['lit', 'detail', 'unlit', 'wireframe'] as const).map((m) => (
-          <button key={m} className={viewMode === m ? 'active' : ''} onClick={() => setViewMode(m)}>
-            {m}
-          </button>
-        ))}
+        <ViewModeSelect />
       </div>
+      {showPtBadge && <div className="viewport-pt-badge" title="GPU path tracing preview (may be slow)">PT</div>}
       <ViewportPaneChrome />
       <div className="viewport-pip" ref={pipRef}>
         <span>Camera Preview</span>

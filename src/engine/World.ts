@@ -21,7 +21,7 @@ import { DEFAULT_PARTICLES } from './particles'
 import { createWaterActor, buildWaterMesh, updateWater } from './water'
 import { createPCGVolumeActor } from './pcg'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock } from './gameplayAbilities'
-import { hud, resetGameplay, tickGameplay } from './gameplay'
+import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
 import { playMetaSound, registerSound, setReverbZone, stopAllSounds, type ReverbPreset } from './audio'
@@ -32,9 +32,14 @@ import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequenc
 import { setViewCamera } from './gameplay'
 import { applyActorMaterial, getEffectiveMaterialGraph, getEffectiveMaterialGraphMode } from './materialAssets'
 import { applyMaterialGraph } from './materialGraph'
-import type { EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel } from './types'
-import { DEFAULT_ENVIRONMENT } from './types'
-import { tickAnimSM, tickBlendSpace1D } from './animStateMachine'
+import {
+  assignStreamCellOnSave,
+  cellKey,
+  splitLevelByCells,
+} from './streaming'
+import type { EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
+import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
+import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
 import { clearActorTicks, recordActorTick } from './profiler'
 
 /**
@@ -47,6 +52,7 @@ export class World {
   actors = new Map<string, Actor>()
   levelName = 'Untitled'
   environment: EnvironmentSettings = { ...DEFAULT_ENVIRONMENT }
+  streaming: StreamingSettings = { ...DEFAULT_STREAMING }
   playing = false
   physics = new PhysicsSim()
 
@@ -76,6 +82,9 @@ export class World {
 
   /** linked levels for multi-level export + api.loadLevel during PIE */
   levelLinks: LevelLink[] = []
+
+  /** per-cell actor lists for lazy streaming (rebuilt on serialize when exportByCell) */
+  cellManifest: Record<string, SerializedActor[]> = {}
 
   /** editor snapshot taken at PIE start — restored when play stops */
   pieSnapshot: SerializedLevel | null = null
@@ -192,10 +201,11 @@ export class World {
     this.activeReverb = ''
     setReverbZone('')
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
-    this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel)
+    const loadCell = (cx: number, cz: number) => this.loadCellDuringPlay(cx, cz)
+    this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, undefined, loadCell)
     initAllActorGAS(this.actors.values())
     for (const a of this.actors.values()) {
-      const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, a)
+      const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, a, loadCell)
       a.beginPlay(api)
       if (a.particleSystem && a.particleProps && a.particleProps.burst > 0) {
         a.particleSystem.burst(a.particleProps.burst)
@@ -211,12 +221,7 @@ export class World {
     }
     this.physics.start(this.actors.values())
     // authored HUD widgets (UMG designer)
-    for (const w of this.hudWidgets) {
-      const opts = { anchor: w.anchor, x: w.x, y: w.y, size: w.size, color: w.color }
-      if (w.type === 'text') hud.text(w.id, w.text, opts)
-      else if (w.type === 'bar') hud.bar(w.id, w.value ?? 1, opts)
-      else if (w.type === 'button') hud.button(w.id, w.text, () => this.playApi?.emit(w.signal ?? w.id), opts)
-    }
+    syncAuthoredHud(this.hudWidgets, (signal) => this.playApi?.emit(signal))
   }
 
   playClock = 0
@@ -293,9 +298,48 @@ export class World {
     return true
   }
 
+  /** Lazy-load actors for a grid cell during PIE (mirrors exported api.loadCell). */
+  async loadCellDuringPlay(cx: number, cz: number): Promise<boolean> {
+    if (!this.playing) {
+      scriptLog('error', `loadCell(${cx},${cz}): not playing`)
+      return false
+    }
+    if (!this.cellManifest || !Object.keys(this.cellManifest).length) {
+      const snap = this.serialize()
+      this.cellManifest = splitLevelByCells(snap).cells
+    }
+    const key = cellKey(cx, cz)
+    const cellActors = this.cellManifest[key]
+    if (!cellActors?.length) {
+      scriptLog('error', `loadCell(${cx},${cz}): empty cell`)
+      return false
+    }
+    const existing = new Set(this.actors.keys())
+    const toAdd = cellActors.filter((sa) => !existing.has(sa.id))
+    if (!toAdd.length) {
+      scriptLog('log', `loadCell(${cx},${cz}): already loaded`)
+      return true
+    }
+    for (const sa of toAdd) {
+      const actor = this.instantiate(sa)
+      const parentId = sa.parentId && this.actors.has(sa.parentId) ? sa.parentId : null
+      this.addActor(actor, parentId)
+    }
+    const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
+    const loadCell = (cxi: number, czi: number) => this.loadCellDuringPlay(cxi, czi)
+    for (const sa of toAdd) {
+      const actor = this.actors.get(sa.id)!
+      const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, actor, loadCell)
+      actor.beginPlay(api)
+    }
+    scriptLog('log', `loadCell(${cx},${cz}): +${toAdd.length} actors`)
+    return true
+  }
+
   /** Merge assets + actors from a level blob without clearing the whole world. */
   private async ingestLevelContent(level: SerializedLevel, preserveRoots: THREE.Object3D[] = []) {
     this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
+    this.streaming = { ...DEFAULT_STREAMING, ...level.streaming }
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.sounds = level.sounds ? { ...level.sounds } : {}
@@ -373,7 +417,9 @@ export class World {
       const t0 = performance.now()
       a.tick(dt)
       const params = a.animParams ?? {}
-      if (a.blendSpace1D?.samples.length) {
+      if (a.blendSpace2D?.samples.length) {
+        tickBlendSpace2D(a, params[a.blendSpace2D.paramX] ?? 0, params[a.blendSpace2D.paramY] ?? 0)
+      } else if (a.blendSpace1D?.samples.length) {
         tickBlendSpace1D(a, params[a.blendSpace1D.param] ?? 0)
       } else if (a.animStateMachine) {
         tickAnimSM(a, dt, params)
@@ -392,7 +438,14 @@ export class World {
           activateAbility(
             actor,
             abilityId,
-            makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, (n) => this.loadLevelDuringPlay(n), actor),
+            makeScriptApi(
+              this.actors,
+              () => this.playClock,
+              () => this.pawnPosition,
+              (n) => this.loadLevelDuringPlay(n),
+              actor,
+              (cx, cz) => this.loadCellDuringPlay(cx, cz),
+            ),
           ),
       )
     }
@@ -448,13 +501,27 @@ export class World {
     for (const [id, a] of this.assets) {
       if (used.has(id)) assets[id] = { name: a.name, data: a.data }
     }
+    const streaming = { ...this.streaming }
+    const actors = [...this.actors.values()].map((a) =>
+      assignStreamCellOnSave(a.serialize(), streaming.gridSize, streaming.enabled),
+    )
+    const split = splitLevelByCells({
+      engine: 'vektra',
+      version: 4,
+      name: this.levelName,
+      environment: { ...this.environment },
+      streaming,
+      actors,
+    })
+    this.cellManifest = split.cells
     return {
       engine: 'vektra',
       version: 4,
       name: this.levelName,
       environment: { ...this.environment },
+      streaming,
       assets,
-      actors: [...this.actors.values()].map((a) => a.serialize()),
+      actors,
       sequence: JSON.parse(JSON.stringify(this.sequence)),
       data: JSON.parse(JSON.stringify(this.dataTables)),
       sounds: { ...this.sounds },
@@ -475,6 +542,7 @@ export class World {
     this.clear()
     this.levelName = level.name
     this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
+    this.streaming = { ...DEFAULT_STREAMING, ...level.streaming }
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.sounds = level.sounds ? { ...level.sounds } : {}
@@ -623,9 +691,11 @@ export class World {
     if (sa.script) actor.script = sa.script
     if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
     if (sa.cullDistance) actor.cullDistance = sa.cullDistance
+    if (sa.streamCell) actor.streamCell = [sa.streamCell[0], sa.streamCell[1]]
     if (sa.autoPlayClip) actor.autoPlayClip = sa.autoPlayClip
     if (sa.animStateMachine) actor.animStateMachine = JSON.parse(JSON.stringify(sa.animStateMachine))
     if (sa.blendSpace1D) actor.blendSpace1D = JSON.parse(JSON.stringify(sa.blendSpace1D))
+    if (sa.blendSpace2D) actor.blendSpace2D = JSON.parse(JSON.stringify(sa.blendSpace2D))
     if (sa.animParams) actor.animParams = { ...sa.animParams }
     if (sa.materialGraph && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
       actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
@@ -651,6 +721,8 @@ export class World {
         Object.entries(sa.prefabOverrides).map(([k, v]) => [k, { ...v }]),
       )
     }
+    if (sa.syncProperties?.length) actor.syncProperties = [...sa.syncProperties]
+    if (sa.syncSpawn) actor.syncSpawn = true
     return actor
   }
 }
