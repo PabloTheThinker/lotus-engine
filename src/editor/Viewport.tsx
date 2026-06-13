@@ -10,7 +10,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
-import { rebuildFoliage } from '../engine/factory'
+import { rebuildFoliage, updateLabel3DBillboards } from '../engine/factory'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
 import { hasHudTracks, sampleSequence, setKey } from '../engine/sequencer'
 import { Input } from '../engine/Input'
@@ -1001,9 +1001,6 @@ export function Viewport() {
       spawnAsset(payload, pos)
     })
 
-    // camera bookmarks — Shift+0-9 set, 0-9 recall (Ctrl+digits is browser-reserved)
-    const bookmarks: Array<{ p: THREE.Vector3; q: THREE.Quaternion } | null> = Array(10).fill(null)
-
     function snapToFloor(actorId: string) {
       const actor = world.actors.get(actorId)
       if (!actor) return
@@ -1087,15 +1084,21 @@ export function Viewport() {
         s.setViewMode(e.code === 'Digit2' ? 'wireframe' : e.code === 'Digit3' ? 'unlit' : e.code === 'Digit4' ? 'lit' : 'detail')
         return
       }
-      // camera bookmarks
+      // camera bookmarks — persisted per level in world.cameraBookmarks
       if (!e.altKey && /^Digit[0-9]$/.test(e.code)) {
         const slot = parseInt(e.code.slice(5), 10)
         if (e.shiftKey) {
-          bookmarks[slot] = { p: editorCamera.position.clone(), q: editorCamera.quaternion.clone() }
+          world.setCameraBookmark(slot, {
+            position: editorCamera.position.toArray() as [number, number, number],
+            quaternion: editorCamera.quaternion.toArray() as [number, number, number, number],
+          })
           s.setStatus(`Bookmark ${slot} set`)
-        } else if (bookmarks[slot]) {
-          editorCamera.position.copy(bookmarks[slot]!.p)
-          editorCamera.quaternion.copy(bookmarks[slot]!.q)
+          s.touch()
+        } else if (world.cameraBookmarks[slot]) {
+          const bm = world.cameraBookmarks[slot]!
+          editorCamera.position.fromArray(bm.position)
+          editorCamera.quaternion.fromArray(bm.quaternion)
+          controls.syncOrientation()
           s.setStatus(`Bookmark ${slot}`)
         }
         return
@@ -1518,6 +1521,7 @@ export function Viewport() {
             renderer.setClearColor(0x0d0f12, 1)
           }
           gizmoHelper.visible = savedGizmoVisible && pr.pane === s.activeViewportPane && !hideChrome
+          updateLabel3DBillboards(cam, world.actors.values())
           renderer.render(world.scene, cam)
         }
         world.scene.background = savedBg
@@ -1527,6 +1531,7 @@ export function Viewport() {
         renderer.setViewport(0, 0, mount.clientWidth, canvasH)
       } else {
         world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
+        updateLabel3DBillboards(activeCam, world.actors.values())
         renderPass.camera = activeCam
         if (pathTraceActive) {
           const needsScene = ptSceneVersion !== s.sceneVersion

@@ -236,6 +236,32 @@ function instantiate(sa) {
     mesh.count = f.instances.length
     root.add(mesh)
     actor.mesh = mesh
+  } else if (sa.type === 'Label3D' && sa.label3D) {
+    const L = sa.label3D
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    const font = `600 ${L.fontSize}px system-ui, sans-serif`
+    ctx.font = font
+    const metrics = ctx.measureText(L.text || ' ')
+    const pad = L.padding ?? 12
+    canvas.width = Math.max(64, Math.ceil(metrics.width) + pad * 2)
+    canvas.height = Math.max(32, L.fontSize + pad * 2)
+    ctx.font = font
+    if (L.background) { ctx.fillStyle = L.background; ctx.fillRect(0, 0, canvas.width, canvas.height) }
+    ctx.fillStyle = L.color ?? '#fff'
+    ctx.textBaseline = 'middle'
+    ctx.textAlign = 'center'
+    ctx.fillText(L.text, canvas.width / 2, canvas.height / 2)
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const aspect = canvas.width / canvas.height
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(aspect, 1),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false }),
+    )
+    mesh.userData.isLabel3D = true
+    actor.mesh = mesh
+    root.add(mesh)
   } else if (sa.type === 'Landscape' && sa.landscape) {
     const L = sa.landscape
     const geo = new THREE.PlaneGeometry(L.size, L.size, L.resolution, L.resolution)

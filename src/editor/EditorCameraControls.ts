@@ -202,6 +202,13 @@ export class EditorCameraControls {
     this.camera.quaternion.setFromEuler(this.euler)
   }
 
+  /** Sync internal yaw/pitch after external pose changes (e.g. camera bookmarks). */
+  syncOrientation() {
+    this.euler.setFromQuaternion(this.camera.quaternion)
+    this.yaw = this.euler.y
+    this.pitch = this.euler.x
+  }
+
   focusOn(target: THREE.Object3D) {
     const box = new THREE.Box3().setFromObject(target)
     const center = new THREE.Vector3()

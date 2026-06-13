@@ -22,6 +22,7 @@ export type ActorType =
   | 'CustomMesh'
   | 'Water'
   | 'PCGVolume'
+  | 'Label3D'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -48,6 +49,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   CustomMesh: 'static',
   Water: 'static',
   PCGVolume: 'static',
+  Label3D: 'movable',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -231,10 +233,16 @@ export interface SerializedActor {
   trigger?: TriggerProps
   /** SoundEmitter only */
   soundEmitter?: SoundEmitterProps
+  /** Label3D only — billboard text plane */
+  label3D?: Label3DProps
   /** MultiplayerSynchronizer-lite: property names to replicate (position, rotation, visible, script var names) */
   syncProperties?: string[]
   /** MultiplayerSpawner-lite: host replicates spawn/despawn of this actor during Play */
   syncSpawn?: boolean
+  /** Godot SkeletonIK3D-lite — two-bone chains toward actor or world targets */
+  ikTargets?: IKTarget[]
+  /** Head LookAt toward actor or world position */
+  lookAtTarget?: LookAtTarget
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
@@ -298,6 +306,21 @@ export const DEFAULT_FOLIAGE: FoliageProps = {
 }
 
 export type PawnMode = 'fly' | 'firstperson' | 'thirdperson' | 'vehicle'
+
+/** Two-bone IK limb chain (glTF humanoid / Mixamo naming). */
+export type IKChain = 'leftLeg' | 'rightLeg' | 'leftArm' | 'rightArm'
+
+export interface IKTarget {
+  chain: IKChain
+  targetActorId?: string
+  targetPosition?: [number, number, number]
+}
+
+/** Optional head LookAt target — applied after limb IK each frame. */
+export interface LookAtTarget {
+  targetActorId?: string
+  targetPosition?: [number, number, number]
+}
 
 /** TriggerVolume — optional reverb zone preset applied while the pawn is inside. */
 export type ReverbPreset = '' | 'room' | 'hall' | 'cave'
@@ -373,6 +396,31 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   exposure: 0.75,
 }
 
+/** Editor viewport camera bookmark — Shift+0-9 set, 0-9 recall (per level). */
+export interface CameraBookmark {
+  position: [number, number, number]
+  quaternion: [number, number, number, number]
+}
+
+/** Label3D — canvas-textured billboard text plane in the 3D scene. */
+export interface Label3DProps {
+  text: string
+  fontSize: number
+  color: string
+  background: string
+  padding: number
+  billboard: boolean
+}
+
+export const DEFAULT_LABEL3D: Label3DProps = {
+  text: 'Label',
+  fontSize: 48,
+  color: '#ffffff',
+  background: '#000000aa',
+  padding: 12,
+  billboard: true,
+}
+
 /** Linked level entry — embedded JSON for export / PIE scene switching. */
 export interface LevelLink {
   /** manifest key (e.g. dungeon) — used by api.loadLevel('dungeon') */
@@ -402,6 +450,8 @@ export interface SerializedLevel {
   levelLinks?: LevelLink[]
   /** grid-chunked streaming settings */
   streaming?: StreamingSettings
+  /** per-level editor camera bookmarks (slots 0–9) */
+  cameraBookmarks?: (CameraBookmark | null)[]
 }
 
 /** CSS properties keyable on authored HUD widgets (sequencer tracks). */

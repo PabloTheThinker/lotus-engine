@@ -217,6 +217,10 @@ input[type='checkbox'] {
 .toolbar-spacer {
   flex: 1;
 }
+.toolbar-modes {
+  min-width: 108px;
+  font-weight: 600;
+}
 .play-button {
   background: #1d7a3e;
   border-color: #1d7a3e;

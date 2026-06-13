@@ -4,10 +4,42 @@ Notable changes to Vektra Engine. Newest entries first.
 
 ---
 
-## 2026-06-13 — v0.53 World streaming (grid-chunked)
+## 2026-06-13 — Agent swarm wave 4: v0.49–v0.54 (path trace, blend2D, MP sync, widget anims, streaming, tests)
 
 ### Added
+- **v0.49 Path tracer:** `pathtraced` view mode + `r.PathTracer 0|1` console cvar; `WebGLPathTracer` (three-gpu-pathtracer) progressive samples in single-pane perspective
+- **v0.50 Blend space 2D:** `AnimStateEditor` Blend 2D tab — draggable samples, Delaunay triangulation, barycentric `tickBlendSpace2D` runtime
+- **v0.51 Multiplayer sync:** host authority via lexicographic peer id; `sync` property deltas @ 10 Hz; `spawn`/`despawn` replication; Details Network section (Sync Spawn + per-property checklist)
+- **v0.52 Widget animations:** Sequencer `+ HUD Track…` — opacity/left/top/width/color keys on authored HUD widgets; `applyHudCssProperty` at scrub/play
 - **v0.53 Grid streaming:** World Settings → grid size (64m), load radius, export-by-cell; actors tagged `streamCell: [cx,cz]` (auto on save); camera-radius cell visibility in editor + play; `show streaming` console grid overlay; optional per-cell export manifest + `api.loadCell(cx,cz)` in playable runtime
+- **v0.54 Playwright smoke tests:** `npm run test` — 5 specs (build, editor load, `window.vektra` bridge, terminal spawn, viewport WebGL + FPS stats); `@playwright/test` + `playwright.config.ts` with GPU flags
+
+### Changed
+- `exportPlayable` splits actors into per-cell JSON when `streaming.exportByCell` is enabled
+- Multiplayer relay protocol extended with `sync` / `spawn` / `despawn` message types
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/vektra-engine"
+npm install
+npm run build   # exit 0
+npm run test    # 5 passed
+```
+
+---
+
+## 2026-06-13 — Agent swarm wave 3: v0.44–v0.48 (material GPU, quad viewports, shortcuts, drawer, curves)
+
+### Added
+- **v0.44 Material editor v2:** GPU mode via `onBeforeCompile` (`materialShader.ts`) — UV, TextureSample, Fresnel, Noise nodes; CPU/GPU toggle; live preview sphere in `MaterialEditor`
+- **v0.45 Quad viewports:** `viewportLayout.ts` — single/quad 2×2 scissor panes (Perspective/Top/Front/Side), pane maximize/restore, per-pane camera + gizmo focus; prefs in localStorage
+- **v0.46 Keyboard shortcuts:** `ShortcutEditor` modal (Edit → Editor Preferences → Keyboard Shortcuts…); 25 rebindable bindings in `SHORTCUT_REGISTRY`; overrides in `vektra-engine.shortcuts`
+- **v0.47 Content Drawer polish:** 📌 Dock in Layout pin (`contentDrawerDocked`); color-coded `asset-type-stripe` on tiles; right-click Rename (F2) / Duplicate on materials, MetaSounds, prefabs, imports
+- **v0.48 Bezier curves:** Sequencer `bezier` interp (⌇) + `CurveEditor` panel with draggable in/out tangent handles; cubic evaluation in `sequencer.ts`
+
+### Changed
+- `App.tsx` routes editor hotkeys through `matchesShortcutId` (respects user rebinding)
+- Status bar shows drawer dock state; Content Drawer floating vs docked layout
 
 ### Verification
 ```bash

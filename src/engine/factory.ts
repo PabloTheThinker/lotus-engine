@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
 import { ParticleSystem, DEFAULT_PARTICLES } from './particles'
-import type { ActorType, CameraProps, GeometryKind, LightProps, MaterialProps } from './types'
-import { DEFAULT_FOLIAGE, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS, DEFAULT_SOUND_EMITTER } from './types'
+import type { ActorType, CameraProps, GeometryKind, Label3DProps, LightProps, MaterialProps } from './types'
+import { DEFAULT_FOLIAGE, DEFAULT_LABEL3D, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS, DEFAULT_SOUND_EMITTER } from './types'
 import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
@@ -344,6 +344,93 @@ export function createPlayerStartActor(name: string, id = nextActorId()): Actor 
   actor.mesh = capsule // makes it pickable in the viewport
   actor.root.add(capsule, arrow)
   return actor
+}
+
+/** Build a canvas texture for a Label3D billboard plane. */
+export function buildLabel3DTexture(props: Label3DProps): { texture: THREE.CanvasTexture; aspect: number } {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')!
+  const font = `600 ${props.fontSize}px system-ui, sans-serif`
+  ctx.font = font
+  const metrics = ctx.measureText(props.text || ' ')
+  const textW = Math.ceil(metrics.width)
+  const textH = props.fontSize
+  const pad = props.padding
+  canvas.width = Math.max(64, textW + pad * 2)
+  canvas.height = Math.max(32, textH + pad * 2)
+  ctx.font = font
+  if (props.background) {
+    ctx.fillStyle = props.background
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+  ctx.fillStyle = props.color
+  ctx.textBaseline = 'middle'
+  ctx.textAlign = 'center'
+  ctx.fillText(props.text, canvas.width / 2, canvas.height / 2)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  return { texture, aspect: canvas.width / canvas.height }
+}
+
+/** (re)build the Label3D plane mesh after text/style changes. */
+export function rebuildLabel3D(actor: Actor) {
+  const props = actor.label3DProps
+  if (!props) return
+  if (actor.mesh) {
+    actor.mesh.geometry.dispose()
+    const mat = actor.mesh.material
+    if (mat instanceof THREE.Material) mat.dispose()
+    actor.mesh.removeFromParent()
+  }
+  const { texture, aspect } = buildLabel3DTexture(props)
+  const h = 1
+  const w = h * aspect
+  const geo = new THREE.PlaneGeometry(w, h)
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.userData.actorId = actor.id
+  mesh.userData.isLabel3D = true
+  actor.mesh = mesh
+  actor.root.add(mesh)
+}
+
+/** Label3D — billboard text plane using a canvas texture. */
+export function createLabel3DActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'Label3D')
+  actor.label3DProps = { ...DEFAULT_LABEL3D }
+  rebuildLabel3D(actor)
+  return actor
+}
+
+const _billboardCam = new THREE.Vector3()
+const _billboardObj = new THREE.Vector3()
+const _billboardParentQ = new THREE.Quaternion()
+const _billboardInvParentQ = new THREE.Quaternion()
+const _billboardLookM = new THREE.Matrix4()
+const _billboardLookQ = new THREE.Quaternion()
+
+/** Face Label3D planes toward the active camera (editor + play). */
+export function updateLabel3DBillboards(camera: THREE.Camera, actors: Iterable<Actor>) {
+  camera.getWorldPosition(_billboardCam)
+  for (const actor of actors) {
+    if (actor.type !== 'Label3D' || !actor.label3DProps?.billboard || !actor.mesh) continue
+    actor.mesh.getWorldPosition(_billboardObj)
+    if (actor.mesh.parent) {
+      actor.mesh.parent.getWorldQuaternion(_billboardParentQ)
+      _billboardInvParentQ.copy(_billboardParentQ).invert()
+    } else {
+      _billboardInvParentQ.identity()
+    }
+    _billboardLookM.lookAt(_billboardObj, _billboardCam, new THREE.Vector3(0, 1, 0))
+    _billboardLookQ.setFromRotationMatrix(_billboardLookM)
+    actor.mesh.quaternion.copy(_billboardInvParentQ).multiply(_billboardLookQ)
+  }
 }
 
 /** Wrap a loaded glTF scene in an actor. */

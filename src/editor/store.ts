@@ -2,6 +2,19 @@ import { create } from 'zustand'
 import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
+/** UE main-toolbar Modes: Select / Landscape / Foliage / Paint */
+export type EditorMode = 'select' | 'landscape' | 'foliage' | 'paint'
+
+export function deriveEditorMode(s: {
+  foliagePaint: boolean
+  sculptActive: boolean
+  sculptTool: import('../engine/types').SculptTool
+}): EditorMode {
+  if (s.foliagePaint) return 'foliage'
+  if (s.sculptActive && s.sculptTool === 'paint') return 'paint'
+  if (s.sculptActive) return 'landscape'
+  return 'select'
+}
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail' | 'pathtraced'
 export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug'
 export type BottomTab = BuiltinBottomTab | `plugin:${string}`
@@ -132,6 +145,8 @@ interface EditorState {
   // landscape sculpt mode (UE Landscape mode)
   sculptActive: boolean
   setSculptActive: (v: boolean) => void
+  /** UE Modes dropdown — switches select / landscape / foliage / paint */
+  setEditorMode: (m: EditorMode) => void
   sculptTool: import('../engine/types').SculptTool
   setSculptTool: (t: import('../engine/types').SculptTool) => void
   sculptRadius: number
@@ -327,10 +342,28 @@ export const useEditor = create<EditorState>((set) => ({
   clearConsole: () => set({ consoleEntries: [] }),
 
   foliagePaint: false,
-  setFoliagePaint: (v) => set({ foliagePaint: v, sculptActive: v ? false : undefined as never }),
+  setFoliagePaint: (v) => set(v ? { foliagePaint: true, sculptActive: false } : { foliagePaint: false }),
 
   sculptActive: false,
-  setSculptActive: (v) => set({ sculptActive: v, foliagePaint: false }),
+  setSculptActive: (v) =>
+    set(() => (v ? { sculptActive: true, foliagePaint: false } : { sculptActive: false })),
+  setEditorMode: (m) =>
+    set((s) => {
+      switch (m) {
+        case 'select':
+          return { foliagePaint: false, sculptActive: false }
+        case 'landscape':
+          return {
+            foliagePaint: false,
+            sculptActive: true,
+            sculptTool: s.sculptTool === 'paint' ? 'raise' : s.sculptTool,
+          }
+        case 'foliage':
+          return { foliagePaint: true, sculptActive: false }
+        case 'paint':
+          return { foliagePaint: false, sculptActive: true, sculptTool: 'paint' }
+      }
+    }),
   sculptTool: 'raise',
   setSculptTool: (t) => set({ sculptTool: t }),
   sculptRadius: 5,

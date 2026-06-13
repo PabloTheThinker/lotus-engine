@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { Input } from './Input'
 import { isActionDown, actionJustPressed, actionHeldTime } from './inputActions'
-import { activateAbility, getAttribute, setAttribute } from './gameplayAbilities'
+import { activateAbility, applyEffect, getAttribute, removeEffect, setAttribute } from './gameplayAbilities'
 import { cameraShake, canSeePoint, hud, queryBestPoint, raycastActors, setTimer, setViewCamera } from './gameplay'
 import { runBT, type BTNode } from './behaviorTree'
 import { findPath } from './nav'
@@ -74,6 +74,10 @@ export interface ScriptApi {
   getAttribute: (name: string) => number | null
   /** GAS-lite: set a gameplay attribute on this actor */
   setAttribute: (name: string, value: number) => boolean
+  /** GAS-lite: apply a gameplay effect by name or id (stacks duration) */
+  applyEffect: (effectId: string) => boolean
+  /** GAS-lite: remove an active gameplay effect by name or id */
+  removeEffect: (effectId: string) => boolean
   time: () => number
   /** world position of the player pawn while playing, else null */
   pawnPosition: () => THREE.Vector3 | null
@@ -188,6 +192,8 @@ export function makeScriptApi(
     activateAbility: (abilityId) => (boundActor ? activateAbility(boundActor, abilityId, api) : false),
     getAttribute: (name) => (boundActor ? getAttribute(boundActor, name) : null),
     setAttribute: (name, value) => (boundActor ? setAttribute(boundActor, name, value) : false),
+    applyEffect: (effectId) => (boundActor ? applyEffect(boundActor, effectId) : false),
+    removeEffect: (effectId) => (boundActor ? removeEffect(boundActor, effectId) : false),
   }
   return api
 }

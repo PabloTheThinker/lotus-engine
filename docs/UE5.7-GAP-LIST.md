@@ -2,7 +2,7 @@
 
 > The complete worklist: every area of the official UE 5.7 documentation
 > (dev.epicgames.com/documentation/unreal-engine/unreal-engine-5-7-documentation)
-> mapped against what Vektra Engine has as of v0.43.
+> mapped against what Vektra Engine has as of v0.54.
 > Sourced from docs/UE5-TOOL-CENSUS.md + docs/UE5.7-EDITOR-UX-RESEARCH.md.
 >
 > Legend: ✅ shipped · ◐ partial (v1 shipped, upgrade listed) · ⏳ to do · 🚫 non-goal (infeasible in browser / wrong category — approximate or skip honestly)
@@ -19,20 +19,20 @@
 | Surface Snapping (rotate-to-normal) | ✅ | ⊥ Surf toolbar toggle (v0.24): translate-release sticks to the surface below + aligns to its normal. Live drag-slide + offset = polish |
 | Camera speed 1–8 + scroll-during-fly sync | ✅ | Add "Speed Scalar" multiplier field |
 | Orthographic views (Top/Front/Side) | ✅ | Alt+G/H/J/K shipped (v0.22): pseudo-ortho, pan-only nav, auto-wireframe, dark background. Bottom/Back/Left variants + zoom-to-cursor = polish |
-| Viewport layouts (quad view, maximize/restore) | ⏳ | Fake with 4 cameras + scissor viewports on one canvas; lower priority |
+| Viewport layouts (quad view, maximize/restore) | ✅ | v0.45: 2×2 scissor panes (Perspective/Top/Front/Side), maximize/restore, per-pane camera + gizmo focus (`viewportLayout.ts`) |
 | F11 immersive viewport | ✅ | — (v0.21) |
 | Game View (G) | ✅ | — |
 | Camera bookmarks | ◐ | Shipped as Shift+0-9 set / 0-9 recall (Ctrl+digits is browser-reserved); persist bookmarks in the level file |
 | Pilot Actor + eject banner | ✅ | Move banner top-left per UE; letterbox preview when piloting a Camera |
 | Frame Selected (F) sets orbit pivot; Alt+LMB orbit / Alt+RMB dolly | ✅ | Alt+RMB dolly shipped (v0.21); Alt+MMB track = polish |
-| Content Drawer (Ctrl+Space, auto-collapse, Dock in Layout) | ◐ | Summon + auto-collapse shipped; **add "Dock in Layout" pin button**; color-coded type stripes on tiles; asset right-click menu (Rename F2, Duplicate) |
+| Content Drawer (Ctrl+Space, auto-collapse, Dock in Layout) | ✅ | v0.47: 📌 Dock in Layout pin, color-coded type stripes, right-click Rename (F2) / Duplicate on materials, MetaSounds, prefabs, imports |
 | Details: Search box + categories + reset-to-default arrows | ✅ | Arrows shipped on material fields (v0.23) — extend to light/physics fields; right-click Copy/Paste; multi-select "Multiple Values"; panel lock |
 | Outliner: tree, Type column, eyes, search + operators, drag-attach, folders | ✅ | `-`/`+` operators shipped (v0.21); pin column + full right-click menu = polish |
 | Main toolbar exact order (Save → Modes → Add → Blueprints → Cinematics → Play cluster → Platforms → Settings) | ◐ | Reorder ours to match; add **Modes dropdown** (Select/Landscape/Foliage/Paint as modes rather than toggle buttons); Quick Settings six-group dropdown |
 | Bottom status bar: drawer button + Cmd console + save status | ◐ | Cmd field shipped; add Content Drawer button + autosave/save-status indicator |
 | Place Actors panel (Recently Placed/Basic/Lights/Shapes/Cinematic/VFX/Volumes + search) | ✅ | Add "All Classes" category |
 | Editor Preferences | ✅ | v0.30: Edit → Editor Preferences modal — invert look Y, camera speed, autosave interval (localStorage) |
-| Keyboard shortcut editor (rebindable) | ⏳ | Reuse Input Map UI pattern for editor hotkeys |
+| Keyboard shortcut editor (rebindable) | ✅ | v0.46: `ShortcutEditor` modal — 25 bindings, localStorage overrides, Edit → Editor Preferences → Keyboard Shortcuts… |
 | Multiple Outliner/Details/Content instances (up to 4) | 🚫 | Single-instance panels are fine for web v1 |
 
 ## 2. Programming & Scripting (Blueprints)
@@ -55,7 +55,7 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Material node editor | ◐ | CPU property-graph shipped (Color/Scalar/Time/Sine/Pulse/Mul/Add/Lerp); material assets + instances ✅ v0.34. **Upgrade: per-pixel via TSL/onBeforeCompile** — TextureSample, UV, Fresnel, Noise, WPO; live preview sphere |
+| Material node editor | ◐ | v0.44: GPU `onBeforeCompile` mode — UV, TextureSample, Fresnel, Noise + live preview sphere; CPU graph + material assets/instances ✅ v0.34. WPO node = next |
 | Material instances + parameters | ✅ | v0.34: MaterialAsset library + per-actor materialAssetId/overrides in Details |
 | Post-process volumes (blend radius, priority) | ✅ | Add vignette, color grading (lift/gamma/gain), DOF to the override set |
 | Sky atmosphere + sun binding | ✅ | Volumetric clouds 🚫 (billboard/raymarch-lite later) |
@@ -67,7 +67,7 @@
 | TSR / anti-aliasing | ◐ | r.ScreenPercentage wired to render targets (v0.21); FXAA pass = polish |
 | View modes: Lit/Unlit/Wireframe/Detail | ✅ | Add Buffer Visualization (World Normal / Depth / Base Color) via MeshNormalMaterial & depth override |
 | Light types | ✅ | RectLight shipped (v0.21) |
-| Path tracer mode | ⏳ | three-gpu-pathtracer toggle; flagship screenshot feature |
+| Path tracer mode | ✅ | v0.49: `pathtraced` view mode + `r.PathTracer` cvar; `WebGLPathTracer` progressive samples (single-pane perspective) |
 | HDRI backdrop | ✅ | v0.30: Import HDRI… tile — .hdr → PMREM environment + background, replaces sky, serialized in level |
 
 ## 4. Building Virtual Worlds
@@ -78,7 +78,7 @@
 | Landscape paint layers | ✅ | Texture-based splat (vs vertex color) when texture import lands |
 | Foliage painting | ✅ | Slope/height filters; multi-type painting in one stroke |
 | Water system | ✅ | v0.32: Water actor — animated Gerstner-lite surface, size/color/wave props, serialized (verified vertex animation) |
-| World Partition / streaming | ◐ | Cull-distance streaming shipped; grid-chunked auto load/unload around camera = upgrade |
+| World Partition / streaming | ✅ | v0.53: grid-chunked `streamCell` load/unload around camera, `show streaming` overlay, `api.loadCell`, export-by-cell; cull-distance still per-actor |
 | Level instances (nested prefabs) | ◐ | v0.35: prefabSource/prefabOverrides + per-field revert (⟲). Nested prefab-in-prefab = upgrade |
 | PCG (sample→filter→spawn) | ✅ | v0.32: PCG Scatter volume — seeded jittered-grid sampling, surface raycast + slope filter, scale/rotation jitter + normal alignment, live regen, deterministic (verified 24 instances). Full node-graph editor = v2 |
 | Modeling mode (CSG/booleans) | ◐ | Union/Subtract/Intersect shipped; add Mirror, Merge, meshopt Simplify; poly editing 🚫 v1 |
@@ -103,12 +103,12 @@
 |---|---|---|
 | Sequencer: transform tracks + keys + scrub + autoplay | ✅ | — |
 | Property tracks (key ANY property) | ✅ | v0.25: visible/color/opacity/emissiveIntensity/intensity/fov + transform; + Property dropdown in toolbar |
-| Curve editor / per-key interpolation | ◐ | Per-key interp shipped v0.25 (linear ◆ / smooth ● / step ■, Shift+click cycles). Graphical bezier-tangent editor = remaining polish |
+| Curve editor / per-key interpolation | ✅ | v0.48: bezier interp (⌇) + `CurveEditor` with draggable in/out tangent handles; linear ◆ / smooth ● / step ■ shipped v0.25 |
 | Camera Cut track | ✅ | v0.25: 🎬 Cut keys on the ruler, drives setViewCamera in PIE |
 | Event/visibility tracks | ✅ | v0.25: ⚡ Event keys emit signals (scripts subscribe via api.on); visibility is a property track. Audio keys = wire signal → playSound in a script |
 | glTF clip playback + crossfade | ✅ | — |
 | Anim state machine editor (FSM graph) | ◐ | v0.38: AnimStateEditor tab — draggable states + transition arrows; full AnimGraph polish = next |
-| Blend spaces 1D/2D | ◐ | v0.38: 1D blend space lerp weights; 2D triangulation = next |
+| Blend spaces 1D/2D | ✅ | v0.38: 1D lerp weights; v0.50: 2D Delaunay triangulation + barycentric blend in `AnimStateEditor` Blend 2D tab |
 | Control Rig / IK | ⏳ | Two-bone IK + LookAt on glTF skeletons; rig graphs 🚫 |
 | Retargeting / Motion Matching | 🚫 | — |
 | Take Recorder | ✅ | v0.31: ⏺ Take arms 10Hz transform sampling of the selected actor during Play → sequencer keys (verified 15 keys) |
@@ -131,7 +131,7 @@
 | Gameplay Ability System | ◐ | v0.42: GAS-lite — attribute sets + abilities (cooldown/cost/tags) + api.activateAbility; effect stacks = next |
 | Gameplay Tags (hierarchical) | ✅ | v0.28: 'Enemy.Boss' prefix-matches 'Enemy.Boss.Fire' in getActorsByTag |
 | Data tables / curve assets | ◐ | JSON tables shipped; grid editor UI + curve assets |
-| Networking / replication | ◐ | Pawn co-presence relay shipped; per-actor property replication checklist (Synchronizer), spawner replication, ownership |
+| Networking / replication | ◐ | v0.51: host authority, property sync @ 10 Hz (Details Network checklist), Sync Spawn/despawn over relay; pawn co-presence ✅. Ownership + prediction = polish |
 
 ## 8. Audio
 
@@ -149,7 +149,7 @@
 | HUD runtime (text/bars via api.hud) | ✅ | — |
 | Widget designer (anchors, authored widgets) | ✅ | v0.29: HUD Widgets section — text/bar/button rows with anchor/color/signal, serialized in levels, rendered at Play. Drag-drop canvas layout = polish |
 | Buttons/interaction routing into scripts | ✅ | v0.29: button widgets emit signals on click; scripts subscribe via api.on (verified) |
-| Widget animations | ⏳ | Reuse Sequencer on DOM properties |
+| Widget animations | ✅ | v0.52: Sequencer HUD tracks — opacity/left/top/width/color keys on authored widgets; `applyHudCssProperty` at scrub/play |
 | 3D world-space widgets | ⏳ | CSS3DRenderer or render-to-texture plane |
 
 ## 10. Testing & Optimization
@@ -161,6 +161,7 @@
 | PIE: pause / frame-step / eject / possess | ✅ | "Click for Mouse Control" + "Shift+F1 for cursor" overlay text; Alt+P play hotkey |
 | Simulate / Play From Here / Keep Sim Changes | ✅ | — |
 | Collision/navmesh debug draw (`show collision`) | ✅ | Wireframe outlines shipped (v0.21) |
+| Automated smoke tests (Playwright) | ✅ | v0.54: `npm run test` — 5 specs (build, editor load, vektra bridge, terminal spawn, viewport WebGL + FPS stats) |
 
 ## 11. Sharing & Releasing
 
@@ -186,11 +187,15 @@
 2. ~~Material assets + instances~~ ✅ v0.34
 3. ~~Recast navmesh~~ ✅ v0.36
 4. ~~Live debugger + tick profiler~~ ✅ v0.37
-5. ~~FSM editor + 1D blend space~~ ◐ v0.38 (2D blend + IK = next)
+5. ~~FSM editor + 1D/2D blend space~~ ✅ v0.38 + v0.50
 6. ~~MetaSounds-lite~~ ✅ v0.39
 7. ~~Multi-level export + PWA~~ ✅ v0.40
 8. ~~Plugin API + GAS-lite + BP functions~~ ✅ v0.40–v0.42
-9. **Material editor v2** — per-pixel TSL nodes (TextureSample/UV/Fresnel/Noise) + live preview sphere
-10. **Viewport quad layouts** + keyboard shortcut editor + Content Drawer dock-pin + toolbar Modes dropdown
+9. ~~Material editor v2~~ ◐ v0.44 (GPU nodes + preview sphere; WPO = next)
+10. ~~Viewport quad layouts + shortcut editor + Content Drawer dock + bezier curves~~ ✅ v0.45–v0.48
+11. ~~Path tracer + blend2D + MP sync + widget anims + streaming + Playwright~~ ✅ v0.49–v0.54
+12. **Two-bone IK + LookAt** on glTF skeletons
+13. **Particles P3** — InstancedMesh renderer, graphical size curves, sub-emitters
+14. **GAS effect stacks** + toolbar Modes dropdown + camera bookmarks persist
 
 *Update this file as items ship — it is the working successor to ROADMAP.md (which records the completed 34-task arc).*

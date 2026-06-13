@@ -78,6 +78,10 @@ export interface BPNodeDef {
 
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 const str = (v: unknown) => JSON.stringify(String(v ?? ''))
+const gateStateKey = (n: BPNode) => {
+  const key = String(n.props.gateKey ?? '').trim()
+  return key ? str(key) : `'${n.id}'`
+}
 
 export const NODE_DEFS: Record<string, BPNodeDef> = {
   // ───── Events ─────
@@ -459,6 +463,106 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     emit: (n, o) => `__flip['${n.id}'] = !__flip['${n.id}'];\nif (__flip['${n.id}']) {\n${o.a ?? ''}\n} else {\n${o.b ?? ''}\n}`,
   },
 
+  Gate: {
+    title: 'Gate',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['exit', 'open', 'close', 'toggle'],
+    props: [
+      {
+        key: 'action',
+        label: 'Action',
+        kind: 'select',
+        options: ['Enter', 'Open', 'Close', 'Toggle'],
+        default: 'Enter',
+      },
+      { key: 'startOpen', label: 'Start Open', kind: 'check', default: true },
+      { key: 'gateKey', label: 'Gate Key (shared)', kind: 'text', default: '' },
+    ],
+    dataOuts: ['isOpen'],
+    emitExpr: (n) => {
+      const k = gateStateKey(n)
+      const start = !!n.props.startOpen
+      return `!!(__gate[${k}] ?? ${start})`
+    },
+    emit: (n, o) => {
+      const k = gateStateKey(n)
+      const start = !!n.props.startOpen
+      const init = `if (__gate[${k}] === undefined) __gate[${k}] = ${start}`
+      const action = String(n.props.action ?? 'Enter')
+      if (action === 'Open') return `${init};\n__gate[${k}] = true;\n${o.open ?? o.exit ?? ''}`
+      if (action === 'Close') return `${init};\n__gate[${k}] = false;\n${o.close ?? o.exit ?? ''}`
+      if (action === 'Toggle') return `${init};\n__gate[${k}] = !__gate[${k}];\n${o.toggle ?? o.exit ?? ''}`
+      return `${init};\nif (__gate[${k}]) {\n${o.exit ?? ''}\n}`
+    },
+  },
+
+  MultiGate: {
+    title: 'Multi Gate',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['out0', 'out1', 'out2', 'out3'],
+    props: [
+      { key: 'numOuts', label: 'Outputs', kind: 'number', default: 4 },
+      { key: 'startIndex', label: 'Start Index', kind: 'number', default: 0 },
+    ],
+    emit: (n, o) => {
+      const count = Math.max(1, Math.min(4, Math.floor(num(n.props.numOuts))))
+      const k = `'${n.id}'`
+      const start = Math.floor(num(n.props.startIndex)) % count
+      let code = `if (__mg[${k}] === undefined) __mg[${k}] = ${start};\n`
+      code += `switch (__mg[${k}] % ${count}) {\n`
+      for (let i = 0; i < count; i++) {
+        const port = `out${i}` as keyof typeof o
+        code += `case ${i}: ${o[port] ?? ''} break;\n`
+      }
+      code += `} __mg[${k}] = (__mg[${k}] + 1) % ${count};`
+      return code
+    },
+  },
+
+  SwitchInt: {
+    title: 'Switch on Int',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['case0', 'case1', 'case2', 'case3', 'default'],
+    props: [{ key: 'value', label: 'Value', kind: 'number', default: 0 }],
+    dataIns: ['value'],
+    emit: (n, o, ins) => {
+      const v = ins?.value ?? num(n.props.value)
+      return `switch (Math.floor(${v}) | 0) {\n` +
+        `case 0: ${o.case0 ?? ''} break;\n` +
+        `case 1: ${o.case1 ?? ''} break;\n` +
+        `case 2: ${o.case2 ?? ''} break;\n` +
+        `case 3: ${o.case3 ?? ''} break;\n` +
+        `default: ${o.default ?? ''}\n` +
+        `}`
+    },
+  },
+
+  BindSignal: {
+    title: 'Bind Signal',
+    category: 'Flow',
+    color: '#6b7280',
+    hasExecIn: true,
+    execOuts: ['then', 'onSignal'],
+    props: [{ key: 'signal', label: 'Signal', kind: 'text', default: 'cue' }],
+    emit: (n, o) => `api.on(${str(n.props.signal)}, () => {\n${o.onSignal ?? ''}\n});\n${o.then ?? ''}`,
+  },
+
+  CallSignal: {
+    title: 'Call Signal',
+    category: 'Actions',
+    color: '#2f6fab',
+    hasExecIn: true,
+    execOuts: ['then'],
+    props: [{ key: 'signal', label: 'Signal', kind: 'text', default: 'cue' }],
+    emit: (n, o) => `api.emit(${str(n.props.signal)});\n${o.then ?? ''}`,
+  },
+
   // ───── Functions / Macros (subgraphs inlined at compile) ─────
   FunctionEntry: {
     title: 'Function Entry',
@@ -660,16 +764,19 @@ function compileGraphBody(graph: BlueprintGraph, rootCtx?: Partial<CompileCtx>):
         return bindEdge ? dataExpr(bindEdge.from.split(':')[0], d + 1) : '0'
       }
       const def = NODE_DEFS[node.type]
-      if (!def?.pure || !def.emitExpr) return '0'
-      const ins: Record<string, string> = {}
-      for (const key of def.dataIns ?? []) {
-        const e2 = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
-        if (e2) {
-          const [src, kind, p] = e2.from.split(':')
-          ins[key] = kind === 'data' && p ? subDataExpr(src, d + 1, p) : subDataExpr(src, d + 1)
+      if (!def?.emitExpr) return '0'
+      if (def.pure || (dataPort && def.dataOuts?.includes(dataPort)) || (!dataPort && def.dataOuts?.length)) {
+        const ins: Record<string, string> = {}
+        for (const key of def.dataIns ?? []) {
+          const e2 = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+          if (e2) {
+            const [src, kind, p] = e2.from.split(':')
+            ins[key] = kind === 'data' && p ? subDataExpr(src, d + 1, p) : subDataExpr(src, d + 1)
+          }
         }
+        return def.emitExpr(node, ins)
       }
-      return def.emitExpr(node, ins)
+      return '0'
     }
     const [src, kind, p] = edge.from.split(':')
     return kind === 'data' && p ? subDataExpr(src, depth + 1, p) : subDataExpr(src, depth + 1)
@@ -688,16 +795,19 @@ function compileGraphBody(graph: BlueprintGraph, rootCtx?: Partial<CompileCtx>):
     }
 
     const def = NODE_DEFS[node.type]
-    if (!def?.pure || !def.emitExpr) return '0'
-    const ins: Record<string, string> = {}
-    for (const key of def.dataIns ?? []) {
-      const edge = ctx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
-      if (edge) {
-        const [src, kind, port] = edge.from.split(':')
-        ins[key] = kind === 'data' && port ? dataExpr(src, depth + 1, port) : dataExpr(src, depth + 1)
+    if (!def?.emitExpr) return '0'
+    if (def.pure || (dataPort && def.dataOuts?.includes(dataPort)) || (!dataPort && def.dataOuts?.length)) {
+      const ins: Record<string, string> = {}
+      for (const key of def.dataIns ?? []) {
+        const edge = ctx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+        if (edge) {
+          const [src, kind, port] = edge.from.split(':')
+          ins[key] = kind === 'data' && port ? dataExpr(src, depth + 1, port) : dataExpr(src, depth + 1)
+        }
       }
+      return def.emitExpr(node, ins)
     }
-    return def.emitExpr(node, ins)
+    return '0'
   }
 
   const dataInsFor = (node: BPNode, def: BPNodeDef): Record<string, string> => {
@@ -748,16 +858,19 @@ function compileGraphBody(graph: BlueprintGraph, rootCtx?: Partial<CompileCtx>):
       if (!node) return '0'
       if (node.type === 'FunctionEntry' && dataPort) return bindings.get(dataPort) ?? '0'
       const def = NODE_DEFS[node.type]
-      if (!def?.pure || !def.emitExpr) return '0'
-      const ins: Record<string, string> = {}
-      for (const key of def.dataIns ?? []) {
-        const edge = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
-        if (edge) {
-          const [src, kind, port] = edge.from.split(':')
-          ins[key] = kind === 'data' && port ? subDataExpr(src, depth + 1, port) : subDataExpr(src, depth + 1)
+      if (!def?.emitExpr) return '0'
+      if (def.pure || (dataPort && def.dataOuts?.includes(dataPort)) || (!dataPort && def.dataOuts?.length)) {
+        const ins: Record<string, string> = {}
+        for (const key of def.dataIns ?? []) {
+          const edge = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+          if (edge) {
+            const [src, kind, port] = edge.from.split(':')
+            ins[key] = kind === 'data' && port ? subDataExpr(src, depth + 1, port) : subDataExpr(src, depth + 1)
+          }
         }
+        return def.emitExpr(node, ins)
       }
-      return def.emitExpr(node, ins)
+      return '0'
     }
 
     const subDataInsFor = (node: BPNode, def: BPNodeDef): Record<string, string> => {
@@ -840,6 +953,8 @@ ${varInit}
 const __near = {}
 const __once = {}
 const __flip = {}
+const __gate = {}
+const __mg = {}
 const __timers = []
 let __dt = 0
 function __after(s, fn) { __timers.push({ t: api.time() + s, fn }) }

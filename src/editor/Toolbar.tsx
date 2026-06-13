@@ -1,6 +1,6 @@
 import { redo, undo } from './commands'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
-import { useEditor, type GizmoMode } from './store'
+import { deriveEditorMode, useEditor, type GizmoMode } from './store'
 import { formatShortcutLabel, getShortcutsVersion, subscribeShortcuts } from './shortcuts'
 import { useSyncExternalStore } from 'react'
 
@@ -37,10 +37,10 @@ export function Toolbar() {
   const gameView = useEditor((s) => s.gameView)
   const toggleGameView = useEditor((s) => s.toggleGameView)
   const foliagePaint = useEditor((s) => s.foliagePaint)
-  const setFoliagePaint = useEditor((s) => s.setFoliagePaint)
   const sculptActive = useEditor((s) => s.sculptActive)
-  const setSculptActive = useEditor((s) => s.setSculptActive)
-  const selectedId = useEditor((s) => s.selectedId)
+  const sculptTool = useEditor((s) => s.sculptTool)
+  const setEditorMode = useEditor((s) => s.setEditorMode)
+  const editorMode = deriveEditorMode({ foliagePaint, sculptActive, sculptTool })
   const canUndo = useEditor((s) => s.canUndo)
   const canRedo = useEditor((s) => s.canRedo)
   const toggleContentBrowser = useEditor((s) => s.toggleContentBrowser)
@@ -53,6 +53,20 @@ export function Toolbar() {
         <button title="New Level" onClick={newLevel}>🗋 New</button>
         <button title="Open Level" onClick={openLevelFromFile}>📂 Open</button>
         <button title={`Save Level (${formatShortcutLabel('tools.save')})`} onClick={saveLevelToFile}>💾 Save</button>
+      </div>
+      <div className="toolbar-sep" />
+      <div className="toolbar-group">
+        <select
+          className="toolbar-modes"
+          title="Editor Modes (UE: Select / Landscape / Foliage / Paint)"
+          value={editorMode}
+          onChange={(e) => setEditorMode(e.target.value as typeof editorMode)}
+        >
+          <option value="select">↖ Select</option>
+          <option value="landscape">⛰ Landscape</option>
+          <option value="foliage">🌿 Foliage</option>
+          <option value="paint">🎨 Paint</option>
+        </select>
       </div>
       <div className="toolbar-sep" />
       <div className="toolbar-group">
@@ -122,22 +136,6 @@ export function Toolbar() {
         </button>
         <button className={gameView ? 'active' : ''} title={`Game View — hide editor chrome (${formatShortcutLabel('viewport.gameView')})`} onClick={toggleGameView}>
           👁 Game
-        </button>
-        <button
-          className={foliagePaint ? 'active' : ''}
-          title="Foliage paint — select a Foliage layer, then click-drag to paint, Shift to erase"
-          onClick={() => setFoliagePaint(!foliagePaint)}
-          disabled={!selectedId}
-        >
-          🌿 Paint
-        </button>
-        <button
-          className={sculptActive ? 'active' : ''}
-          title="Landscape sculpt — select a Landscape, then click-drag (Shift lowers)"
-          onClick={() => setSculptActive(!sculptActive)}
-          disabled={!selectedId}
-        >
-          ⛰ Sculpt
         </button>
       </div>
       <div className="toolbar-spacer" />

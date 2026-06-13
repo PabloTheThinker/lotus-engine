@@ -3,7 +3,7 @@ import { world } from '../engine/World'
 import type { ActorType, GeometryKind, SerializedActor } from '../engine/types'
 import { DEFAULT_MATERIAL } from '../engine/types'
 import { DEFAULT_PARTICLES } from '../engine/particles'
-import { DEFAULT_FOLIAGE } from '../engine/types'
+import { DEFAULT_FOLIAGE, DEFAULT_LABEL3D } from '../engine/types'
 import { DEFAULT_LANDSCAPE } from '../engine/landscape'
 import { DEFAULT_WATER } from '../engine/water'
 import { DEFAULT_PCG } from '../engine/pcg'
@@ -27,6 +27,7 @@ export type AssetPayload =
   | { kind: 'water' }
   | { kind: 'pcg' }
   | { kind: 'playerstart' }
+  | { kind: 'label3d' }
   | { kind: 'imported'; assetId: string; name: string }
   | { kind: 'plugin-node'; nodeType: string }
 
@@ -179,6 +180,14 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         name: uniqueName('PlayerStart'),
         type: 'PlayerStart',
         transform: { ...base.transform, position: [position[0], 0, position[2]] },
+      }
+    case 'label3d':
+      return {
+        ...base,
+        name: uniqueName('Label3D'),
+        type: 'Label3D',
+        label3D: { ...DEFAULT_LABEL3D },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1.5), position[2]] },
       }
     case 'imported':
       return { ...base, name: uniqueName(payload.name), type: 'ImportedMesh', assetId: payload.assetId }

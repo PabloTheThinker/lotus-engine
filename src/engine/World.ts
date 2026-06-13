@@ -20,12 +20,19 @@ import { createLandscapeActor, buildLandscapeMesh, sampleLandscapeHeight } from 
 import { DEFAULT_PARTICLES } from './particles'
 import { createWaterActor, buildWaterMesh, updateWater } from './water'
 import { createPCGVolumeActor } from './pcg'
-import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock } from './gameplayAbilities'
+import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
 import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
 import { playMetaSound, registerSound, setReverbZone, stopAllSounds, type ReverbPreset } from './audio'
-import { createTriggerVolumeActor, createSoundEmitterActor, createReflectionProbeActor, createCustomMeshActor } from './factory'
+import {
+  createTriggerVolumeActor,
+  createSoundEmitterActor,
+  createReflectionProbeActor,
+  createCustomMeshActor,
+  createLabel3DActor,
+  rebuildLabel3D,
+} from './factory'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
@@ -37,9 +44,10 @@ import {
   cellKey,
   splitLevelByCells,
 } from './streaming'
-import type { EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
+import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
 import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
+import { applyActorIK, hasActorSkeleton } from './ik'
 import { clearActorTicks, recordActorTick } from './profiler'
 
 /**
@@ -85,6 +93,9 @@ export class World {
 
   /** per-cell actor lists for lazy streaming (rebuilt on serialize when exportByCell) */
   cellManifest: Record<string, SerializedActor[]> = {}
+
+  /** editor camera bookmarks — persisted in the level file (slots 0–9) */
+  cameraBookmarks: (CameraBookmark | null)[] = Array.from({ length: 10 }, () => null)
 
   /** editor snapshot taken at PIE start — restored when play stops */
   pieSnapshot: SerializedLevel | null = null
@@ -396,6 +407,7 @@ export class World {
     if (!this.playing) return
     this.playClock += dt
     setAbilityPlayClock(this.playClock)
+    tickEffects(this.actors.values(), dt)
     this.physics.step(dt)
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
@@ -425,6 +437,9 @@ export class World {
         tickAnimSM(a, dt, params)
       }
       a.mixer?.update(dt)
+      if (hasActorSkeleton(a) && ((a.ikTargets?.length ?? 0) > 0 || a.lookAtTarget)) {
+        applyActorIK(a, this.actors)
+      }
       recordActorTick(a.id, a.name, performance.now() - t0)
     }
     tickGameplay(dt, scriptLog)
@@ -530,12 +545,21 @@ export class World {
       levelLinks: this.levelLinks.length
         ? this.levelLinks.map((l) => ({ name: l.name, level: JSON.parse(JSON.stringify(l.level)) }))
         : undefined,
+      cameraBookmarks: this.cameraBookmarks.some((b) => b !== null)
+        ? this.cameraBookmarks.map((b) => (b ? { position: [...b.position], quaternion: [...b.quaternion] } : null))
+        : undefined,
     }
+  }
+
+  setCameraBookmark(slot: number, bookmark: CameraBookmark | null) {
+    if (slot < 0 || slot > 9) return
+    this.cameraBookmarks[slot] = bookmark
   }
 
   clear() {
     for (const id of [...this.actors.keys()]) this.removeActor(id)
     this.assets.clear()
+    this.cameraBookmarks = Array.from({ length: 10 }, () => null)
   }
 
   async load(level: SerializedLevel) {
@@ -549,6 +573,15 @@ export class World {
     this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
     this.hdri = level.hdri ?? null
     this.levelLinks = level.levelLinks ? JSON.parse(JSON.stringify(level.levelLinks)) : []
+    if (level.cameraBookmarks?.length) {
+      this.cameraBookmarks = level.cameraBookmarks.map((b) =>
+        b ? { position: [...b.position], quaternion: [...b.quaternion] } : null,
+      )
+      while (this.cameraBookmarks.length < 10) this.cameraBookmarks.push(null)
+      this.cameraBookmarks.length = 10
+    } else {
+      this.cameraBookmarks = Array.from({ length: 10 }, () => null)
+    }
     for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {
@@ -681,6 +714,13 @@ export class World {
       case 'PostProcessVolume':
         actor = createPostProcessVolumeActor(sa.name, sa.id)
         break
+      case 'Label3D':
+        actor = createLabel3DActor(sa.name, sa.id)
+        if (sa.label3D) {
+          actor.label3DProps = { ...sa.label3D }
+          rebuildLabel3D(actor)
+        }
+        break
       default:
         actor = createEmptyActor(sa.name, sa.id)
     }
@@ -723,6 +763,21 @@ export class World {
     }
     if (sa.syncProperties?.length) actor.syncProperties = [...sa.syncProperties]
     if (sa.syncSpawn) actor.syncSpawn = true
+    if (sa.ikTargets?.length) {
+      actor.ikTargets = sa.ikTargets.map((t) => ({
+        chain: t.chain,
+        targetActorId: t.targetActorId,
+        targetPosition: t.targetPosition ? [...t.targetPosition] as [number, number, number] : undefined,
+      }))
+    }
+    if (sa.lookAtTarget) {
+      actor.lookAtTarget = {
+        targetActorId: sa.lookAtTarget.targetActorId,
+        targetPosition: sa.lookAtTarget.targetPosition
+          ? ([...sa.lookAtTarget.targetPosition] as [number, number, number])
+          : undefined,
+      }
+    }
     return actor
   }
 }

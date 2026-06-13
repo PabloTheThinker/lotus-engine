@@ -147,7 +147,16 @@ export function BlueprintEditor() {
       if (node.type === 'FunctionEntry') return { dataIns: [], dataOuts: fn.dataIns }
       return { dataIns: fn.dataOuts, dataOuts: [] }
     }
-    return { dataIns: [], dataOuts: [] }
+    const def = NODE_DEFS[node.type]
+    const dataIns = (def?.dataIns ?? []).map((key) => ({
+      key,
+      label: def.props.find((p) => p.key === key)?.label ?? key,
+    }))
+    const dataOuts = (def?.dataOuts ?? []).map((key) => ({
+      key,
+      label: key === 'isOpen' ? 'Is Open' : key,
+    }))
+    return { dataIns, dataOuts }
   }
 
   const compile = () => {

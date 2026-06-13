@@ -3,6 +3,7 @@ import type {
   ActorType,
   FoliageProps,
   LandscapeProps,
+  Label3DProps,
   Behavior,
   CameraProps,
   GeometryKind,
@@ -14,6 +15,8 @@ import type {
   PostProcessProps,
   SerializedActor,
   TransformSnapshot,
+  IKTarget,
+  LookAtTarget,
 } from './types'
 import { DEFAULT_MOBILITY } from './types'
 import { resetAnimRuntime } from './animStateMachine'
@@ -79,6 +82,7 @@ export class Actor {
   probeProps?: { radius: number }
   waterProps?: import('./types').WaterProps
   pcgProps?: import('./types').PCGProps
+  label3DProps?: Label3DProps
   pcgMesh?: THREE.InstancedMesh
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** material node graph — evaluated per frame onto the material */
@@ -109,6 +113,10 @@ export class Actor {
   syncProperties?: string[]
   /** Godot MultiplayerSpawner-lite — host replicates instantiation */
   syncSpawn = false
+  /** two-bone IK targets (glTF skinned meshes) */
+  ikTargets?: IKTarget[]
+  /** head LookAt target */
+  lookAtTarget?: LookAtTarget
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -308,8 +316,24 @@ export class Actor {
         : undefined,
       trigger: this.triggerProps ? { ...this.triggerProps } : undefined,
       soundEmitter: this.soundEmitterProps ? { ...this.soundEmitterProps } : undefined,
+      label3D: this.label3DProps ? { ...this.label3DProps } : undefined,
       syncProperties: this.syncProperties?.length ? [...this.syncProperties] : undefined,
       syncSpawn: this.syncSpawn || undefined,
+      ikTargets: this.ikTargets?.length
+        ? this.ikTargets.map((t) => ({
+            chain: t.chain,
+            targetActorId: t.targetActorId,
+            targetPosition: t.targetPosition ? [...t.targetPosition] as [number, number, number] : undefined,
+          }))
+        : undefined,
+      lookAtTarget: this.lookAtTarget
+        ? {
+            targetActorId: this.lookAtTarget.targetActorId,
+            targetPosition: this.lookAtTarget.targetPosition
+              ? ([...this.lookAtTarget.targetPosition] as [number, number, number])
+              : undefined,
+          }
+        : undefined,
     }
   }
 

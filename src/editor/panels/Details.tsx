@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import * as THREE from 'three'
 import type { Actor } from '../../engine/Actor'
-import { applyMaterialProps } from '../../engine/factory'
+import { applyMaterialProps, rebuildLabel3D } from '../../engine/factory'
 import {
   applyActorMaterial,
   getEffectiveMaterialGraph,
@@ -10,7 +10,7 @@ import {
 } from '../../engine/materialAssets'
 import { applyLightProps, world } from '../../engine/World'
 import { listMetaSounds } from '../../engine/metaSoundAssets'
-import type { Behavior, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps } from '../../engine/types'
+import type { Behavior, IKChain, IKTarget, Label3DProps, LookAtTarget, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps } from '../../engine/types'
 import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
 import { patchMaterialOverrides, revertMaterialOverride } from '../materialCommands'
@@ -20,7 +20,8 @@ import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscap
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
 import { collectAnimParams } from '../../engine/animStateMachine'
-import { getActorAttributes, listAbilities, listAttributeSets } from '../../engine/gameplayAbilities'
+import { getChainBoneLabels, hasActorSkeleton } from '../../engine/ik'
+import { getActorActiveEffects, getActorAttributes, listAbilities, listAttributeSets } from '../../engine/gameplayAbilities'
 import { mpConnected, mpEnabled, mpIsHost } from '../../engine/multiplayer'
 import { parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
@@ -225,6 +226,326 @@ function MobilitySection({ actor }: { actor: Actor }) {
         {actor.mobility === 'stationary' && 'Lights may change params at runtime; transform behaviors are disabled.'}
         {actor.mobility === 'movable' && 'Full runtime transform. Required for dynamic physics.'}
       </div>
+    </Section>
+  )
+}
+
+const IK_CHAINS: IKChain[] = ['leftLeg', 'rightLeg', 'leftArm', 'rightArm']
+
+function cloneIkTargets(targets: IKTarget[] | undefined): IKTarget[] | undefined {
+  if (!targets?.length) return undefined
+  return targets.map((t) => ({
+    chain: t.chain,
+    targetActorId: t.targetActorId,
+    targetPosition: t.targetPosition ? ([...t.targetPosition] as [number, number, number]) : undefined,
+  }))
+}
+
+function cloneLookAtTarget(target: LookAtTarget | undefined): LookAtTarget | undefined {
+  if (!target) return undefined
+  return {
+    targetActorId: target.targetActorId,
+    targetPosition: target.targetPosition ? ([...target.targetPosition] as [number, number, number]) : undefined,
+  }
+}
+
+function IkSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!hasActorSkeleton(actor)) return null
+
+  const targets = actor.ikTargets ?? []
+  const actorOptions = [...world.actors.values()]
+    .filter((a) => a.id !== actor.id)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const setIkTargets = (next: IKTarget[] | undefined, prev: IKTarget[] | undefined, label: string) => {
+    runCommand(
+      new PropertyCommand(
+        label,
+        () => (actor.ikTargets = next),
+        () => (actor.ikTargets = prev),
+      ),
+    )
+    touch()
+  }
+
+  const setLookAt = (next: LookAtTarget | undefined, prev: LookAtTarget | undefined, label: string) => {
+    runCommand(
+      new PropertyCommand(
+        label,
+        () => (actor.lookAtTarget = next),
+        () => (actor.lookAtTarget = prev),
+      ),
+    )
+    touch()
+  }
+
+  const addChain = () => {
+    const prev = cloneIkTargets(actor.ikTargets)
+    const used = new Set((actor.ikTargets ?? []).map((t) => t.chain))
+    const chain = IK_CHAINS.find((c) => !used.has(c)) ?? 'leftLeg'
+    const next = [...(actor.ikTargets ?? []), { chain }]
+    setIkTargets(next, prev, 'Add IK chain')
+  }
+
+  const removeChain = (index: number) => {
+    const prev = cloneIkTargets(actor.ikTargets)
+    const next = (actor.ikTargets ?? []).filter((_, i) => i !== index)
+    setIkTargets(next.length ? next : undefined, prev, 'Remove IK chain')
+  }
+
+  const updateChain = (index: number, patch: Partial<IKTarget>) => {
+    const prev = cloneIkTargets(actor.ikTargets)
+    const next = (actor.ikTargets ?? []).map((t, i) => (i === index ? { ...t, ...patch } : t))
+    setIkTargets(next, prev, 'Edit IK chain')
+  }
+
+  const lookAt = actor.lookAtTarget
+  const lookAtMode = lookAt?.targetActorId ? 'actor' : lookAt?.targetPosition ? 'world' : 'none'
+
+  return (
+    <Section title="IK">
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Two-bone IK on glTF bones (Hips / Mixamo). Targets resolve at Play time.
+      </div>
+      {targets.map((t, index) => {
+        const bones = getChainBoneLabels(t.chain)
+        const mode = t.targetActorId ? 'actor' : t.targetPosition ? 'world' : 'none'
+        return (
+          <div key={`${t.chain}-${index}`} className="details-subblock">
+            <div className="details-subblock-head">
+              <strong>Chain {index + 1}</strong>
+              <button type="button" onClick={() => removeChain(index)}>
+                Remove
+              </button>
+            </div>
+            <label className="field">
+              <span>Limb</span>
+              <select
+                value={t.chain}
+                onChange={(e) => updateChain(index, { chain: e.target.value as IKChain })}
+              >
+                {IK_CHAINS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="panel-empty" style={{ padding: '2px 0', fontSize: '0.85em' }}>
+              {bones.hip} → {bones.knee} → {bones.ankle}
+            </div>
+            <label className="field">
+              <span>Target</span>
+              <select
+                value={mode}
+                onChange={(e) => {
+                  const m = e.target.value
+                  if (m === 'actor') updateChain(index, { targetActorId: actorOptions[0]?.id, targetPosition: undefined })
+                  else if (m === 'world') updateChain(index, { targetActorId: undefined, targetPosition: [0, 0, 0] })
+                  else updateChain(index, { targetActorId: undefined, targetPosition: undefined })
+                }}
+              >
+                <option value="none">(none)</option>
+                <option value="actor">Actor</option>
+                <option value="world">World position</option>
+              </select>
+            </label>
+            {mode === 'actor' && (
+              <label className="field">
+                <span>Target actor</span>
+                <select
+                  value={t.targetActorId ?? ''}
+                  onChange={(e) => updateChain(index, { targetActorId: e.target.value || undefined })}
+                >
+                  <option value="">(pick actor)</option>
+                  {actorOptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {mode === 'world' && (
+              <>
+                <Num
+                  label="X"
+                  value={t.targetPosition?.[0] ?? 0}
+                  step={0.1}
+                  onLive={(v) => {
+                    const pos: [number, number, number] = [
+                      v,
+                      t.targetPosition?.[1] ?? 0,
+                      t.targetPosition?.[2] ?? 0,
+                    ]
+                    updateChain(index, { targetPosition: pos, targetActorId: undefined })
+                  }}
+                  onCommit={() => {}}
+                />
+                <Num
+                  label="Y"
+                  value={t.targetPosition?.[1] ?? 0}
+                  step={0.1}
+                  onLive={(v) => {
+                    const pos: [number, number, number] = [
+                      t.targetPosition?.[0] ?? 0,
+                      v,
+                      t.targetPosition?.[2] ?? 0,
+                    ]
+                    updateChain(index, { targetPosition: pos, targetActorId: undefined })
+                  }}
+                  onCommit={() => {}}
+                />
+                <Num
+                  label="Z"
+                  value={t.targetPosition?.[2] ?? 0}
+                  step={0.1}
+                  onLive={(v) => {
+                    const pos: [number, number, number] = [
+                      t.targetPosition?.[0] ?? 0,
+                      t.targetPosition?.[1] ?? 0,
+                      v,
+                    ]
+                    updateChain(index, { targetPosition: pos, targetActorId: undefined })
+                  }}
+                  onCommit={() => {}}
+                />
+              </>
+            )}
+          </div>
+        )
+      })}
+      <button type="button" onClick={addChain}>
+        + Add IK chain
+      </button>
+
+      <div className="details-subblock" style={{ marginTop: 8 }}>
+        <strong>Look At (Head)</strong>
+        <label className="field">
+          <span>Target</span>
+          <select
+            value={lookAtMode}
+            onChange={(e) => {
+              const prev = cloneLookAtTarget(actor.lookAtTarget)
+              const m = e.target.value
+              if (m === 'actor') setLookAt({ targetActorId: actorOptions[0]?.id }, prev, 'Set LookAt actor')
+              else if (m === 'world') setLookAt({ targetPosition: [0, 1, 0] }, prev, 'Set LookAt world')
+              else setLookAt(undefined, prev, 'Clear LookAt')
+            }}
+          >
+            <option value="none">(none)</option>
+            <option value="actor">Actor</option>
+            <option value="world">World position</option>
+          </select>
+        </label>
+        {lookAtMode === 'actor' && (
+          <label className="field">
+            <span>Target actor</span>
+            <select
+              value={lookAt?.targetActorId ?? ''}
+              onChange={(e) => {
+                const prev = cloneLookAtTarget(actor.lookAtTarget)
+                setLookAt({ targetActorId: e.target.value || undefined }, prev, 'Edit LookAt actor')
+              }}
+            >
+              <option value="">(pick actor)</option>
+              {actorOptions.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {lookAtMode === 'world' && (
+          <>
+            <Num
+              label="X"
+              value={lookAt?.targetPosition?.[0] ?? 0}
+              step={0.1}
+              onLive={(v) => {
+                const prev = cloneLookAtTarget(actor.lookAtTarget)
+                const next: LookAtTarget = {
+                  targetPosition: [v, lookAt?.targetPosition?.[1] ?? 0, lookAt?.targetPosition?.[2] ?? 0],
+                }
+                setLookAt(next, prev, 'Edit LookAt X')
+              }}
+              onCommit={() => {}}
+            />
+            <Num
+              label="Y"
+              value={lookAt?.targetPosition?.[1] ?? 0}
+              step={0.1}
+              onLive={(v) => {
+                const prev = cloneLookAtTarget(actor.lookAtTarget)
+                const next: LookAtTarget = {
+                  targetPosition: [lookAt?.targetPosition?.[0] ?? 0, v, lookAt?.targetPosition?.[2] ?? 0],
+                }
+                setLookAt(next, prev, 'Edit LookAt Y')
+              }}
+              onCommit={() => {}}
+            />
+            <Num
+              label="Z"
+              value={lookAt?.targetPosition?.[2] ?? 0}
+              step={0.1}
+              onLive={(v) => {
+                const prev = cloneLookAtTarget(actor.lookAtTarget)
+                const next: LookAtTarget = {
+                  targetPosition: [lookAt?.targetPosition?.[0] ?? 0, lookAt?.targetPosition?.[1] ?? 0, v],
+                }
+                setLookAt(next, prev, 'Edit LookAt Z')
+              }}
+              onCommit={() => {}}
+            />
+          </>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+function Label3DSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.label3DProps) return null
+  const props = actor.label3DProps
+  const set = <K extends keyof Label3DProps>(key: K, value: Label3DProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Label ${String(key)}`,
+        () => {
+          props[key] = value
+          rebuildLabel3D(actor)
+        },
+        () => {
+          props[key] = prev
+          rebuildLabel3D(actor)
+        },
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="3D Label">
+      <label className="field">
+        <span>Text</span>
+        <input
+          type="text"
+          value={props.text}
+          onChange={(e) => set('text', e.target.value)}
+          spellCheck={false}
+        />
+      </label>
+      <Num label="Font Size" value={props.fontSize} step={4} min={12} max={128} onLive={(v) => set('fontSize', v)} onCommit={() => {}} />
+      <ColorField label="Text Color" value={props.color} onLive={(v) => set('color', v)} onCommit={() => {}} />
+      <ColorField label="Background" value={props.background} onLive={(v) => set('background', v)} onCommit={() => {}} />
+      <Num label="Padding" value={props.padding} step={2} min={0} max={48} onLive={(v) => set('padding', v)} onCommit={() => {}} />
+      <label className="field check">
+        <span>Billboard</span>
+        <input type="checkbox" checked={props.billboard} onChange={(e) => set('billboard', e.target.checked)} />
+      </label>
     </Section>
   )
 }
@@ -573,6 +894,7 @@ function AbilitiesSection({ actor }: { actor: Actor }) {
   const sets = listAttributeSets()
   const abilities = listAbilities()
   const liveAttrs = playing ? getActorAttributes(actor) : null
+  const liveEffects = playing ? getActorActiveEffects(actor) : null
 
   const setAttrSet = (id: string) => {
     const prev = actor.attributeSetId
@@ -633,8 +955,18 @@ function AbilitiesSection({ actor }: { actor: Actor }) {
           Live: {Object.entries(liveAttrs).map(([k, v]) => `${k}=${v.toFixed(1)}`).join(' · ')}
         </div>
       )}
+      {liveEffects && liveEffects.length > 0 && (
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Active effects: {liveEffects.map((e) => `${e.name} (${e.remaining.toFixed(1)}s)`).join(' · ')}
+        </div>
+      )}
+      {playing && liveEffects && liveEffects.length === 0 && actor.attributeSetId && (
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Active effects: (none)
+        </div>
+      )}
       <div className="panel-empty" style={{ padding: '2px 0' }}>
-        Scripts: api.activateAbility('{abilities[0]?.name ?? 'AbilityName'}')
+        Scripts: api.activateAbility('{abilities[0]?.name ?? 'AbilityName'}') · api.applyEffect('Poison')
       </div>
     </Section>
   )
@@ -1722,6 +2054,7 @@ export function Details() {
         {actor.type === 'PostProcessVolume' && actor.postProcessProps && <PostProcessSection actor={actor} />}
         {actor.type === 'TriggerVolume' && <TriggerSection actor={actor} />}
         {actor.type === 'SoundEmitter' && <SoundEmitterSection actor={actor} />}
+        {actor.type === 'Label3D' && <Label3DSection actor={actor} />}
         {actor.type === 'PlayerStart' && <PawnSection actor={actor} />}
         {actor.mesh && actor.materialProps && actor.materialAssetId && <MaterialInstanceSection actor={actor} />}
         {actor.mesh && actor.materialProps && !actor.materialAssetId && <MaterialSection actor={actor} />}
@@ -1733,6 +2066,7 @@ export function Details() {
         {actor.probeProps && <ProbeSection actor={actor} />}
         {actor.waterProps && <WaterSection actor={actor} />}
         {actor.pcgProps && <PCGSection actor={actor} />}
+        {hasActorSkeleton(actor) && <IkSection actor={actor} />}
         {(actor.animations?.length ?? 0) > 0 && <AnimationSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}

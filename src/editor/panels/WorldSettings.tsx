@@ -2,14 +2,20 @@ import { useState } from 'react'
 import {
   deleteAbility,
   deleteAttributeSet,
+  deleteEffect,
   listAbilities,
   listAttributeSets,
+  listEffects,
   nextAbilityId,
   nextAttributeSetId,
+  nextEffectId,
   saveAbility,
   saveAttributeSet,
+  saveEffect,
   type Ability,
   type AttributeSet,
+  type EffectModifierOp,
+  type GameplayEffect,
 } from '../../engine/gameplayAbilities'
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { sanitizeLevelKey, world } from '../../engine/World'
@@ -441,6 +447,7 @@ function AbilitiesLibrarySection() {
   const refresh = () => bump((n) => n + 1)
   const sets = listAttributeSets()
   const abilities = listAbilities()
+  const effects = listEffects()
 
   const updateSet = (set: AttributeSet) => {
     saveAttributeSet(set)
@@ -449,6 +456,11 @@ function AbilitiesLibrarySection() {
 
   const updateAbility = (ability: Ability) => {
     saveAbility(ability)
+    refresh()
+  }
+
+  const updateEffect = (effect: GameplayEffect) => {
+    saveEffect(effect)
     refresh()
   }
 
@@ -569,8 +581,78 @@ function AbilitiesLibrarySection() {
         >
           + Ability
         </button>
+        <strong style={{ fontSize: 11 }}>Gameplay Effects</strong>
+        {effects.map((eff) => (
+          <div key={eff.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+            <div className="hud-widget-row">
+              <input
+                value={eff.name}
+                placeholder="Name"
+                onChange={(e) => updateEffect({ ...eff, name: e.target.value })}
+                spellCheck={false}
+              />
+              <input
+                type="number"
+                step={0.1}
+                min={0}
+                value={eff.duration}
+                title="Duration (s) — 0 = instant"
+                onChange={(e) => updateEffect({ ...eff, duration: parseFloat(e.target.value) || 0 })}
+              />
+              <button onClick={() => { deleteEffect(eff.id); refresh() }}>✕</button>
+            </div>
+            <input
+              value={JSON.stringify(eff.modifiers)}
+              title='[{"attribute":"Health","op":"add","value":-5}]'
+              spellCheck={false}
+              onBlur={(e) => {
+                try {
+                  updateEffect({ ...eff, modifiers: JSON.parse(e.target.value) as GameplayEffect['modifiers'] })
+                } catch { /* keep prior */ }
+              }}
+            />
+            <input
+              value={(eff.tagsGranted ?? []).join(', ')}
+              placeholder="Tags granted"
+              spellCheck={false}
+              onBlur={(e) =>
+                updateEffect({
+                  ...eff,
+                  tagsGranted: e.target.value.split(',').map((t) => t.trim()).filter(Boolean),
+                })
+              }
+            />
+            <input
+              value={(eff.tagsRemoved ?? []).join(', ')}
+              placeholder="Tags removed"
+              spellCheck={false}
+              onBlur={(e) =>
+                updateEffect({
+                  ...eff,
+                  tagsRemoved: e.target.value.split(',').map((t) => t.trim()).filter(Boolean),
+                })
+              }
+            />
+            <div className="panel-empty" style={{ padding: 0, fontSize: 10 }}>
+              Modifiers: add = per-second delta · multiply = applied on start, reverted on expiry
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={() => {
+            const id = nextEffectId()
+            updateEffect({
+              id,
+              name: 'NewEffect',
+              duration: 3,
+              modifiers: [{ attribute: 'Health', op: 'add' as EffectModifierOp, value: -1 }],
+            })
+          }}
+        >
+          + Effect
+        </button>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Scripts: api.activateAbility('Fireball') · api.getAttribute('Health') · api.setAttribute('Health', 50)
+          Scripts: api.activateAbility('Fireball') · api.applyEffect('Poison') · api.removeEffect('Poison') · api.getAttribute('Health')
         </div>
       </div>
     </details>
