@@ -12,8 +12,17 @@ export interface FrameSample {
   actors: number
 }
 
+export interface ActorTickSample {
+  id: string
+  name: string
+  ms: number
+}
+
 const N = 120
 export const samples: FrameSample[] = []
+
+/** Last-frame per-actor tick cost (cleared when play stops). */
+const actorTickMs = new Map<string, { name: string; ms: number }>()
 
 export function pushSample(s: FrameSample) {
   samples.push(s)
@@ -22,4 +31,18 @@ export function pushSample(s: FrameSample) {
 
 export function latest(): FrameSample | null {
   return samples[samples.length - 1] ?? null
+}
+
+export function recordActorTick(id: string, name: string, ms: number) {
+  actorTickMs.set(id, { name, ms })
+}
+
+export function getActorTickBreakdown(): ActorTickSample[] {
+  return [...actorTickMs.entries()]
+    .map(([id, v]) => ({ id, name: v.name, ms: v.ms }))
+    .sort((a, b) => b.ms - a.ms)
+}
+
+export function clearActorTicks() {
+  actorTickMs.clear()
 }

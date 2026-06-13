@@ -74,6 +74,10 @@ interface EditorState {
   sceneVersion: number
   touch: () => void
 
+  /** Bumped during Play so Details/Debug mirror live actor state. */
+  liveVersion: number
+  bumpLive: () => void
+
   // undo/redo availability (mirrored from the command stack)
   canUndo: boolean
   canRedo: boolean
@@ -194,6 +198,9 @@ export const useEditor = create<EditorState>((set) => ({
 
   sceneVersion: 0,
   touch: () => set((s) => ({ sceneVersion: s.sceneVersion + 1 })),
+
+  liveVersion: 0,
+  bumpLive: () => set((s) => ({ liveVersion: s.liveVersion + 1 })),
 
   canUndo: false,
   canRedo: false,

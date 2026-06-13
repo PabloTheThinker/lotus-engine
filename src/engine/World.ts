@@ -28,9 +28,11 @@ import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
 import { setViewCamera } from './gameplay'
+import { applyActorMaterial, getEffectiveMaterialGraph } from './materialAssets'
 import { applyMaterialGraph } from './materialGraph'
 import type { EnvironmentSettings, HudWidget, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
+import { clearActorTicks, recordActorTick } from './profiler'
 
 /**
  * World — the Unreal UWorld analog. Owns the Three.js scene graph,
@@ -204,6 +206,7 @@ export class World {
     stopAllSounds()
     this.physics.stop()
     for (const a of this.actors.values()) a.endPlay()
+    clearActorTicks()
   }
 
   /** advance all particle systems — editor preview AND play */
@@ -212,7 +215,8 @@ export class World {
     const t = this.playing ? this.playClock : this.editorClock
     for (const a of this.actors.values()) {
       if (a.particleSystem) a.particleSystem.update(dt, a.visible)
-      if (a.materialGraph) applyMaterialGraph(a, t)
+      const matGraph = getEffectiveMaterialGraph(a)
+      if (matGraph) applyMaterialGraph(a, t, matGraph)
       if (a.waterProps) updateWater(a, t)
     }
   }
@@ -240,8 +244,10 @@ export class World {
       this.lastSeqTime = st
     }
     for (const a of this.actors.values()) {
+      const t0 = performance.now()
       a.tick(dt)
       a.mixer?.update(dt)
+      recordActorTick(a.id, a.name, performance.now() - t0)
     }
     tickGameplay(dt, scriptLog)
     if (this.playApi) {
@@ -349,7 +355,11 @@ export class World {
     switch (sa.type) {
       case 'StaticMesh':
         actor = createStaticMeshActor(sa.geometry ?? 'box', sa.name, sa.id)
-        if (sa.material) {
+        if (sa.materialAssetId) actor.materialAssetId = sa.materialAssetId
+        if (sa.materialOverrides) actor.materialOverrides = { ...sa.materialOverrides }
+        if (sa.materialGraph) actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+        if (sa.materialAssetId) applyActorMaterial(actor)
+        else if (sa.material) {
           actor.materialProps = { ...sa.material }
           applyMaterialProps(actor.mesh!.material as THREE.MeshStandardMaterial, sa.material)
         }
@@ -410,7 +420,11 @@ export class World {
         break
       case 'CustomMesh':
         actor = createCustomMeshActor(sa.name, sa.customGeometry ?? { positions: [], normals: [] }, sa.id)
-        if (sa.material && actor.mesh) {
+        if (sa.materialAssetId) actor.materialAssetId = sa.materialAssetId
+        if (sa.materialOverrides) actor.materialOverrides = { ...sa.materialOverrides }
+        if (sa.materialGraph) actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+        if (sa.materialAssetId) applyActorMaterial(actor)
+        else if (sa.material && actor.mesh) {
           actor.materialProps = { ...sa.material }
           applyMaterialProps(actor.mesh.material as THREE.MeshStandardMaterial, sa.material)
         }
@@ -450,11 +464,25 @@ export class World {
     if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
     if (sa.cullDistance) actor.cullDistance = sa.cullDistance
     if (sa.autoPlayClip) actor.autoPlayClip = sa.autoPlayClip
-    if (sa.materialGraph) actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+    if (sa.materialGraph && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
+      actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+    }
+    if (sa.materialAssetId && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
+      actor.materialAssetId = sa.materialAssetId
+      if (sa.materialOverrides) actor.materialOverrides = { ...sa.materialOverrides }
+      applyActorMaterial(actor)
+    }
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]
     if (sa.postProcess && actor.postProcessProps) Object.assign(actor.postProcessProps, sa.postProcess)
+    if (sa.prefabSource) actor.prefabSource = sa.prefabSource
+    if (sa.prefabActorId) actor.prefabActorId = sa.prefabActorId
+    if (sa.prefabOverrides) {
+      actor.prefabOverrides = Object.fromEntries(
+        Object.entries(sa.prefabOverrides).map(([k, v]) => [k, { ...v }]),
+      )
+    }
     return actor
   }
 }

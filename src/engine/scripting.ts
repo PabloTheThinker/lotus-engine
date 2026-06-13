@@ -55,7 +55,7 @@ export interface ScriptApi {
   queryBestPoint: (opts: import('./gameplay').EQSOpts) => [number, number, number] | null
   /** AI sight: can this actor see the player? (FOV cone + occlusion raycast) */
   canSeePlayer: (actor: Actor, fovDeg?: number, maxDist?: number) => boolean
-  /** navmesh-lite: A* waypoints over baked walkability grid */
+  /** Recast navmesh waypoints when baked; grid A* fallback otherwise */
   findPath: (from: [number, number, number], to: [number, number, number]) => [number, number, number][] | null
   /** data assets (UE DataTable analog) */
   getData: (name: string) => unknown
@@ -188,6 +188,36 @@ export function parseExports(source: string): ExportVar[] {
     }
   }
   return out
+}
+
+/**
+ * UE Construction Script: if the actor's script defines onConstruct(),
+ * run it once in-editor (after placement or transform edits).
+ */
+export function runConstructScript(
+  actor: Actor,
+  actors: Map<string, Actor>,
+  log: (level: 'log' | 'error', msg: string) => void,
+) {
+  if (!actor.script || !actor.script.includes('onConstruct')) return
+  try {
+    const api = makeScriptApi(actors, () => 0, () => null)
+    const fn = new Function(
+      'actor',
+      'api',
+      'THREE',
+      'vars',
+      `"use strict";
+${actor.script}
+if (typeof onConstruct === 'function') onConstruct();`,
+    )
+    const vars: Record<string, unknown> = {}
+    for (const ev of parseExports(actor.script)) vars[ev.name] = ev.value
+    Object.assign(vars, actor.scriptVars ?? {})
+    fn(actor, api, THREE, vars)
+  } catch (err) {
+    log('error', `onConstruct(${actor.name}): ${(err as Error).message}`)
+  }
 }
 
 export function compileScript(actor: Actor, source: string, api: ScriptApi): CompiledScript | null {

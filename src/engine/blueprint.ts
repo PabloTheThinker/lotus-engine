@@ -98,6 +98,16 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
       `{ const __p = api.pawnPosition(); if (__p && __p.distanceTo(actor.root.position) < ${num(n.props.distance)} && !__near['${n.id}']) { __near['${n.id}'] = true;\n${o.then ?? ''}\n} else if (__p && __p.distanceTo(actor.root.position) >= ${num(n.props.distance)}) { __near['${n.id}'] = false } }`,
   },
 
+  EventSignal: {
+    title: 'On Signal',
+    category: 'Events',
+    color: '#a23b3b',
+    hasExecIn: false,
+    execOuts: ['then'],
+    props: [{ key: 'signal', label: 'Signal', kind: 'text', default: 'cue' }],
+    emit: (n, o) => `api.on(${str(n.props.signal)}, () => {\n${o.then ?? ''}\n})`,
+  },
+
   // ───── Actions ─────
   MoveBy: {
     title: 'Move By',
@@ -367,6 +377,24 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     emitExpr: (n, ins) => `Math.sin(${ins.in ?? num(n.props.in)})`,
   },
 
+  EmitSignal: {
+    title: 'Emit Signal',
+    category: 'Actions',
+    color: '#2f6fab',
+    hasExecIn: true,
+    execOuts: ['then'],
+    props: [{ key: 'signal', label: 'Signal', kind: 'text', default: 'cue' }],
+    emit: (n, o) => `api.emit(${str(n.props.signal)});\n${o.then ?? ''}`,
+  },
+  RunJS: {
+    title: 'Run JS',
+    category: 'Actions',
+    color: '#2f6fab',
+    hasExecIn: true,
+    execOuts: ['then'],
+    props: [{ key: 'code', label: 'Code', kind: 'text', default: 'api.log("hi")' }],
+    emit: (n, o) => `{ ${String(n.props.code ?? '')} }\n${o.then ?? ''}`,
+  },
   SetVariable: {
     title: 'Set Variable',
     category: 'Actions',
@@ -465,7 +493,10 @@ export function compileBlueprint(graph: BlueprintGraph): string {
     if (!def) return `/* unknown node ${node.type} */`
     const outs: Record<string, string> = {}
     for (const port of def.execOuts) outs[port] = follow(node.id, port, depth)
-    return def.emit(node, outs, dataInsFor(node, def))
+    const body = def.emit(node, outs, dataInsFor(node, def))
+    if (!body.trim()) return body
+    // exec pulse → blueprint debugger highlights this node live
+    return `__pulse('${node.id}');\n${body}`
   }
 
   const beginChains: string[] = []
@@ -475,7 +506,7 @@ export function compileBlueprint(graph: BlueprintGraph): string {
     if (!def || def.hasExecIn) continue
     const code = emitNode(node, 0)
     if (!code.trim()) continue
-    if (node.type === 'EventBeginPlay') beginChains.push(code)
+    if (node.type === 'EventBeginPlay' || node.type === 'EventSignal') beginChains.push(code)
     else tickChains.push(code)
   }
 
@@ -493,6 +524,7 @@ const __flip = {}
 const __timers = []
 let __dt = 0
 function __after(s, fn) { __timers.push({ t: api.time() + s, fn }) }
+function __pulse(id) { if (globalThis.__bpPulse) globalThis.__bpPulse(actor.id, id) }
 
 function onBeginPlay() {
 ${indent(beginChains.join('\n'))}

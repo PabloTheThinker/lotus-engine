@@ -13,6 +13,7 @@ export const consoleState = {
   maxFPS: 0, // 0 = uncapped
   screenPercentage: 100,
   showCollision: false,
+  showNavMesh: false,
 }
 
 export const CONSOLE_COMMANDS = [
@@ -23,6 +24,7 @@ export const CONSOLE_COMMANDS = [
   't.MaxFPS ',
   'r.ScreenPercentage ',
   'show collision',
+  'show navmesh',
 ]
 
 /** returns a response string if the input was a console command, else null */
@@ -70,6 +72,10 @@ export function execConsoleCommand(raw: string): string | null {
   if (lower === 'show collision') {
     consoleState.showCollision = !consoleState.showCollision
     return `show collision ${consoleState.showCollision ? 'ON' : 'OFF'}`
+  }
+  if (lower === 'show navmesh') {
+    consoleState.showNavMesh = !consoleState.showNavMesh
+    return `show navmesh ${consoleState.showNavMesh ? 'ON' : 'OFF'}`
   }
   if (lower === 'help' || lower === '?') {
     push('log', CONSOLE_COMMANDS.join('\n'))

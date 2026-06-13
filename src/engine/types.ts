@@ -199,6 +199,16 @@ export interface SerializedActor {
   autoPlayClip?: string
   /** material node graph */
   materialGraph?: import('./materialGraph').MaterialGraph
+  /** shared material asset (UE Material) — base props live in localStorage */
+  materialAssetId?: string
+  /** per-instance material overrides (UE Material Instance) */
+  materialOverrides?: Partial<MaterialProps>
+  /** prefab instance root: source prefab name */
+  prefabSource?: string
+  /** maps to the original prefab actor id (all actors in an instance subtree) */
+  prefabActorId?: string
+  /** prefab instance root only: per-actor overrides keyed by original prefab id */
+  prefabOverrides?: Record<string, Partial<SerializedActor>>
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */

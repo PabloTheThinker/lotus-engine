@@ -14,13 +14,16 @@ import { sampleSequence, setKey } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, mountHud, unmountHud } from '../engine/gameplay'
 import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
-import { setScriptLogSink } from '../engine/scripting'
+import { runConstructScript, setScriptLogSink } from '../engine/scripting'
 import { pushSample, latest } from '../engine/profiler'
+import { getNavMesh } from '../engine/nav'
+import { NavMeshHelper } from '@recast-navigation/three'
 import { consoleState } from './consoleCommands'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
+import { assignMaterialAsset } from './materialCommands'
 import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
 import { dragGhost, spawnAsset, type AssetPayload } from './spawn'
 import { useEditor, type ViewMode } from './store'
@@ -232,6 +235,7 @@ export function Viewport() {
         const after = actor.transform
         if (JSON.stringify(after) !== JSON.stringify(transformBefore)) {
           runCommand(new TransformCommand(actor.id, transformBefore, after))
+          runConstructScript(actor, world.actors, (lvl, msg) => useEditor.getState().pushConsole(lvl, msg))
         }
         transformBefore = null
       }
@@ -241,6 +245,7 @@ export function Viewport() {
     // selection outlines — one pooled BoxHelper per selected actor
     const selectionBoxes = new Map<string, THREE.BoxHelper>()
     const collisionHelpers = new Map<string, THREE.BoxHelper>()
+    let navMeshHelper: NavMeshHelper | null = null
     function syncSelectionBoxes(ids: string[], show: boolean) {
       for (const [id, box] of selectionBoxes) {
         if (!show || !ids.includes(id) || !world.actors.has(id)) {
@@ -697,6 +702,13 @@ export function Viewport() {
         }
         return
       }
+      const materialId = e.dataTransfer?.getData('vektra/material')
+      if (materialId) {
+        const target = pick(e)
+        if (target?.mesh) assignMaterialAsset(target.id, materialId)
+        else useEditor.getState().setStatus('Drop material onto a mesh actor')
+        return
+      }
       const raw = e.dataTransfer?.getData('vektra/asset')
       if (!raw) return
       const payload = JSON.parse(raw) as AssetPayload
@@ -895,6 +907,7 @@ export function Viewport() {
     let wasPlaying = false
     let stepConsumed = 0
     let takeAcc = 0
+    let liveBumpAcc = 0
     let lastFrameAt = 0
     renderer.setAnimationLoop(() => {
       const __t0 = performance.now()
@@ -960,6 +973,15 @@ export function Viewport() {
       if (simDt > 0) {
         pawn.update(simDt)
         world.tick(simDt * consoleState.timeDilation)
+      }
+      if (s.playing) {
+        liveBumpAcc += dt
+        if (liveBumpAcc >= 0.12) {
+          liveBumpAcc = 0
+          useEditor.getState().bumpLive()
+        }
+      } else {
+        liveBumpAcc = 0
       }
       world.updateParticles(s.playing && s.paused ? 0.000001 : dt) // emitters preview in-editor like Niagara
 
@@ -1057,6 +1079,36 @@ export function Viewport() {
             collisionHelpers.set(a.id, h)
             world.scene.add(h)
           }
+        }
+      }
+
+      // `show navmesh` — Recast polygon wireframe overlay
+      {
+        const baked = getNavMesh()
+        if (!consoleState.showNavMesh || !baked) {
+          if (navMeshHelper) {
+            world.scene.remove(navMeshHelper)
+            navMeshHelper.navMeshGeometry.dispose()
+            navMeshHelper.navMeshMaterial.dispose()
+            navMeshHelper = null
+          }
+        } else if (!navMeshHelper || navMeshHelper.navMesh !== baked) {
+          if (navMeshHelper) {
+            world.scene.remove(navMeshHelper)
+            navMeshHelper.navMeshGeometry.dispose()
+            navMeshHelper.navMeshMaterial.dispose()
+          }
+          navMeshHelper = new NavMeshHelper(baked, {
+            navMeshMaterial: new THREE.MeshBasicMaterial({
+              color: 0x33aaff,
+              transparent: true,
+              opacity: 0.45,
+              wireframe: true,
+              depthTest: true,
+            }),
+          })
+          navMeshHelper.userData.isHelper = true
+          world.scene.add(navMeshHelper)
         }
       }
 
@@ -1200,6 +1252,12 @@ export function Viewport() {
       pmrem.dispose()
       composer.dispose()
       syncSelectionBoxes([], false)
+      if (navMeshHelper) {
+        world.scene.remove(navMeshHelper)
+        navMeshHelper.navMeshGeometry.dispose()
+        navMeshHelper.navMeshMaterial.dispose()
+        navMeshHelper = null
+      }
       brushRing.geometry.dispose()
       ;(brushRing.material as THREE.Material).dispose()
       world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)

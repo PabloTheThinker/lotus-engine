@@ -8,7 +8,8 @@ import {
   type BlueprintGraph,
   type BPNode,
 } from '../../engine/blueprint'
-import { PropertyCommand, runCommand } from '../commands'
+import { AddActorCommand, PropertyCommand, runCommand } from '../commands'
+import { buildSerializedActor } from '../spawn'
 import { useEditor } from '../store'
 
 const NODE_W = 190
@@ -49,7 +50,45 @@ export function BlueprintEditor() {
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
   const panState = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
+  const pulseRef = useRef<Record<string, number>>({})
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [pulseAt, setPulseAt] = useState<Record<string, number>>({})
+
+  useEffect(() => {
+    if (!actor) return
+    const aid = actor.id
+    let throttle: ReturnType<typeof setTimeout> | null = null
+
+    const g = globalThis as typeof globalThis & { __bpPulse?: (actorId: string, nodeId: string) => void }
+    g.__bpPulse = (actorId: string, nodeId: string) => {
+      if (actorId !== aid) return
+      pulseRef.current[nodeId] = Date.now()
+      if (!throttle) {
+        throttle = setTimeout(() => {
+          throttle = null
+          setPulseAt({ ...pulseRef.current })
+        }, 50)
+      }
+    }
+
+    const tick = setInterval(() => {
+      const now = Date.now()
+      let changed = false
+      for (const [id, t] of Object.entries(pulseRef.current)) {
+        if (now - t >= 300) {
+          delete pulseRef.current[id]
+          changed = true
+        }
+      }
+      if (changed) setPulseAt({ ...pulseRef.current })
+    }, 80)
+
+    return () => {
+      delete g.__bpPulse
+      if (throttle) clearTimeout(throttle)
+      clearInterval(tick)
+    }
+  }, [actor?.id])
 
   useEffect(() => {
     if (actor && actor.id !== lastActor.current) {
@@ -156,6 +195,21 @@ export function BlueprintEditor() {
           </span>
         ))}
         <button onClick={() => mutate((g) => Object.assign(g, emptyGraph()))}>Clear</button>
+        <button
+          title="Level Blueprint — Empty actor named LevelScript (UE equivalent)"
+          onClick={() => {
+            let level = [...world.actors.values()].find((a) => a.name === 'LevelScript')
+            if (!level) {
+              const sa = buildSerializedActor({ kind: 'empty' }, [0, 0, 0])
+              sa.name = 'LevelScript'
+              runCommand(new AddActorCommand(sa))
+              level = world.actors.get(sa.id)
+            }
+            if (level) useEditor.getState().select(level.id)
+          }}
+        >
+          Level BP
+        </button>
         <button className="apply" onClick={compile}>
           ⚙ Compile
         </button>
@@ -245,7 +299,7 @@ export function BlueprintEditor() {
               style={{ left: node.x + offset.x, top: node.y + offset.y, width: NODE_W }}
             >
               <div
-                className="bp-node-header"
+                className={`bp-node-header${pulseAt[node.id] != null && Date.now() - pulseAt[node.id] < 300 ? ' pulsing' : ''}`}
                 style={{ background: def.color }}
                 onMouseDown={(e) => {
                   const p = canvasPoint(e)

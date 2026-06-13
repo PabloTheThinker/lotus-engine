@@ -46,6 +46,10 @@ export class Actor {
 
   geometryKind?: GeometryKind
   materialProps?: MaterialProps
+  /** reference to a shared material asset in localStorage */
+  materialAssetId?: string
+  /** per-instance material property overrides */
+  materialOverrides?: Partial<MaterialProps>
   lightProps?: LightProps
   cameraProps?: CameraProps
   physicsProps?: PhysicsProps
@@ -79,6 +83,12 @@ export class Actor {
   currentAction?: THREE.AnimationAction
   /** clip to start playing at BeginPlay */
   autoPlayClip?: string
+  /** prefab instance root: source prefab asset name */
+  prefabSource?: string
+  /** original prefab actor id — set on every actor in an instance subtree */
+  prefabActorId?: string
+  /** prefab instance root only: overrides keyed by original prefab actor id */
+  prefabOverrides?: Record<string, Partial<SerializedActor>>
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -217,7 +227,12 @@ export class Actor {
       visible: this.visible,
       transform: this.transform,
       geometry: this.geometryKind,
-      material: this.materialProps ? { ...this.materialProps } : undefined,
+      material: this.materialAssetId ? undefined : this.materialProps ? { ...this.materialProps } : undefined,
+      materialAssetId: this.materialAssetId,
+      materialOverrides:
+        this.materialOverrides && Object.keys(this.materialOverrides).length
+          ? { ...this.materialOverrides }
+          : undefined,
       light: this.lightProps ? { ...this.lightProps } : undefined,
       camera: this.cameraProps ? { ...this.cameraProps } : undefined,
       physics: this.physicsProps ? { ...this.physicsProps } : undefined,
@@ -242,6 +257,13 @@ export class Actor {
       behaviors: this.behaviors.map((b) => ({ ...b })),
       castShadow: this.mesh?.castShadow,
       receiveShadow: this.mesh?.receiveShadow,
+      prefabSource: this.prefabSource,
+      prefabActorId: this.prefabActorId,
+      prefabOverrides: this.prefabOverrides
+        ? Object.fromEntries(
+            Object.entries(this.prefabOverrides).map(([k, v]) => [k, { ...v }]),
+          )
+        : undefined,
     }
   }
 

@@ -7,3 +7,12 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+declare global {
+  // Blueprint exec debugger — installed by BlueprintEditor while panel is open
+  var __bpPulse: ((actorId: string, nodeId: string) => void) | undefined
+
+  interface Global {
+    __bpPulse?: (actorId: string, nodeId: string) => void
+  }
+}

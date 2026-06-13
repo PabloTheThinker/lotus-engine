@@ -2,10 +2,18 @@ import { useRef } from 'react'
 import * as THREE from 'three'
 import type { Actor } from '../../engine/Actor'
 import { applyMaterialProps } from '../../engine/factory'
+import {
+  applyActorMaterial,
+  getEffectiveMaterialGraph,
+  getMaterial,
+  saveMaterialFromProps,
+} from '../../engine/materialAssets'
 import { applyLightProps, world } from '../../engine/World'
-import type { Behavior, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
+import type { Behavior, MaterialProps, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
 import { DEFAULT_MATERIAL } from '../../engine/types'
-import { PropertyCommand, TransformCommand, runCommand } from '../commands'
+import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
+import { patchMaterialOverrides, revertMaterialOverride } from '../materialCommands'
+import { getPrefabDefaultValue, isPrefabInstanceActor, runPrefabAwareCommand } from '../prefabs'
 import { buildFoliageMesh } from '../../engine/factory'
 import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
@@ -28,6 +36,8 @@ function Num({
   onLive,
   onCommit,
   defaultValue,
+  prefabRevert,
+  onRevert,
 }: {
   label: string
   value: number
@@ -37,9 +47,23 @@ function Num({
   onLive: (v: number) => void
   onCommit: (before: number, after: number) => void
   defaultValue?: number
+  prefabRevert?: { actorId: string; fieldPath: string }
+  onRevert?: () => void
 }) {
   const before = useRef(value)
   const modified = defaultValue !== undefined && Math.abs(value - defaultValue) > 1e-6
+  const revert = () => {
+    if (onRevert) {
+      onRevert()
+      return
+    }
+    if (prefabRevert) {
+      runCommand(new RevertPrefabOverrideCommand(prefabRevert.actorId, prefabRevert.fieldPath))
+      return
+    }
+    onLive(defaultValue!)
+    onCommit(value, defaultValue!)
+  }
   return (
     <label className="field">
       <span>{label}</span>
@@ -60,7 +84,7 @@ function Num({
         }}
       />
       {modified && (
-        <button className="reset-default" title={`Reset to ${defaultValue}`} onClick={(e) => { e.preventDefault(); onLive(defaultValue!); onCommit(value, defaultValue!) }}>
+        <button className="reset-default" title={prefabRevert ? 'Revert prefab override' : `Reset to ${defaultValue}`} onClick={(e) => { e.preventDefault(); revert() }}>
           ⟲
         </button>
       )}
@@ -74,15 +98,31 @@ function ColorField({
   onLive,
   onCommit,
   defaultValue,
+  prefabRevert,
+  onRevert,
 }: {
   label: string
   value: string
   onLive: (v: string) => void
   onCommit: (before: string, after: string) => void
   defaultValue?: string
+  prefabRevert?: { actorId: string; fieldPath: string }
+  onRevert?: () => void
 }) {
   const before = useRef(value)
   const modified = defaultValue !== undefined && value.toLowerCase() !== defaultValue.toLowerCase()
+  const revert = () => {
+    if (onRevert) {
+      onRevert()
+      return
+    }
+    if (prefabRevert) {
+      runCommand(new RevertPrefabOverrideCommand(prefabRevert.actorId, prefabRevert.fieldPath))
+      return
+    }
+    onLive(defaultValue!)
+    onCommit(value, defaultValue!)
+  }
   return (
     <label className="field">
       <span>{label}</span>
@@ -96,7 +136,7 @@ function ColorField({
         }}
       />
       {modified && (
-        <button className="reset-default" title={`Reset to ${defaultValue}`} onClick={(e) => { e.preventDefault(); onLive(defaultValue!); onCommit(value, defaultValue!) }}>
+        <button className="reset-default" title={prefabRevert ? 'Revert prefab override' : `Reset to ${defaultValue}`} onClick={(e) => { e.preventDefault(); revert() }}>
           ⟲
         </button>
       )}
@@ -104,11 +144,39 @@ function ColorField({
   )
 }
 
-function Check({ label, value, onToggle }: { label: string; value: boolean; onToggle: (v: boolean) => void }) {
+function Check({
+  label,
+  value,
+  onToggle,
+  defaultValue,
+  prefabRevert,
+  onRevert,
+}: {
+  label: string
+  value: boolean
+  onToggle: (v: boolean) => void
+  defaultValue?: boolean
+  prefabRevert?: { actorId: string; fieldPath: string }
+  onRevert?: () => void
+}) {
+  const modified = defaultValue !== undefined && value !== defaultValue
   return (
     <label className="field check">
       <span>{label}</span>
       <input type="checkbox" checked={value} onChange={(e) => onToggle(e.target.checked)} />
+      {modified && (onRevert || prefabRevert) && (
+        <button
+          className="reset-default"
+          title={prefabRevert ? 'Revert prefab override' : 'Revert to default'}
+          onClick={(e) => {
+            e.preventDefault()
+            if (onRevert) onRevert()
+            else if (prefabRevert) runCommand(new RevertPrefabOverrideCommand(prefabRevert.actorId, prefabRevert.fieldPath))
+          }}
+        >
+          ⟲
+        </button>
+      )}
     </label>
   )
 }
@@ -333,9 +401,114 @@ function PostProcessSection({ actor }: { actor: Actor }) {
   )
 }
 
+function ActorSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const nameBefore = useRef(actor.name)
+  const prefab = isPrefabInstanceActor(actor.id)
+  const nameDefault = prefab ? (getPrefabDefaultValue(actor.id, 'name') as string | undefined) : undefined
+  const visibleDefault = prefab ? (getPrefabDefaultValue(actor.id, 'visible') as boolean | undefined) : undefined
+  return (
+    <Section title="Actor">
+      <label className="field">
+        <span>Name</span>
+        <input
+          type="text"
+          value={actor.name}
+          onFocus={() => (nameBefore.current = actor.name)}
+          onChange={(e) => {
+            actor.name = e.target.value
+            actor.root.name = e.target.value
+            touch()
+          }}
+          onBlur={(e) => {
+            const next = e.target.value.trim()
+            if (!next || next === nameBefore.current) return
+            const prev = nameBefore.current
+            if (prefab) {
+              runPrefabAwareCommand(
+                actor.id,
+                'name',
+                `Rename to ${next}`,
+                () => {
+                  actor.name = next
+                  actor.root.name = next
+                },
+                () => {
+                  actor.name = prev
+                  actor.root.name = prev
+                },
+              )
+            } else {
+              runCommand(
+                new PropertyCommand(
+                  `Rename to ${next}`,
+                  () => {
+                    actor.name = next
+                    actor.root.name = next
+                  },
+                  () => {
+                    actor.name = prev
+                    actor.root.name = prev
+                  },
+                ),
+              )
+            }
+            touch()
+          }}
+        />
+        {prefab && nameDefault !== undefined && actor.name !== nameDefault && (
+          <button
+            className="reset-default"
+            title="Revert prefab override"
+            onClick={(e) => {
+              e.preventDefault()
+              runCommand(new RevertPrefabOverrideCommand(actor.id, 'name'))
+            }}
+          >
+            ⟲
+          </button>
+        )}
+      </label>
+      <Check
+        label="Visible"
+        value={actor.visible}
+        defaultValue={visibleDefault}
+        prefabRevert={prefab ? { actorId: actor.id, fieldPath: 'visible' } : undefined}
+        onToggle={(v) => {
+          const prev = actor.visible
+          if (prefab) {
+            runPrefabAwareCommand(
+              actor.id,
+              'visible',
+              v ? 'Show actor' : 'Hide actor',
+              () => actor.setVisible(v),
+              () => actor.setVisible(prev),
+            )
+          } else {
+            runCommand(
+              new PropertyCommand(
+                v ? 'Show actor' : 'Hide actor',
+                () => actor.setVisible(v),
+                () => actor.setVisible(prev),
+              ),
+            )
+          }
+          touch()
+        }}
+      />
+      {actor.prefabSource && (
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Prefab instance: {actor.prefabSource}
+        </div>
+      )}
+    </Section>
+  )
+}
+
 function TransformSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const t = actor.transform
+  const prefab = isPrefabInstanceActor(actor.id)
 
   const live = (mut: (tr: TransformSnapshot) => void) => {
     const next = actor.transform
@@ -344,8 +517,8 @@ function TransformSection({ actor }: { actor: Actor }) {
     touch()
   }
   const commit = (beforeVal: number, mutBefore: (tr: TransformSnapshot, v: number) => void) => {
-    const after = actor.transform
-    const before = actor.transform
+    const after = { ...actor.transform, position: [...actor.transform.position], rotation: [...actor.transform.rotation], scale: [...actor.transform.scale] } as TransformSnapshot
+    const before = { ...actor.transform, position: [...actor.transform.position], rotation: [...actor.transform.rotation], scale: [...actor.transform.scale] } as TransformSnapshot
     mutBefore(before, beforeVal)
     runCommand(new TransformCommand(actor.id, before, after))
   }
@@ -356,53 +529,80 @@ function TransformSection({ actor }: { actor: Actor }) {
     { key: 2, name: 'Z' },
   ]
 
+  const prefabNum = (fieldPath: string, label: string, value: number, step: number, onLive: (v: number) => void, onCommit: (b: number) => void) => {
+    const def = prefab ? (getPrefabDefaultValue(actor.id, fieldPath) as number | undefined) : undefined
+    return (
+      <Num
+        label={label}
+        value={value}
+        step={step}
+        defaultValue={def}
+        prefabRevert={prefab ? { actorId: actor.id, fieldPath } : undefined}
+        onLive={onLive}
+        onCommit={onCommit}
+      />
+    )
+  }
+
   return (
     <Section title="Transform">
       <div className="vec-label">Location</div>
       <div className="vec-row">
-        {axes.map(({ key, name }) => (
-          <Num
-            key={`p${name}`}
-            label={name}
-            value={t.position[key]}
-            onLive={(v) => live((tr) => (tr.position[key] = v))}
-            onCommit={(b) => commit(b, (tr, v) => (tr.position[key] = v))}
-          />
-        ))}
+        {axes.map(({ key, name }) =>
+          prefabNum(
+            `transform.position.${key}`,
+            name,
+            t.position[key],
+            0.1,
+            (v) => live((tr) => (tr.position[key] = v)),
+            (b) => commit(b, (tr, v) => (tr.position[key] = v)),
+          ),
+        )}
       </div>
       <div className="vec-label">Rotation°</div>
       <div className="vec-row">
-        {axes.map(({ key, name }) => (
-          <Num
-            key={`r${name}`}
-            label={name}
-            step={1}
-            value={THREE.MathUtils.radToDeg(t.rotation[key])}
-            onLive={(v) => live((tr) => (tr.rotation[key] = THREE.MathUtils.degToRad(v)))}
-            onCommit={(b) => commit(THREE.MathUtils.degToRad(b), (tr, v) => (tr.rotation[key] = v))}
-          />
-        ))}
+        {axes.map(({ key, name }) =>
+          prefabNum(
+            `transform.rotation.${key}`,
+            name,
+            THREE.MathUtils.radToDeg(t.rotation[key]),
+            1,
+            (v) => live((tr) => (tr.rotation[key] = THREE.MathUtils.degToRad(v))),
+            (b) => commit(THREE.MathUtils.degToRad(b), (tr, v) => (tr.rotation[key] = v)),
+          ),
+        )}
       </div>
       <div className="vec-label">Scale</div>
       <div className="vec-row">
-        {axes.map(({ key, name }) => (
-          <Num
-            key={`s${name}`}
-            label={name}
-            value={t.scale[key]}
-            onLive={(v) => live((tr) => (tr.scale[key] = v))}
-            onCommit={(b) => commit(b, (tr, v) => (tr.scale[key] = v))}
-          />
-        ))}
+        {axes.map(({ key, name }) =>
+          prefabNum(
+            `transform.scale.${key}`,
+            name,
+            t.scale[key],
+            0.1,
+            (v) => live((tr) => (tr.scale[key] = v)),
+            (b) => commit(b, (tr, v) => (tr.scale[key] = v)),
+          ),
+        )}
       </div>
     </Section>
   )
+}
+
+function saveActorAsMaterialAsset(actor: Actor) {
+  const name = prompt('Material asset name', `${actor.name}_Material`)
+  if (!name?.trim()) return
+  const graph = getEffectiveMaterialGraph(actor)
+  const asset = saveMaterialFromProps(name.trim(), actor.materialProps!, graph)
+  useEditor.getState().setStatus(`Saved material asset: ${asset.name}`)
+  useEditor.getState().touch()
 }
 
 function MaterialSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const props = actor.materialProps!
   const mat = actor.mesh!.material as THREE.MeshStandardMaterial
+  const prefab = isPrefabInstanceActor(actor.id)
 
   const liveSet = <K extends keyof typeof props>(key: K, v: (typeof props)[K]) => {
     props[key] = v
@@ -410,8 +610,11 @@ function MaterialSection({ actor }: { actor: Actor }) {
     touch()
   }
   const commitSet = <K extends keyof typeof props>(key: K, before: (typeof props)[K], after: (typeof props)[K]) => {
-    runCommand(
-      new PropertyCommand(
+    const fieldPath = `material.${String(key)}`
+    if (prefab) {
+      runPrefabAwareCommand(
+        actor.id,
+        fieldPath,
         `Edit ${String(key)}`,
         () => {
           props[key] = after
@@ -421,19 +624,150 @@ function MaterialSection({ actor }: { actor: Actor }) {
           props[key] = before
           applyMaterialProps(mat, props)
         },
-      ),
-    )
+      )
+    } else {
+      runCommand(
+        new PropertyCommand(
+          `Edit ${String(key)}`,
+          () => {
+            props[key] = after
+            applyMaterialProps(mat, props)
+          },
+          () => {
+            props[key] = before
+            applyMaterialProps(mat, props)
+          },
+        ),
+      )
+    }
   }
+
+  const matDefault = <K extends keyof typeof props>(key: K) =>
+    prefab ? (getPrefabDefaultValue(actor.id, `material.${String(key)}`) as (typeof props)[K] | undefined) : DEFAULT_MATERIAL[key as keyof typeof DEFAULT_MATERIAL]
+  const matRevert = (key: keyof typeof props) => (prefab ? { actorId: actor.id, fieldPath: `material.${String(key)}` } : undefined)
 
   return (
     <Section title="Material">
-      <ColorField label="Base Color" value={props.color} defaultValue={DEFAULT_MATERIAL.color} onLive={(v) => liveSet('color', v)} onCommit={(b, a) => commitSet('color', b, a)} />
-      <Num label="Roughness" value={props.roughness} defaultValue={DEFAULT_MATERIAL.roughness} step={0.05} min={0} max={1} onLive={(v) => liveSet('roughness', v)} onCommit={(b, a) => commitSet('roughness', b, a)} />
-      <Num label="Metalness" value={props.metalness} defaultValue={DEFAULT_MATERIAL.metalness} step={0.05} min={0} max={1} onLive={(v) => liveSet('metalness', v)} onCommit={(b, a) => commitSet('metalness', b, a)} />
-      <ColorField label="Emissive" value={props.emissive} onLive={(v) => liveSet('emissive', v)} onCommit={(b, a) => commitSet('emissive', b, a)} />
-      <Num label="Emissive ×" value={props.emissiveIntensity} step={0.1} min={0} onLive={(v) => liveSet('emissiveIntensity', v)} onCommit={(b, a) => commitSet('emissiveIntensity', b, a)} />
-      <Num label="Opacity" value={props.opacity} step={0.05} min={0} max={1} onLive={(v) => liveSet('opacity', v)} onCommit={(b, a) => commitSet('opacity', b, a)} />
-      <Check label="Wireframe" value={props.wireframe} onToggle={(v) => commitSet('wireframe', props.wireframe, v)} />
+      <ColorField label="Base Color" value={props.color} defaultValue={matDefault('color') as string} prefabRevert={matRevert('color')} onLive={(v) => liveSet('color', v)} onCommit={(b, a) => commitSet('color', b, a)} />
+      <Num label="Roughness" value={props.roughness} defaultValue={matDefault('roughness') as number} prefabRevert={matRevert('roughness')} step={0.05} min={0} max={1} onLive={(v) => liveSet('roughness', v)} onCommit={(b, a) => commitSet('roughness', b, a)} />
+      <Num label="Metalness" value={props.metalness} defaultValue={matDefault('metalness') as number} prefabRevert={matRevert('metalness')} step={0.05} min={0} max={1} onLive={(v) => liveSet('metalness', v)} onCommit={(b, a) => commitSet('metalness', b, a)} />
+      <ColorField label="Emissive" value={props.emissive} defaultValue={matDefault('emissive') as string} prefabRevert={matRevert('emissive')} onLive={(v) => liveSet('emissive', v)} onCommit={(b, a) => commitSet('emissive', b, a)} />
+      <Num label="Emissive ×" value={props.emissiveIntensity} defaultValue={matDefault('emissiveIntensity') as number} prefabRevert={matRevert('emissiveIntensity')} step={0.1} min={0} onLive={(v) => liveSet('emissiveIntensity', v)} onCommit={(b, a) => commitSet('emissiveIntensity', b, a)} />
+      <Num label="Opacity" value={props.opacity} defaultValue={matDefault('opacity') as number} prefabRevert={matRevert('opacity')} step={0.05} min={0} max={1} onLive={(v) => liveSet('opacity', v)} onCommit={(b, a) => commitSet('opacity', b, a)} />
+      <Check label="Wireframe" value={props.wireframe} defaultValue={matDefault('wireframe') as boolean} prefabRevert={matRevert('wireframe')} onToggle={(v) => commitSet('wireframe', props.wireframe, v)} />
+      <button onClick={() => saveActorAsMaterialAsset(actor)}>💾 Save as Material Asset</button>
+      <Check
+        label="Cast Shadow"
+        value={actor.mesh!.castShadow}
+        onToggle={(v) => {
+          actor.mesh!.castShadow = v
+          touch()
+        }}
+      />
+      <Check
+        label="Receive Shadow"
+        value={actor.mesh!.receiveShadow}
+        onToggle={(v) => {
+          actor.mesh!.receiveShadow = v
+          touch()
+        }}
+      />
+    </Section>
+  )
+}
+
+function MaterialInstanceSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const asset = getMaterial(actor.materialAssetId!)
+  const base = asset?.material ?? DEFAULT_MATERIAL
+  const props = actor.materialProps!
+
+  const liveSet = <K extends keyof MaterialProps>(key: K, v: MaterialProps[K]) => {
+    actor.materialOverrides = { ...(actor.materialOverrides ?? {}), [key]: v }
+    applyActorMaterial(actor)
+    touch()
+  }
+  const commitSet = <K extends keyof MaterialProps>(key: K, _before: MaterialProps[K], after: MaterialProps[K]) => {
+    if (after === base[key]) revertMaterialOverride(actor, key)
+    else patchMaterialOverrides(actor, (o) => ({ ...o, [key]: after }), `Override ${String(key)}`)
+  }
+  const revertKey = (key: keyof MaterialProps) => () => revertMaterialOverride(actor, key)
+
+  return (
+    <Section title="Material Instance">
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Parent: {asset?.name ?? `(missing: ${actor.materialAssetId})`}
+      </div>
+      <ColorField
+        label="Base Color"
+        value={props.color}
+        defaultValue={base.color}
+        onRevert={revertKey('color')}
+        onLive={(v) => liveSet('color', v)}
+        onCommit={(b, a) => commitSet('color', b, a)}
+      />
+      <Num
+        label="Roughness"
+        value={props.roughness}
+        defaultValue={base.roughness}
+        onRevert={revertKey('roughness')}
+        step={0.05}
+        min={0}
+        max={1}
+        onLive={(v) => liveSet('roughness', v)}
+        onCommit={(b, a) => commitSet('roughness', b, a)}
+      />
+      <Num
+        label="Metalness"
+        value={props.metalness}
+        defaultValue={base.metalness}
+        onRevert={revertKey('metalness')}
+        step={0.05}
+        min={0}
+        max={1}
+        onLive={(v) => liveSet('metalness', v)}
+        onCommit={(b, a) => commitSet('metalness', b, a)}
+      />
+      <ColorField
+        label="Emissive"
+        value={props.emissive}
+        defaultValue={base.emissive}
+        onRevert={revertKey('emissive')}
+        onLive={(v) => liveSet('emissive', v)}
+        onCommit={(b, a) => commitSet('emissive', b, a)}
+      />
+      <Num
+        label="Emissive ×"
+        value={props.emissiveIntensity}
+        defaultValue={base.emissiveIntensity}
+        onRevert={revertKey('emissiveIntensity')}
+        step={0.1}
+        min={0}
+        onLive={(v) => liveSet('emissiveIntensity', v)}
+        onCommit={(b, a) => commitSet('emissiveIntensity', b, a)}
+      />
+      <Num
+        label="Opacity"
+        value={props.opacity}
+        defaultValue={base.opacity}
+        onRevert={revertKey('opacity')}
+        step={0.05}
+        min={0}
+        max={1}
+        onLive={(v) => liveSet('opacity', v)}
+        onCommit={(b, a) => commitSet('opacity', b, a)}
+      />
+      <Check
+        label="Wireframe"
+        value={props.wireframe}
+        defaultValue={base.wireframe}
+        onRevert={revertKey('wireframe')}
+        onToggle={(v) => {
+          if (v === base.wireframe) revertMaterialOverride(actor, 'wireframe')
+          else patchMaterialOverrides(actor, (o) => ({ ...o, wireframe: v }), 'Override wireframe')
+        }}
+      />
+      <button onClick={() => saveActorAsMaterialAsset(actor)}>💾 Save as Material Asset</button>
       <Check
         label="Cast Shadow"
         value={actor.mesh!.castShadow}
@@ -964,7 +1298,8 @@ function BehaviorsSection({ actor }: { actor: Actor }) {
 }
 
 export function Details() {
-  useEditor((s) => s.sceneVersion)
+  const playing = useEditor((s) => s.playing)
+  useEditor((s) => (playing ? s.liveVersion : s.sceneVersion))
   const selectedId = useEditor((s) => s.selectedId)
   const actor = selectedId ? world.actors.get(selectedId) : null
 
@@ -987,6 +1322,7 @@ export function Details() {
       <div className="panel-header">
         <span>Details</span>
         <span className="panel-meta">
+          {playing && <span className="details-live-badge" title="Live values from running simulation">LIVE</span>}
           <button className="prefab-save" title="Save this actor (and children) as a reusable prefab" onClick={() => savePrefab(actor.id)}>
             🧩 Prefab
           </button>
@@ -1013,12 +1349,14 @@ export function Details() {
         />
       </div>
       <div className="panel-body">
+        <ActorSection actor={actor} />
         <TransformSection actor={actor} />
         <MobilitySection actor={actor} />
         <TagsSection actor={actor} />
         {actor.type === 'PostProcessVolume' && actor.postProcessProps && <PostProcessSection actor={actor} />}
         {actor.type === 'PlayerStart' && <PawnSection actor={actor} />}
-        {actor.mesh && actor.materialProps && <MaterialSection actor={actor} />}
+        {actor.mesh && actor.materialProps && actor.materialAssetId && <MaterialInstanceSection actor={actor} />}
+        {actor.mesh && actor.materialProps && !actor.materialAssetId && <MaterialSection actor={actor} />}
         {actor.light && actor.lightProps && <LightSection actor={actor} />}
         {actor.camera && actor.cameraProps && <CameraSection actor={actor} />}
         {actor.script && <ScriptVarsSection actor={actor} />}

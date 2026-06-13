@@ -5,6 +5,15 @@ import { vektraTerminalPlugin } from './vite-plugin-vektra-terminal'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), vektraTerminalPlugin()],
+  optimizeDeps: {
+    exclude: [
+      'recast-navigation',
+      '@recast-navigation/core',
+      '@recast-navigation/wasm',
+      '@recast-navigation/generators',
+      '@recast-navigation/three',
+    ],
+  },
   server: {
     host: '127.0.0.1',
     proxy: {

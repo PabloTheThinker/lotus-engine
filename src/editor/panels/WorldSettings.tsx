@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { world } from '../../engine/World'
+import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
 import { setBusVolume } from '../../engine/audio'
 import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
@@ -186,6 +188,52 @@ function InputMapSection() {
   )
 }
 
+function NavigationSection() {
+  const touch = useEditor((s) => s.touch)
+  const [status, setStatus] = useState(() => (navMeshReady ? 'NavMesh ready' : 'No navmesh baked'))
+
+  return (
+    <details className="details-section">
+      <summary>Navigation</summary>
+      <div className="details-grid">
+        <label className="field check">
+          <span>Show NavMesh</span>
+          <input
+            type="checkbox"
+            checked={consoleState.showNavMesh}
+            onChange={(e) => {
+              consoleState.showNavMesh = e.target.checked
+              touch()
+            }}
+          />
+        </label>
+        <button
+          disabled={navMeshBaking}
+          onClick={async () => {
+            setStatus('Baking navmesh…')
+            const ok = await bakeNavMesh(world.actors)
+            setStatus(
+              ok
+                ? 'NavMesh baked (Recast polygon pathfinding active)'
+                : `Bake failed: ${lastBakeError ?? 'unknown error'}`,
+            )
+            touch()
+          }}
+        >
+          {navMeshBaking ? 'Baking NavMesh…' : 'Bake NavMesh'}
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          {status}
+          {isRecastNavReady() ? '' : ' · Console: show navmesh'}
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Bakes static + landscape geometry. Scripts use api.findPath when a bake is available.
+        </div>
+      </div>
+    </details>
+  )
+}
+
 /** World Settings — environment + post stack (UE World Settings analog). */
 export function WorldSettings() {
   const touch = useEditor((s) => s.touch)
@@ -302,6 +350,7 @@ export function WorldSettings() {
           </>
         )}
       </div>
+      <NavigationSection />
       <InputMapSection />
       <DataAssetsSection />
       <AudioSection />

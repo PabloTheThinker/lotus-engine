@@ -1,5 +1,8 @@
+import { applyMaterialProps } from '../engine/factory'
 import { world } from '../engine/World'
+import { runConstructScript } from '../engine/scripting'
 import type { SerializedActor, TransformSnapshot } from '../engine/types'
+import { recordPrefabOverride, revertPrefabOverride } from './prefabs'
 import { useEditor } from './store'
 
 /**
@@ -24,6 +27,12 @@ function syncHistoryState() {
 
 export function runCommand(cmd: Command) {
   cmd.execute()
+  // During Play/Eject/Simulate, apply immediately without polluting the undo stack.
+  if (useEditor.getState().playing) {
+    useEditor.getState().setStatus(cmd.label)
+    useEditor.getState().touch()
+    return
+  }
   undoStack.push(cmd)
   if (undoStack.length > MAX_HISTORY) undoStack.shift()
   redoStack.length = 0
@@ -68,6 +77,7 @@ export class AddActorCommand implements Command {
   execute() {
     const actor = world.instantiate(this.data)
     world.addActor(actor, this.data.parentId)
+    runConstructScript(actor, world.actors, (lvl, msg) => useEditor.getState().pushConsole(lvl, msg))
     useEditor.getState().select(actor.id)
   }
   undo() {
@@ -116,9 +126,99 @@ export class TransformCommand implements Command {
   }
   execute() {
     world.actors.get(this.actorId)?.setTransform(this.after)
+    recordPrefabOverride(this.actorId, 'transform')
   }
   undo() {
     world.actors.get(this.actorId)?.setTransform(this.before)
+    recordPrefabOverride(this.actorId, 'transform')
+  }
+}
+
+/** Revert a single prefab instance property override to the source prefab value. */
+export class RevertPrefabOverrideCommand implements Command {
+  label: string
+  private actorId: string
+  private fieldPath: string
+  private savedValue: unknown
+
+  constructor(actorId: string, fieldPath: string) {
+    this.actorId = actorId
+    this.fieldPath = fieldPath
+    const actor = world.actors.get(actorId)
+    this.savedValue = actor ? getActorFieldSnapshot(actor, fieldPath) : undefined
+    this.label = `Revert ${fieldPath}`
+  }
+
+  execute() {
+    revertPrefabOverride(this.actorId, this.fieldPath)
+  }
+
+  undo() {
+    const actor = world.actors.get(this.actorId)
+    if (!actor) return
+    applyActorFieldSnapshot(actor, this.fieldPath, this.savedValue)
+    recordPrefabOverride(this.actorId, this.fieldPath)
+  }
+}
+
+function getActorFieldSnapshot(actor: import('../engine/Actor').Actor, fieldPath: string): unknown {
+  if (fieldPath === 'name') return actor.name
+  if (fieldPath === 'visible') return actor.visible
+  if (fieldPath === 'transform') return { ...actor.transform }
+  if (fieldPath.startsWith('transform.')) {
+    const t = actor.transform
+    const rest = fieldPath.slice('transform.'.length)
+    if (rest === 'position.0') return t.position[0]
+    if (rest === 'position.1') return t.position[1]
+    if (rest === 'position.2') return t.position[2]
+    if (rest === 'rotation.0') return t.rotation[0]
+    if (rest === 'rotation.1') return t.rotation[1]
+    if (rest === 'rotation.2') return t.rotation[2]
+    if (rest === 'scale.0') return t.scale[0]
+    if (rest === 'scale.1') return t.scale[1]
+    if (rest === 'scale.2') return t.scale[2]
+  }
+  if (fieldPath.startsWith('material.')) {
+    const key = fieldPath.slice('material.'.length) as keyof NonNullable<typeof actor.materialProps>
+    return actor.materialProps?.[key]
+  }
+  return undefined
+}
+
+function applyActorFieldSnapshot(
+  actor: import('../engine/Actor').Actor,
+  fieldPath: string,
+  value: unknown,
+) {
+  if (value === undefined) return
+  if (fieldPath === 'name' && typeof value === 'string') {
+    actor.name = value
+    actor.root.name = value
+  } else if (fieldPath === 'visible' && typeof value === 'boolean') {
+    actor.setVisible(value)
+  } else if (fieldPath === 'transform' && value && typeof value === 'object') {
+    actor.setTransform(value as TransformSnapshot)
+  } else if (fieldPath.startsWith('transform.')) {
+    const t = { ...actor.transform }
+    const rest = fieldPath.slice('transform.'.length)
+    if (rest.startsWith('position.') && typeof value === 'number') {
+      const idx = parseInt(rest.split('.')[1], 10) as 0 | 1 | 2
+      t.position = [...t.position] as [number, number, number]
+      t.position[idx] = value
+    } else if (rest.startsWith('rotation.') && typeof value === 'number') {
+      const idx = parseInt(rest.split('.')[1], 10) as 0 | 1 | 2
+      t.rotation = [...t.rotation] as [number, number, number]
+      t.rotation[idx] = value
+    } else if (rest.startsWith('scale.') && typeof value === 'number') {
+      const idx = parseInt(rest.split('.')[1], 10) as 0 | 1 | 2
+      t.scale = [...t.scale] as [number, number, number]
+      t.scale[idx] = value
+    }
+    actor.setTransform(t)
+  } else if (fieldPath.startsWith('material.') && actor.materialProps && actor.mesh) {
+    const key = fieldPath.slice('material.'.length) as keyof typeof actor.materialProps
+    ;(actor.materialProps as unknown as Record<string, unknown>)[key as string] = value
+    applyMaterialProps(actor.mesh.material as import('three').MeshStandardMaterial, actor.materialProps)
   }
 }
 

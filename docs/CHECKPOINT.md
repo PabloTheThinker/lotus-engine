@@ -1,13 +1,22 @@
-# CHECKPOINT — 2026-06-10 (session end)
+# CHECKPOINT — 2026-06-13 (agent swarm)
 
-> Where the UE5.7 gap-list run stopped. Resume from here.
-> Working doc: `docs/UE5.7-GAP-LIST.md` (statuses current through v0.32).
+> Working doc: `docs/UE5.7-GAP-LIST.md` — update statuses as items ship.
+> Research synthesis: prior session (UE5 + Unity + Godot completion roadmap).
 
 ## State
 
-- **Last clean commit: `8bc3cc3` — v0.32 (Water + PCG Scatter).** Everything through v0.32 is committed, built, and Playwright-verified.
-- **Working tree: IN-FLIGHT v0.33 (Blueprint completion cluster), partially applied, 3 TS errors.** Do NOT discard — the engine half is done; only the editor wiring is broken.
-- Dev server :5199, relay :24690. Test harness: headless Chromium via `/home/pablothethinker/raven-origin/node_modules/playwright` with `--enable-gpu --use-angle=gl-egl`.
+- **Last clean commit: `8bc3cc3` — v0.32.** v0.33–v0.37 landed in working tree via parallel agent swarm; **build clean** (`npm run build` exit 0), **not yet committed**.
+- Dev server `npm run dev`, relay :24690. Test harness: headless Chromium via `/home/pablothethinker/raven-origin/node_modules/playwright` with `--enable-gpu --use-angle=gl-egl`.
+
+## Shipped this swarm (v0.33 → v0.37, working tree)
+
+| Ver | What |
+|---|---|
+| v0.33 | Blueprint completion: onConstruct (AddActorCommand + gizmo release), __bpPulse debugger, Level BP button |
+| v0.34 | Material assets + instances (`materialAssets.ts`, Content Browser, Details overrides) |
+| v0.35 | Prefab property overrides + revert (⟲) |
+| v0.36 | Recast navmesh bake (worker WASM), show navmesh, World Settings Navigation |
+| v0.37 | Live Tree debugger, per-actor tick profiler, `vektra.getLiveSnapshot()` |
 
 ## Shipped this run (v0.20 → v0.32, all committed + verified)
 
@@ -27,24 +36,20 @@
 | v0.31 | Movie Render Queue (🎥 .webm export) + Take Recorder (⏺ 10Hz sampling) |
 | v0.32 | Water actor (Gerstner-lite) + PCG Scatter volume (sample→filter→spawn, seeded) |
 
-## IN-FLIGHT: v0.33 Blueprint completion cluster
+## Next up (Phase 2–3 from completion research)
 
-**Already applied (engine side — compiles clean):**
-- `src/engine/blueprint.ts`: `EventSignal` (On Signal → beginChains as `api.on(...)`), `EmitSignal`, `RunJS` escape-hatch node; exec-pulse injection (`__pulse('<nodeId>')` before every exec node body, `__pulse` calls `globalThis.__bpPulse(actorId, nodeId)`).
-- `src/engine/scripting.ts`: `runConstructScript(actor, actors, log)` added — runs `onConstruct()` in-editor.
+1. **FSM animation editor** — graph UI over crossfade primitive; 1D blend space
+2. **MetaSounds-lite** — WebAudio node graph editor
+3. **Material editor v2** — TSL per-pixel (TextureSample, UV, Fresnel)
+4. **Blueprint functions/macros** — subgraph collapse at compile
+5. **Multi-level export** — `api.loadLevel` + bundled HTML manifest
+6. **Plugin API surface** — `registerNodeType` / `registerPanel` for user plugins
+7. **Viewport quad layouts** + piercing pick menu (Unity Ctrl+RMB)
+8. **Particles P3** — ribbon renderer, curve widgets
+9. **GAS-lite** — attributes + abilities over gameplay tags
+10. Playwright verify v0.33–v0.37, commit stack, update `UE5.7-GAP-LIST.md` §2–§10 statuses
 
-**Broken (3 TS errors to fix on resume):**
-1. `src/engine/scripting.ts(214)`: `parseExports(actor.script, actor.scriptVars)` — wrong arity, check parseExports signature (takes 1 arg; merge scriptVars separately like compileScript does).
-2. `src/editor/spawn.ts(181)`: `useEditor` not imported — add `import { useEditor } from './store'`.
-3. `src/editor/spawn.ts(180)`: `runConstruct` unused — the insertion anchor regex for `spawnAsset` body didn't match (`spawn anchor: False` in output). Find the actual instantiate/addActor lines in `spawnAsset` and insert `runConstruct(actor)` after them.
-
-**Still to do for v0.33:**
-- Viewport: call `runConstructScript` after gizmo translate-release (next to the surface-snap block).
-- BlueprintEditor: pulse visualization — install `globalThis.__bpPulse` hook while the panel is open; throttled state map; `.pulsing` class on node headers (<300ms old), CSS glow.
-- BlueprintEditor toolbar: "Level BP" button → find-or-create Empty actor named `LevelScript`, select it (UE Level Blueprint equivalent).
-- Test: OnSignal/EmitSignal round-trip between two actors, onConstruct fires on spawn, pulse hook receives ids during play. Commit as v0.33, update gap list (§2: dispatchers ✅, construction ✅, debugger ✅, level BP ✅, functions/macros ◐ via RunJS).
-
-## Remaining gap-list queue (after v0.33)
+## Remaining gap-list queue
 
 1. **Audio cluster**: PannerNode true spatialization, reverb zones (ConvolverNode), MetaSounds-lite graph (Osc/Gain/Filter/Out → WebAudio chain; reuse material-graph canvas pattern)
 2. **Particles P3**: ribbon + mesh renderers, curve/gradient widgets, ground-collision bounce

@@ -172,10 +172,11 @@ export function evaluateMaterialGraph(graph: MaterialGraph, t: number): Record<s
 }
 
 /** apply evaluated channels onto an actor's material */
-export function applyMaterialGraph(actor: Actor, t: number) {
-  if (!actor.materialGraph || !actor.mesh) return
+export function applyMaterialGraph(actor: Actor, t: number, graph?: MaterialGraph) {
+  const g = graph ?? actor.materialGraph
+  if (!g || !actor.mesh) return
   const mat = actor.mesh.material as THREE.MeshStandardMaterial
-  const r = evaluateMaterialGraph(actor.materialGraph, t)
+  const r = evaluateMaterialGraph(g, t)
   if (r.baseColor !== undefined) {
     const [cr, cg, cb] = toVec(r.baseColor)
     mat.color.setRGB(cr, cg, cb)

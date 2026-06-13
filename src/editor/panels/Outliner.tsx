@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { Actor } from '../../engine/Actor'
 import { world } from '../../engine/World'
 import { AddActorCommand, DeleteActorCommand, PropertyCommand, ReparentCommand, runCommand } from '../commands'
+import { isPrefabInstanceActor, runPrefabAwareCommand } from '../prefabs'
 import { buildSerializedActor } from '../spawn'
 import { useEditor } from '../store'
 
@@ -119,8 +120,10 @@ function OutlinerRow({
               const next = e.target.value.trim()
               if (next && next !== actor.name) {
                 const prev = actor.name
-                runCommand(
-                  new PropertyCommand(
+                if (isPrefabInstanceActor(actor.id)) {
+                  runPrefabAwareCommand(
+                    actor.id,
+                    'name',
                     `Rename to ${next}`,
                     () => {
                       actor.name = next
@@ -130,8 +133,22 @@ function OutlinerRow({
                       actor.name = prev
                       actor.root.name = prev
                     },
-                  ),
-                )
+                  )
+                } else {
+                  runCommand(
+                    new PropertyCommand(
+                      `Rename to ${next}`,
+                      () => {
+                        actor.name = next
+                        actor.root.name = next
+                      },
+                      () => {
+                        actor.name = prev
+                        actor.root.name = prev
+                      },
+                    ),
+                  )
+                }
               }
               setRenaming(false)
             }}
@@ -150,7 +167,25 @@ function OutlinerRow({
           title="Toggle visibility"
           onClick={(e) => {
             e.stopPropagation()
-            actor.setVisible(!actor.visible)
+            const prev = actor.visible
+            const next = !prev
+            if (isPrefabInstanceActor(actor.id)) {
+              runPrefabAwareCommand(
+                actor.id,
+                'visible',
+                next ? 'Show actor' : 'Hide actor',
+                () => actor.setVisible(next),
+                () => actor.setVisible(prev),
+              )
+            } else {
+              runCommand(
+                new PropertyCommand(
+                  next ? 'Show actor' : 'Hide actor',
+                  () => actor.setVisible(next),
+                  () => actor.setVisible(prev),
+                ),
+              )
+            }
             touch()
           }}
         >

@@ -10,6 +10,7 @@ import { Outliner } from './editor/panels/Outliner'
 import { autosave, newLevel, restoreAutosave, saveLevelToFile } from './editor/levelIO'
 import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
+import { getLiveSnapshot } from './engine/liveSnapshot'
 import { executeAICommands, extractCommands } from './editor/ai'
 import { buildPlayableHTML } from './editor/exportPlayable'
 import { useEditor } from './editor/store'
@@ -36,6 +37,10 @@ import { PreferencesModal, loadPrefs } from './editor/Preferences'
   buildPlayableHTML,
   registerPlugin,
   installPlugin,
+  getLiveSnapshot: () => {
+    const s = useEditor.getState()
+    return getLiveSnapshot(world, s)
+  },
 }
 
 let booted = false

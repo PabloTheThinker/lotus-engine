@@ -1,4 +1,5 @@
 import { world } from '../../engine/World'
+import { deleteMaterial, listMaterials } from '../../engine/materialAssets'
 import { deletePrefab, instantiatePrefab, listPrefabs } from '../prefabs'
 import { dragGhost, spawnAsset, type AssetPayload } from '../spawn'
 import { useEditor } from '../store'
@@ -111,6 +112,7 @@ export function ContentBrowser() {
   useEditor((s) => s.sceneVersion)
   const imported = [...world.assets.entries()]
   const prefabs = listPrefabs()
+  const materials = listMaterials()
 
   return (
     <div className="content-browser-body">
@@ -138,6 +140,40 @@ export function ContentBrowser() {
           </div>
         </div>
       ))}
+      {materials.length > 0 && (
+        <div className="asset-category">
+          <div className="asset-category-label">Materials</div>
+          <div className="asset-grid">
+            {materials.map((m) => (
+              <div
+                key={m.id}
+                className="asset-tile material"
+                title={`${m.name} — drag onto a mesh actor to apply`}
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData('vektra/material', m.id)}
+              >
+                <button
+                  className="prefab-delete"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    deleteMaterial(m.id)
+                    useEditor.getState().touch()
+                  }}
+                >
+                  ✕
+                </button>
+                <div
+                  className="asset-icon material-swatch"
+                  style={{ background: m.material.color, boxShadow: `inset 0 0 0 2px ${m.material.emissive}` }}
+                >
+                  ◆
+                </div>
+                <div className="asset-label">{m.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {prefabs.length > 0 && (
         <div className="asset-category">
           <div className="asset-category-label">Prefabs</div>
