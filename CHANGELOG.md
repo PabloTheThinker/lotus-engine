@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 10: v0.79–v0.84
+
+### Added
+- **v0.79** WebGPU quality tier toggle — `World Settings → Rendering → Backend` (`renderBackend.ts`, capability probe + viewport badge)
+- **v0.80** WebGL post stack v2 — optional SSAO + FXAA passes (`postStackWebGL.ts`); TSL post stub (`postStackTSL.ts`)
+- **v0.81** Asset pipeline v2 — IndexedDB blob store (`assetStore.ts`), GLTF + DRACO + KTX2 loaders (`assetPipeline.ts`)
+- **v0.82** Static mesh LOD chains — `THREE.LOD` builder (`lodMesh.ts`)
+- **v0.83** BatchedMesh export merge — static mesh batching for playable export (`batchExport.ts`, `exportBatchStatic` env flag)
+- **v0.84** Rapier `moveAndSlide` character controller — Godot-style kinematic pawn (`characterController.ts`, `api.moveAndSlide`, `window.lotus.character`)
+
+### Changed
+- `PlayController` uses Rapier character path when `useRapierCharacter` is enabled
+- Playable export injects `window.__LOTUS_BATCHED__` when batch export is on
+- Material instances gain TSL uniform stub (`applyMaterialInstanceTSL`)
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 17 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 9 + Lotus rename: v0.73–v0.78
 
 ### Added

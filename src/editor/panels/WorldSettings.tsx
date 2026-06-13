@@ -940,6 +940,40 @@ export function WorldSettings() {
             onChange={(e) => set('fixedPhysicsHz', parseInt(e.target.value, 10) || 60)}
           />
         </label>
+        <label className="field">
+          <span>Rendering backend</span>
+          <select
+            value={env.renderBackend ?? 'webgl'}
+            onChange={(e) => set('renderBackend', e.target.value as 'webgl' | 'webgpu')}
+          >
+            <option value="webgl">WebGL (default)</option>
+            <option value="webgpu">WebGPU quality tier</option>
+          </select>
+        </label>
+        <label className="field check">
+          <span>Post FXAA</span>
+          <input type="checkbox" checked={env.postFxaa !== false} onChange={(e) => set('postFxaa', e.target.checked)} />
+        </label>
+        <label className="field check">
+          <span>Post SSAO</span>
+          <input type="checkbox" checked={!!env.postSsao} onChange={(e) => set('postSsao', e.target.checked)} />
+        </label>
+        <label className="field check">
+          <span>Rapier move_and_slide pawn</span>
+          <input
+            type="checkbox"
+            checked={env.useRapierCharacter !== false}
+            onChange={(e) => set('useRapierCharacter', e.target.checked)}
+          />
+        </label>
+        <label className="field check">
+          <span>Export batch static meshes</span>
+          <input
+            type="checkbox"
+            checked={!!env.exportBatchStatic}
+            onChange={(e) => set('exportBatchStatic', e.target.checked)}
+          />
+        </label>
       </div>
       <LinkedLevelsSection />
       <StreamingSection />

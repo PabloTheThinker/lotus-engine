@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import type { Actor } from '../engine/Actor'
 import type { PawnMode } from '../engine/types'
+import { isCharacterControllerReady, moveAndSlide } from '../engine/characterController'
+import { physicsReady } from '../engine/physics'
 
 /**
  * PlayController — the pawn possessed during Play-In-Editor.
@@ -32,6 +34,8 @@ export class PlayController {
   private carHeading = 0
   private vy = 0
   private grounded = false
+  /** When true, use Rapier move_and_slide instead of raycast character (World Settings). */
+  useRapierCharacter = true
   private spawnPoint = new THREE.Vector3()
   private readonly eyeHeight = 1.65
   private readonly boomLength = 4.5
@@ -268,38 +272,55 @@ export class PlayController {
       return
     }
 
-    // character movement (first/third person) — yaw-relative, gravity, jump
     const speed = this.walkSpeed * (this.keys.has('ShiftLeft') ? 1.9 : 1)
+    const sin = Math.sin(this.yaw)
+    const cos = Math.cos(this.yaw)
+    let vx = 0
+    let vz = 0
     if (move.lengthSq() > 0) {
       move.normalize()
-      // forward = (-sinθ, 0, -cosθ), right = (cosθ, 0, -sinθ); W encodes move.z = -1
-      const sin = Math.sin(this.yaw)
-      const cos = Math.cos(this.yaw)
-      let dx = (move.x * cos + move.z * sin) * speed * dt
-      let dz = (-move.x * sin + move.z * cos) * speed * dt
+      vx = (move.x * cos + move.z * sin) * speed
+      vz = (-move.x * sin + move.z * cos) * speed
+    }
+
+    if (this.useRapierCharacter && physicsReady() && isCharacterControllerReady()) {
+      if (this.grounded && this.keys.has('Space')) this.vy = 8.5
+      this.vy -= 22 * dt
+      const res = moveAndSlide({
+        position: this.feet,
+        velocity: new THREE.Vector3(vx, this.vy, vz),
+        dt,
+      })
+      if (res) {
+        this.grounded = res.onFloor
+        if (res.onFloor && this.vy < 0) this.vy = 0
+        if (this.mode === 'thirdperson' && (vx !== 0 || vz !== 0)) {
+          this.body.rotation.y = Math.atan2(-vx, -vz)
+        }
+      }
+    } else {
+      let dx = vx * dt
+      let dz = vz * dt
       ;[dx, dz] = this.collideWalls(dx, dz)
       this.feet.x += dx
       this.feet.z += dz
-      // face the body's -z (visor) toward travel direction in third person
       if (this.mode === 'thirdperson' && (dx !== 0 || dz !== 0)) {
         this.body.rotation.y = Math.atan2(-dx, -dz)
       }
-    }
-
-    // gravity + ground
-    this.vy -= 22 * dt
-    if (this.grounded && this.keys.has('Space')) {
-      this.vy = 8.5
-      this.grounded = false
-    }
-    this.feet.y += this.vy * dt
-    const ground = this.groundHeightAt(this.feet)
-    if (ground !== null && this.feet.y <= ground + 0.02 && this.vy <= 0) {
-      this.feet.y = ground
-      this.vy = 0
-      this.grounded = true
-    } else {
-      this.grounded = false
+      this.vy -= 22 * dt
+      if (this.grounded && this.keys.has('Space')) {
+        this.vy = 8.5
+        this.grounded = false
+      }
+      this.feet.y += this.vy * dt
+      const ground = this.groundHeightAt(this.feet)
+      if (ground !== null && this.feet.y <= ground + 0.02 && this.vy <= 0) {
+        this.feet.y = ground
+        this.vy = 0
+        this.grounded = true
+      } else {
+        this.grounded = false
+      }
     }
     // fell out of the world — respawn
     if (this.feet.y < -60) {

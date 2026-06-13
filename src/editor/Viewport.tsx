@@ -3,10 +3,14 @@ import type { CSSProperties } from 'react'
 import * as THREE from 'three'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+import { configureAssetLoaders } from '../engine/assetPipeline'
+import { createWebGLPostStack } from '../engine/postStackWebGL'
+import {
+  getEffectiveRenderBackend,
+  getPostFxSettings,
+  isWebGPUAvailable,
+} from '../engine/renderBackend'
+import { getTSLPostState } from '../engine/postStackTSL'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
@@ -238,6 +242,7 @@ export function Viewport() {
     const mount = mountRef.current!
     RectAreaLightUniformsLib.init()
     const renderer = new THREE.WebGLRenderer({ antialias: true })
+    configureAssetLoaders(renderer)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
@@ -354,23 +359,26 @@ export function Viewport() {
     // post stack — RenderPass → UnrealBloom → Output (tone map + sRGB)
     // ?nofx falls back to a direct render for GPUs/drivers the stack upsets
     const usePostFx = !new URLSearchParams(location.search).has('nofx')
-    // half-float render targets need float-buffer support; software GL lacks it
-    const floatOk = renderer.capabilities.isWebGL2 && !!renderer.extensions.get('EXT_color_buffer_float')
-    const composerTarget = new THREE.WebGLRenderTarget(1, 1, {
-      type: floatOk ? THREE.HalfFloatType : THREE.UnsignedByteType,
+    let webgpuOk = false
+    void isWebGPUAvailable().then((ok) => {
+      webgpuOk = ok
     })
-    const composer = new EffectComposer(renderer, composerTarget)
+    const postFx = getPostFxSettings(world.environment)
+    const postStack = createWebGLPostStack(
+      renderer,
+      world.scene,
+      editorCamera,
+      mount.clientWidth,
+      mount.clientHeight,
+      postFx,
+    )
+    const composer = postStack.composer
+    const renderPass = postStack.renderPass
     if (import.meta.env.DEV) {
       const winGfx = window as unknown as Record<string, unknown>
       winGfx.lotusGfx = { renderer, composer }
       winGfx.vektraGfx = winGfx.lotusGfx
     }
-    const renderPass = new RenderPass(world.scene, editorCamera)
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.6, 0.9)
-    const outputPass = new OutputPass()
-    composer.addPass(renderPass)
-    composer.addPass(bloomPass)
-    composer.addPass(outputPass)
 
     // Path Traced preview — three-gpu-pathtracer (honest label, not Lumen)
     const pathTracer = new WebGLPathTracer(renderer)
@@ -432,11 +440,7 @@ export function Viewport() {
     }
 
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
-      bloomPass.enabled = post.bloomEnabled
-      bloomPass.strength = post.bloomStrength
-      bloomPass.threshold = post.bloomThreshold
-      bloomPass.radius = post.bloomRadius
-      renderer.toneMappingExposure = post.exposure
+      postStack.applySettings(post)
     }
 
     // editor-only chrome
@@ -1325,7 +1329,7 @@ export function Viewport() {
       const h = mount.clientHeight
       renderer.setSize(w, h)
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-      composer.setSize(w, h)
+      postStack.setSize(w, h)
       const st = useEditor.getState()
       const panes = computePanes(w, h, st.viewportLayout, st.maximizedPane)
       for (const pr of panes) {
@@ -1376,6 +1380,7 @@ export function Viewport() {
         world.beginPlay()
         mpConnect(world, (m) => useEditor.getState().setStatus(m))
         if (!s.simulate) {
+          pawn.useRapierCharacter = world.environment.useRapierCharacter !== false
           pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
           s.setPendingSpawn(null)
           s.select(null)
@@ -1650,7 +1655,7 @@ export function Viewport() {
       const targetPR = Math.min(window.devicePixelRatio, 2) * (consoleState.screenPercentage / 100)
       if (Math.abs(renderer.getPixelRatio() - targetPR) > 0.01) {
         renderer.setPixelRatio(targetPR)
-        composer.setSize(mount.clientWidth, mount.clientHeight)
+        postStack.setSize(mount.clientWidth, mount.clientHeight)
       }
       const __t1 = performance.now()
       if (quadMode) {
@@ -1842,7 +1847,9 @@ export function Viewport() {
       fpsTimer += dt
       if (fpsTimer >= 0.5 && statsRef.current) {
         const fps = Math.round(frames / fpsTimer)
-        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris`
+        const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
+        const tsl = getTSLPostState(backend === 'webgpu', webgpuOk)
+        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris · ${backend.toUpperCase()}${tsl.tier === 'ready' ? '+' : ''}`
         frames = 0
         fpsTimer = 0
       }
@@ -1861,7 +1868,7 @@ export function Viewport() {
       gizmo.dispose()
       pmrem.dispose()
       pathTracer.dispose()
-      composer.dispose()
+      postStack.dispose()
       syncSelectionBoxes([], false)
       if (navMeshHelper) {
         world.scene.remove(navMeshHelper)

@@ -37,6 +37,15 @@ interface LotusBridge {
     loadSettings: () => { url: string; room: string; enabled: boolean }
     enabled: () => boolean
   }
+  character: {
+    ready: () => boolean
+    isOnFloor: () => boolean
+    moveAndSlide: (
+      position: [number, number, number],
+      velocity: [number, number, number],
+      dt: number,
+    ) => { position: [number, number, number]; onFloor: boolean } | null
+  }
 }
 
 declare global {
@@ -345,6 +354,77 @@ test('multiplayer settings load without crash when disabled', async ({ page }) =
   await page.waitForFunction(() => window.lotus?.getLiveSnapshot().playing === true)
   await expect(page.locator('.editor-root')).toBeVisible()
   await expect(page.locator('.viewport canvas')).toBeVisible()
+
+  await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
+})
+
+test('wave 10 environment defaults (render tier + pawn)', async ({ page }) => {
+  await bootEditor(page)
+
+  const env = await page.evaluate(() => {
+    const e = window.lotus!.world.environment as Record<string, unknown>
+    return {
+      renderBackend: e.renderBackend,
+      postFxaa: e.postFxaa,
+      postSsao: e.postSsao,
+      useRapierCharacter: e.useRapierCharacter,
+      exportBatchStatic: e.exportBatchStatic,
+    }
+  })
+
+  expect(env.renderBackend).toBe('webgl')
+  expect(env.postFxaa).toBe(true)
+  expect(env.postSsao).toBe(false)
+  expect(env.useRapierCharacter).toBe(true)
+  expect(env.exportBatchStatic).toBe(false)
+})
+
+test('render backend badge reports WEBGL tier (Wave 10)', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.waitForFunction(() => {
+    const stats = document.querySelector('.viewport-stats')?.textContent ?? ''
+    return /\d+ FPS/.test(stats) && /WEBGL/.test(stats)
+  })
+
+  const stats = await page.locator('.viewport-stats').textContent()
+  expect(stats).toMatch(/WEBGL/)
+  expect(stats).toMatch(/\d+ FPS/)
+})
+
+test('moveAndSlide after play (Rapier character controller)', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus!
+    const play = v.terminal.exec('/play')
+    if (play.error) throw new Error(play.error)
+
+    await new Promise<void>((resolve) => {
+      const start = performance.now()
+      const tick = () => {
+        if (v.character.ready()) {
+          resolve()
+          return
+        }
+        if (performance.now() - start > 15_000) throw new Error('character controller timeout')
+        requestAnimationFrame(tick)
+      }
+      tick()
+    })
+
+    const moved = v.character.moveAndSlide([0, 2, 0], [0, -1, 0], 1 / 60)
+    return {
+      playing: v.getLiveSnapshot().playing,
+      ready: v.character.ready(),
+      moved,
+    }
+  })
+
+  expect(result.playing).toBe(true)
+  expect(result.ready).toBe(true)
+  expect(result.moved).not.toBeNull()
+  expect(result.moved!.position.length).toBe(3)
 
   await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
 })

@@ -128,15 +128,27 @@
 | v0.77 | TSL material preview stub |
 | v0.78 | Buffer viz AO + emissive |
 
-## Next up (v0.79+, Wave 10)
+## Shipped wave 10 (v0.79 → v0.84)
 
-1. **WebGPU quality tier** — `WebGPURenderer` opt-in in World Settings
-2. **GPU particles compute** — full TSL `ComputeNode` sim (stub shipped v0.75)
-3. **xatlas-three integration** — replace box-projection UV2 fallback
-4. **TSL post stack** — bloom/SSAO/DOF via `PostProcessing`
-5. **MP polish** — dedicated server mode, lag compensation
-6. **Toolbar reorder** — exact UE5 main toolbar order
-7. **Expanded E2E** — PIE physics, export playable roundtrip (16+ tests)
+| Ver | What |
+|---|---|
+| v0.79 | WebGPU quality tier toggle + render backend badge |
+| v0.80 | WebGL post stack SSAO/FXAA + TSL post stub |
+| v0.81 | Asset pipeline v2 — IndexedDB blobs, DRACO, KTX2 |
+| v0.82 | Static mesh LOD chains (`THREE.LOD`) |
+| v0.83 | BatchedMesh export merge for playable HTML |
+| v0.84 | Rapier `moveAndSlide` character controller + script API |
+
+## Next up (v0.85+, Wave 11)
+
+1. **SSR + LightProbeGrid** — interior GI approx (Lumen honest-skip)
+2. **MP polish** — dedicated server mode, lag compensation, delta compression
+3. **Full TSL post stack** — migrate bloom/SSAO/DOF/TAA to `PostProcessing`
+4. **WebGPURenderer swap** — opt-in backend after QA matrix (tier toggle shipped v0.79)
+5. **GPU particles compute** — full TSL `ComputeNode` sim (stub shipped v0.75)
+6. **xatlas-three integration** — replace box-projection UV2 fallback
+7. **Toolbar reorder** — exact UE5 main toolbar order
+8. **Expanded E2E** — export playable roundtrip, PIE physics scenes
 
 ## Remaining gap-list queue (post–wave 7)
 

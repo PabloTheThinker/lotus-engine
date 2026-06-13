@@ -421,6 +421,20 @@ export interface EnvironmentSettings {
   materialBackend?: 'glsl' | 'tsl'
   /** Fixed physics tick rate (Godot _physics_process analog). Default 60 Hz. */
   fixedPhysicsHz?: number
+  /** Rendering backend: webgl (default) | webgpu (quality tier) */
+  renderBackend?: 'webgl' | 'webgpu'
+  /** Post FXAA pass (default true on WebGPU tier) */
+  postFxaa?: boolean
+  /** Screen-space ambient occlusion */
+  postSsao?: boolean
+  /** Depth of field (stub — Wave 11 full TSL) */
+  postDof?: boolean
+  /** Temporal AA — WebGPU tier only */
+  postTaa?: boolean
+  /** Use Rapier kinematic character for first/third person pawn */
+  useRapierCharacter?: boolean
+  /** Merge static meshes at export via BatchedMesh payloads */
+  exportBatchStatic?: boolean
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */
@@ -457,6 +471,13 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   particleBackend: 'cpu',
   materialBackend: 'glsl',
   fixedPhysicsHz: 60,
+  renderBackend: 'webgl',
+  postFxaa: true,
+  postSsao: false,
+  postDof: false,
+  postTaa: false,
+  useRapierCharacter: true,
+  exportBatchStatic: false,
 }
 
 /** Editor viewport camera bookmark — Shift+0-9 set, 0-9 recall (per level). */
@@ -523,6 +544,10 @@ export interface SerializedLevel {
   environment: EnvironmentSettings
   // imported glTF binaries, base64-encoded, keyed by assetId
   assets?: Record<string, { name: string; data: string }>
+  /** Asset pipeline v2 — IndexedDB blob refs (id → meta); binaries in IDB */
+  assetBlobRefs?: Record<string, { name: string; mime?: string; compression?: string }>
+  /** Export-only merged static mesh batches */
+  batchedMeshes?: object[]
   actors: SerializedActor[]
   /** master Sequencer timeline */
   sequence?: import('./sequencer').Sequence

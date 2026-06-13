@@ -16,10 +16,23 @@ export function isTSLPreviewAvailable(): boolean {
   return typeof (THREE as unknown as { MeshPhysicalNodeMaterial?: unknown }).MeshPhysicalNodeMaterial === 'function'
 }
 
+/** Apply material instance overrides as TSL uniform targets (Wave 10.7 stub). */
+export function applyMaterialInstanceTSL(
+  mat: THREE.MeshPhysicalMaterial,
+  overrides: { color?: string; roughness?: number; metalness?: number; emissive?: string },
+): void {
+  if (overrides.color) mat.color.set(overrides.color)
+  if (overrides.emissive) mat.emissive.set(overrides.emissive)
+  if (overrides.roughness != null) mat.roughness = overrides.roughness
+  if (overrides.metalness != null) mat.metalness = overrides.metalness
+  mat.userData.lotusInstanceOverrides = overrides
+}
+
 /** Compile a Lotus material graph to a TSL-backed preview material (preview only). */
 export function compileMaterialGraphTSL(
   graph: MaterialGraph,
   t: number,
+  instanceOverrides?: { color?: string; roughness?: number; metalness?: number; emissive?: string },
 ): THREE.Material | null {
   if (!isTSLPreviewAvailable()) return null
   try {
@@ -43,6 +56,7 @@ export function compileMaterialGraphTSL(
       mat.opacity = op
       mat.transparent = op < 0.999
     }
+    if (instanceOverrides) applyMaterialInstanceTSL(mat, instanceOverrides)
     mat.userData.lotusMaterialBackend = 'tsl'
     mat.userData.lotusGraphPreview = true
     return mat

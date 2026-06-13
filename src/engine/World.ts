@@ -47,6 +47,7 @@ import {
   splitLevelByCells,
 } from './streaming'
 import { applySerializedBakedAO, applySerializedBakedAOMap } from './lightmapBake'
+import { buildBatchedExportMeshes, serializeBatchedMeshes } from './batchExport'
 import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
 import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
@@ -555,6 +556,10 @@ export class World {
       actors,
     })
     this.cellManifest = split.cells
+    const batchedMeshes =
+      this.environment.exportBatchStatic
+        ? serializeBatchedMeshes(buildBatchedExportMeshes(this.actors))
+        : undefined
     return {
       engine: 'lotus',
       version: 4,
@@ -562,6 +567,7 @@ export class World {
       environment: { ...this.environment },
       streaming,
       assets,
+      batchedMeshes,
       actors,
       sequence: JSON.parse(JSON.stringify(this.sequence)),
       data: JSON.parse(JSON.stringify(this.dataTables)),

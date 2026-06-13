@@ -5,6 +5,7 @@ import { activateAbility, applyEffect, getAttribute, removeEffect, setAttribute 
 import { cameraShake, canSeePoint, hud, queryBestPoint, raycastActors, setTimer, setViewCamera } from './gameplay'
 import { runBT, type BTNode } from './behaviorTree'
 import { findPath } from './nav'
+import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
 
@@ -111,6 +112,14 @@ export interface ScriptApi {
   loadLevel: (name: string) => boolean | Promise<boolean>
   /** lazy-load a grid cell's actors (exported playable + PIE) */
   loadCell: (cx: number, cz: number) => boolean | Promise<boolean>
+  /** Godot move_and_slide — Rapier kinematic character (PIE + physics ready) */
+  moveAndSlide: (
+    position: [number, number, number],
+    velocity: [number, number, number],
+    dt: number,
+  ) => { position: [number, number, number]; onFloor: boolean } | null
+  /** true when Rapier character controller is active */
+  isOnFloor: () => boolean
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -215,6 +224,18 @@ export function makeScriptApi(
     pawnPosition,
     loadLevel,
     loadCell,
+    moveAndSlide: (position, velocity, dt) => {
+      if (!isCharacterControllerReady()) return null
+      const pos = new THREE.Vector3(position[0], position[1], position[2])
+      const vel = new THREE.Vector3(velocity[0], velocity[1], velocity[2])
+      const res = moveAndSlide({ position: pos, velocity: vel, dt })
+      if (!res) return null
+      return {
+        position: [res.position.x, res.position.y, res.position.z] as [number, number, number],
+        onFloor: res.onFloor,
+      }
+    },
+    isOnFloor: () => characterIsOnFloor(),
     activateAbility: (abilityId) => (boundActor ? activateAbility(boundActor, abilityId, api) : false),
     getAttribute: (name) => (boundActor ? getAttribute(boundActor, name) : null),
     setAttribute: (name, value) => (boundActor ? setAttribute(boundActor, name, value) : false),

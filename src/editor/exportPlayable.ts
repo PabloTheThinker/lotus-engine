@@ -131,7 +131,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 <body>
 <div id="overlay">Loading…</div>
 <div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

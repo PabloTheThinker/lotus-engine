@@ -34,6 +34,12 @@ import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
 import { loadMPSettings, mpEnabled, mpConnected, mpKnownPeerIds } from './engine/multiplayer'
+import * as THREE from 'three'
+import {
+  characterIsOnFloor,
+  isCharacterControllerReady,
+  moveAndSlide as characterMoveAndSlide,
+} from './engine/characterController'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 const lotusBridge = {
@@ -104,6 +110,25 @@ const lotusBridge = {
     enabled: mpEnabled,
     connected: mpConnected,
     peerCount: () => mpKnownPeerIds().length,
+  },
+  /** Rapier kinematic character — E2E + devtools (Wave 10) */
+  character: {
+    ready: isCharacterControllerReady,
+    isOnFloor: characterIsOnFloor,
+    moveAndSlide: (
+      position: [number, number, number],
+      velocity: [number, number, number],
+      dt: number,
+    ) => {
+      const pos = new THREE.Vector3(...position)
+      const vel = new THREE.Vector3(...velocity)
+      const res = characterMoveAndSlide({ position: pos, velocity: vel, dt })
+      if (!res) return null
+      return {
+        position: [res.position.x, res.position.y, res.position.z] as [number, number, number],
+        onFloor: res.onFloor,
+      }
+    },
   },
 }
 const win = window as unknown as Record<string, unknown>

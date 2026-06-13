@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type RAPIER_NS from '@dimforge/rapier3d-compat'
 import type { Actor } from './Actor'
+import { disposeCharacterController, initCharacterController } from './characterController'
 
 /**
  * Physics — the Chaos analog, backed by Rapier (WASM). The simulation only
@@ -46,6 +47,7 @@ export class PhysicsSim {
   start(actors: Iterable<Actor>) {
     if (!RAPIER) return
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+    initCharacterController(RAPIER, this.world)
     for (const actor of actors) {
       const props = actor.physicsProps
       if (!props || props.mode === 'none' || !actor.mesh) continue
@@ -199,6 +201,7 @@ export class PhysicsSim {
   }
 
   stop() {
+    disposeCharacterController()
     for (const f of this.fragments) {
       f.mesh.removeFromParent()
       f.mesh.geometry.dispose()
