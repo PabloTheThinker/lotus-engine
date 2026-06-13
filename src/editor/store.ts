@@ -16,7 +16,7 @@ export function deriveEditorMode(s: {
   return 'select'
 }
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail' | 'pathtraced'
-export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug'
+export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug' | 'pcg'
 export type BottomTab = BuiltinBottomTab | `plugin:${string}`
 
 export interface ConsoleEntry {

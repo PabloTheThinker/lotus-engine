@@ -6,7 +6,17 @@ import * as THREE from 'three'
  * Emitters preview in the editor and run during Play.
  */
 
-export type ParticleRenderMode = 'points' | 'ribbon'
+export type ParticleRenderMode = 'points' | 'ribbon' | 'mesh'
+export type ParticleMeshShape = 'box' | 'sphere'
+
+export interface SubEmitterProps {
+  enabled: boolean
+  onDeath: boolean
+  onCollision: boolean
+  count: number
+  speed: number
+  lifetime: number
+}
 
 export interface ParticleProps {
   rate: number // particles per second
@@ -26,14 +36,18 @@ export interface ParticleProps {
   colorGradient?: [string, string, string, string]
   sizeStart: number
   sizeEnd: number
+  /** 4-stop size curve over lifetime (0%, 33%, 66%, 100%) */
+  sizeCurve?: [number, number, number, number]
   opacityEnd: number
   maxParticles: number
   additive: boolean
   renderMode: ParticleRenderMode
+  meshShape: ParticleMeshShape
   ribbonWidth: number
   ribbonSegments: number
   groundBounce: boolean
   bounceFactor: number
+  subEmitter?: SubEmitterProps
   /** Niagara-style module stack: disabled module names */
   modulesOff?: string[]
 }
@@ -55,14 +69,17 @@ export const DEFAULT_PARTICLES: ParticleProps = {
   colorGradient: ['#ffb347', '#ff8c42', '#e86a4a', '#e5484d'],
   sizeStart: 0.22,
   sizeEnd: 0.04,
+  sizeCurve: [0.22, 0.18, 0.1, 0.04],
   opacityEnd: 0,
   maxParticles: 600,
   additive: true,
   renderMode: 'points',
+  meshShape: 'box',
   ribbonWidth: 0.08,
   ribbonSegments: 8,
   groundBounce: false,
   bounceFactor: 0.45,
+  subEmitter: { enabled: false, onDeath: true, onCollision: false, count: 8, speed: 1.5, lifetime: 0.4 },
 }
 
 const VERT = `
@@ -111,11 +128,21 @@ export function sampleColorGradient(stops: [string, string, string, string], t: 
   return out.copy(c0).lerp(c1, f)
 }
 
+/** Sample a 4-point size curve at normalized life t (0→1). */
+export function sampleSizeCurve(stops: [number, number, number, number], t: number): number {
+  const clamped = THREE.MathUtils.clamp(t, 0, 1)
+  const seg = clamped * 3
+  const idx = Math.min(2, Math.floor(seg))
+  const f = seg - idx
+  return THREE.MathUtils.lerp(stops[idx], stops[idx + 1], f)
+}
+
 export type TerrainHeightFn = (worldX: number, worldZ: number) => number | null
 
 export class ParticleSystem {
   points: THREE.Points
   ribbon: THREE.Mesh
+  mesh: THREE.InstancedMesh
   props: ParticleProps
 
   private positions: Float32Array
@@ -136,6 +163,12 @@ export class ParticleSystem {
   private worldVel = new THREE.Vector3()
   private side = new THREE.Vector3()
   private up = new THREE.Vector3(0, 1, 0)
+  private instPos = new THREE.Vector3()
+  private instQuat = new THREE.Quaternion()
+  private instScale = new THREE.Vector3()
+  private instMat = new THREE.Matrix4()
+  private meshGeo: THREE.BufferGeometry
+  private currentMeshShape: ParticleMeshShape
 
   constructor(props: ParticleProps) {
     this.props = props
@@ -183,7 +216,26 @@ export class ParticleSystem {
     this.ribbon = new THREE.Mesh(rGeo, rMat)
     this.ribbon.frustumCulled = false
     this.ribbon.userData.isParticles = true
+
+    this.currentMeshShape = props.meshShape
+    this.meshGeo = this.makeMeshGeometry(this.currentMeshShape)
+    const meshMat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexColors: true,
+      blending: props.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    })
+    this.mesh = new THREE.InstancedMesh(this.meshGeo, meshMat, this.cap)
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    this.mesh.frustumCulled = false
+    this.mesh.userData.isParticles = true
     this.applyRenderMode()
+  }
+
+  private makeMeshGeometry(shape: ParticleMeshShape) {
+    return shape === 'sphere'
+      ? new THREE.SphereGeometry(0.5, 6, 4)
+      : new THREE.BoxGeometry(1, 1, 1)
   }
 
   /** apply prop changes that affect the material / visible renderer */
@@ -194,18 +246,62 @@ export class ParticleSystem {
     const rMat = this.ribbon.material as THREE.ShaderMaterial
     rMat.blending = this.props.additive ? THREE.AdditiveBlending : THREE.NormalBlending
     rMat.needsUpdate = true
+    const mMat = this.mesh.material as THREE.MeshBasicMaterial
+    mMat.blending = this.props.additive ? THREE.AdditiveBlending : THREE.NormalBlending
+    mMat.needsUpdate = true
+    const shape = this.props.meshShape ?? 'box'
+    if (shape !== this.currentMeshShape) {
+      this.meshGeo.dispose()
+      this.currentMeshShape = shape
+      this.meshGeo = this.makeMeshGeometry(shape)
+      this.mesh.geometry = this.meshGeo
+    }
     this.trailLen = Math.max(2, Math.min(this.props.ribbonSegments, 32))
     this.applyRenderMode()
   }
 
   private applyRenderMode() {
-    const ribbon = this.props.renderMode === 'ribbon'
-    this.points.visible = !ribbon
-    this.ribbon.visible = ribbon
+    const mode = this.props.renderMode ?? 'points'
+    this.points.visible = mode === 'points'
+    this.ribbon.visible = mode === 'ribbon'
+    this.mesh.visible = mode === 'mesh'
   }
 
   burst(count: number) {
     for (let i = 0; i < count; i++) this.spawn()
+  }
+
+  private sizeAt(t: number, offSize: boolean) {
+    if (offSize) return this.props.sizeStart
+    const curve = this.props.sizeCurve
+    if (curve && curve.length === 4) return sampleSizeCurve(curve, t)
+    return THREE.MathUtils.lerp(this.props.sizeStart, this.props.sizeEnd, t)
+  }
+
+  /** Spawn a radial burst at a world-local position (sub-emitter). */
+  private spawnBurstAt(x: number, y: number, z: number, se: SubEmitterProps) {
+    for (let n = 0; n < se.count; n++) {
+      const idx = this.alive.indexOf(false)
+      if (idx === -1) return
+      this.alive[idx] = true
+      this.maxLife[idx] = Math.max(0.05, se.lifetime)
+      this.life[idx] = this.maxLife[idx]
+      const i3 = idx * 3
+      this.positions[i3] = x
+      this.positions[i3 + 1] = y
+      this.positions[i3 + 2] = z
+      const dir = new THREE.Vector3().randomDirection()
+      const speed = se.speed * (0.6 + Math.random() * 0.4)
+      this.vel[i3] = dir.x * speed
+      this.vel[i3 + 1] = dir.y * speed
+      this.vel[i3 + 2] = dir.z * speed
+      const tb = idx * this.trailLen * 3
+      for (let s = 0; s < this.trailLen; s++) {
+        this.trail[tb + s * 3] = x
+        this.trail[tb + s * 3 + 1] = y
+        this.trail[tb + s * 3 + 2] = z
+      }
+    }
   }
 
   private spawn() {
@@ -325,7 +421,8 @@ export class ParticleSystem {
         if (this.side.lengthSq() < 1e-8) this.side.set(1, 0, 0)
         this.side.normalize().multiplyScalar(width * 0.5 * (1 - segT * 0.5))
 
-        const w = width * (offSize ? 1 : THREE.MathUtils.lerp(1, this.props.sizeEnd / Math.max(0.01, this.props.sizeStart), t))
+        const sizeNorm = offSize ? 1 : this.sizeAt(t, false) / Math.max(0.01, this.props.sizeStart)
+        const w = width * sizeNorm
 
         for (const sign of [-1, 1] as const) {
           posAttr.setXYZ(v, this.worldPos.x + this.side.x * sign * w, this.worldPos.y + this.side.y * sign * w, this.worldPos.z + this.side.z * sign * w)
@@ -351,6 +448,34 @@ export class ParticleSystem {
     this.ribbon.geometry.setDrawRange(0, tri)
   }
 
+  private buildMesh() {
+    const offColor = this.props.modulesOff?.includes('colorOverLife') ?? false
+    const offSize = this.props.modulesOff?.includes('sizeOverLife') ?? false
+
+    for (let i = 0; i < this.cap; i++) {
+      if (!this.alive[i]) {
+        this.instScale.set(0, 0, 0)
+        this.instMat.compose(this.instPos.set(0, 0, 0), this.instQuat, this.instScale)
+        this.mesh.setMatrixAt(i, this.instMat)
+        continue
+      }
+      const i3 = i * 3
+      const t = 1 - this.life[i] / this.maxLife[i]
+      this.colorAt(t, offColor)
+      const alpha = offSize ? 1 : THREE.MathUtils.lerp(1, this.props.opacityEnd, t)
+      const size = this.sizeAt(t, offSize)
+      this.instPos.set(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2])
+      this.instScale.set(size, size, size)
+      this.instMat.compose(this.instPos, this.instQuat, this.instScale)
+      this.mesh.setMatrixAt(i, this.instMat)
+      this.mesh.setColorAt(i, this.tmp.multiplyScalar(Math.max(0, alpha)))
+    }
+
+    this.mesh.count = this.cap
+    this.mesh.instanceMatrix.needsUpdate = true
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true
+  }
+
   update(dt: number, emitting: boolean, worldMatrix?: THREE.Matrix4, terrainAt?: TerrainHeightFn) {
     const p = this.props
     const off = (m: string) => p.modulesOff?.includes(m)
@@ -366,6 +491,8 @@ export class ParticleSystem {
     const gravity = off('forces') ? 0 : p.gravity
     const dragMul = off('forces') ? 1 : Math.max(0, 1 - p.drag * dt)
     const bounceOn = p.groundBounce && !off('forces') && terrainAt
+    const se = p.subEmitter
+    const subOn = se?.enabled && !off('subEmitter')
     const m = worldMatrix ?? new THREE.Matrix4()
 
     for (let i = 0; i < this.cap; i++) {
@@ -375,6 +502,10 @@ export class ParticleSystem {
       }
       this.life[i] -= dt
       if (this.life[i] <= 0) {
+        if (subOn && se!.onDeath) {
+          const i3 = i * 3
+          this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
+        }
         this.alive[i] = false
         this.sizes[i] = 0
         continue
@@ -399,6 +530,9 @@ export class ParticleSystem {
           this.positions[i3 + 1] = this.worldPos.y
           this.positions[i3 + 2] = this.worldPos.z
           this.vel[i3 + 1] = Math.abs(this.vel[i3 + 1]) * p.bounceFactor
+          if (subOn && se!.onCollision) {
+            this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
+          }
         }
       }
 
@@ -411,7 +545,7 @@ export class ParticleSystem {
       this.colors[i4 + 1] = this.tmp.g
       this.colors[i4 + 2] = this.tmp.b
       this.colors[i4 + 3] = off('sizeOverLife') ? 1 : THREE.MathUtils.lerp(1, p.opacityEnd, t)
-      this.sizes[i] = off('sizeOverLife') ? p.sizeStart : THREE.MathUtils.lerp(p.sizeStart, p.sizeEnd, t)
+      this.sizes[i] = this.sizeAt(t, !!off('sizeOverLife'))
     }
 
     const geo = this.points.geometry
@@ -420,6 +554,7 @@ export class ParticleSystem {
     geo.attributes.aSize.needsUpdate = true
 
     if (p.renderMode === 'ribbon') this.buildRibbon(worldMatrix)
+    if (p.renderMode === 'mesh') this.buildMesh()
   }
 
   dispose() {
@@ -427,5 +562,7 @@ export class ParticleSystem {
     ;(this.points.material as THREE.Material).dispose()
     this.ribbon.geometry.dispose()
     ;(this.ribbon.material as THREE.Material).dispose()
+    this.meshGeo.dispose()
+    ;(this.mesh.material as THREE.Material).dispose()
   }
 }

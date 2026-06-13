@@ -203,6 +203,8 @@ export interface SerializedActor {
   water?: WaterProps
   /** PCGVolume only */
   pcg?: PCGProps
+  /** PCGVolume node graph (v0.61) */
+  pcgGraph?: import('./pcgGraph').PCGGraph
   /** CustomMesh (CSG results) — packed geometry */
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** animation clip to play at BeginPlay */

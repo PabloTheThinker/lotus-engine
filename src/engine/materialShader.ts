@@ -53,7 +53,10 @@ export interface CompiledMaterialShader {
   uniforms: Record<string, THREE.IUniform>
   /** snippet assignments for output channels (GLSL expr strings) */
   channels: Partial<Record<string, string>>
+  /** injected into fragment shader after #include <common> */
   helperFunctions: string
+  /** injected into vertex shader after #include <common> (WPO / vertex-stage nodes) */
+  vertexHelpers: string
   graphKey: string
 }
 
@@ -236,6 +239,12 @@ export function compileMaterialShader(graph: MaterialGraph): CompiledMaterialSha
         result = { expr: `(0.5 + 0.5 * snoise(${uv3}))`, type: 'float' }
         break
       }
+      case 'WorldPosition':
+        result = { expr: '(modelMatrix * vec4(position, 1.0)).xyz', type: 'vec3' }
+        break
+      case 'ObjectPosition':
+        result = { expr: '(modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz', type: 'vec3' }
+        break
       default:
         result = { expr: '0.0', type: 'float' }
     }
@@ -250,15 +259,21 @@ export function compileMaterialShader(graph: MaterialGraph): CompiledMaterialSha
       const edge = graph.edges.find((e) => e.to === `${out.id}:${inp}`)
       if (!edge) continue
       const v = compileNode(edge.from, 0)
-      if (inp === 'baseColor' || inp === 'emissive') channels[inp] = toVec3Expr(v)
+      if (inp === 'baseColor' || inp === 'emissive' || inp === 'wpo') channels[inp] = toVec3Expr(v)
       else channels[inp] = toFloatExpr(v)
     }
   }
 
+  const hasWpo = Boolean(channels.wpo)
+
   let helperFunctions = ''
   if (needsNoise) helperFunctions += SIMPLEX_GLSL
-  if (needsUv) {
-    helperFunctions += 'varying vec2 vMatGraphUv;\n'
+  if (needsUv) helperFunctions += 'varying vec2 vMatGraphUv;\n'
+
+  let vertexHelpers = ''
+  if (hasWpo) {
+    if (needsNoise) vertexHelpers += SIMPLEX_GLSL
+    if (needsUv) vertexHelpers += 'varying vec2 vMatGraphUv;\n'
   }
 
   // touch textures array so callers can dispose
@@ -268,7 +283,12 @@ export function compileMaterialShader(graph: MaterialGraph): CompiledMaterialSha
     uniforms,
     channels,
     helperFunctions,
-    graphKey: graphKey(graph) + (needsUv ? ':uv' : '') + (needsNoise ? ':noise' : ''),
+    vertexHelpers,
+    graphKey:
+      graphKey(graph) +
+      (needsUv ? ':uv' : '') +
+      (needsNoise ? ':noise' : '') +
+      (hasWpo ? ':wpo' : ''),
   }
 }
 
@@ -315,18 +335,27 @@ export function installMaterialShader(
   const state: GpuMaterialState = { graphKey: c.graphKey, uniforms: c.uniforms, textures }
   setGpuState(material, state)
 
-  const { channels, helperFunctions } = c
+  const { channels, helperFunctions, vertexHelpers } = c
   const cacheKey = `vektra_mat_${c.graphKey.length}_${c.graphKey.slice(0, 32)}`
+  const needsUvVarying = helperFunctions.includes('vMatGraphUv') || vertexHelpers.includes('vMatGraphUv')
 
   material.customProgramCacheKey = () => cacheKey
   material.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, state.uniforms)
 
-    if (helperFunctions.includes('vMatGraphUv')) {
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', `#include <common>\nvarying vec2 vMatGraphUv;`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>\nvMatGraphUv = uv;`)
+    const vtxCommon =
+      (needsUvVarying ? 'varying vec2 vMatGraphUv;\n' : '') +
+      vertexHelpers.replace('varying vec2 vMatGraphUv;\n', '')
+    if (vtxCommon.trim()) {
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', `#include <common>\n${vtxCommon}`)
     }
+
+    let beginVertexPatch = '#include <begin_vertex>'
+    if (needsUvVarying) beginVertexPatch += '\nvMatGraphUv = uv;'
+    if (channels.wpo) {
+      beginVertexPatch += `\nvec3 wpoOffset = ${channels.wpo};\ntransformed += wpoOffset;`
+    }
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', beginVertexPatch)
 
     const fragHeader =
       (helperFunctions.includes('vMatGraphUv') ? 'varying vec2 vMatGraphUv;\n' : '') +

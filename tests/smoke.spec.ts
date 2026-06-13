@@ -6,9 +6,19 @@ import { expect, test } from '@playwright/test'
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
 interface VektraBridge {
-  getLiveSnapshot: () => { actorCount: number; tree: Array<{ type: string; name: string }> }
+  getLiveSnapshot: () => {
+    actorCount: number
+    playing: boolean
+    tree: Array<{ type: string; name: string; children?: Array<{ type: string; name: string }> }>
+  }
   terminal: { exec: (source: string) => { output: string | null; error: string | null; level: string } }
-  world: { actors: { size: number } }
+  world: {
+    actors: { size: number }
+    serialize: () => { engine: string; name: string; actors: unknown[] }
+    load: (level: unknown) => Promise<void>
+  }
+  undo: () => void
+  redo: () => void
 }
 
 declare global {
@@ -100,4 +110,82 @@ test('viewport mounts canvas and render loop reports stats', async ({ page }) =>
   expect(statsText).toMatch(/\d+ FPS/)
   expect(statsText).toMatch(/\d+ actors/)
   expect(statsText).toMatch(/tris/)
+})
+
+test('undo after spawn reduces actor count (Ctrl+Z)', async ({ page }) => {
+  await bootEditor(page)
+
+  const before = await page.evaluate(() => window.vektra!.getLiveSnapshot().actorCount)
+  await page.evaluate(() => {
+    const spawn = window.vektra!.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+  })
+  const afterSpawn = await page.evaluate(() => window.vektra!.getLiveSnapshot().actorCount)
+  expect(afterSpawn).toBeGreaterThan(before)
+
+  await page.keyboard.press('Control+KeyZ')
+  await page.waitForFunction((expected) => window.vektra?.getLiveSnapshot().actorCount === expected, before)
+  const afterUndo = await page.evaluate(() => window.vektra!.getLiveSnapshot().actorCount)
+  expect(afterUndo).toBe(before)
+})
+
+test('play mode starts and stops (Alt+P / vektra API)', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.keyboard.press('Alt+KeyP')
+  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === true)
+  await expect(page.locator('.play-button.stop')).toBeVisible()
+
+  const playing = await page.evaluate(() => window.vektra!.getLiveSnapshot().playing)
+  expect(playing).toBe(true)
+
+  const stop = await page.evaluate(() => window.vektra!.terminal.exec('/stop'))
+  expect(stop.error).toBeNull()
+  expect(stop.output).toContain('Stopped')
+  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === false)
+
+  const stopped = await page.evaluate(() => window.vektra!.getLiveSnapshot().playing)
+  expect(stopped).toBe(false)
+})
+
+test('command palette opens (Ctrl+Shift+P)', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.keyboard.press('Control+Shift+KeyP')
+  await expect(page.locator('.palette')).toBeVisible()
+  await expect(page.locator('.palette input')).toHaveAttribute('placeholder', 'Type a command…')
+  await expect(page.locator('.palette-list button').first()).toBeVisible()
+})
+
+test('level save/load roundtrip via terminal world API', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.vektra!
+    const baseline = v.getLiveSnapshot().actorCount
+
+    const saveProbe = v.terminal.exec('world.serialize().engine')
+    if (saveProbe.error) throw new Error(saveProbe.error)
+
+    const snap = v.world.serialize()
+    const spawn = v.terminal.exec('/spawn sphere')
+    if (spawn.error) throw new Error(spawn.error)
+    const afterSpawn = v.getLiveSnapshot().actorCount
+
+    await v.world.load(snap)
+    const afterLoad = v.getLiveSnapshot().actorCount
+
+    return {
+      engine: saveProbe.output,
+      baseline,
+      afterSpawn,
+      afterLoad,
+      levelName: snap.name,
+    }
+  })
+
+  expect(result.engine).toBe('vektra')
+  expect(result.afterSpawn).toBeGreaterThan(result.baseline)
+  expect(result.afterLoad).toBe(result.baseline)
+  expect(result.levelName.length).toBeGreaterThan(0)
 })

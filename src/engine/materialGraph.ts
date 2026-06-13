@@ -5,7 +5,7 @@ import { clearMaterialShader, installMaterialShader, updateMaterialShaderTime } 
 /**
  * Material graph — UE Material Editor analog (v1 CPU / v2 GPU):
  * dataflow node graph driving MeshStandardMaterial channels
- * (base color, emissive, roughness, metalness, opacity).
+ * (base color, emissive, roughness, metalness, opacity, world-position offset).
  * CPU mode evaluates once per frame; GPU mode transpiles to GLSL via onBeforeCompile.
  */
 
@@ -61,7 +61,7 @@ export const MAT_NODE_DEFS: Record<string, MatNodeDef> = {
   Output: {
     title: 'Material Output',
     color: '#7a3b3b',
-    inputs: ['baseColor', 'emissive', 'emissiveInt', 'roughness', 'metalness', 'opacity'],
+    inputs: ['baseColor', 'emissive', 'emissiveInt', 'roughness', 'metalness', 'opacity', 'wpo'],
     hasOutput: false,
     props: [],
     evaluate: () => 0,
@@ -174,6 +174,24 @@ export const MAT_NODE_DEFS: Record<string, MatNodeDef> = {
       const uv = toVec(i.uv ?? [0.5, 0.5, 0])
       return 0.5 + 0.5 * simplexNoise3(uv[0] * Number(p.scale ?? 4), uv[1] * Number(p.scale ?? 4), t)
     },
+  },
+  WorldPosition: {
+    title: 'World Position',
+    color: '#4a6a8a',
+    inputs: [],
+    hasOutput: true,
+    props: [],
+    /** CPU preview placeholder — GPU shader uses modelMatrix * position. */
+    evaluate: () => [0, 0, 0] as [number, number, number],
+  },
+  ObjectPosition: {
+    title: 'Object Position',
+    color: '#4a6a8a',
+    inputs: [],
+    hasOutput: true,
+    props: [],
+    /** CPU preview placeholder — GPU shader uses modelMatrix origin. */
+    evaluate: () => [0, 0, 0] as [number, number, number],
   },
 }
 

@@ -161,9 +161,11 @@ export function createParticleEmitterActor(name: string, id = nextActorId()): Ac
   const system = new ParticleSystem(actor.particleProps)
   system.points.userData.actorId = id
   system.ribbon.userData.actorId = id
+  system.mesh.userData.actorId = id
   actor.particleSystem = system
   actor.root.add(system.points)
   actor.root.add(system.ribbon)
+  actor.root.add(system.mesh)
   // editor pick proxy + icon
   const proxy = new THREE.Mesh(
     new THREE.SphereGeometry(0.25, 10, 8),

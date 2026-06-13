@@ -55,7 +55,7 @@ function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: Material
     host.appendChild(renderer.domElement)
 
     const mat = new THREE.MeshStandardMaterial({ color: '#5b8def', roughness: 0.35, metalness: 0.1 })
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.85, 64, 48), mat)
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.85, 96, 72), mat)
     scene.add(mesh)
 
     const key = new THREE.DirectionalLight(0xffffff, 1.4)
@@ -132,7 +132,8 @@ export function MaterialEditor() {
     return (
       <div className="panel-empty">
         Select a mesh actor to edit its material graph. Wire Color/Time/math nodes into the Output channels — CPU mode
-        animates per-object; GPU mode compiles per-pixel shaders (UV, Fresnel, Noise, Texture Sample).
+        animates per-object; GPU mode compiles per-pixel shaders (UV, Fresnel, Noise, Texture Sample) and WPO vertex
+        displacement (World/Object Position, Time, Sine, Noise).
       </div>
     )
   }
@@ -457,12 +458,33 @@ export function MaterialEditor() {
                     </button>
                   )
                 })}
+                <div className="bp-add-cat">WPO (GPU vertex)</div>
+                {['WorldPosition', 'ObjectPosition'].map((type) => {
+                  const d = MAT_NODE_DEFS[type]
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        mutate((g) => {
+                          const props: Record<string, string | number> = {}
+                          for (const p of d.props) props[p.key] = p.default
+                          g.nodes.push({ id: newMatNodeId(), type, x: addMenu.x, y: addMenu.y, props })
+                        })
+                        setAddMenu(null)
+                      }}
+                    >
+                      {d.title}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
         </div>
         <aside className="mat-preview-panel">
-          <div className="mat-preview-label">Preview · {mode === 'gpu' ? 'GPU' : 'CPU'}</div>
+          <div className="mat-preview-label">
+            Preview · {mode === 'gpu' ? 'GPU (WPO displaces vertices)' : 'CPU'}
+          </div>
           <MaterialPreview graph={graph} mode={mode} />
         </aside>
       </div>

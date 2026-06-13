@@ -82,6 +82,8 @@ export class Actor {
   probeProps?: { radius: number }
   waterProps?: import('./types').WaterProps
   pcgProps?: import('./types').PCGProps
+  /** PCGVolume — sample→filter→transform→spawn node graph */
+  pcgGraph?: import('./pcgGraph').PCGGraph
   label3DProps?: Label3DProps
   pcgMesh?: THREE.InstancedMesh
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
@@ -302,6 +304,7 @@ export class Actor {
       probe: this.probeProps ? { ...this.probeProps } : undefined,
       water: this.waterProps ? { ...this.waterProps } : undefined,
       pcg: this.pcgProps ? { ...this.pcgProps } : undefined,
+      pcgGraph: this.pcgGraph ? JSON.parse(JSON.stringify(this.pcgGraph)) : undefined,
       customGeometry: this.customGeometry,
       landscape: this.landscapeProps ? { ...this.landscapeProps, heights: [...this.landscapeProps.heights], weights: this.landscapeProps.weights ? [...this.landscapeProps.weights] : undefined } : undefined,
       behaviors: this.behaviors.map((b) => ({ ...b })),

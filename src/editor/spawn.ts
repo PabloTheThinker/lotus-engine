@@ -7,6 +7,7 @@ import { DEFAULT_FOLIAGE, DEFAULT_LABEL3D } from '../engine/types'
 import { DEFAULT_LANDSCAPE } from '../engine/landscape'
 import { DEFAULT_WATER } from '../engine/water'
 import { DEFAULT_PCG } from '../engine/pcg'
+import { emptyPCGGraph } from '../engine/pcgGraph'
 import { AddActorCommand, runCommand } from './commands'
 import { getPluginNodeType } from './plugins'
 
@@ -156,6 +157,7 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         name: uniqueName('PCGVolume'),
         type: 'PCGVolume',
         pcg: { ...DEFAULT_PCG },
+        pcgGraph: emptyPCGGraph(),
         transform: { ...base.transform, position: [position[0], Math.max(position[1], 2), position[2]], scale: [20, 6, 20] },
       }
     case 'trigger':

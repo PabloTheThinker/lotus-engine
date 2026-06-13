@@ -20,6 +20,7 @@ import { createLandscapeActor, buildLandscapeMesh, sampleLandscapeHeight } from 
 import { DEFAULT_PARTICLES } from './particles'
 import { createWaterActor, buildWaterMesh, updateWater } from './water'
 import { createPCGVolumeActor } from './pcg'
+import { syncPropsFromGraph } from './pcgGraph'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
 import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
@@ -692,10 +693,18 @@ export class World {
           buildWaterMesh(actor)
         }
         break
-      case 'PCGVolume':
+      case 'PCGVolume': {
         actor = createPCGVolumeActor(sa.name, sa.id)
-        if (sa.pcg) actor.pcgProps = { ...sa.pcg }
+        if (sa.pcgGraph) {
+          const graph = JSON.parse(JSON.stringify(sa.pcgGraph))
+          actor.pcgGraph = graph
+          actor.pcgProps = syncPropsFromGraph(graph)
+        } else if (sa.pcg) {
+          actor.pcgGraph = undefined
+          actor.pcgProps = { ...sa.pcg }
+        }
         break
+      }
       case 'TriggerVolume':
         actor = createTriggerVolumeActor(sa.name, sa.id)
         if (sa.trigger) actor.triggerProps = { ...sa.trigger }

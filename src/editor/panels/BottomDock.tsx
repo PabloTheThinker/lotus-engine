@@ -11,6 +11,7 @@ import { DebugPanel } from './DebugPanel'
 import { MaterialEditor } from './MaterialEditor'
 import { AnimStateEditor } from './AnimStateEditor'
 import { MetaSoundEditor } from './MetaSoundEditor'
+import { PCGEditor } from './PCGEditor'
 
 const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'content', label: '🗄 Content' },
@@ -23,6 +24,7 @@ const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'console', label: '>_ Console' },
   { id: 'ai', label: '✦ AI' },
   { id: 'debug', label: '📈 Debug' },
+  { id: 'pcg', label: '🎲 PCG' },
 ]
 
 function pluginTabId(panelId: string): BottomTab {
@@ -87,6 +89,7 @@ export function BottomDock() {
           {tab === 'console' && <Console />}
           {tab === 'ai' && <AIChat />}
           {tab === 'debug' && <DebugPanel />}
+          {tab === 'pcg' && <PCGEditor />}
           {tab.startsWith('plugin:') && <PluginPanelView panelId={tab.slice('plugin:'.length)} />}
         </div>
       )}

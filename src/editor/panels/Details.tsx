@@ -661,13 +661,18 @@ function WaterSection({ actor }: { actor: Actor }) {
 
 function PCGSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
+  const setBottomTab = useEditor((s) => s.setBottomTab)
   const props = actor.pcgProps!
   const regen = () => {
     regeneratePCG(actor, world.actors)
     touch()
   }
+  const openPcgEditor = () => setBottomTab('pcg')
   return (
     <Section title="PCG Scatter (sample → filter → spawn)">
+      <button type="button" onClick={openPcgEditor}>
+        Edit PCG Graph
+      </button>
       <label className="field">
         <span>Mesh</span>
         <select value={props.geometry} onChange={(e) => { props.geometry = e.target.value as typeof props.geometry; regen() }}>
@@ -1646,6 +1651,57 @@ function ColorGradient4({
   )
 }
 
+function SizeCurve4({
+  values,
+  max = 1,
+  onChange,
+}: {
+  values: [number, number, number, number]
+  max?: number
+  onChange: (v: [number, number, number, number]) => void
+}) {
+  const w = 200
+  const h = 48
+  const pad = 4
+  const innerH = h - pad * 2
+  const toY = (v: number) => pad + innerH - (v / max) * innerH
+  const xs = [0, w * 0.33, w * 0.66, w]
+  const path = values
+    .map((v, i) => `${i === 0 ? 'M' : 'L'} ${xs[i].toFixed(1)} ${toY(v).toFixed(1)}`)
+    .join(' ')
+  const fillPath = `${path} L ${w} ${h - pad} L 0 ${h - pad} Z`
+  return (
+    <div className="size-curve-4">
+      <svg className="size-curve-svg" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+        <path d={fillPath} className="size-curve-fill" />
+        <path d={path} className="size-curve-line" fill="none" />
+        {values.map((v, i) => (
+          <circle key={i} cx={xs[i]} cy={toY(v)} r={3} className="size-curve-dot" />
+        ))}
+      </svg>
+      <div className="size-curve-stops">
+        {values.map((v, i) => (
+          <label key={i} className="size-curve-stop" title={`Stop ${i + 1} (${Math.round((i / 3) * 100)}%)`}>
+            <input
+              type="range"
+              min={0}
+              max={max}
+              step={0.01}
+              value={v}
+              onChange={(e) => {
+                const next = [...values] as [number, number, number, number]
+                next[i] = parseFloat(e.target.value)
+                onChange(next)
+              }}
+            />
+            <span>{v.toFixed(2)}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ParticlesSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const props = actor.particleProps!
@@ -1721,6 +1777,83 @@ function ParticlesSection({ actor }: { actor: Actor }) {
       <Module id="sizeOverLife" title="Size Over Life">
         <Num label="Start" value={props.sizeStart} step={0.02} min={0.01} onLive={(v) => setNum('sizeStart', v)} onCommit={() => {}} />
         <Num label="End" value={props.sizeEnd} step={0.02} min={0} onLive={(v) => setNum('sizeEnd', v)} onCommit={() => {}} />
+        <label className="field span-2">
+          <span>4-Point Size Curve</span>
+          <SizeCurve4
+            values={props.sizeCurve ?? [props.sizeStart, props.sizeStart, props.sizeEnd, props.sizeEnd]}
+            max={Math.max(0.5, props.sizeStart, props.sizeEnd, ...(props.sizeCurve ?? []))}
+            onChange={(v) => {
+              props.sizeCurve = v
+              props.sizeStart = v[0]
+              props.sizeEnd = v[3]
+              touch()
+            }}
+          />
+        </label>
+      </Module>
+      <Module id="subEmitter" title="Sub-Emitter (Events)">
+        <Check
+          label="Enabled"
+          value={props.subEmitter?.enabled ?? false}
+          onToggle={(v) => {
+            props.subEmitter = { ...(props.subEmitter ?? { onDeath: true, onCollision: false, count: 8, speed: 1.5, lifetime: 0.4, enabled: false }), enabled: v }
+            touch()
+          }}
+        />
+        {(props.subEmitter?.enabled ?? false) && (
+          <>
+            <Check
+              label="On Death"
+              value={props.subEmitter?.onDeath ?? true}
+              onToggle={(v) => {
+                props.subEmitter = { ...props.subEmitter!, onDeath: v }
+                touch()
+              }}
+            />
+            <Check
+              label="On Collision"
+              value={props.subEmitter?.onCollision ?? false}
+              onToggle={(v) => {
+                props.subEmitter = { ...props.subEmitter!, onCollision: v }
+                touch()
+              }}
+            />
+            <Num
+              label="Burst Count"
+              value={props.subEmitter?.count ?? 8}
+              step={1}
+              min={1}
+              max={64}
+              onLive={(v) => {
+                props.subEmitter = { ...props.subEmitter!, count: v }
+                touch()
+              }}
+              onCommit={() => {}}
+            />
+            <Num
+              label="Burst Speed"
+              value={props.subEmitter?.speed ?? 1.5}
+              step={0.1}
+              min={0}
+              onLive={(v) => {
+                props.subEmitter = { ...props.subEmitter!, speed: v }
+                touch()
+              }}
+              onCommit={() => {}}
+            />
+            <Num
+              label="Child Lifetime"
+              value={props.subEmitter?.lifetime ?? 0.4}
+              step={0.05}
+              min={0.05}
+              onLive={(v) => {
+                props.subEmitter = { ...props.subEmitter!, lifetime: v }
+                touch()
+              }}
+              onCommit={() => {}}
+            />
+          </>
+        )}
       </Module>
       <Module id="renderer" title="Renderer">
         <label className="field">
@@ -1735,8 +1868,25 @@ function ParticlesSection({ actor }: { actor: Actor }) {
           >
             <option value="points">Points (sprites)</option>
             <option value="ribbon">Ribbon (trail strip)</option>
+            <option value="mesh">Mesh (instanced)</option>
           </select>
         </label>
+        {(props.renderMode ?? 'points') === 'mesh' && (
+          <label className="field">
+            <span>Mesh Shape</span>
+            <select
+              value={props.meshShape ?? 'box'}
+              onChange={(e) => {
+                props.meshShape = e.target.value as typeof props.meshShape
+                sys.refresh()
+                touch()
+              }}
+            >
+              <option value="box">Box</option>
+              <option value="sphere">Sphere</option>
+            </select>
+          </label>
+        )}
         {(props.renderMode ?? 'points') === 'ribbon' && (
           <>
             <Num label="Ribbon Width" value={props.ribbonWidth ?? 0.08} step={0.01} min={0.01} onLive={(v) => { setNum('ribbonWidth', v); sys.refresh() }} onCommit={() => {}} />

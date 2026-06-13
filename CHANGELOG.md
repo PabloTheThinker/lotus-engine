@@ -4,6 +4,31 @@ Notable changes to Vektra Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Agent swarm wave 6: v0.59–v0.61 + expanded tests
+
+### Added
+- **v0.59 Particles P3:** mesh InstancedMesh renderer, sub-emitters on death/collision, 4-point size curve widget
+- **v0.60 Material WPO:** GPU vertex displacement — WorldPosition, ObjectPosition, Noise → Output.wpo
+- **v0.61 PCG graph editor:** visual node canvas (Sample→Filter→Transform→Spawn), 🎲 PCG bottom dock tab
+- **Tests:** 9 Playwright specs — undo, play/stop, command palette, level save/load roundtrip
+
+### Verification
+```bash
+npm run build && npm run test   # 9 passed
+```
+
+---
+
+## 2026-06-13 — Agent swarm wave 5: v0.55–v0.58 (IK, BP flow, GAS effects, UX)
+
+### Added
+- **v0.55 IK:** two-bone IK + LookAt on glTF skeletons (`ik.ts`, Details IK section)
+- **v0.56 Blueprint flow:** Gate, MultiGate, SwitchInt, BindSignal, CallSignal nodes
+- **v0.57 GAS effects:** duration modifiers, tag grant/remove, `api.applyEffect` / `api.removeEffect`
+- **v0.58 Editor UX:** camera bookmarks persist in level; Modes dropdown; Label3D billboard actor
+
+---
+
 ## 2026-06-13 — Agent swarm wave 4: v0.49–v0.54 (path trace, blend2D, MP sync, widget anims, streaming, tests)
 
 ### Added
