@@ -4,8 +4,12 @@ import { execConsoleCommand } from './consoleCommands'
 import * as THREE from 'three'
 import { makeScriptApi } from '../engine/scripting'
 
+const AUTOSAVE_WARN_SEC = 5
+
 export function StatusBar() {
   const status = useEditor((s) => s.statusMessage)
+  const saveStatus = useEditor((s) => s.saveStatus)
+  const autosaveCountdownSec = useEditor((s) => s.autosaveCountdownSec)
   const bridgeConnected = useEditor((s) => s.bridgeConnected)
   const selectedId = useEditor((s) => s.selectedId)
   const selectedIds = useEditor((s) => s.selectedIds)
@@ -17,6 +21,11 @@ export function StatusBar() {
   useEditor((s) => s.sceneVersion)
   const selected = selectedId ? world.actors.get(selectedId) : null
   const drawerActive = drawerDocked ? contentOpen && bottomTab === 'content' : drawerOpen
+  const showAutosaveToast =
+    saveStatus === 'dirty' && autosaveCountdownSec > 0 && autosaveCountdownSec <= AUTOSAVE_WARN_SEC
+
+  const saveLabel =
+    saveStatus === 'saving' ? 'Saving…' : saveStatus === 'dirty' ? '● Unsaved' : '✓ Saved'
 
   return (
     <div className="statusbar">
@@ -28,6 +37,14 @@ export function StatusBar() {
       >
         🗄 Content Drawer
       </button>
+      <span className={`status-save status-save--${saveStatus}`} title="Level save status (Ctrl+S)">
+        {saveLabel}
+      </span>
+      {showAutosaveToast && (
+        <span className="status-autosave-toast" title="Autosave countdown">
+          Autosaving in {autosaveCountdownSec}s
+        </span>
+      )}
       <span className="status-message">
         {import.meta.env.DEV && (
           <span className={`bridge-dot ${bridgeConnected ? 'on' : ''}`} title={bridgeConnected ? 'CLI bridge connected' : 'CLI bridge waiting'}>
@@ -72,7 +89,7 @@ export function StatusBar() {
           {selected.name} · {selected.type} · {selected.mobility}
         </span>
       )}
-      <span className="status-hint">` terminal · RMB+WASD fly · Q/W/E/R · F focus · End snap · Alt+drag dup · G game view · F8 eject</span>
+      <span className="status-hint">` terminal · show bufferviz &lt;mode&gt; · RMB+WASD fly · Q/W/E/R · F focus · End snap · Alt+drag dup · G game view · F8 eject</span>
     </div>
   )
 }

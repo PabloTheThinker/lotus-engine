@@ -11,8 +11,21 @@ function afterLoad(name: string) {
   s.select(null)
   s.setLevelName(name)
   clearHistory()
+  markLevelSaved()
   s.setStatus(`Loaded level: ${name}`)
   s.touch()
+}
+
+/** Mark the level dirty after a world mutation (non-command paths can call this). */
+export function markLevelDirty() {
+  useEditor.getState().markDirty()
+}
+
+/** Mark the level saved — after explicit save, load, or autosave. */
+export function markLevelSaved() {
+  const s = useEditor.getState()
+  s.markSaved()
+  s.resetAutosaveCountdown()
 }
 
 export function newLevel() {
@@ -90,6 +103,7 @@ export function saveLevelToFile() {
   a.download = `${s.levelName.replace(/[^\w-]+/g, '_') || 'level'}.vlevel.json`
   a.click()
   URL.revokeObjectURL(a.href)
+  markLevelSaved()
   s.setStatus(`Saved ${a.download}`)
 }
 
@@ -113,11 +127,15 @@ export function openLevelFromFile() {
 }
 
 export function autosave() {
+  const s = useEditor.getState()
+  s.markSaving()
   try {
-    world.levelName = useEditor.getState().levelName
+    world.levelName = s.levelName
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(world.serialize()))
+    markLevelSaved()
   } catch {
     // storage full or unavailable — autosave is best-effort
+    s.markDirty()
   }
 }
 

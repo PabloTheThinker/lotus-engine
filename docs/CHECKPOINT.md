@@ -1,10 +1,10 @@
-# CHECKPOINT — 2026-06-13 (agent swarm through v0.67)
+# CHECKPOINT — 2026-06-13 (agent swarm through v0.72)
 
-> Working doc: `docs/UE5.7-GAP-LIST.md` — update statuses as items ship.
+> Working doc: `docs/UE5.7-GAP-LIST.md` — synced through v0.72.
 
 ## State
 
-- **Last clean commit: v0.67 (wave 7).** v0.33–v0.67 shipped across seven agent swarms; **build clean**, **`npm run test` — 13 passed**.
+- **Last clean commit: v0.72 (wave 8).** v0.33–v0.72 shipped across eight agent swarms; **build clean**, **`npm run test` — 14 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -95,22 +95,43 @@
 | v0.66 | Baked AO (approx) — `lightmapBake.ts`, Build → Bake AO |
 | v0.67 | Playwright **13 tests** — navmesh, materials, blueprint, MP mock |
 
-## Next up (v0.68+)
+### Wave 7 gap-list marks (v0.67 sync)
 
-1. **Buffer visualization** view modes (World Normal, Depth, Base Color)
-2. **Sequencer audio** polish — waveform display, loop regions
-3. **Multiplayer 2-tab live test** — relay integration test (optional CI)
-4. **Second UV lightmaps** — stretch beyond vertex-color AO
-5. **Status bar** — save indicator, autosave countdown
-6. **PCG / Niagara** — GPU particles (WebGPU stretch)
+| Item | Status |
+|---|---|
+| Audio falloff curves | ✅ v0.62 |
+| Sequencer audio scrubbing | ✅ v0.62 |
+| Blueprint exec breakpoints | ✅ v0.63 |
+| Widget3D (world-space HTML) | ✅ v0.64 |
+| MP ownership + prediction | ◐ v0.65 |
+| Baked AO (approx) | ◐ v0.66 |
 
-## Remaining gap-list queue
+## Shipped wave 8 (v0.68 → v0.72)
 
-1. **Audio**: attenuation falloff curve picker, Sequencer audio scrubbing
-2. **BP**: breakpoints (Gate/MultiGate/Switch/Bind ✅ v0.56)
-3. **Networking**: ownership + prediction polish (sync + spawner ✅ v0.51)
-4. **Editor UX**: status-bar save indicator, buffer visualization view modes
-5. **Honest-skip**: Lightmass bake (stretch), Nanite/Lumen/Control Rig 🚫
+| Ver | What |
+|---|---|
+| v0.68 | Buffer visualization (worldNormal, depth, baseColor, roughness, metallic) |
+| v0.69 | Status bar save indicator + autosave countdown |
+| v0.70 | Sequencer audio waveforms + loop regions |
+| v0.71 | MP 2-tab relay integration test (14 tests total) |
+| v0.72 | AO map bake to UV2 (`build ao map`) |
+
+## Next up (v0.73+)
+
+1. **GPU particles** — WebGPU compute Niagara stretch
+2. **Buffer viz polish** — AO, emissive, scene depth as post pass
+3. **MP polish** — dedicated server mode, lag compensation
+4. **xatlas uv2** — proper lightmap unwrapping for AO map bake
+5. **Toolbar reorder** — exact UE5 main toolbar order
+6. **Expanded E2E** — PIE physics, export playable roundtrip
+
+## Remaining gap-list queue (post–wave 7)
+
+1. **Editor UX**: buffer visualization view modes, status-bar save indicator + autosave countdown
+2. **Sequencer audio**: waveform display, loop regions (scrubbing ✅ v0.62)
+3. **Networking**: 2-tab live relay test; ownership/prediction polish (base ✅ v0.65)
+4. **Rendering**: second UV lightmaps (vertex-color AO ✅ v0.66)
+5. **Honest-skip**: full Lightmass, Nanite, Lumen, Control Rig graphs 🚫
 
 ## Gotchas carried forward
 

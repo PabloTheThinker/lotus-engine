@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { playSound, stopScrubAudio } from './audio'
+import { getSoundBuffer, playSound, stopScrubAudio } from './audio'
 import { applyHudCssProperty } from './gameplay'
 import type { HudWidget, SeqHudProperty } from './types'
 import type { World } from './World'
@@ -47,6 +47,10 @@ export interface SeqTrack {
   actorId: string
   property: SeqProperty | SeqHudProperty | SeqAudioProperty
   keys: SeqKey[]
+  /** audio only — loop region start in seconds within the clip buffer */
+  loopIn?: number
+  /** audio only — loop region end in seconds within the clip buffer */
+  loopOut?: number
 }
 
 export interface SeqCameraCut {
@@ -267,21 +271,50 @@ export function sampleTrack(track: SeqTrack, t: number): SeqKey['v'] | null {
   return null
 }
 
+/** Resolved loop region for an audio clip (seconds within the buffer). */
+export function audioLoopRegion(track: SeqTrack, bufferDuration: number): { loopIn: number; loopOut: number } | null {
+  const { loopIn, loopOut } = track
+  if (loopIn == null || loopOut == null) return null
+  const inClamped = Math.max(0, Math.min(loopIn, bufferDuration))
+  const outClamped = Math.max(inClamped + 0.001, Math.min(loopOut, bufferDuration))
+  if (outClamped <= inClamped) return null
+  return { loopIn: inClamped, loopOut: outClamped }
+}
+
+/** Map sequencer time to a buffer offset, wrapping inside an optional loop region. */
+export function audioPlaybackOffset(track: SeqTrack, timelineT: number, bufferDuration: number): number | null {
+  if (track.keys.length === 0) return null
+  const startT = track.keys[0].t
+  if (timelineT < startT) return null
+  const elapsed = timelineT - startT
+  const region = audioLoopRegion(track, bufferDuration)
+  if (region) {
+    const span = region.loopOut - region.loopIn
+    return region.loopIn + (elapsed % span)
+  }
+  return elapsed % Math.max(0.001, bufferDuration)
+}
+
 /** Play imported sounds at the playhead for audio tracks (scrub / editor playback). */
 export function scrubSequenceAudio(seq: Sequence, t: number) {
   stopScrubAudio()
   for (const track of seq.tracks) {
     if (!isAudioTrack(track) || track.keys.length === 0) continue
     const soundName = track.actorId
-    const startT = track.keys[0].t
-    if (t < startT) continue
+    const buf = getSoundBuffer(soundName)
+    if (!buf) continue
+    const offset = audioPlaybackOffset(track, t, buf.duration)
+    if (offset == null) continue
     const vol = sampleTrack(track, t)
     const volume = typeof vol === 'number' ? vol : 1
+    const region = audioLoopRegion(track, buf.duration)
     playSound(soundName, {
       volume,
-      currentTime: t - startT,
+      currentTime: offset,
       scrub: true,
       loop: true,
+      loopStart: region?.loopIn,
+      loopEnd: region?.loopOut,
     })
   }
 }

@@ -46,7 +46,7 @@ import {
   cellKey,
   splitLevelByCells,
 } from './streaming'
-import { applySerializedBakedAO } from './lightmapBake'
+import { applySerializedBakedAO, applySerializedBakedAOMap } from './lightmapBake'
 import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
 import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
@@ -814,6 +814,7 @@ export class World {
       }
     }
     applySerializedBakedAO(actor, sa)
+    applySerializedBakedAOMap(actor, sa)
     return actor
   }
 }

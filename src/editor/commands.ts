@@ -23,21 +23,23 @@ const MAX_HISTORY = 200
 function syncHistoryState() {
   const s = useEditor.getState()
   s.setHistoryState(undoStack.length > 0, redoStack.length > 0)
+  if (!s.playing) s.markDirty()
   s.touch()
 }
 
 export function runCommand(cmd: Command) {
   cmd.execute()
+  const s = useEditor.getState()
   // During Play/Eject/Simulate, apply immediately without polluting the undo stack.
-  if (useEditor.getState().playing) {
-    useEditor.getState().setStatus(cmd.label)
-    useEditor.getState().touch()
+  if (s.playing) {
+    s.setStatus(cmd.label)
+    s.touch()
     return
   }
   undoStack.push(cmd)
   if (undoStack.length > MAX_HISTORY) undoStack.shift()
   redoStack.length = 0
-  useEditor.getState().setStatus(cmd.label)
+  s.setStatus(cmd.label)
   syncHistoryState()
 }
 

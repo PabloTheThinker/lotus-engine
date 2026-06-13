@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import { getHudElement } from '../../engine/gameplay'
-import { stopScrubAudio } from '../../engine/audio'
+import { getSoundBuffer, stopScrubAudio } from '../../engine/audio'
 import {
   ensureBezierTangents,
   isAudioTrack,
@@ -20,6 +20,85 @@ import { useEditor } from '../store'
 import { CurveEditor } from './CurveEditor'
 
 const RULER_STEP = 1 // seconds between ruler marks
+const WAVEFORM_SAMPLES = 160
+
+function computeWaveformPeaks(buf: AudioBuffer, samples: number): number[] {
+  const data = buf.getChannelData(0)
+  const block = Math.max(1, Math.floor(data.length / samples))
+  const peaks: number[] = []
+  for (let i = 0; i < samples; i++) {
+    let max = 0
+    const start = i * block
+    for (let j = 0; j < block; j++) {
+      const v = Math.abs(data[start + j] ?? 0)
+      if (v > max) max = v
+    }
+    peaks.push(max)
+  }
+  return peaks
+}
+
+function waveformPath(peaks: number[], width: number, height: number): string {
+  if (peaks.length === 0) return ''
+  const mid = height * 0.5
+  const maxPeak = Math.max(...peaks, 0.001)
+  const step = width / Math.max(1, peaks.length - 1)
+  const top = peaks.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(2)},${(mid - (p / maxPeak) * mid * 0.9).toFixed(2)}`)
+  const bot = [...peaks].reverse().map((p, i) => {
+    const x = (peaks.length - 1 - i) * step
+    return `L${x.toFixed(2)},${(mid + (p / maxPeak) * mid * 0.9).toFixed(2)}`
+  })
+  return `${top.join(' ')} ${bot.join(' ')} Z`
+}
+
+function AudioWaveformLane({
+  soundName,
+  startT,
+  seqDuration,
+  loopIn,
+  loopOut,
+}: {
+  soundName: string
+  startT: number
+  seqDuration: number
+  loopIn?: number
+  loopOut?: number
+}) {
+  const buf = getSoundBuffer(soundName)
+  const peaks = useMemo(() => (buf ? computeWaveformPeaks(buf, WAVEFORM_SAMPLES) : []), [buf, soundName])
+  if (!buf || peaks.length === 0) return null
+
+  const clipDur = buf.duration
+  const leftPct = (startT / seqDuration) * 100
+  const widthPct = (clipDur / seqDuration) * 100
+  const path = waveformPath(peaks, 200, 18)
+  const hasLoop = loopIn != null && loopOut != null && loopOut > loopIn
+
+  return (
+    <div
+      className="seq-audio-clip"
+      style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
+      title={`${soundName} · ${clipDur.toFixed(2)}s${hasLoop ? ` · loop ${loopIn!.toFixed(2)}–${loopOut!.toFixed(2)}s` : ''}`}
+    >
+      <svg className="seq-audio-waveform" viewBox="0 0 200 18" preserveAspectRatio="none">
+        <path d={path} className="seq-audio-waveform-fill" />
+      </svg>
+      {hasLoop && (
+        <>
+          <div
+            className="seq-audio-loop-region"
+            style={{
+              left: `${((loopIn! / clipDur) * 100).toFixed(3)}%`,
+              width: `${(((loopOut! - loopIn!) / clipDur) * 100).toFixed(3)}%`,
+            }}
+          />
+          <span className="seq-audio-loop-bracket in" style={{ left: `${((loopIn! / clipDur) * 100).toFixed(3)}%` }} title={`Loop In ${loopIn!.toFixed(2)}s`} />
+          <span className="seq-audio-loop-bracket out" style={{ left: `${((loopOut! / clipDur) * 100).toFixed(3)}%` }} title={`Loop Out ${loopOut!.toFixed(2)}s`} />
+        </>
+      )}
+    </div>
+  )
+}
 
 /**
  * Sequencer — UE Sequencer / Godot AnimationPlayer v1.
@@ -571,6 +650,25 @@ export function Sequencer() {
                 ⚡
               </span>
             ))}
+            {[...byAudio.entries()].flatMap(([soundName, tracks]) => {
+              const tr = tracks[0]
+              if (!tr?.keys.length || tr.loopIn == null || tr.loopOut == null || tr.loopOut <= tr.loopIn) return []
+              const startT = tr.keys[0].t
+              return [
+                <span
+                  key={`loop-in-${soundName}`}
+                  className="seq-loop-bracket in"
+                  style={{ left: pct(startT + tr.loopIn) }}
+                  title={`${soundName} loop in @ ${(startT + tr.loopIn).toFixed(2)}s`}
+                />,
+                <span
+                  key={`loop-out-${soundName}`}
+                  className="seq-loop-bracket out"
+                  style={{ left: pct(startT + tr.loopOut) }}
+                  title={`${soundName} loop out @ ${(startT + tr.loopOut).toFixed(2)}s`}
+                />,
+              ]
+            })}
           </div>
           {[...byActor.entries()].map(([actorId, tracks]) => (
             <div key={actorId}>
@@ -648,9 +746,20 @@ export function Sequencer() {
               ))}
             </div>
           ))}
-          {[...byAudio.entries()].map(([soundName, tracks]) => (
+          {[...byAudio.entries()].map(([soundName, tracks]) => {
+            const primary = tracks[0]
+            const startT = primary?.keys[0]?.t ?? 0
+            return (
             <div key={`audio-lane-${soundName}`}>
-              <div className="seq-actor-lane seq-audio-lane" />
+              <div className="seq-actor-lane seq-audio-lane">
+                <AudioWaveformLane
+                  soundName={soundName}
+                  startT={startT}
+                  seqDuration={seq.duration}
+                  loopIn={primary?.loopIn}
+                  loopOut={primary?.loopOut}
+                />
+              </div>
               {tracks.map((tr) => (
                 <div
                   key={tr.property}
@@ -685,7 +794,8 @@ export function Sequencer() {
                 </div>
               ))}
             </div>
-          ))}
+            )
+          })}
           <div className="seq-playhead" style={{ left: pct(seqTime) }} />
         </div>
       </div>
@@ -712,6 +822,40 @@ export function Sequencer() {
                   <option value={2}>Z</option>
                 </select>
               </label>
+            )}
+            {isAudioTrack(curveTrack) && (
+              <div className="seq-audio-loop-fields">
+                <label>
+                  Loop In
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="—"
+                    value={curveTrack.loopIn ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      curveTrack.loopIn = v === '' ? undefined : Math.max(0, parseFloat(v) || 0)
+                      touch()
+                    }}
+                  />
+                </label>
+                <label>
+                  Loop Out
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="—"
+                    value={curveTrack.loopOut ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      curveTrack.loopOut = v === '' ? undefined : Math.max(0, parseFloat(v) || 0)
+                      touch()
+                    }}
+                  />
+                </label>
+              </div>
             )}
           </div>
           <CurveEditor track={curveTrack} duration={seq.duration} channel={curveChannel} />

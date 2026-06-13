@@ -158,6 +158,9 @@ export interface PlayOpts {
   customCurve?: [number, number][]
   /** start playback at this offset in seconds (sequencer scrubbing) */
   currentTime?: number
+  /** loop wrap points within the buffer (sequencer loop regions) */
+  loopStart?: number
+  loopEnd?: number
   /** marks a scrub-preview voice (stopped by stopScrubAudio) */
   scrub?: boolean
 }
@@ -296,6 +299,10 @@ export function playSound(name: string, opts: PlayOpts = {}) {
   const src = ac.createBufferSource()
   src.buffer = buf
   src.loop = !!opts.loop
+  if (src.loop && opts.loopStart != null && opts.loopEnd != null && opts.loopEnd > opts.loopStart) {
+    src.loopStart = opts.loopStart
+    src.loopEnd = opts.loopEnd
+  }
 
   const att = resolveAttenuation(name, opts)
   let panner: PannerNode | undefined
@@ -341,7 +348,10 @@ export function playSound(name: string, opts: PlayOpts = {}) {
   }
 
   const offset = Math.max(0, opts.currentTime ?? 0)
-  src.start(0, Math.min(offset, buf.duration - 0.001))
+  const loopEnd = src.loop && opts.loopEnd != null ? opts.loopEnd : buf.duration
+  const loopStart = src.loop && opts.loopStart != null ? opts.loopStart : 0
+  const clamped = Math.max(loopStart, Math.min(offset, loopEnd - 0.001))
+  src.start(0, clamped)
 
   const voice: ActiveVoice = {
     panner,

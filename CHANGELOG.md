@@ -4,153 +4,272 @@ Notable changes to Vektra Engine. Newest entries first.
 
 ---
 
-## 2026-06-13 — v0.66 Baked AO (approx)
+## 2026-06-13 — Wave 8: v0.68–v0.72
 
 ### Added
-- **Lightmass-approx MVP:** hemisphere raycast AO bake to vertex colors (`src/engine/lightmapBake.ts`)
-- **Build → Bake AO (approx)** + World Settings → Lighting (approx) with progress
-- **Console:** `build ao` · **Devtools:** `vektra.BakeAO({ samples, radius })`
-- **Serialization:** `bakedAO` flag + `bakedAOMeshes` color arrays; restored on load and in playable export
-
-### Notes
-- Labeled honestly as **Baked AO (approx)** — not Lightmass. Main-thread bake with chunked yields.
-
----
-
-## 2026-06-13 — Agent swarm wave 7: v0.62–v0.67
-
-### Added
-- **v0.62 Audio:** attenuation falloff curves (linear/inverse/inverseSquare/custom), Sequencer audio tracks with scrubbing
-- **v0.63 Blueprint:** exec breakpoints — pause PIE on node hit, F5 Continue, gutter toggle
-- **v0.64 Widget3D:** CSS3DRenderer world-space HTML widgets (canvas fallback in export)
-- **v0.65 Networking:** ownership (`netOwnerId`), client prediction + reconcile, `own` protocol message
-- **v0.66 Lightmap:** Baked AO (approx) — hemisphere raycast via mesh-bvh, vertex colors, `build ao` console
-- **v0.67 Tests:** Playwright expanded to **13 specs** — navmesh bake, material instance, blueprint compile, MP settings
-
-### Verification
-```bash
-npm run build && npm run test   # 13 passed
-```
-
----
-
-## 2026-06-13 — Agent swarm wave 6: v0.59–v0.61 + expanded tests
-
-### Added
-- **v0.59 Particles P3:** mesh InstancedMesh renderer, sub-emitters on death/collision, 4-point size curve widget
-- **v0.60 Material WPO:** GPU vertex displacement — WorldPosition, ObjectPosition, Noise → Output.wpo
-- **v0.61 PCG graph editor:** visual node canvas (Sample→Filter→Transform→Spawn), 🎲 PCG bottom dock tab
-- **Tests:** 9 Playwright specs — undo, play/stop, command palette, level save/load roundtrip
-
-### Verification
-```bash
-npm run build && npm run test   # 9 passed
-```
-
----
-
-## 2026-06-13 — Agent swarm wave 5: v0.55–v0.58 (IK, BP flow, GAS effects, UX)
-
-### Added
-- **v0.55 IK:** two-bone IK + LookAt on glTF skeletons (`ik.ts`, Details IK section)
-- **v0.56 Blueprint flow:** Gate, MultiGate, SwitchInt, BindSignal, CallSignal nodes
-- **v0.57 GAS effects:** duration modifiers, tag grant/remove, `api.applyEffect` / `api.removeEffect`
-- **v0.58 Editor UX:** camera bookmarks persist in level; Modes dropdown; Label3D billboard actor
-
----
-
-## 2026-06-13 — Agent swarm wave 4: v0.49–v0.54 (path trace, blend2D, MP sync, widget anims, streaming, tests)
-
-### Added
-- **v0.49 Path tracer:** `pathtraced` view mode + `r.PathTracer 0|1` console cvar; `WebGLPathTracer` (three-gpu-pathtracer) progressive samples in single-pane perspective
-- **v0.50 Blend space 2D:** `AnimStateEditor` Blend 2D tab — draggable samples, Delaunay triangulation, barycentric `tickBlendSpace2D` runtime
-- **v0.51 Multiplayer sync:** host authority via lexicographic peer id; `sync` property deltas @ 10 Hz; `spawn`/`despawn` replication; Details Network section (Sync Spawn + per-property checklist)
-- **v0.52 Widget animations:** Sequencer `+ HUD Track…` — opacity/left/top/width/color keys on authored HUD widgets; `applyHudCssProperty` at scrub/play
-- **v0.53 Grid streaming:** World Settings → grid size (64m), load radius, export-by-cell; actors tagged `streamCell: [cx,cz]` (auto on save); camera-radius cell visibility in editor + play; `show streaming` console grid overlay; optional per-cell export manifest + `api.loadCell(cx,cz)` in playable runtime
-- **v0.54 Playwright smoke tests:** `npm run test` — 5 specs (build, editor load, `window.vektra` bridge, terminal spawn, viewport WebGL + FPS stats); `@playwright/test` + `playwright.config.ts` with GPU flags
+- **v0.68** Buffer visualization view modes — World Normal, Depth, Base Color, Roughness, Metallic (`show bufferviz`)
+- **v0.69** Status bar save indicator — ● Unsaved / ✓ Saved / Saving… + autosave countdown toast
+- **v0.70** Sequencer audio waveforms + loop regions (loopIn/loopOut brackets)
+- **v0.71** Multiplayer 2-tab relay integration test (`tests/multiplayer.spec.ts`, `relay-fixture.ts`)
+- **v0.72** AO Map bake to UV2 — `aoMap` texture via box-projection uv2, `build ao map`
 
 ### Changed
-- `exportPlayable` splits actors into per-cell JSON when `streaming.exportByCell` is enabled
-- Multiplayer relay protocol extended with `sync` / `spawn` / `despawn` message types
+- Session master summary below now spans **v0.33 → v0.72** (8 waves, 40 version bumps)
+- Playwright: **14 tests** (13 smoke + 1 live MP relay)
 
 ### Verification
+```bash
+npm run build && npm run test   # 14 passed
+```
+
+---
+
+## 2026-06-13 — Session master summary (v0.33 → v0.72)
+
+Eight parallel agent swarms shipped **40 version bumps** in one research-and-build session. Starting point: broken v0.33 in-flight work (3 TS errors). End state: **build clean**, **14 Playwright tests passing** (incl. live MP relay).
+
+### Starting baseline (pre-session)
+- Last clean commit before session: `8bc3cc3` (v0.32 — Water + PCG Scatter)
+- In-flight v0.33 Blueprint cluster broken (parseExports arity, spawn.ts wiring)
+- Research completed: UE5.7 + Unity 6 + Godot 4.6 gap analysis → completion roadmap
+
+### What was built (by domain)
+
+**Editor shell & UX**
+- Quad viewport layouts (4-pane scissor), rebindable keyboard shortcuts (26 bindings)
+- Content Drawer dock-pin, type stripes, asset context menus
+- Toolbar Modes dropdown (Select/Landscape/Foliage/Paint)
+- Piercing pick menu (Ctrl+RMB), camera bookmarks persist in level
+- Path traced viewport mode (`r.PathTracer`), buffer viz *(v0.68 planned)*
+
+**Scripting & Blueprints**
+- Construction scripts (`onConstruct`), exec pulse debugger, Level BP
+- Data pins, variables, ForLoop/DoOnce/FlipFlop (prior), function collapse/macros
+- Gate, MultiGate, SwitchInt, BindSignal, CallSignal nodes
+- Exec breakpoints with F5 Continue
+
+**Materials & rendering**
+- Material assets + instances (shareable library, per-actor overrides)
+- GPU material editor (UV, Fresnel, Noise, TextureSample) + WPO vertex displacement
+- Baked AO (approx) — hemisphere raycast to vertex colors
+- Reflection probes, post-process volumes, HDRI, sky atmosphere (prior)
+
+**Animation & characters**
+- FSM state machine editor, 1D + 2D blend spaces (Delaunay)
+- Two-bone IK + LookAt on glTF skeletons
+- glTF clip playback, crossfade, sequencer tracks
+
+**World building**
+- Landscape sculpt/paint, foliage, water, CSG booleans, GridMap
+- Visual PCG graph editor (Sample→Filter→Transform→Spawn)
+- Grid-chunked world streaming + `api.loadCell`
+- Recast navmesh WASM bake + grid A* fallback
+
+**Gameplay systems**
+- GAS-lite: attributes, abilities, gameplay effects (duration modifiers)
+- Behavior trees, EQS, AI perception, collision layers/masks
+- Input map, signals/groups, triggers, timers, raycast API
+- Prefab overrides (Godot editable-children pattern)
+
+**Audio & VFX**
+- MetaSounds-lite WebAudio graph editor
+- HRTF spatialization, reverb zones, attenuation falloff curves
+- Particle ribbon + mesh renderers, sub-emitters, size curves
+- Sequencer audio tracks with scrubbing
+
+**UI & cinematics**
+- UMG-lite HUD designer, HUD widget Sequencer tracks
+- Widget3D (CSS3D world-space HTML), Label3D billboards
+- Sequencer bezier curve editor, Take Recorder, Movie Render Queue
+
+**Multiplayer & export**
+- WS relay, ghost pawns, 10Hz property sync, spawn/despawn replication
+- Ownership + client prediction + `own` protocol
+- Multi-level export, PWA option, quality presets
+- One-click playable HTML (~22KB + CDN)
+
+**Debugging & extensibility**
+- Live Tree debugger, per-actor tick profiler, `getLiveSnapshot()`
+- Plugin API (panels, node types, importers, console commands)
+- Plugin Manager UI, command palette
+- Playwright E2E: 5 → 9 → 13 tests
+
+### Version table (all waves)
+
+| Version | Wave | Highlights |
+|---------|------|------------|
+| v0.33 | 1 | onConstruct, BP pulse debugger, Level BP |
+| v0.34 | 1 | Material assets + instances |
+| v0.35 | 1 | Prefab property overrides |
+| v0.36 | 1 | Recast navmesh bake |
+| v0.37 | 1 | Live Tree debugger, tick profiler |
+| v0.38 | 2 | FSM animation editor + blend 1D |
+| v0.39 | 2 | MetaSounds + HRTF + reverb zones |
+| v0.40 | 2 | Multi-level export, PWA, BP functions |
+| v0.41 | 2 | Plugin API + Plugin Manager |
+| v0.42 | 2 | GAS-lite, piercing pick, particle ribbon |
+| v0.43 | 2 | Wave 2 integration |
+| v0.44 | 3 | Material GPU shader nodes |
+| v0.45 | 3 | Quad viewport layouts |
+| v0.46 | 3 | Keyboard shortcut editor |
+| v0.47 | 3 | Content Drawer dock-pin |
+| v0.48 | 3 | Sequencer bezier curves |
+| v0.49 | 4 | Path tracer viewport |
+| v0.50 | 4 | Blend space 2D |
+| v0.51 | 4 | Multiplayer property sync |
+| v0.52 | 4 | HUD widget Sequencer tracks |
+| v0.53 | 4 | Grid world streaming |
+| v0.54 | 4 | Playwright smoke tests (5) |
+| v0.55 | 5 | Two-bone IK + LookAt |
+| v0.56 | 5 | BP Gate/MultiGate/Switch |
+| v0.57 | 5 | GAS gameplay effects |
+| v0.58 | 5 | Bookmarks persist, Modes dropdown, Label3D |
+| v0.59 | 6 | Particle mesh + sub-emitters |
+| v0.60 | 6 | Material WPO |
+| v0.61 | 6 | PCG graph editor; 9 tests |
+| v0.62 | 7 | Audio falloff + sequencer audio |
+| v0.63 | 7 | Blueprint breakpoints |
+| v0.64 | 7 | Widget3D CSS3D |
+| v0.65 | 7 | MP ownership + prediction |
+| v0.66 | 7 | Baked AO (approx) |
+| v0.67 | 7 | 13 E2E tests |
+| v0.68 | 8 | Buffer visualization view modes |
+| v0.69 | 8 | Status bar save + autosave countdown |
+| v0.70 | 8 | Sequencer audio waveforms + loops |
+| v0.71 | 8 | MP 2-tab relay test |
+| v0.72 | 8 | AO map bake (UV2) |
+
+### New modules (files created this session)
+
+`materialAssets.ts` · `materialShader.ts` · `materialCommands.ts` · `liveSnapshot.ts` · `navMeshWorker.ts` · `animStateMachine.ts` · `metaSounds.ts` · `metaSoundAssets.ts` · `gameplayAbilities.ts` · `ik.ts` · `pcgGraph.ts` · `streaming.ts` · `lightmapBake.ts` · `widget3d.ts` · `plugins.ts` · `shortcuts.ts` · `viewportLayout.ts` · `PluginManager.tsx` · `AnimStateEditor.tsx` · `MetaSoundEditor.tsx` · `PCGEditor.tsx` · `CurveEditor.tsx` · `ContentDrawer.tsx` · `ShortcutEditor.tsx` · `AttenuationFields.tsx` · `Widget3DLayer.tsx` · `PluginPanelView.tsx` · `playwright.config.ts` · `tests/smoke.spec.ts` · `tests/multiplayer.spec.ts` · `tests/relay-fixture.ts`
+
+### Dependencies added
+
+`recast-navigation` · `@recast-navigation/three` · `three-gpu-pathtracer` · `three-mesh-bvh` · `@playwright/test`
+
+### Verification (current)
+
 ```bash
 cd "~/Vektra Industries/Software/vektra-engine"
 npm install
-npm run build   # exit 0
-npm run test    # 5 passed
+npm run build    # exit 0
+npm run test     # 14 passed
+npm run dev      # editor on :5173
+node scripts/relay.mjs   # multiplayer relay :24690
 ```
+
+### Explicit non-goals (honest skips)
+
+Real Lumen, Nanite, Substrate, Motion Matching, Mass Entity, MetaHumans, full Control Rig graphs, true Lightmass — approximated or deferred.
 
 ---
 
-## 2026-06-13 — Agent swarm wave 3: v0.44–v0.48 (material GPU, quad viewports, shortcuts, drawer, curves)
+## 2026-06-13 — Wave 8: v0.68+ (placeholder — append after swarm finishes)
+
+> **Do not finalize until wave 8 agents land.** Fill in version bumps, commit hash, and test count below.
+
+### Planned (from CHECKPOINT + gap list)
+
+- **v0.68** Buffer visualization view modes (World Normal, Depth, Base Color)
+- **v0.69** Sequencer audio polish — waveform display, loop regions
+- **v0.70** Status bar — save indicator, autosave countdown
+- *(stretch)* Second UV lightmaps; optional 2-tab MP relay CI test
 
 ### Added
-- **v0.44 Material editor v2:** GPU mode via `onBeforeCompile` (`materialShader.ts`) — UV, TextureSample, Fresnel, Noise nodes; CPU/GPU toggle; live preview sphere in `MaterialEditor`
-- **v0.45 Quad viewports:** `viewportLayout.ts` — single/quad 2×2 scissor panes (Perspective/Top/Front/Side), pane maximize/restore, per-pane camera + gizmo focus; prefs in localStorage
-- **v0.46 Keyboard shortcuts:** `ShortcutEditor` modal (Edit → Editor Preferences → Keyboard Shortcuts…); 25 rebindable bindings in `SHORTCUT_REGISTRY`; overrides in `vektra-engine.shortcuts`
-- **v0.47 Content Drawer polish:** 📌 Dock in Layout pin (`contentDrawerDocked`); color-coded `asset-type-stripe` on tiles; right-click Rename (F2) / Duplicate on materials, MetaSounds, prefabs, imports
-- **v0.48 Bezier curves:** Sequencer `bezier` interp (⌇) + `CurveEditor` panel with draggable in/out tangent handles; cubic evaluation in `sequencer.ts`
+
+- *(pending)*
 
 ### Changed
-- `App.tsx` routes editor hotkeys through `matchesShortcutId` (respects user rebinding)
-- Status bar shows drawer dock state; Content Drawer floating vs docked layout
 
-### Verification
+- *(pending)*
+
+### Verification target
+
 ```bash
-cd "~/Vektra Industries/Software/vektra-engine"
-npm run build   # exit 0
+npm run build    # exit 0
+npm run test     # TBD passed
 ```
 
 ---
 
-## 2026-06-13 — Agent swarm wave 2: v0.38–v0.43 (animation, audio, export, plugins, GAS)
+## 2026-06-13 — Wave 7: v0.62–v0.67
 
 ### Added
-- **v0.38 FSM + blend space:** `AnimStateEditor` bottom-dock tab — draggable state nodes, transition arrows, 1D blend space lerp; `tickAnimSM` / `tickBlendSpace1D` runtime
-- **v0.39 MetaSounds-lite:** `MetaSoundEditor` — Oscillator/Gain/Filter/ADSR/Noise/Buffer → WebAudio topology; `MetaSoundAsset` library; `SoundEmitter` actor; HRTF `PannerNode` spatialization; TriggerVolume reverb zones (`ConvolverNode`)
-- **v0.40 Multi-level export:** World Settings linked levels → `window.__VEKTRA_LEVELS__` in playable HTML; `api.loadLevel('key')` during PIE; PWA manifest + service-worker stub; mobile/desktop export quality presets
-- **v0.40 BP functions/macros:** `collapseToFunction` + `CallFunction` nodes inlined at compile; function subgraph editor in Blueprint panel
-- **v0.41 Plugin API:** `registerNodeType` / `registerPanel` / `registerImporter` / `registerConsoleCommand`; Plugin Manager modal; drag-drop `.js` install; example-hello plugin
-- **v0.42 GAS-lite:** attribute sets + ability assets (localStorage); per-actor assignment in Details; `api.activateAbility` / `api.getAttribute` / `api.setAttribute`; BT `activateAbility` task
-- **v0.42 Viewport + particles:** piercing pick menu (Ctrl+RMB / select mode); ribbon trail renderer; 4-stop color gradient widget; ground-bounce via heightfield lookup
-
-### Changed
-- `exportPlayable` bundles linked levels + optional PWA head/boot script
-- `audio.ts` routes playback through bus mixer + HRTF panner (replaces manual distance falloff)
-- Behavior trees can invoke assigned abilities via `activateAbility` task node
-
-### Verification
-```bash
-cd "~/Vektra Industries/Software/vektra-engine"
-npm install
-npm run build   # exit 0
-npm run dev     # :5173 default
-```
+- **v0.62** Attenuation falloff curves + Sequencer audio tracks with scrubbing (`AttenuationFields.tsx`)
+- **v0.63** Blueprint exec breakpoints — gutter toggle, pause PIE, F5 Continue
+- **v0.64** Widget3D — CSS3DRenderer world-space HTML (`widget3d.ts`, `Widget3DLayer.tsx`)
+- **v0.65** MP ownership (`netOwnerId`), client prediction, `own` protocol
+- **v0.66** Baked AO (approx) — `lightmapBake.ts`, `build ao`, Build menu
+- **v0.67** Playwright **13 tests** — navmesh, materials, blueprint, MP mock
 
 ---
 
-## 2026-06-13 — Agent swarm wave 1: v0.33–v0.37 (functional completeness wave)
+## 2026-06-13 — Wave 6: v0.59–v0.61
 
 ### Added
-- **v0.33 Blueprint completion:** `onConstruct` construction scripts (spawn + gizmo move), Blueprint exec pulse debugger (`__bpPulse`), Level BP button (`LevelScript` actor)
-- **v0.34 Material assets:** shareable `MaterialAsset` library (localStorage), per-actor instances with overrides, Content Browser Materials tab, Details Material Instance section
-- **v0.35 Prefab overrides:** Godot-style `prefabSource` / `prefabOverrides` with per-field revert (⟲) in Details
-- **v0.36 Recast navmesh:** `recast-navigation` WASM bake (worker), `show navmesh` console command, World Settings Bake + Show toggle, grid A* fallback
-- **v0.37 Live debugger:** Debug panel Live Tree + Monitors tabs, live Details during Play, `window.vektra.getLiveSnapshot()`, per-actor tick profiler bars
+- **v0.59** Particle mesh renderer, sub-emitters, 4-point size curve
+- **v0.60** Material GPU WPO vertex displacement
+- **v0.61** Visual PCG graph editor (🎲 PCG tab); tests expanded to 9
 
-### Changed
-- `AddActorCommand` runs construction scripts on every actor spawn
-- `api.findPath` uses Recast polygon paths when navmesh is baked
-- Property commands skip undo stack during Play (live edit without pollution)
+---
+
+## 2026-06-13 — Wave 5: v0.55–v0.58
+
+### Added
+- **v0.55** Two-bone IK + LookAt (`ik.ts`)
+- **v0.56** BP Gate, MultiGate, SwitchInt, BindSignal, CallSignal
+- **v0.57** GAS gameplay effects — `api.applyEffect` / `api.removeEffect`
+- **v0.58** Camera bookmarks in level file; Modes dropdown; Label3D actor
+
+---
+
+## 2026-06-13 — Wave 4: v0.49–v0.54
+
+### Added
+- **v0.49** Path tracer view mode + `r.PathTracer` cvar
+- **v0.50** 2D blend space (Delaunay triangulation)
+- **v0.51** Multiplayer sync @ 10Hz + spawn/despawn
+- **v0.52** HUD widget Sequencer tracks
+- **v0.53** Grid streaming + `api.loadCell`
+- **v0.54** Playwright smoke tests (5)
+
+---
+
+## 2026-06-13 — Wave 3: v0.44–v0.48
+
+### Added
+- **v0.44** Material GPU `onBeforeCompile` shader graph
+- **v0.45** Quad viewport scissor layouts
+- **v0.46** Rebindable keyboard shortcuts (26)
+- **v0.47** Content Drawer dock-pin + asset stripes
+- **v0.48** Sequencer bezier curve editor
+
+---
+
+## 2026-06-13 — Wave 2: v0.38–v0.43
+
+### Added
+- **v0.38** FSM + 1D blend space animation editor
+- **v0.39** MetaSounds + HRTF + reverb zones + SoundEmitter
+- **v0.40** Multi-level export, PWA, BP function macros
+- **v0.41** Plugin API + Plugin Manager
+- **v0.42** GAS-lite, piercing pick, particle ribbon/gradient/bounce
+- **v0.43** Integration + gap-list sync
+
+---
+
+## 2026-06-13 — Wave 1: v0.33–v0.37
+
+### Added
+- **v0.33** Construction scripts, BP pulse debugger, Level BP
+- **v0.34** Material assets + instances
+- **v0.35** Prefab property overrides
+- **v0.36** Recast navmesh WASM bake
+- **v0.37** Live Tree debugger + tick profiler
 
 ### Fixed
-- Build-breaking TS errors in `scripting.ts` / `spawn.ts` (v0.33 in-flight cluster)
+- v0.33 in-flight TS errors (`scripting.ts`, `spawn.ts`)
 
-### Verification
-```bash
-cd "~/Vektra Industries/Software/vektra-engine"
-npm install
-npm run build   # exit 0
-npm run dev     # :5173 default
-```
+### Changed
+- `AddActorCommand` runs `onConstruct` on all spawns
+- Property commands skip undo during Play

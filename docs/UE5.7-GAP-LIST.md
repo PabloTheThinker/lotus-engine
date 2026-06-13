@@ -2,7 +2,7 @@
 
 > The complete worklist: every area of the official UE 5.7 documentation
 > (dev.epicgames.com/documentation/unreal-engine/unreal-engine-5-7-documentation)
-> mapped against what Vektra Engine has as of v0.54.
+> mapped against what Vektra Engine has as of v0.67.
 > Sourced from docs/UE5-TOOL-CENSUS.md + docs/UE5.7-EDITOR-UX-RESEARCH.md.
 >
 > Legend: ✅ shipped · ◐ partial (v1 shipped, upgrade listed) · ⏳ to do · 🚫 non-goal (infeasible in browser / wrong category — approximate or skip honestly)
@@ -22,7 +22,7 @@
 | Viewport layouts (quad view, maximize/restore) | ✅ | v0.45: 2×2 scissor panes (Perspective/Top/Front/Side), maximize/restore, per-pane camera + gizmo focus (`viewportLayout.ts`) |
 | F11 immersive viewport | ✅ | — (v0.21) |
 | Game View (G) | ✅ | — |
-| Camera bookmarks | ◐ | Shipped as Shift+0-9 set / 0-9 recall (Ctrl+digits is browser-reserved); persist bookmarks in the level file |
+| Camera bookmarks | ✅ | Shift+0-9 set / 0-9 recall (Ctrl+digits browser-reserved); v0.58: persist in level file |
 | Pilot Actor + eject banner | ✅ | Move banner top-left per UE; letterbox preview when piloting a Camera |
 | Frame Selected (F) sets orbit pivot; Alt+LMB orbit / Alt+RMB dolly | ✅ | Alt+RMB dolly shipped (v0.21); Alt+MMB track = polish |
 | Content Drawer (Ctrl+Space, auto-collapse, Dock in Layout) | ✅ | v0.47: 📌 Dock in Layout pin, color-coded type stripes, right-click Rename (F2) / Duplicate on materials, MetaSounds, prefabs, imports |
@@ -46,7 +46,7 @@
 | Flow nodes: ForLoop, DoOnce, FlipFlop | ✅ | Shipped (v0.24, runtime-verified). Gate/MultiGate/Switch = next |
 | Event Dispatchers / BP Interfaces | ◐ | Signals (api.emit/on) cover the runtime; add Bind/Call BP nodes |
 | Construction Script (runs on edit-time placement) | ✅ | v0.33: onConstruct() via runConstructScript on AddActorCommand + gizmo release |
-| Blueprint debugger (exec pulse visualization, breakpoints) | ✅ | v0.33: __bpPulse wire highlights during Play (breakpoints = polish) |
+| Blueprint debugger (exec pulse visualization, breakpoints) | ✅ | v0.33: __bpPulse wire highlights; v0.63: exec breakpoints — gutter toggle, pause PIE, F5 Continue |
 | Level Blueprint | ✅ | v0.33: Level BP button spawns LevelScript Empty actor convention |
 | Per-actor JS scripting (our GDScript analog) | ✅ | — |
 | @export vars → Details widgets | ✅ | Add @export_range slider / @export_enum dropdown variants |
@@ -55,14 +55,14 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Material node editor | ◐ | v0.44: GPU `onBeforeCompile` mode — UV, TextureSample, Fresnel, Noise + live preview sphere; CPU graph + material assets/instances ✅ v0.34. WPO node = next |
+| Material node editor | ◐ | v0.44: GPU `onBeforeCompile` nodes + preview sphere; v0.60: WPO (WorldPosition, ObjectPosition → vertex displacement). CPU graph + instances ✅ v0.34 |
 | Material instances + parameters | ✅ | v0.34: MaterialAsset library + per-actor materialAssetId/overrides in Details |
 | Post-process volumes (blend radius, priority) | ✅ | Add vignette, color grading (lift/gamma/gain), DOF to the override set |
 | Sky atmosphere + sun binding | ✅ | Volumetric clouds 🚫 (billboard/raymarch-lite later) |
 | Exponential height fog | ◐ | FogExp2 shipped; height-falloff variant via shader |
 | Lumen (dynamic GI) | 🚫 | Approximate: SSAO pass + env probes (probes ✅); label honestly |
 | Nanite | 🚫 | meshoptimizer LOD chains + BatchedMesh when three.js lands virtual geometry |
-| Lightmass baking | ⏳ | Stretch: three-gpu-pathtracer AO/lightmap bake to second UV set |
+| Lightmass baking | ◐ | v0.66: Baked AO (approx) — hemisphere raycast → vertex colors (`lightmapBake.ts`, Build → Bake AO). Second UV lightmaps = stretch |
 | Reflection captures | ✅ | Add box projection + auto re-bake on Build |
 | TSR / anti-aliasing | ◐ | r.ScreenPercentage wired to render targets (v0.21); FXAA pass = polish |
 | View modes: Lit/Unlit/Wireframe/Detail | ✅ | Add Buffer Visualization (World Normal / Depth / Base Color) via MeshNormalMaterial & depth override |
@@ -80,7 +80,7 @@
 | Water system | ✅ | v0.32: Water actor — animated Gerstner-lite surface, size/color/wave props, serialized (verified vertex animation) |
 | World Partition / streaming | ✅ | v0.53: grid-chunked `streamCell` load/unload around camera, `show streaming` overlay, `api.loadCell`, export-by-cell; cull-distance still per-actor |
 | Level instances (nested prefabs) | ◐ | v0.35: prefabSource/prefabOverrides + per-field revert (⟲). Nested prefab-in-prefab = upgrade |
-| PCG (sample→filter→spawn) | ✅ | v0.32: PCG Scatter volume — seeded jittered-grid sampling, surface raycast + slope filter, scale/rotation jitter + normal alignment, live regen, deterministic (verified 24 instances). Full node-graph editor = v2 |
+| PCG (sample→filter→spawn) | ✅ | v0.32: PCG Scatter volume; v0.61: visual node-graph editor (`pcgGraph.ts`, 🎲 PCG tab) |
 | Modeling mode (CSG/booleans) | ◐ | Union/Subtract/Intersect shipped; add Mirror, Merge, meshopt Simplify; poly editing 🚫 v1 |
 | Fracture mode | ◐ | Breakable shatter shipped (8 fragments); Voronoi pre-fracture = upgrade |
 | GridMap blockout | ✅ | Mesh-library palettes (multiple tile types per layer) |
@@ -93,9 +93,9 @@
 | Emitter + params (rate/burst/shapes/velocity/gravity/drag/color & size over life) | ✅ | — |
 | Module *stack* UI | ✅ | v0.27: Spawn/Shape/Velocity/Forces/ColorOverLife/SizeOverLife/Renderer cards with enable toggles, sim-respected (A/B verified: 4.0m vs 0.4m rise) |
 | Curve-driven params (color ramp / size curve widgets) | ◐ | v0.42: 4-stop color gradient widget in Details; graphical size curve + Sequencer-shared widgets = polish |
-| Ribbon / mesh renderers | ◐ | v0.42: ribbon trail strip renderer; InstancedMesh mesh renderer = next |
+| Ribbon / mesh renderers | ✅ | v0.42: ribbon trail; v0.59: mesh renderer + sub-emitters + 4-point size curve |
 | GPU sim | 🚫 | WebGPU compute later; CPU ≤5k fine |
-| Sub-emitters / events / collision | ◐ | v0.42: ground-bounce via heightfield lookup; sub-emitters/events = next |
+| Sub-emitters / events / collision | ◐ | v0.42: ground-bounce via heightfield lookup; v0.59: sub-emitters; particle events = polish |
 
 ## 6. Animating Characters & Objects
 
@@ -109,7 +109,7 @@
 | glTF clip playback + crossfade | ✅ | — |
 | Anim state machine editor (FSM graph) | ◐ | v0.38: AnimStateEditor tab — draggable states + transition arrows; full AnimGraph polish = next |
 | Blend spaces 1D/2D | ✅ | v0.38: 1D lerp weights; v0.50: 2D Delaunay triangulation + barycentric blend in `AnimStateEditor` Blend 2D tab |
-| Control Rig / IK | ⏳ | Two-bone IK + LookAt on glTF skeletons; rig graphs 🚫 |
+| Control Rig / IK | ◐ | v0.55: two-bone IK + LookAt on glTF skeletons (`ik.ts`); rig graphs 🚫 |
 | Retargeting / Motion Matching | 🚫 | — |
 | Take Recorder | ✅ | v0.31: ⏺ Take arms 10Hz transform sampling of the selected actor during Play → sequencer keys (verified 15 keys) |
 | Movie Render Queue | ✅ | v0.31: 🎥 Render plays the timeline once and exports a .webm of the viewport (verified 507KB capture) |
@@ -128,10 +128,10 @@
 | Physics: rigid bodies, mobility gate, trimesh terrain | ✅ | Physics layers/masks matrix; joints as actor links |
 | Collision layers/masks | ✅ | v0.28: per-actor Layer 0-7 + collides-with bitmask buttons → Rapier groups (verified: filtered ball fell through ground) |
 | Destruction | ✅ (lite) | Voronoi fracture, strain propagation = upgrade |
-| Gameplay Ability System | ◐ | v0.42: GAS-lite — attribute sets + abilities (cooldown/cost/tags) + api.activateAbility; effect stacks = next |
+| Gameplay Ability System | ◐ | v0.42: GAS-lite — attributes + abilities; v0.57: gameplay effects (duration modifiers, `api.applyEffect` / `api.removeEffect`) |
 | Gameplay Tags (hierarchical) | ✅ | v0.28: 'Enemy.Boss' prefix-matches 'Enemy.Boss.Fire' in getActorsByTag |
 | Data tables / curve assets | ◐ | JSON tables shipped; grid editor UI + curve assets |
-| Networking / replication | ◐ | v0.51: host authority, property sync @ 10 Hz (Details Network checklist), Sync Spawn/despawn over relay; pawn co-presence ✅. Ownership + prediction = polish |
+| Networking / replication | ◐ | v0.51: host authority, property sync @ 10 Hz, Sync Spawn/despawn; v0.65: ownership (`netOwnerId`), client prediction, `own` protocol. 2-tab live relay test + polish = next |
 
 ## 8. Audio
 
@@ -139,8 +139,8 @@
 |---|---|---|
 | Sound playback + distance attenuation + buses | ✅ | v0.39: HRTF PannerNode spatialization + bus mixer (replaces manual falloff) |
 | MetaSounds (procedural node graph) | ✅ | v0.39: MetaSoundEditor — Osc/Gain/Filter/ADSR/Noise/Buffer → WebAudio; api.playMetaSound + SoundEmitter actor |
-| Attenuation curve shapes / reverb zones | ◐ | v0.39: ConvolverNode reverb zones via TriggerVolume preset; falloff curve picker = polish |
-| Sequencer audio scrubbing | ⏳ | After audio tracks land |
+| Attenuation curve shapes / reverb zones | ✅ | v0.39: ConvolverNode reverb zones via TriggerVolume preset; v0.62: falloff curve picker (`AttenuationFields.tsx`) |
+| Sequencer audio scrubbing | ✅ | v0.62: Sequencer audio tracks + scrub-to-playhead (`AttenuationFields.tsx`) |
 
 ## 9. UI (UMG)
 
@@ -150,7 +150,7 @@
 | Widget designer (anchors, authored widgets) | ✅ | v0.29: HUD Widgets section — text/bar/button rows with anchor/color/signal, serialized in levels, rendered at Play. Drag-drop canvas layout = polish |
 | Buttons/interaction routing into scripts | ✅ | v0.29: button widgets emit signals on click; scripts subscribe via api.on (verified) |
 | Widget animations | ✅ | v0.52: Sequencer HUD tracks — opacity/left/top/width/color keys on authored widgets; `applyHudCssProperty` at scrub/play |
-| 3D world-space widgets | ⏳ | CSS3DRenderer or render-to-texture plane |
+| 3D world-space widgets | ✅ | v0.64: Widget3D — CSS3DRenderer world-space HTML (`widget3d.ts`, `Widget3DLayer.tsx`); export canvas fallback |
 
 ## 10. Testing & Optimization
 
@@ -161,7 +161,7 @@
 | PIE: pause / frame-step / eject / possess | ✅ | "Click for Mouse Control" + "Shift+F1 for cursor" overlay text; Alt+P play hotkey |
 | Simulate / Play From Here / Keep Sim Changes | ✅ | — |
 | Collision/navmesh debug draw (`show collision`) | ✅ | Wireframe outlines shipped (v0.21) |
-| Automated smoke tests (Playwright) | ✅ | v0.54: `npm run test` — 5 specs (build, editor load, vektra bridge, terminal spawn, viewport WebGL + FPS stats) |
+| Automated smoke tests (Playwright) | ✅ | v0.67: `npm run test` — 13 specs (build, editor boot, vektra bridge, terminal spawn, viewport stats, navmesh, materials, blueprint, MP mock) |
 
 ## 11. Sharing & Releasing
 
@@ -194,8 +194,14 @@
 9. ~~Material editor v2~~ ◐ v0.44 (GPU nodes + preview sphere; WPO = next)
 10. ~~Viewport quad layouts + shortcut editor + Content Drawer dock + bezier curves~~ ✅ v0.45–v0.48
 11. ~~Path tracer + blend2D + MP sync + widget anims + streaming + Playwright~~ ✅ v0.49–v0.54
-12. **Two-bone IK + LookAt** on glTF skeletons
-13. **Particles P3** — InstancedMesh renderer, graphical size curves, sub-emitters
-14. **GAS effect stacks** + toolbar Modes dropdown + camera bookmarks persist
+12. ~~Two-bone IK + LookAt~~ ✅ v0.55
+13. ~~Particles P3 — mesh renderer, size curves, sub-emitters~~ ✅ v0.59
+14. ~~GAS effect stacks + Modes dropdown + camera bookmarks persist~~ ✅ v0.55–v0.58
+15. ~~Material WPO + PCG graph editor~~ ✅ v0.60–v0.61
+16. ~~Audio falloff + sequencer scrubbing + BP breakpoints + Widget3D + MP ownership + baked AO~~ ✅ v0.62–v0.67
+17. **Buffer visualization** view modes (World Normal, Depth, Base Color)
+18. **Sequencer audio** polish — waveform display, loop regions
+19. **Status bar** — save indicator, autosave countdown
+20. **Second UV lightmaps** — stretch beyond vertex-color AO
 
 *Update this file as items ship — it is the working successor to ROADMAP.md (which records the completed 34-task arc).*

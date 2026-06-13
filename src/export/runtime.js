@@ -140,6 +140,83 @@ function applyBakedAO(root, sa) {
   })
 }
 
+function generateBoxProjectionUV2(geometry) {
+  const pos = geometry.attributes.position
+  if (!pos?.count) return false
+  if (!geometry.attributes.normal) geometry.computeVertexNormals()
+  const norm = geometry.attributes.normal
+  geometry.computeBoundingBox()
+  const bbox = geometry.boundingBox
+  if (!bbox) return false
+  const size = new THREE.Vector3()
+  bbox.getSize(size)
+  const sx = size.x || 1
+  const sy = size.y || 1
+  const sz = size.z || 1
+  const uvs = new Float32Array(pos.count * 2)
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const z = pos.getZ(i)
+    const ax = Math.abs(norm.getX(i))
+    const ay = Math.abs(norm.getY(i))
+    const az = Math.abs(norm.getZ(i))
+    let u
+    let v
+    if (ax >= ay && ax >= az) {
+      u = (z - bbox.min.z) / sz
+      v = (y - bbox.min.y) / sy
+    } else if (ay >= ax && ay >= az) {
+      u = (x - bbox.min.x) / sx
+      v = (z - bbox.min.z) / sz
+    } else {
+      u = (x - bbox.min.x) / sx
+      v = (y - bbox.min.y) / sy
+    }
+    uvs[i * 2] = THREE.MathUtils.clamp(u, 0, 1)
+    uvs[i * 2 + 1] = THREE.MathUtils.clamp(v, 0, 1)
+  }
+  geometry.setAttribute('uv2', new THREE.BufferAttribute(uvs, 2))
+  return true
+}
+
+function createAOMapTexture(pixels, size) {
+  const data = new Uint8Array(size * size * 3)
+  for (let i = 0; i < size * size; i++) {
+    const v = Math.round(THREE.MathUtils.clamp(pixels[i] ?? 1, 0, 1) * 255)
+    data[i * 3] = v
+    data[i * 3 + 1] = v
+    data[i * 3 + 2] = v
+  }
+  const tex = new THREE.DataTexture(data, size, size, THREE.RGBFormat)
+  tex.colorSpace = THREE.NoColorSpace
+  tex.needsUpdate = true
+  return tex
+}
+
+/** Re-apply AO Map Bake (UV2, approx) saved on the actor. */
+function applyBakedAOMap(root, sa) {
+  if (!sa.bakedAOMap || !sa.bakedAOMapMeshes?.length) return
+  const meshes = []
+  root.traverse((o) => { if (o.isMesh) meshes.push(o) })
+  const size = sa.bakedAOMapSize ?? 256
+  const intensity = sa.aoMapIntensity ?? 1
+  sa.bakedAOMapMeshes.forEach((pixels, i) => {
+    const mesh = meshes[i]
+    if (!mesh || !pixels?.length) return
+    if (!mesh.geometry.attributes.uv2) generateBoxProjectionUV2(mesh.geometry)
+    const tex = createAOMapTexture(pixels, size)
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const mat of mats) {
+      if (mat.isMeshStandardMaterial) {
+        if (mat.aoMap) mat.aoMap.dispose()
+        mat.aoMap = tex
+        mat.aoMapIntensity = intensity
+      }
+    }
+  })
+}
+
 const gltfAssets = {}
 async function loadAssets(level) {
   const loader = new GLTFLoader()
@@ -221,6 +298,7 @@ function instantiate(sa) {
     actor.mesh = mesh
     root.add(mesh)
     applyBakedAO(root, sa)
+    applyBakedAOMap(root, sa)
   } else if (sa.type === 'CustomMesh' && sa.customGeometry) {
     const g = sa.customGeometry
     const geo = new THREE.BufferGeometry()
@@ -233,11 +311,13 @@ function instantiate(sa) {
     actor.mesh = mesh
     root.add(mesh)
     applyBakedAO(root, sa)
+    applyBakedAOMap(root, sa)
   } else if (sa.type === 'ImportedMesh' && sa.assetId && gltfAssets[sa.assetId]) {
     const inst = gltfAssets[sa.assetId].clone(true)
     inst.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (!actor.mesh) actor.mesh = o } })
     root.add(inst)
     applyBakedAO(root, sa)
+    applyBakedAOMap(root, sa)
   } else if (sa.type === 'DirectionalLight') {
     const l = new THREE.DirectionalLight(sa.light?.color ?? '#fff', sa.light?.intensity ?? 2)
     l.castShadow = true
@@ -356,6 +436,7 @@ function instantiate(sa) {
     actor.mesh = mesh
     root.add(mesh)
     applyBakedAO(root, sa)
+    applyBakedAOMap(root, sa)
   }
   scene.add(root)
   actors.set(sa.id, actor)

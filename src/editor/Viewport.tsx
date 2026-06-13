@@ -32,7 +32,7 @@ import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
 import { handlePluginFileDrop } from './plugins'
 import { dragGhost, spawnAsset, type AssetPayload } from './spawn'
 import { updateListener } from '../engine/audio'
-import { useEditor, type ViewMode } from './store'
+import { useEditor, type BufferViz, type ViewMode } from './store'
 import { isTypingTarget, matchesShortcutId } from './shortcuts'
 import {
   computePanes,
@@ -166,19 +166,43 @@ const VIEW_MODE_LABELS: Record<ViewMode, string> = {
   pathtraced: 'Path Traced',
 }
 
+const BUFFER_VIZ_LABELS: Record<Exclude<BufferViz, 'none'>, string> = {
+  baseColor: 'Base Color',
+  worldNormal: 'World Normal',
+  depth: 'Scene Depth',
+  roughness: 'Roughness',
+  metallic: 'Metallic',
+}
+
 function ViewModeSelect() {
   const viewMode = useEditor((s) => s.viewMode)
+  const bufferViz = useEditor((s) => s.bufferViz)
   const setViewMode = useEditor((s) => s.setViewMode)
+  const setBufferViz = useEditor((s) => s.setBufferViz)
+  const selectValue = bufferViz !== 'none' ? `buffer:${bufferViz}` : viewMode
   return (
     <select
       className="cam-speed view-mode-select"
-      title="View Mode (Alt+2–5)"
-      value={viewMode}
-      onChange={(e) => setViewMode(e.target.value as ViewMode)}
+      title="View Mode (Alt+2–5) · Buffer Viz: show bufferviz <mode>"
+      value={selectValue}
+      onChange={(e) => {
+        const v = e.target.value
+        if (v.startsWith('buffer:')) {
+          setBufferViz(v.slice(7) as BufferViz)
+        } else {
+          setBufferViz('none')
+          setViewMode(v as ViewMode)
+        }
+      }}
     >
       {(Object.keys(VIEW_MODE_LABELS) as ViewMode[]).map((m) => (
         <option key={m} value={m}>{VIEW_MODE_LABELS[m]}</option>
       ))}
+      <optgroup label="Buffer Visualization">
+        {(Object.keys(BUFFER_VIZ_LABELS) as Exclude<BufferViz, 'none'>[]).map((bv) => (
+          <option key={bv} value={`buffer:${bv}`}>{BUFFER_VIZ_LABELS[bv]}</option>
+        ))}
+      </optgroup>
     </select>
   )
 }
@@ -527,42 +551,137 @@ export function Viewport() {
       })
     }
 
-    // ---- view modes (Lit / Unlit / Wireframe / Path Traced) ----
-    let appliedViewMode: ViewMode = 'lit'
+    // ---- view modes (Lit / Unlit / Wireframe / Path Traced / Buffer Viz) ----
+    let appliedEffectiveMode = 'lit'
     let appliedViewVersion = -1
     let ptSceneVersion = -1
     let ptEnvVersion = -1
     const ptCamPos = new THREE.Vector3()
     const ptCamQuat = new THREE.Quaternion()
-    function applyViewMode(mode: ViewMode, sceneVersion: number) {
-      if (mode === appliedViewMode && sceneVersion === appliedViewVersion) return
-      appliedViewMode = mode
+
+    const depthVizVert = /* glsl */`
+      varying vec3 vViewPosition;
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `
+    const depthVizFrag = /* glsl */`
+      uniform float cameraNear;
+      uniform float cameraFar;
+      varying vec3 vViewPosition;
+      void main() {
+        float d = length(vViewPosition);
+        float linear = clamp((d - cameraNear) / (cameraFar - cameraNear), 0.0, 1.0);
+        gl_FragColor = vec4(vec3(linear), 1.0);
+      }
+    `
+    const worldNormalVizVert = /* glsl */`
+      varying vec3 vWorldNormal;
+      void main() {
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `
+    const worldNormalVizFrag = /* glsl */`
+      varying vec3 vWorldNormal;
+      void main() {
+        gl_FragColor = vec4(vWorldNormal * 0.5 + 0.5, 1.0);
+      }
+    `
+
+    function stdProps(mat: THREE.Material) {
+      const std = mat as THREE.MeshStandardMaterial
+      return {
+        color: std.color?.clone?.() ?? new THREE.Color(0xcccccc),
+        map: std.map ?? null,
+        roughness: std.roughness ?? 0.5,
+        metalness: std.metalness ?? 0,
+        normalMap: std.normalMap ?? null,
+      }
+    }
+
+    function makeBufferVizMaterial(bv: Exclude<BufferViz, 'none'>, orig: THREE.Material, camera: THREE.Camera): THREE.Material {
+      const p = stdProps(orig)
+      if (bv === 'baseColor') {
+        return new THREE.MeshBasicMaterial({ color: p.color, map: p.map })
+      }
+      if (bv === 'worldNormal') {
+        return new THREE.ShaderMaterial({
+          vertexShader: worldNormalVizVert,
+          fragmentShader: worldNormalVizFrag,
+        })
+      }
+      if (bv === 'depth') {
+        const cam = camera as THREE.PerspectiveCamera
+        return new THREE.ShaderMaterial({
+          uniforms: {
+            cameraNear: { value: cam.near ?? 0.1 },
+            cameraFar: { value: cam.far ?? 1000 },
+          },
+          vertexShader: depthVizVert,
+          fragmentShader: depthVizFrag,
+        })
+      }
+      if (bv === 'roughness') {
+        const g = p.roughness
+        return new THREE.MeshBasicMaterial({ color: new THREE.Color(g, g, g) })
+      }
+      const g = p.metalness
+      return new THREE.MeshBasicMaterial({ color: new THREE.Color(g, g, g) })
+    }
+
+    function applyViewMode(mode: ViewMode, bufferViz: BufferViz, sceneVersion: number, camera: THREE.Camera) {
+      const effective = bufferViz !== 'none' ? `bv:${bufferViz}` : mode
+      if (effective === appliedEffectiveMode && sceneVersion === appliedViewVersion) return
+      appliedEffectiveMode = effective
       appliedViewVersion = sceneVersion
       for (const actor of world.actors.values()) {
         actor.root.traverse((o) => {
           if (!(o instanceof THREE.Mesh) || o.userData.isHelper || o.userData.isEditorOnly) return
           const orig = (o.userData.origMaterial as THREE.Material | undefined) ?? (o.material as THREE.Material)
           if (!o.userData.origMaterial) o.userData.origMaterial = orig
+          delete o.userData.depthVizUniforms
+          if (bufferViz !== 'none') {
+            const mat = makeBufferVizMaterial(bufferViz, orig, camera)
+            o.material = mat
+            if (bufferViz === 'depth' && mat instanceof THREE.ShaderMaterial) {
+              o.userData.depthVizUniforms = mat.uniforms
+            }
+            return
+          }
           if (mode === 'lit' || mode === 'pathtraced') {
             o.material = orig
           } else if (mode === 'unlit') {
-            const std = orig as THREE.MeshStandardMaterial
-            o.material = new THREE.MeshBasicMaterial({
-              color: std.color ? std.color.clone() : new THREE.Color(0xcccccc),
-              map: std.map ?? null,
-            })
+            const p = stdProps(orig)
+            o.material = new THREE.MeshBasicMaterial({ color: p.color, map: p.map })
           } else if (mode === 'detail') {
             // UE Detail Lighting: neutral material, lighting + normals only
-            const std = orig as THREE.MeshStandardMaterial
+            const p = stdProps(orig)
             o.material = new THREE.MeshStandardMaterial({
               color: 0x9a9a9a,
               roughness: 0.65,
               metalness: 0,
-              normalMap: std.normalMap ?? null,
+              normalMap: p.normalMap,
             })
           } else {
             o.material = new THREE.MeshBasicMaterial({ color: 0x8fa3bd, wireframe: true })
           }
+        })
+      }
+    }
+
+    function syncDepthVizUniforms(camera: THREE.Camera) {
+      const cam = camera as THREE.PerspectiveCamera
+      const near = cam.near ?? 0.1
+      const far = cam.far ?? 1000
+      for (const actor of world.actors.values()) {
+        actor.root.traverse((o) => {
+          const u = o.userData.depthVizUniforms as { cameraNear: { value: number }; cameraFar: { value: number } } | undefined
+          if (!u) return
+          u.cameraNear.value = near
+          u.cameraFar.value = far
         })
       }
     }
@@ -1315,7 +1434,8 @@ export function Viewport() {
       const camPos = new THREE.Vector3()
       activeCam.getWorldPosition(camPos)
       applyPostSettings(computeBlendedPost(camPos, world.actors.values(), world.environment))
-      applyViewMode(s.viewMode, s.sceneVersion)
+      applyViewMode(s.viewMode, s.bufferViz, s.sceneVersion, activeCam)
+      if (s.bufferViz === 'depth') syncDepthVizUniforms(activeCam)
       // UE pause + frame-step
       let simDt = dt
       if (s.playing && s.paused) {
@@ -1378,7 +1498,7 @@ export function Viewport() {
         gizmo.detach()
       }
 
-      const pathTraceActive = s.viewMode === 'pathtraced' && !quadMode && s.viewProjection === 'perspective'
+      const pathTraceActive = s.viewMode === 'pathtraced' && s.bufferViz === 'none' && !quadMode && s.viewProjection === 'perspective'
 
       // selection outlines (multi-select aware)
       syncSelectionBoxes(s.selectedIds, !possessed && !pathTraceActive)
@@ -1748,9 +1868,10 @@ export function Viewport() {
   const simulate = useEditor((s) => s.simulate)
   const ejected = useEditor((s) => s.ejected)
   const viewMode = useEditor((s) => s.viewMode)
+  const bufferViz = useEditor((s) => s.bufferViz)
   const viewportLayout = useEditor((s) => s.viewportLayout)
   const viewProjection = useEditor((s) => s.viewProjection)
-  const showPtBadge = viewMode === 'pathtraced' && viewportLayout === 'single' && viewProjection === 'perspective'
+  const showPtBadge = viewMode === 'pathtraced' && bufferViz === 'none' && viewportLayout === 'single' && viewProjection === 'perspective'
 
   const banner = !playing
     ? null

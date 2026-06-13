@@ -257,6 +257,14 @@ export interface SerializedActor {
   bakedAO?: boolean
   /** Per-mesh vertex color arrays (traversal order) from bakeAO */
   bakedAOMeshes?: number[][]
+  /** AO Map Bake (UV2, approx) — texture aoMap, not Lightmass */
+  bakedAOMap?: boolean
+  /** AO map resolution used during bakeAOMapUV2 */
+  bakedAOMapSize?: number
+  /** Per-mesh flattened AO map grayscale 0–1 (traversal order) */
+  bakedAOMapMeshes?: number[][]
+  /** aoMapIntensity applied on MeshStandardMaterial */
+  aoMapIntensity?: number
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */

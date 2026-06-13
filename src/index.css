@@ -338,7 +338,7 @@ input[type='checkbox'] {
   background: rgba(13, 15, 18, 0.75);
 }
 .viewport-modes .view-mode-select {
-  min-width: 118px;
+  min-width: 148px;
 }
 .viewport-pt-badge {
   position: absolute;
@@ -782,6 +782,39 @@ input[type='checkbox'] {
   border-color: var(--accent);
   color: var(--text);
   background: var(--bg-2);
+}
+.status-save {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-1);
+}
+.status-save--saved {
+  color: #46a758;
+  border-color: #2d4a35;
+}
+.status-save--dirty {
+  color: #e3b341;
+  border-color: #4a3f20;
+}
+.status-save--saving {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  animation: status-saving-pulse 1s ease-in-out infinite;
+}
+@keyframes status-saving-pulse {
+  50% { opacity: 0.55; }
+}
+.status-autosave-toast {
+  flex-shrink: 0;
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 3px;
+  color: #e3b341;
+  background: #3d3418;
+  border: 1px solid #5c4e22;
 }
 .status-spacer {
   flex: 1;
@@ -1685,6 +1718,47 @@ input[type='checkbox'] {
 
 .seq-cut, .seq-event { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10px; cursor: pointer; z-index: 2; }
 .seq-event { top: auto; bottom: 0; }
+
+.seq-audio-lane { position: relative; overflow: hidden; }
+.seq-audio-clip {
+  position: absolute; top: 1px; bottom: 1px;
+  min-width: 2px; pointer-events: none;
+}
+.seq-audio-waveform { width: 100%; height: 100%; display: block; }
+.seq-audio-waveform-fill { fill: rgba(107, 74, 158, .55); stroke: rgba(180, 140, 220, .7); stroke-width: .4; }
+.seq-audio-loop-region {
+  position: absolute; top: 0; bottom: 0;
+  background: rgba(255, 180, 80, .18);
+  border-top: 1px solid rgba(255, 180, 80, .45);
+  border-bottom: 1px solid rgba(255, 180, 80, .45);
+  pointer-events: none;
+}
+.seq-audio-loop-bracket {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  background: var(--accent-warm); opacity: .9; pointer-events: none;
+}
+.seq-audio-loop-bracket.in::before,
+.seq-audio-loop-bracket.out::after {
+  content: ''; position: absolute; top: 1px; width: 5px; height: 5px;
+  border: 1.5px solid var(--accent-warm); background: var(--bg-1);
+}
+.seq-audio-loop-bracket.in::before { left: -1px; border-right: none; }
+.seq-audio-loop-bracket.out::after { right: -1px; border-left: none; }
+.seq-loop-bracket {
+  position: absolute; top: 0; bottom: 0; width: 2px;
+  transform: translateX(-50%); pointer-events: none; z-index: 1;
+  background: linear-gradient(var(--accent-warm), var(--accent-warm)) center/2px 70% no-repeat;
+}
+.seq-loop-bracket.in::before,
+.seq-loop-bracket.out::after {
+  content: ''; position: absolute; left: 50%; transform: translateX(-50%);
+  width: 7px; height: 7px; border: 1.5px solid var(--accent-warm); background: var(--bg-1);
+}
+.seq-loop-bracket.in::before { top: 1px; border-bottom: none; }
+.seq-loop-bracket.out::after { bottom: 1px; border-top: none; }
+.seq-audio-loop-fields { display: flex; align-items: center; gap: 10px; }
+.seq-audio-loop-fields label { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+.seq-audio-loop-fields input { width: 64px; font-size: 10px; padding: 1px 4px; }
 
 .bp-wire.data { stroke: #2e d; stroke: #35c9a8; }
 .bp-port.out.data { color: #35c9a8; }

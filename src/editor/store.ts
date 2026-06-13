@@ -1,5 +1,8 @@
 import { create } from 'zustand'
+import { loadPrefs } from './Preferences'
 import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
+
+export type SaveStatus = 'saved' | 'dirty' | 'saving'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 /** UE main-toolbar Modes: Select / Landscape / Foliage / Paint */
@@ -16,6 +19,8 @@ export function deriveEditorMode(s: {
   return 'select'
 }
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail' | 'pathtraced'
+/** UE Buffer Visualization view modes (v0.68) */
+export type BufferViz = 'none' | 'baseColor' | 'worldNormal' | 'depth' | 'roughness' | 'metallic'
 export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug' | 'pcg'
 export type BottomTab = BuiltinBottomTab | `plugin:${string}`
 
@@ -76,6 +81,9 @@ interface EditorState {
   // viewport render mode (UE view modes: Lit / Unlit / Wireframe)
   viewMode: ViewMode
   setViewMode: (m: ViewMode) => void
+  /** UE Buffer Visualization — overrides materials when not 'none' (v0.68) */
+  bufferViz: BufferViz
+  setBufferViz: (m: BufferViz) => void
   /** UE viewport projection (Alt+G/H/J/K) */
   viewProjection: 'perspective' | 'top' | 'front' | 'side'
   setViewProjection: (p: 'perspective' | 'top' | 'front' | 'side') => void
@@ -112,6 +120,16 @@ interface EditorState {
 
   levelName: string
   setLevelName: (n: string) => void
+
+  /** UE status-bar save indicator */
+  saveStatus: SaveStatus
+  markDirty: () => void
+  markSaved: () => void
+  markSaving: () => void
+  /** Seconds until next autosave (from Editor Preferences interval) */
+  autosaveCountdownSec: number
+  setAutosaveCountdown: (sec: number) => void
+  resetAutosaveCountdown: () => void
 
   statusMessage: string
   setStatus: (m: string) => void
@@ -240,7 +258,9 @@ export const useEditor = create<EditorState>((set) => ({
   setEjected: (e) => set({ ejected: e }),
 
   viewMode: 'lit',
-  setViewMode: (m) => set({ viewMode: m }),
+  setViewMode: (m) => set({ viewMode: m, bufferViz: 'none' }),
+  bufferViz: 'none',
+  setBufferViz: (m) => set({ bufferViz: m }),
   viewProjection: 'perspective',
   setViewProjection: (p) => set({ viewProjection: p, activeViewportPane: p }),
 
@@ -283,6 +303,15 @@ export const useEditor = create<EditorState>((set) => ({
 
   levelName: 'Untitled',
   setLevelName: (n) => set({ levelName: n }),
+
+  saveStatus: 'saved',
+  markDirty: () =>
+    set((s) => (s.saveStatus === 'saving' ? {} : { saveStatus: 'dirty' as SaveStatus })),
+  markSaved: () => set({ saveStatus: 'saved' }),
+  markSaving: () => set({ saveStatus: 'saving' }),
+  autosaveCountdownSec: loadPrefs().autosaveSeconds,
+  setAutosaveCountdown: (sec) => set({ autosaveCountdownSec: Math.max(0, sec) }),
+  resetAutosaveCountdown: () => set({ autosaveCountdownSec: loadPrefs().autosaveSeconds }),
 
   statusMessage: 'Ready',
   setStatus: (m) => set({ statusMessage: m }),

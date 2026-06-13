@@ -22,7 +22,7 @@ import type {
 import { DEFAULT_MOBILITY } from './types'
 import { disposeWidget3D } from './widget3d'
 import { resetAnimRuntime } from './animStateMachine'
-import { extractBakedAOMeshes } from './lightmapBake'
+import { extractBakedAOMapMeshes, extractBakedAOMeshes } from './lightmapBake'
 import { compileScript, scriptLog, type CompiledScript, type ScriptApi } from './scripting'
 
 let actorCounter = 0
@@ -131,6 +131,10 @@ export class Actor {
   lookAtTarget?: LookAtTarget
   /** Baked AO (approx) applied to mesh vertex colors */
   bakedAO = false
+  /** AO Map Bake (UV2, approx) applied as material.aoMap */
+  bakedAOMap = false
+  bakedAOMapSize = 256
+  aoMapIntensity = 1
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -354,6 +358,10 @@ export class Actor {
         : undefined,
       bakedAO: this.bakedAO || undefined,
       bakedAOMeshes: extractBakedAOMeshes(this),
+      bakedAOMap: this.bakedAOMap || undefined,
+      bakedAOMapSize: this.bakedAOMap ? this.bakedAOMapSize : undefined,
+      bakedAOMapMeshes: extractBakedAOMapMeshes(this),
+      aoMapIntensity: this.bakedAOMap ? this.aoMapIntensity : undefined,
     }
   }
 
