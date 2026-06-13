@@ -1,11 +1,10 @@
-# CHECKPOINT — 2026-06-13 (agent swarm wave 4)
+# CHECKPOINT — 2026-06-13 (agent swarm through v0.61)
 
 > Working doc: `docs/UE5.7-GAP-LIST.md` — update statuses as items ship.
-> Research synthesis: prior session (UE5 + Unity + Godot completion roadmap).
 
 ## State
 
-- **Last clean commit: `ee45f2c` — v0.54.** v0.33–v0.54 shipped across four agent swarms; **build clean** (`npm run build` exit 0), **tests green** (`npm run test` — 5 passed).
+- **Last clean commit: `d3f163e` — v0.61.** v0.33–v0.61 shipped across six agent swarms; **build clean**, **`npm run test` — 9 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -68,29 +67,39 @@
 | v0.31 | Movie Render Queue (🎥 .webm export) + Take Recorder (⏺ 10Hz sampling) |
 | v0.32 | Water actor (Gerstner-lite) + PCG Scatter volume (sample→filter→spawn, seeded) |
 
-## Next up (v0.55+)
+## Shipped wave 5 (v0.55 → v0.58, commit `1fdcac6`)
 
-1. **Two-bone IK + LookAt** on glTF skeletons (Control Rig graphs 🚫)
-2. **Particles P3 polish** — InstancedMesh renderer, graphical size curves, sub-emitters/events
-3. **GAS effect stacks** — gameplay effects over tags (extend v0.42 GAS-lite)
-4. **Material WPO** — world-position-offset node in GPU shader graph
-5. **Toolbar Modes dropdown** — Select/Landscape/Foliage/Paint as UE mode switcher
-6. **Camera bookmarks persist** — save Shift+0-9 sets in level file
-7. **BP polish** — Gate/MultiGate/Switch flow nodes, Bind/Call dispatcher nodes, breakpoints
-8. **3D world-space widgets** — CSS3DRenderer or render-to-texture plane
-9. **Lightmass bake** (stretch) — pathtracer AO/lightmap to second UV set
-10. **Expand Playwright coverage** — PIE play/stop, navmesh bake, multiplayer relay smoke
+| Ver | What |
+|---|---|
+| v0.55 | Two-bone IK + LookAt on glTF skeletons (`ik.ts`, Details IK section) |
+| v0.56 | BP Gate, MultiGate, SwitchInt, BindSignal, CallSignal nodes |
+| v0.57 | GAS gameplay effects — duration modifiers, `api.applyEffect` / `api.removeEffect` |
+| v0.58 | Camera bookmarks persist in level; Modes dropdown; Label3D billboard actor |
+
+## Shipped wave 6 (v0.59 → v0.61, commit `d3f163e`)
+
+| Ver | What |
+|---|---|
+| v0.59 | Particle mesh renderer, sub-emitters, 4-point size curve |
+| v0.60 | Material GPU WPO — WorldPosition, ObjectPosition → vertex displacement |
+| v0.61 | Visual PCG graph editor (`pcgGraph.ts`, 🎲 PCG tab); Playwright **9 tests** |
+
+## Next up (v0.62+)
+
+1. **Audio polish** — falloff curve picker, Sequencer audio tracks + scrubbing
+2. **BP breakpoints** — pause on exec node during play
+3. **3D widgets** — CSS3DRenderer world-space UI (Label3D ✅)
+4. **Networking polish** — ownership, client prediction
+5. **Lightmass-approx** — offline AO/lightmap bake (stretch)
+6. **E2E expansion** — navmesh bake, multiplayer 2-tab, material instance tests
 
 ## Remaining gap-list queue
 
-1. **Animation cluster**: two-bone IK + LookAt, Control Rig graphs 🚫, retargeting 🚫
-2. **Particles cluster**: InstancedMesh renderer, graphical size curves, sub-emitters/events
-3. **GAS**: effect stacks over gameplay tags (attributes/abilities/cooldown/cost ✅)
-4. **Editor UX**: toolbar Modes dropdown, camera bookmarks persist, status-bar save indicator
-5. **Material cluster**: WPO node (GPU nodes + preview sphere ✅ v0.44)
-6. **Audio**: attenuation falloff curve picker, Sequencer audio scrubbing (after audio tracks)
-7. **Networking**: ownership model + client prediction polish (property sync + spawner ✅ v0.51)
-8. **Honest-skip notes**: Lightmass bake (stretch), Nanite/Lumen 🚫
+1. **Audio**: attenuation falloff curve picker, Sequencer audio scrubbing
+2. **BP**: breakpoints (Gate/MultiGate/Switch/Bind ✅ v0.56)
+3. **Networking**: ownership + prediction polish (sync + spawner ✅ v0.51)
+4. **Editor UX**: status-bar save indicator, buffer visualization view modes
+5. **Honest-skip**: Lightmass bake (stretch), Nanite/Lumen/Control Rig 🚫
 
 ## Gotchas carried forward
 
