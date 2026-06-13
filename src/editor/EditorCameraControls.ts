@@ -101,7 +101,7 @@ export class EditorCameraControls {
   private onMouseMove = (e: MouseEvent) => {
     if (!this.enabled) return
     if (this.looking) {
-      const inv = localStorage.getItem('vektra-engine.prefs')?.includes('"invertLookY":true') ? -1 : 1
+      const inv = localStorage.getItem('lotus-engine.prefs')?.includes('"invertLookY":true') ? -1 : 1
       this.yaw -= e.movementX * 0.0022
       this.pitch -= e.movementY * 0.0022 * inv
       this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch))

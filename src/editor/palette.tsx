@@ -12,7 +12,7 @@ import { isTypingTarget, matchesShortcutId } from './shortcuts'
 
 /**
  * Command palette (Ctrl+Shift+P) — built-in commands + plugin-registered commands.
- * Plugin API lives in `src/editor/plugins.ts` and `window.vektra`.
+ * Plugin API lives in `src/editor/plugins.ts` and `window.lotus`.
  */
 
 export type { PaletteCommand } from './plugins'

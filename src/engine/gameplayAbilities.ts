@@ -7,7 +7,7 @@ import { scriptLog } from './scripting'
  * Assets persist in localStorage; per-actor runtime state resets each Play.
  */
 
-const KEY = 'vektra-engine.abilities'
+const KEY = 'lotus-engine.abilities'
 
 export interface AttributeSet {
   id: string

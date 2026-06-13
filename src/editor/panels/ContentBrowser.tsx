@@ -393,7 +393,7 @@ export function ContentBrowser() {
                   draggable
                   icon={<div className="asset-icon">{a.icon}</div>}
                   onDragStart={(e) => {
-                    e.dataTransfer.setData('vektra/asset', JSON.stringify(a.payload))
+                    e.dataTransfer.setData('lotus/asset', JSON.stringify(a.payload))
                     dragGhost.payload = a.payload
                   }}
                   onDragEnd={() => (dragGhost.payload = null)}
@@ -485,7 +485,7 @@ export function ContentBrowser() {
                       ◆
                     </div>
                   }
-                  onDragStart={(e) => e.dataTransfer.setData('vektra/material', m.id)}
+                  onDragStart={(e) => e.dataTransfer.setData('lotus/material', m.id)}
                   onContextMenu={(e) =>
                     openCtx(e, {
                       key,
@@ -529,7 +529,7 @@ export function ContentBrowser() {
                   title={`${p.name} — ${p.actors.length} actor(s). Drag or double-click to instance.`}
                   draggable
                   icon={<div className="asset-icon">🧩</div>}
-                  onDragStart={(e) => e.dataTransfer.setData('vektra/prefab', p.name)}
+                  onDragStart={(e) => e.dataTransfer.setData('lotus/prefab', p.name)}
                   onDoubleClick={() => instantiatePrefab(p, [0, p.actors[0].transform.position[1], 0])}
                   onContextMenu={(e) =>
                     openCtx(e, {
@@ -570,7 +570,7 @@ export function ContentBrowser() {
                     draggable
                     icon={<div className="asset-icon">{n.icon ?? '🔌'}</div>}
                     onDragStart={(e) => {
-                      e.dataTransfer.setData('vektra/asset', JSON.stringify(payload))
+                      e.dataTransfer.setData('lotus/asset', JSON.stringify(payload))
                       dragGhost.payload = payload
                     }}
                     onDragEnd={() => (dragGhost.payload = null)}
@@ -613,7 +613,7 @@ export function ContentBrowser() {
                   icon={<div className="asset-icon">🧊</div>}
                   onDragStart={(e) =>
                     e.dataTransfer.setData(
-                      'vektra/asset',
+                      'lotus/asset',
                       JSON.stringify({ kind: 'imported', assetId: id, name: displayName }),
                     )
                   }

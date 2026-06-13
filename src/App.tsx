@@ -36,7 +36,7 @@ import { compileBlueprint, emptyGraph } from './engine/blueprint'
 import { loadMPSettings, mpEnabled, mpConnected, mpKnownPeerIds } from './engine/multiplayer'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
-;(window as unknown as Record<string, unknown>).vektra = {
+const lotusBridge = {
   world,
   useEditor,
   runCommand,
@@ -46,7 +46,7 @@ import { loadMPSettings, mpEnabled, mpConnected, mpKnownPeerIds } from './engine
     exec: terminalExec,
     help: () => TERMINAL_HELP,
     open: () => useEditor.getState().openConsole(),
-    port: import.meta.env.VITE_VEKTRA_TERMINAL_PORT ?? '24679',
+    port: import.meta.env.VITE_LOTUS_TERMINAL_PORT ?? '24679',
   },
   ai: { executeAICommands, extractCommands },
   buildPlayableHTML,
@@ -106,6 +106,9 @@ import { loadMPSettings, mpEnabled, mpConnected, mpKnownPeerIds } from './engine
     peerCount: () => mpKnownPeerIds().length,
   },
 }
+const win = window as unknown as Record<string, unknown>
+win.lotus = lotusBridge
+win.vektra = lotusBridge // legacy alias — plugins/tests may still use window.vektra
 
 let booted = false
 

@@ -1,4 +1,4 @@
-/* Vektra Engine — standalone playable runtime. Injected into exported HTML
+/* Lotus Engine — standalone playable runtime. Injected into exported HTML
    alongside the level JSON. Loads three.js (+ optional Rapier physics) from
    CDN and runs the level: scripts, behaviors, particles, foliage, landscape,
    pawn controllers. Supports multi-level manifests + api.loadLevel(). */
@@ -6,12 +6,17 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { Sky } from 'three/addons/objects/Sky.js'
 
-const LEVELS = window.__VEKTRA_LEVELS__ ?? (window.__VEKTRA_LEVEL__ ? { main: window.__VEKTRA_LEVEL__ } : null)
-const MAIN_KEY = window.__VEKTRA_MAIN__ ?? 'main'
-const EXPORT = window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
-const CELL_MANIFEST = window.__VEKTRA_CELLS__ ?? null
+const LEVELS =
+  window.__LOTUS_LEVELS__ ??
+  (window.__VEKTRA_LEVELS__ ??
+    (window.__LOTUS_LEVEL__ ?? window.__VEKTRA_LEVEL__
+      ? { main: window.__LOTUS_LEVEL__ ?? window.__VEKTRA_LEVEL__ }
+      : null))
+const MAIN_KEY = window.__LOTUS_MAIN__ ?? window.__VEKTRA_MAIN__ ?? 'main'
+const EXPORT = window.__LOTUS_EXPORT__ ?? window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
+const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
 const ALWAYS_LOADED = new Set(['DirectionalLight', 'AmbientLight', 'PlayerStart'])
-if (!LEVELS || !LEVELS[MAIN_KEY]) throw new Error('Vektra: no level data')
+if (!LEVELS || !LEVELS[MAIN_KEY]) throw new Error('Lotus: no level data')
 
 let LEVEL = LEVELS[MAIN_KEY]
 const pixelRatio = EXPORT.pixelRatio ?? (EXPORT.quality === 'mobile' ? 1 : Math.min(devicePixelRatio, 2))
@@ -735,7 +740,7 @@ function updateSeqAudio(t) {
 
 // ---- scripts & behaviors ----
 const api = {
-  log: (...a) => console.log('[vektra]', ...a),
+  log: (...a) => console.log('[lotus]', ...a),
   isKeyDown: (c) => keys.has(c),
   keyJustPressed: (c) => pressed.has(c),
   getActor: (n) => [...actors.values()].find((a) => a.name === n),

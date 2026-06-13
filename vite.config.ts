@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { vektraTerminalPlugin } from './vite-plugin-vektra-terminal'
+import { lotusTerminalPlugin } from './vite-plugin-lotus-terminal'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), vektraTerminalPlugin()],
+  plugins: [react(), lotusTerminalPlugin()],
   optimizeDeps: {
     exclude: [
       'recast-navigation',

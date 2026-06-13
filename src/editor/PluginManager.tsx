@@ -128,7 +128,7 @@ export function PluginManagerModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="panel-empty plugin-hint">
               Plugins use <code>registerPlugin</code>, <code>registerPanelCallback</code>, and helpers on{' '}
-              <code>window.vektra</code>. See API docs in <code>src/editor/plugins.ts</code>.
+              <code>window.lotus</code>. See API docs in <code>src/editor/plugins.ts</code>.
             </div>
           </div>
         </div>

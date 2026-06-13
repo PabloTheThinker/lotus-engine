@@ -67,7 +67,7 @@ export function buildLiveTree(actors: Map<string, Actor>): LiveActorNode[] {
   return roots
 }
 
-/** Full serializable snapshot of the running scene — for window.vektra.getLiveSnapshot(). */
+/** Full serializable snapshot of the running scene — for window.lotus.getLiveSnapshot(). */
 export function getLiveSnapshot(
   world: World,
   editor: { playing: boolean; ejected: boolean; simulate: boolean; selectedId: string | null },

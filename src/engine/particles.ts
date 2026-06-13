@@ -169,6 +169,8 @@ export class ParticleSystem {
   private instMat = new THREE.Matrix4()
   private meshGeo: THREE.BufferGeometry
   private currentMeshShape: ParticleMeshShape
+  private boundsCenter = new THREE.Vector3()
+  private boundsScratch = new THREE.Vector3()
 
   constructor(props: ParticleProps) {
     this.props = props
@@ -197,7 +199,7 @@ export class ParticleSystem {
       blending: props.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     })
     this.points = new THREE.Points(geo, mat)
-    this.points.frustumCulled = false
+    this.points.frustumCulled = true
     this.points.userData.isParticles = true
 
     const maxVerts = this.cap * this.trailLen * 2
@@ -214,7 +216,7 @@ export class ParticleSystem {
       blending: props.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     })
     this.ribbon = new THREE.Mesh(rGeo, rMat)
-    this.ribbon.frustumCulled = false
+    this.ribbon.frustumCulled = true
     this.ribbon.userData.isParticles = true
 
     this.currentMeshShape = props.meshShape
@@ -227,7 +229,7 @@ export class ParticleSystem {
     })
     this.mesh = new THREE.InstancedMesh(this.meshGeo, meshMat, this.cap)
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
-    this.mesh.frustumCulled = false
+    this.mesh.frustumCulled = true
     this.mesh.userData.isParticles = true
     this.applyRenderMode()
   }
@@ -555,6 +557,30 @@ export class ParticleSystem {
 
     if (p.renderMode === 'ribbon') this.buildRibbon(worldMatrix)
     if (p.renderMode === 'mesh') this.buildMesh()
+    this.updateBounds()
+  }
+
+  /** Tighten bounding spheres each tick so frustum culling stays correct. */
+  private updateBounds() {
+    this.boundsCenter.set(0, 0, 0)
+    let aliveCount = 0
+    let maxDistSq = 0.01
+    for (let i = 0; i < this.cap; i++) {
+      if (!this.alive[i]) continue
+      aliveCount++
+      const i3 = i * 3
+      this.boundsScratch.set(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2])
+      this.boundsCenter.add(this.boundsScratch)
+      const r = Math.max(0.05, this.sizes[i] * 0.5)
+      maxDistSq = Math.max(maxDistSq, this.boundsScratch.lengthSq() + r * r)
+    }
+    if (aliveCount > 0) this.boundsCenter.multiplyScalar(1 / aliveCount)
+    const radius = Math.sqrt(maxDistSq) + 0.25
+    for (const obj of [this.points, this.ribbon, this.mesh] as const) {
+      if (!obj.geometry.boundingSphere) obj.geometry.boundingSphere = new THREE.Sphere()
+      obj.geometry.boundingSphere.center.copy(this.boundsCenter)
+      obj.geometry.boundingSphere.radius = radius
+    }
   }
 
   dispose() {

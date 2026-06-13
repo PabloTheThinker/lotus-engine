@@ -11,7 +11,7 @@ export interface InputAction {
   keys: string[]
 }
 
-const KEY = 'vektra-engine.inputmap'
+const KEY = 'lotus-engine.inputmap'
 
 export const DEFAULT_ACTIONS: InputAction[] = [
   { name: 'Jump', keys: ['Space'] },

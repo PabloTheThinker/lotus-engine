@@ -67,7 +67,7 @@ export function MenuBar() {
   return (
     <div className="menubar">
       <div className="menubar-logo">
-        VEKTRA<span>ENGINE</span>
+        LOTUS<span>ENGINE</span>
       </div>
       <Menu
         title="File"

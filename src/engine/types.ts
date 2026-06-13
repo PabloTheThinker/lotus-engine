@@ -1,4 +1,4 @@
-// Core type definitions for the Vektra Engine — mirrors Unreal's gameplay framework vocabulary.
+// Core type definitions for Lotus Engine — mirrors Unreal's gameplay framework vocabulary.
 
 export type ActorType =
   | 'StaticMesh'
@@ -415,6 +415,12 @@ export interface EnvironmentSettings {
   bloomThreshold: number
   bloomRadius: number
   exposure: number
+  /** Niagara backend: cpu (default) | gpu (opt-in WebGPU tier) */
+  particleBackend?: 'cpu' | 'gpu'
+  /** Material graph preview backend: glsl (default) | tsl */
+  materialBackend?: 'glsl' | 'tsl'
+  /** Fixed physics tick rate (Godot _physics_process analog). Default 60 Hz. */
+  fixedPhysicsHz?: number
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */
@@ -448,6 +454,9 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   bloomThreshold: 2.0,
   bloomRadius: 0.4,
   exposure: 0.75,
+  particleBackend: 'cpu',
+  materialBackend: 'glsl',
+  fixedPhysicsHz: 60,
 }
 
 /** Editor viewport camera bookmark — Shift+0-9 set, 0-9 recall (per level). */
@@ -508,7 +517,7 @@ export interface LevelLink {
 }
 
 export interface SerializedLevel {
-  engine: 'vektra'
+  engine: 'lotus' | 'vektra'
   version: 1 | 2 | 3 | 4
   name: string
   environment: EnvironmentSettings

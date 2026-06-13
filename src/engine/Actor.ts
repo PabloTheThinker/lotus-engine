@@ -242,6 +242,18 @@ export class Actor {
   }
 
   /** Per-frame gameplay tick — only runs while the editor is in Play mode. */
+  /** Fixed-rate physics script hook (Godot _physics_process). */
+  physicsTick(dt: number) {
+    if (this.compiled?.onPhysicsTick) {
+      try {
+        this.compiled.onPhysicsTick(dt)
+      } catch (err) {
+        scriptLog('error', `[${this.name}] onPhysicsTick: ${(err as Error).message}`)
+        this.compiled = null
+      }
+    }
+  }
+
   tick(dt: number) {
     this.elapsed += dt
     if (this.compiled?.onTick) {

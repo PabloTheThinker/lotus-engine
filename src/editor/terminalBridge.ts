@@ -13,12 +13,12 @@ interface BridgeMessage {
 }
 
 /**
- * Dev-only WebSocket bridge — lets the external `npm run vektra` CLI drive the live editor.
+ * Dev-only WebSocket bridge — lets the external `npm run lotus` CLI drive the live editor.
  */
 export function connectTerminalBridge(): () => void {
   if (!import.meta.env.DEV) return () => {}
 
-  const port = import.meta.env.VITE_VEKTRA_TERMINAL_PORT ?? '24679'
+  const port = import.meta.env.VITE_LOTUS_TERMINAL_PORT ?? '24679'
   const wsUrl = `ws://127.0.0.1:${port}`
 
   let ws: WebSocket | null = null

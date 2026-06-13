@@ -569,7 +569,7 @@ function LinkedLevelsSection() {
           + Add Linked Level
         </button>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Bundled into playable export as <code>window.__VEKTRA_LEVELS__</code>. Scripts: <code>api.loadLevel('dungeon')</code>.
+          Bundled into playable export as <code>window.__LOTUS_LEVELS__</code>. Scripts: <code>api.loadLevel('dungeon')</code>.
           Tag actors <code>Autoload</code> to persist across switches.
         </div>
       </div>
@@ -909,6 +909,37 @@ export function WorldSettings() {
             </label>
           </>
         )}
+        <label className="field">
+          <span>Niagara backend</span>
+          <select
+            value={env.particleBackend ?? 'cpu'}
+            onChange={(e) => set('particleBackend', e.target.value as 'cpu' | 'gpu')}
+          >
+            <option value="cpu">CPU (WebGL)</option>
+            <option value="gpu">GPU (opt-in WebGPU)</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Material preview backend</span>
+          <select
+            value={env.materialBackend ?? 'glsl'}
+            onChange={(e) => set('materialBackend', e.target.value as 'glsl' | 'tsl')}
+          >
+            <option value="glsl">GLSL (default)</option>
+            <option value="tsl">TSL (preview)</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Physics tick rate (Hz)</span>
+          <input
+            type="number"
+            min={30}
+            max={120}
+            step={1}
+            value={env.fixedPhysicsHz ?? 60}
+            onChange={(e) => set('fixedPhysicsHz', parseInt(e.target.value, 10) || 60)}
+          />
+        </label>
       </div>
       <LinkedLevelsSection />
       <StreamingSection />

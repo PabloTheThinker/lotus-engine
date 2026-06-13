@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
 import type { Actor } from './Actor'
 import type { SerializedActor } from './types'
+import type { AOBakeWorkerRequest, AOBakeWorkerResponse } from './lightmapBakeWorker'
+import { unwrapUV2ForBake } from './xatlasUV2'
 
 /**
  * Baked AO (approx) — hemisphere raycast ambient occlusion, not Lightmass.
@@ -18,6 +20,8 @@ export interface BakeAOOptions {
   strength?: number
   /** vertices processed per yield chunk (main-thread breathing room) */
   chunkSize?: number
+  /** Run hemisphere raycasts in a Web Worker (default true). */
+  useWorker?: boolean
   onProgress?: (done: number, total: number, label: string) => void
 }
 
@@ -33,8 +37,10 @@ export interface BakeAOMapOptions extends BakeAOOptions {
   mapSize?: number
   /** aoMapIntensity on MeshStandardMaterial. Default 1. */
   aoMapIntensity?: number
-  /** Auto-generate uv2 via box projection when missing. Default true. */
+  /** Auto-generate uv2 via xatlas/box projection when missing. Default true. */
   autoGenerateUV2?: boolean
+  /** Attempt xatlas WASM unwrap before box projection fallback. Default true. */
+  useXatlas?: boolean
 }
 
 export interface BakeAOMapResult {
@@ -67,6 +73,84 @@ const _bboxSize = new THREE.Vector3()
 
 let bakePromise: Promise<BakeAOResult> | null = null
 let bakeMapPromise: Promise<BakeAOMapResult> | null = null
+let aoWorker: Worker | null = null
+let aoWorkerReqId = 0
+
+function getAOBakeWorker(): Worker {
+  if (!aoWorker) {
+    aoWorker = new Worker(new URL('./lightmapBakeWorker.ts', import.meta.url), { type: 'module' })
+  }
+  return aoWorker
+}
+
+function meshToOccluderPayload(mesh: THREE.Mesh) {
+  const geo = mesh.geometry
+  const pos = geo.attributes.position as THREE.BufferAttribute
+  const idx = geo.index
+  mesh.updateWorldMatrix(true, false)
+  return {
+    positions: new Float32Array(pos.array),
+    indices: idx ? new Uint32Array(idx.array) : new Uint32Array(0),
+    matrix: mesh.matrixWorld.toArray(),
+  }
+}
+
+function meshToTargetPayload(mesh: THREE.Mesh) {
+  const geo = mesh.geometry
+  const pos = geo.attributes.position as THREE.BufferAttribute
+  const norm = geo.attributes.normal as THREE.BufferAttribute
+  const uv2 = geo.attributes.uv2 as THREE.BufferAttribute | undefined
+  mesh.updateWorldMatrix(true, false)
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld)
+  return {
+    positions: new Float32Array(pos.array),
+    normals: new Float32Array(norm.array),
+    uv2: uv2 ? new Float32Array(uv2.array) : undefined,
+    matrix: mesh.matrixWorld.toArray(),
+    normalMatrix: normalMatrix.toArray(),
+  }
+}
+
+async function bakeAOInWorker(
+  bakeActors: Actor[],
+  occluders: THREE.Mesh[],
+  opts: { samples: number; radius: number; strength: number; mapSize?: number; mode: 'bakeVertex' | 'bakeMap' },
+): Promise<{ colors: Float32Array[]; maps?: Float32Array[] } | null> {
+  try {
+    const worker = getAOBakeWorker()
+    const id = ++aoWorkerReqId
+    const targets: AOBakeWorkerRequest['targets'] = []
+    for (const actor of bakeActors) {
+      for (const mesh of collectBakeMeshes(actor)) {
+        if (!mesh.geometry.attributes.normal) mesh.geometry.computeVertexNormals()
+        targets.push(meshToTargetPayload(mesh))
+      }
+    }
+    const occluderPayload = occluders.map(meshToOccluderPayload)
+    const req: AOBakeWorkerRequest = {
+      type: opts.mode,
+      id,
+      samples: opts.samples,
+      radius: opts.radius,
+      strength: opts.strength,
+      mapSize: opts.mapSize,
+      targets,
+      occluders: occluderPayload,
+    }
+    return await new Promise((resolve) => {
+      const onMessage = (e: MessageEvent<AOBakeWorkerResponse>) => {
+        if (e.data.id !== id || e.data.type !== opts.mode) return
+        worker.removeEventListener('message', onMessage)
+        if (e.data.ok) resolve({ colors: e.data.colors, maps: e.data.maps })
+        else resolve(null)
+      }
+      worker.addEventListener('message', onMessage)
+      worker.postMessage(req)
+    })
+  } catch {
+    return null
+  }
+}
 
 const hemisphereSamplesCache = new Map<number, THREE.Vector3[]>()
 
@@ -407,6 +491,7 @@ export async function bakeAO(
   const radius = Math.max(0.05, opts.radius ?? 1)
   const strength = Math.max(0, Math.min(1, opts.strength ?? 0.85))
   const chunkSize = Math.max(32, opts.chunkSize ?? 256)
+  const useWorker = opts.useWorker !== false
   const onProgress = opts.onProgress
 
   bakePromise = (async (): Promise<BakeAOResult> => {
@@ -427,7 +512,6 @@ export async function bakeAO(
 
     for (const mesh of occluders) ensureBVH(mesh)
 
-    const sampleDirs = getHemisphereSamples(samples)
     let totalVerts = 0
     for (const actor of bakeActors) {
       for (const mesh of collectBakeMeshes(actor)) {
@@ -438,15 +522,46 @@ export async function bakeAO(
     aoBakeProgress = { done: 0, total: totalVerts, label: 'Baking AO (approx)…' }
     onProgress?.(0, totalVerts, aoBakeProgress.label)
 
-    _raycaster.far = radius
-    _raycaster.near = 0.0001
-    _raycaster.firstHitOnly = true
-
     let processed = 0
     let actorsBaked = 0
-    let vertsSinceYield = 0
 
     try {
+      if (useWorker) {
+        aoBakeProgress = { done: 0, total: totalVerts, label: 'Baking AO (approx, worker)…' }
+        onProgress?.(0, totalVerts, aoBakeProgress.label)
+        const workerResult = await bakeAOInWorker(bakeActors, occluders, {
+          samples,
+          radius,
+          strength,
+          mode: 'bakeVertex',
+        })
+        if (workerResult) {
+          let meshIdx = 0
+          for (const actor of bakeActors) {
+            const targets = collectBakeMeshes(actor)
+            if (!targets.length) continue
+            for (const target of targets) {
+              const colors = workerResult.colors[meshIdx++]
+              if (colors?.length) {
+                applyVertexColors(target, colors)
+                processed += colors.length / 3
+              }
+            }
+            actor.bakedAO = true
+            actorsBaked++
+          }
+          aoBakeProgress = { done: totalVerts, total: totalVerts, label: 'Baked AO (approx) complete' }
+          onProgress?.(totalVerts, totalVerts, aoBakeProgress.label)
+          return { ok: true, actorsBaked, verticesProcessed: processed }
+        }
+      }
+
+      const sampleDirs = getHemisphereSamples(samples)
+      _raycaster.far = radius
+      _raycaster.near = 0.0001
+      _raycaster.firstHitOnly = true
+      let vertsSinceYield = 0
+
       for (const actor of bakeActors) {
         const targets = collectBakeMeshes(actor)
         if (!targets.length) continue
@@ -535,6 +650,8 @@ export async function bakeAOMapUV2(
   const mapSize = Math.max(64, Math.min(1024, opts.mapSize ?? 256))
   const aoMapIntensity = Math.max(0, Math.min(2, opts.aoMapIntensity ?? 1))
   const autoGenerateUV2 = opts.autoGenerateUV2 !== false
+  const useXatlas = opts.useXatlas !== false
+  const useWorker = opts.useWorker !== false
   const onProgress = opts.onProgress
 
   bakeMapPromise = (async (): Promise<BakeAOMapResult> => {
@@ -564,7 +681,6 @@ export async function bakeAOMapUV2(
 
     for (const mesh of occluders) ensureBVH(mesh)
 
-    const sampleDirs = getHemisphereSamples(samples)
     let totalVerts = 0
     for (const actor of bakeActors) {
       for (const mesh of collectBakeMeshes(actor)) {
@@ -575,18 +691,85 @@ export async function bakeAOMapUV2(
     aoMapBakeProgress = { done: 0, total: totalVerts, label: 'AO Map Bake (UV2, approx)…' }
     onProgress?.(0, totalVerts, aoMapBakeProgress.label)
 
-    _raycaster.far = radius
-    _raycaster.near = 0.0001
-    _raycaster.firstHitOnly = true
-
     let processed = 0
     let actorsBaked = 0
     let meshesBaked = 0
     let meshesSkipped = 0
     let uv2AutoGenerated = 0
-    let vertsSinceYield = 0
 
     try {
+      if (useWorker) {
+        for (const actor of bakeActors) {
+          for (const target of collectBakeMeshes(actor)) {
+            if (!target.geometry.attributes.uv2 && autoGenerateUV2) {
+              if (useXatlas) await unwrapUV2ForBake(target.geometry)
+              else generateBoxProjectionUV2(target.geometry)
+              uv2AutoGenerated++
+            }
+          }
+        }
+        const workerResult = await bakeAOInWorker(bakeActors, occluders, {
+          samples,
+          radius,
+          strength,
+          mapSize,
+          mode: 'bakeMap',
+        })
+        if (workerResult?.maps) {
+          let meshIdx = 0
+          for (const actor of bakeActors) {
+            const targets = collectBakeMeshes(actor)
+            let actorHadBake = false
+            for (const target of targets) {
+              const pixels = workerResult.maps![meshIdx]
+              const colors = workerResult.colors[meshIdx]
+              meshIdx++
+              if (!pixels?.length) {
+                meshesSkipped++
+                continue
+              }
+              const tex = createAOMapTexture(pixels, mapSize)
+              applyAOMap(target, tex, aoMapIntensity)
+              if (colors?.length) applyVertexColors(target, colors)
+              meshesBaked++
+              actorHadBake = true
+              processed += colors?.length ? colors.length / 3 : 0
+            }
+            if (actorHadBake) {
+              actor.bakedAOMap = true
+              actor.bakedAOMapSize = mapSize
+              actor.aoMapIntensity = aoMapIntensity
+              actorsBaked++
+            }
+          }
+          if (meshesBaked) {
+            aoMapBakeProgress = {
+              done: totalVerts,
+              total: totalVerts,
+              label: 'AO Map Bake (UV2, approx) complete',
+            }
+            onProgress?.(totalVerts, totalVerts, aoMapBakeProgress.label)
+            return {
+              ok: true,
+              actorsBaked,
+              meshesBaked,
+              meshesSkipped,
+              uv2AutoGenerated,
+              verticesProcessed: processed,
+              warnings: uv2AutoGenerated
+                ? [`${uv2AutoGenerated} mesh(es): uv2 generated (xatlas/box approx)`]
+                : undefined,
+            }
+          }
+        }
+      }
+
+      const sampleDirs = getHemisphereSamples(samples)
+      _raycaster.far = radius
+      _raycaster.near = 0.0001
+      _raycaster.firstHitOnly = true
+      let vertsSinceYield = 0
+
       for (const actor of bakeActors) {
         const targets = collectBakeMeshes(actor)
         if (!targets.length) continue
@@ -602,7 +785,15 @@ export async function bakeAOMapUV2(
             continue
           }
 
-          const uv2State = ensureUV2(target, autoGenerateUV2)
+          let uv2State = ensureUV2(target, false)
+          if (uv2State === 'missing' && autoGenerateUV2) {
+            if (useXatlas) {
+              const unwrap = await unwrapUV2ForBake(target.geometry)
+              uv2State = unwrap.method === 'failed' ? 'missing' : unwrap.method === 'existing' ? 'existing' : 'generated'
+            } else {
+              uv2State = generateBoxProjectionUV2(target.geometry) ? 'generated' : 'missing'
+            }
+          }
           if (uv2State === 'missing') {
             meshesSkipped++
             warnings.push(`${actor.name}: no uv2 and box projection failed — skipped`)

@@ -1,8 +1,8 @@
-# UE 5.7 Documentation → Vektra Engine Gap List
+# UE 5.7 Documentation → Lotus Engine Gap List
 
 > The complete worklist: every area of the official UE 5.7 documentation
 > (dev.epicgames.com/documentation/unreal-engine/unreal-engine-5-7-documentation)
-> mapped against what Vektra Engine has as of v0.67.
+> mapped against what Lotus Engine has as of v0.67.
 > Sourced from docs/UE5-TOOL-CENSUS.md + docs/UE5.7-EDITOR-UX-RESEARCH.md.
 >
 > Legend: ✅ shipped · ◐ partial (v1 shipped, upgrade listed) · ⏳ to do · 🚫 non-goal (infeasible in browser / wrong category — approximate or skip honestly)
@@ -167,7 +167,7 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Packaging/export | ✅ | v0.40: multi-level export (`__VEKTRA_LEVELS__` + api.loadLevel) + PWA manifest option + mobile/desktop quality presets |
+| Packaging/export | ✅ | v0.40: multi-level export (`__LOTUS_LEVELS__` + api.loadLevel) + PWA manifest option + mobile/desktop quality presets |
 | Platforms menu | 🚫 | Web is the platform |
 
 ## 12. Editor Extensibility

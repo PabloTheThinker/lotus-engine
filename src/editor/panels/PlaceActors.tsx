@@ -126,7 +126,7 @@ export function PlaceActors() {
               draggable
               title="Drag into the viewport or double-click to place"
               onDragStart={(e) => {
-                e.dataTransfer.setData('vektra/asset', JSON.stringify(item.payload))
+                e.dataTransfer.setData('lotus/asset', JSON.stringify(item.payload))
                 dragGhost.payload = item.payload
                 notePlaced(item)
               }}

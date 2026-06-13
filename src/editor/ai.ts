@@ -21,7 +21,7 @@ export interface AISettings {
   anthropicModel: string
 }
 
-const SETTINGS_KEY = 'vektra-engine.ai'
+const SETTINGS_KEY = 'lotus-engine.ai'
 
 export function loadAISettings(): AISettings {
   try {
@@ -65,7 +65,7 @@ function sceneSummary(): string {
   return out
 }
 
-const SYSTEM_PROMPT = `You are the AI copilot inside Vektra Engine, a Three.js game editor with an Unreal-style actor framework. You can SEE the scene (provided below) and ACT on it.
+const SYSTEM_PROMPT = `You are the AI copilot inside Lotus Engine, a Three.js game editor with an Unreal-style actor framework. You can SEE the scene (provided below) and ACT on it.
 
 To act, include ONE fenced code block labeled vektra containing a JSON array of commands. Available commands:
 - {"cmd":"spawn","what":"box|sphere|cylinder|cone|plane|torus|capsule|icosahedron|PointLight|SpotLight|DirectionalLight|AmbientLight|Camera|PlayerStart|Empty|Folder|PostProcessVolume","name":"MyActor","position":[x,y,z],"color":"#hex","scale":[x,y,z],"physics":"none|static|dynamic","mobility":"static|stationary|movable","tags":["Tag1"]}

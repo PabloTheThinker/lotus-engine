@@ -1,14 +1,14 @@
 /**
  * Vite dev plugin — dedicated WebSocket bridge for external CLI control.
- * Writes `.vektra-dev.json` once the socket is actually listening.
+ * Writes `.lotus-dev.json` once the socket is actually listening.
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Plugin } from 'vite'
 import { WebSocket, WebSocketServer } from 'ws'
 
-export const VEKTRA_TERMINAL_PORT = Number(process.env.VEKTRA_TERMINAL_PORT ?? 24679)
-const MANIFEST = '.vektra-dev.json'
+export const LOTUS_TERMINAL_PORT = Number(process.env.LOTUS_TERMINAL_PORT ?? 24679)
+const MANIFEST = '.lotus-dev.json'
 
 interface PendingExec {
   shell: WebSocket
@@ -27,18 +27,18 @@ interface WireMessage {
   connected?: boolean
 }
 
-export function vektraTerminalPlugin(): Plugin {
+export function lotusTerminalPlugin(): Plugin {
   return {
-    name: 'vektra-terminal',
+    name: 'lotus-terminal',
     config() {
       return {
         define: {
-          'import.meta.env.VITE_VEKTRA_TERMINAL_PORT': JSON.stringify(String(VEKTRA_TERMINAL_PORT)),
+          'import.meta.env.VITE_LOTUS_TERMINAL_PORT': JSON.stringify(String(LOTUS_TERMINAL_PORT)),
         },
       }
     },
     configureServer(server) {
-      const wss = new WebSocketServer({ host: '127.0.0.1', port: VEKTRA_TERMINAL_PORT })
+      const wss = new WebSocketServer({ host: '127.0.0.1', port: LOTUS_TERMINAL_PORT })
       let editor: WebSocket | null = null
       const shells = new Set<WebSocket>()
       const pending = new Map<string, PendingExec>()
@@ -62,10 +62,10 @@ export function vektraTerminalPlugin(): Plugin {
       }
 
       const writeManifest = () => {
-        const wsUrl = `ws://127.0.0.1:${VEKTRA_TERMINAL_PORT}`
+        const wsUrl = `ws://127.0.0.1:${LOTUS_TERMINAL_PORT}`
         fs.writeFileSync(
           path.join(process.cwd(), MANIFEST),
-          JSON.stringify({ wsUrl, port: VEKTRA_TERMINAL_PORT }, null, 2),
+          JSON.stringify({ wsUrl, port: LOTUS_TERMINAL_PORT }, null, 2),
         )
       }
 
@@ -147,7 +147,7 @@ export function vektraTerminalPlugin(): Plugin {
       wss.on('listening', () => {
         writeManifest()
         server.config.logger.info(
-          `  \x1b[36mvektra terminal\x1b[0m  ws://127.0.0.1:${VEKTRA_TERMINAL_PORT}  →  npm run vektra`,
+          `  \x1b[36mvektra terminal\x1b[0m  ws://127.0.0.1:${LOTUS_TERMINAL_PORT}  →  npm run lotus`,
           { timestamp: true },
         )
       })

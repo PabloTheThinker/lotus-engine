@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test'
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
-interface VektraBridge {
+interface LotusBridge {
   getLiveSnapshot: () => {
     actorCount: number
     playing: boolean
@@ -41,8 +41,9 @@ interface VektraBridge {
 
 declare global {
   interface Window {
-    vektra?: VektraBridge
-    vektraGfx?: { renderer: unknown; composer: unknown }
+    lotus?: LotusBridge
+    vektra?: LotusBridge
+    lotusGfx?: { renderer: unknown; composer: unknown }
   }
 }
 
@@ -58,7 +59,7 @@ async function bootEditor(
   }, localStorageSeed ?? {})
   await page.goto('/')
   await page.waitForFunction(() => {
-    const v = window.vektra
+    const v = window.lotus
     return Boolean(
       v?.world &&
         v.world.actors.size > 0 &&
@@ -84,10 +85,10 @@ test('editor page loads', async ({ page }) => {
   await page.waitForSelector('.viewport canvas', { timeout: 30_000 })
 })
 
-test('window.vektra bridge is exposed', async ({ page }) => {
+test('window.lotus bridge is exposed', async ({ page }) => {
   await bootEditor(page)
   const api = await page.evaluate(() => {
-    const v = window.vektra!
+    const v = window.lotus!
     return {
       hasWorld: v.world.actors.size > 0,
       hasTerminal: typeof v.terminal.exec === 'function',
@@ -103,7 +104,7 @@ test('spawns a box via terminal API', async ({ page }) => {
   await bootEditor(page)
 
   const result = await page.evaluate(() => {
-    const v = window.vektra!
+    const v = window.lotus!
     const before = v.getLiveSnapshot().actorCount
     const spawn = v.terminal.exec('/spawn box')
     const after = v.getLiveSnapshot().actorCount
@@ -149,17 +150,17 @@ test('viewport mounts canvas and render loop reports stats', async ({ page }) =>
 test('undo after spawn reduces actor count (Ctrl+Z)', async ({ page }) => {
   await bootEditor(page)
 
-  const before = await page.evaluate(() => window.vektra!.getLiveSnapshot().actorCount)
+  const before = await page.evaluate(() => window.lotus!.getLiveSnapshot().actorCount)
   await page.evaluate(() => {
-    const spawn = window.vektra!.terminal.exec('/spawn box')
+    const spawn = window.lotus!.terminal.exec('/spawn box')
     if (spawn.error) throw new Error(spawn.error)
   })
-  const afterSpawn = await page.evaluate(() => window.vektra!.getLiveSnapshot().actorCount)
+  const afterSpawn = await page.evaluate(() => window.lotus!.getLiveSnapshot().actorCount)
   expect(afterSpawn).toBeGreaterThan(before)
 
   await page.keyboard.press('Control+KeyZ')
-  await page.waitForFunction((expected) => window.vektra?.getLiveSnapshot().actorCount === expected, before)
-  const afterUndo = await page.evaluate(() => window.vektra!.getLiveSnapshot().actorCount)
+  await page.waitForFunction((expected) => window.lotus?.getLiveSnapshot().actorCount === expected, before)
+  const afterUndo = await page.evaluate(() => window.lotus!.getLiveSnapshot().actorCount)
   expect(afterUndo).toBe(before)
 })
 
@@ -167,18 +168,18 @@ test('play mode starts and stops (Alt+P / vektra API)', async ({ page }) => {
   await bootEditor(page)
 
   await page.keyboard.press('Alt+KeyP')
-  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === true)
+  await page.waitForFunction(() => window.lotus?.getLiveSnapshot().playing === true)
   await expect(page.locator('.play-button.stop')).toBeVisible()
 
-  const playing = await page.evaluate(() => window.vektra!.getLiveSnapshot().playing)
+  const playing = await page.evaluate(() => window.lotus!.getLiveSnapshot().playing)
   expect(playing).toBe(true)
 
-  const stop = await page.evaluate(() => window.vektra!.terminal.exec('/stop'))
+  const stop = await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
   expect(stop.error).toBeNull()
   expect(stop.output).toContain('Stopped')
-  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === false)
+  await page.waitForFunction(() => window.lotus?.getLiveSnapshot().playing === false)
 
-  const stopped = await page.evaluate(() => window.vektra!.getLiveSnapshot().playing)
+  const stopped = await page.evaluate(() => window.lotus!.getLiveSnapshot().playing)
   expect(stopped).toBe(false)
 })
 
@@ -195,7 +196,7 @@ test('level save/load roundtrip via terminal world API', async ({ page }) => {
   await bootEditor(page)
 
   const result = await page.evaluate(async () => {
-    const v = window.vektra!
+    const v = window.lotus!
     const baseline = v.getLiveSnapshot().actorCount
 
     const saveProbe = v.terminal.exec('world.serialize().engine')
@@ -218,7 +219,7 @@ test('level save/load roundtrip via terminal world API', async ({ page }) => {
     }
   })
 
-  expect(result.engine).toBe('vektra')
+  expect(result.engine).toBe('lotus')
   expect(result.afterSpawn).toBeGreaterThan(result.baseline)
   expect(result.afterLoad).toBe(result.baseline)
   expect(result.levelName.length).toBeGreaterThan(0)
@@ -228,7 +229,7 @@ test('navmesh bake and show navmesh overlay', async ({ page }) => {
   await bootEditor(page)
 
   const result = await page.evaluate(async () => {
-    const v = window.vektra!
+    const v = window.lotus!
     const bakeOk = await v.bakeNavMesh()
     const show = v.terminal.exec('show navmesh')
     const toggleOff = v.terminal.exec('show navmesh')
@@ -252,7 +253,7 @@ test('material instance assignment via terminal', async ({ page }) => {
   await bootEditor(page)
 
   const result = await page.evaluate(() => {
-    const v = window.vektra!
+    const v = window.lotus!
     const spawn = v.terminal.exec('/spawn box')
     if (spawn.error) throw new Error(spawn.error)
 
@@ -287,7 +288,7 @@ test('blueprint compile and play starts', async ({ page }) => {
   await bootEditor(page)
 
   await page.evaluate(() => {
-    const v = window.vektra!
+    const v = window.lotus!
     const spawn = v.terminal.exec('/spawn box')
     if (spawn.error) throw new Error(spawn.error)
 
@@ -303,22 +304,22 @@ test('blueprint compile and play starts', async ({ page }) => {
     if (play.error) throw new Error(play.error)
   })
 
-  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === true)
-  const playing = await page.evaluate(() => window.vektra!.getLiveSnapshot().playing)
+  await page.waitForFunction(() => window.lotus?.getLiveSnapshot().playing === true)
+  const playing = await page.evaluate(() => window.lotus!.getLiveSnapshot().playing)
   expect(playing).toBe(true)
 
   const compiled = await page.evaluate(() => {
-    const actor = [...window.vektra!.world.actors.values()].find((a) => /^box/i.test(a.name) && a.script)
+    const actor = [...window.lotus!.world.actors.values()].find((a) => /^box/i.test(a.name) && a.script)
     return actor?.script?.includes('onBeginPlay') ?? false
   })
   expect(compiled).toBe(true)
 
-  await page.evaluate(() => window.vektra!.terminal.exec('/stop'))
+  await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
 })
 
 test('multiplayer settings load without crash when disabled', async ({ page }) => {
   await bootEditor(page, {
-    'vektra-engine.multiplayer': JSON.stringify({
+    'lotus-engine.multiplayer': JSON.stringify({
       url: 'ws://localhost:24690',
       room: 'e2e-off',
       enabled: false,
@@ -326,7 +327,7 @@ test('multiplayer settings load without crash when disabled', async ({ page }) =
   })
 
   const mp = await page.evaluate(() => {
-    const v = window.vektra!
+    const v = window.lotus!
     const settings = v.multiplayer.loadSettings()
     const play = v.terminal.exec('/play')
     return {
@@ -341,9 +342,9 @@ test('multiplayer settings load without crash when disabled', async ({ page }) =
   expect(mp.enabled).toBe(false)
   expect(mp.playError).toBeNull()
 
-  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === true)
+  await page.waitForFunction(() => window.lotus?.getLiveSnapshot().playing === true)
   await expect(page.locator('.editor-root')).toBeVisible()
   await expect(page.locator('.viewport canvas')).toBeVisible()
 
-  await page.evaluate(() => window.vektra!.terminal.exec('/stop'))
+  await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
 })

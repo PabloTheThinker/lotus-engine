@@ -22,6 +22,8 @@ import type { Actor } from './Actor'
 export interface CompiledScript {
   onBeginPlay: (() => void) | null
   onTick: ((dt: number) => void) | null
+  /** Godot _physics_process analog — fixed 60 Hz (or World Settings fixedPhysicsHz) */
+  onPhysicsTick: ((dt: number) => void) | null
 }
 
 export interface ScriptApi {
@@ -287,6 +289,7 @@ export function compileScript(actor: Actor, source: string, api: ScriptApi): Com
       `"use strict";\n${source}\nreturn {
         onBeginPlay: typeof onBeginPlay === 'function' ? onBeginPlay : null,
         onTick: typeof onTick === 'function' ? onTick : null,
+        onPhysicsTick: typeof onPhysicsTick === 'function' ? onPhysicsTick : null,
       };`,
     )
     return factory(actor, api, THREE, vars) as CompiledScript
@@ -296,7 +299,7 @@ export function compileScript(actor: Actor, source: string, api: ScriptApi): Com
   }
 }
 
-export const DEFAULT_SCRIPT = `// Vektra script — runs during Play.
+export const DEFAULT_SCRIPT = `// Lotus script — runs during Play.
 // In scope: actor, api, THREE
 
 function onBeginPlay() {
@@ -308,4 +311,8 @@ function onBeginPlay() {
 function onTick(dt) {
   // actor.root.rotation.y += dt
 }
+
+// function onPhysicsTick(dt) {
+//   // fixed-rate physics hook (60 Hz default)
+// }
 `

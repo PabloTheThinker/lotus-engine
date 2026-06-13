@@ -1,5 +1,5 @@
 {
-  "name": "vektra-engine",
+  "name": "lotus-engine",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "playwright test",
-    "vektra": "node scripts/vektra-cli.mjs"
+    "lotus": "node scripts/lotus-cli.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

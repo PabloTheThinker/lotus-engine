@@ -89,12 +89,12 @@ function OutlinerRow({
         onClick={(e) => (e.ctrlKey || e.metaKey ? toggleSelect(actor.id) : select(actor.id))}
         onDoubleClick={() => setRenaming(true)}
         draggable
-        onDragStart={(e) => e.dataTransfer.setData('vektra/actor', actor.id)}
+        onDragStart={(e) => e.dataTransfer.setData('lotus/actor', actor.id)}
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('vektra/actor')) e.preventDefault()
+          if (e.dataTransfer.types.includes('lotus/actor')) e.preventDefault()
         }}
         onDrop={(e) => {
-          const dragged = e.dataTransfer.getData('vektra/actor')
+          const dragged = e.dataTransfer.getData('lotus/actor')
           if (dragged && dragged !== actor.id) {
             e.stopPropagation()
             runCommand(new ReparentCommand(dragged, actor.id))
@@ -252,10 +252,10 @@ export function Outliner() {
       <div
         className="panel-body"
         onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('vektra/actor')) e.preventDefault()
+          if (e.dataTransfer.types.includes('lotus/actor')) e.preventDefault()
         }}
         onDrop={(e) => {
-          const dragged = e.dataTransfer.getData('vektra/actor')
+          const dragged = e.dataTransfer.getData('lotus/actor')
           if (dragged) runCommand(new ReparentCommand(dragged, null))
         }}
       >

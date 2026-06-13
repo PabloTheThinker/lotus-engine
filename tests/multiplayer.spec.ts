@@ -12,7 +12,7 @@ async function bootEditor(
     ({ url, room: mpRoom }) => {
       localStorage.clear()
       localStorage.setItem(
-        'vektra-engine.multiplayer',
+        'lotus-engine.multiplayer',
         JSON.stringify({ url, room: mpRoom, enabled: true }),
       )
     },
@@ -20,7 +20,7 @@ async function bootEditor(
   )
   await page.goto('/')
   await page.waitForFunction(() => {
-    const v = window.vektra
+    const v = window.lotus
     return Boolean(
       v?.world &&
         v.world.actors.size > 0 &&
@@ -53,30 +53,30 @@ test('multiplayer 2-tab relay: Tab B sees peer when Tab A plays', async ({
 
     // Tab B joins the room first (already in play, waiting for a peer).
     await pageB.keyboard.press('Alt+KeyP')
-    await pageB.waitForFunction(() => window.vektra?.multiplayer?.connected?.() === true, {
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, {
       timeout: 15_000,
     })
 
     const bBefore = await pageB.evaluate(() => ({
-      connected: window.vektra!.multiplayer.connected(),
-      peers: window.vektra!.multiplayer.peerCount(),
+      connected: window.lotus!.multiplayer.connected(),
+      peers: window.lotus!.multiplayer.peerCount(),
     }))
     expect(bBefore.connected).toBe(true)
     expect(bBefore.peers).toBe(0)
 
     // Tab A presses play — relay notifies Tab B of the new peer.
     await pageA.keyboard.press('Alt+KeyP')
-    await pageA.waitForFunction(() => window.vektra?.multiplayer?.connected?.() === true, {
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, {
       timeout: 15_000,
     })
 
-    await pageB.waitForFunction(() => (window.vektra?.multiplayer?.peerCount?.() ?? 0) >= 1, {
+    await pageB.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, {
       timeout: 15_000,
     })
 
     const bAfter = await pageB.evaluate(() => ({
-      connected: window.vektra!.multiplayer.connected(),
-      peers: window.vektra!.multiplayer.peerCount(),
+      connected: window.lotus!.multiplayer.connected(),
+      peers: window.lotus!.multiplayer.peerCount(),
       status: document.querySelector('.status-message')?.textContent ?? '',
     }))
     expect(bAfter.connected).toBe(true)
@@ -84,10 +84,10 @@ test('multiplayer 2-tab relay: Tab B sees peer when Tab A plays', async ({
     expect(bAfter.status).toMatch(/MP connected/i)
 
     // Host election: lexicographically smallest id is host — both tabs should converge.
-    await pageA.waitForFunction(() => (window.vektra?.multiplayer?.peerCount?.() ?? 0) >= 1, {
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, {
       timeout: 15_000,
     })
-    const aPeers = await pageA.evaluate(() => window.vektra!.multiplayer.peerCount())
+    const aPeers = await pageA.evaluate(() => window.lotus!.multiplayer.peerCount())
     expect(aPeers).toBeGreaterThanOrEqual(1)
   } finally {
     await contextA.close()

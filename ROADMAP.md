@@ -1,4 +1,4 @@
-# Vektra Engine — Roadmap
+# Lotus Engine — Roadmap
 
 Mission: the leading Three.js game engine — the tools and features of Unreal Engine 5 and Godot, native to the web.
 

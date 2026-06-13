@@ -5,7 +5,7 @@ import { emptyMetaSoundGraph } from './metaSounds'
  * MetaSound assets — procedural audio graphs stored in localStorage (UE MetaSound analog).
  */
 
-const KEY = 'vektra-engine.metasounds'
+const KEY = 'lotus-engine.metasounds'
 
 export interface MetaSoundAsset {
   id: string

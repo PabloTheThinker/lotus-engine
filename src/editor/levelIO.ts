@@ -4,7 +4,7 @@ import { buildSerializedActor } from './spawn'
 import { clearHistory } from './commands'
 import { useEditor } from './store'
 
-const AUTOSAVE_KEY = 'vektra-engine.autosave'
+const AUTOSAVE_KEY = 'lotus-engine.autosave'
 
 function afterLoad(name: string) {
   const s = useEditor.getState()
@@ -116,7 +116,7 @@ export function openLevelFromFile() {
     if (!file) return
     try {
       const level = JSON.parse(await file.text()) as SerializedLevel
-      if (level.engine !== 'vektra') throw new Error('Not a Vektra level file')
+      if (level.engine !== 'lotus' && level.engine !== 'vektra') throw new Error('Not a Lotus level file')
       await world.load(level)
       afterLoad(level.name)
     } catch (err) {
@@ -145,7 +145,7 @@ export async function restoreAutosave(): Promise<boolean> {
     const raw = localStorage.getItem(AUTOSAVE_KEY)
     if (!raw) return false
     const level = JSON.parse(raw) as SerializedLevel
-    if (level.engine !== 'vektra' || !Array.isArray(level.actors) || level.actors.length === 0) return false
+    if ((level.engine !== 'lotus' && level.engine !== 'vektra') || !Array.isArray(level.actors) || level.actors.length === 0) return false
     await world.load(level)
     afterLoad(level.name)
     return true

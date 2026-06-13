@@ -1,6 +1,6 @@
 /**
  * Editor keyboard shortcuts — UE Editor Preferences pattern.
- * Defaults + per-user overrides in localStorage (`vektra-engine.shortcuts`).
+ * Defaults + per-user overrides in localStorage (`lotus-engine.shortcuts`).
  */
 
 export type ShortcutCategory = 'Viewport' | 'Play' | 'Tools' | 'Panels'
@@ -20,7 +20,7 @@ export interface ShortcutDef {
   defaultBinding: ShortcutBinding
 }
 
-const STORAGE_KEY = 'vektra-engine.shortcuts'
+const STORAGE_KEY = 'lotus-engine.shortcuts'
 
 export const SHORTCUT_REGISTRY: ShortcutDef[] = [
   // Viewport — transform tools

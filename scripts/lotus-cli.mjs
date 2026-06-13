@@ -1,22 +1,22 @@
 #!/usr/bin/env node
 /**
- * Vektra external terminal — drives the live editor over WebSocket while `npm run dev` runs.
+ * Lotus external terminal — drives the live editor over WebSocket while `npm run dev` runs.
  *
  * Usage:
- *   npm run vektra                  Interactive REPL
- *   npm run vektra -- exec "/ls"    One-shot command
- *   npm run vektra -- status        Check editor connection
- *   npm run vektra -- wait          Block until editor connects
+ *   npm run lotus                  Interactive REPL
+ *   npm run lotus -- exec "/ls"    One-shot command
+ *   npm run lotus -- status        Check editor connection
+ *   npm run lotus -- wait          Block until editor connects
  */
 import { readFileSync, existsSync } from 'node:fs'
 import readline from 'node:readline'
 import { WebSocket } from 'ws'
 
-const MANIFEST = '.vektra-dev.json'
-const DEFAULT_PORT = Number(process.env.VEKTRA_TERMINAL_PORT || 24679)
+const MANIFEST = '.lotus-dev.json'
+const DEFAULT_PORT = Number(process.env.LOTUS_TERMINAL_PORT || 24679)
 
 function resolveWsUrl() {
-  if (process.env.VEKTRA_TERMINAL_URL) return process.env.VEKTRA_TERMINAL_URL
+  if (process.env.LOTUS_TERMINAL_URL) return process.env.LOTUS_TERMINAL_URL
   if (existsSync(MANIFEST)) {
     try {
       const m = JSON.parse(readFileSync(MANIFEST, 'utf8'))
@@ -28,23 +28,23 @@ function resolveWsUrl() {
   return `ws://127.0.0.1:${DEFAULT_PORT}`
 }
 
-const HELP = `Vektra CLI — external terminal for the live editor
+const HELP = `Lotus CLI — external terminal for the live editor
 
 Usage:
-  npm run vektra                     Interactive REPL
-  npm run vektra -- exec "<cmd>"     Run one command and exit
-  npm run vektra -- status           Show bridge + editor status
-  npm run vektra -- wait [seconds]   Wait for editor (default 60s)
-  npm run vektra -- help             This help
+  npm run lotus                     Interactive REPL
+  npm run lotus -- exec "<cmd>"     Run one command and exit
+  npm run lotus -- status           Show bridge + editor status
+  npm run lotus -- wait [seconds]   Wait for editor (default 60s)
+  npm run lotus -- help             This help
 
 Requires: npm run dev (editor open in browser)
 Bridge URL read from ${MANIFEST} (written by Vite on startup)
 
 Commands match the in-editor terminal (/help, /ls, JS expressions).
 Examples:
-  npm run vektra -- exec "world.actors.size"
-  npm run vektra -- exec "/select Ball"
-  npm run vektra -- exec "/spawn sphere"
+  npm run lotus -- exec "world.actors.size"
+  npm run lotus -- exec "/select Ball"
+  npm run lotus -- exec "/spawn sphere"
 `
 
 function connect(timeoutMs = 8000) {
@@ -191,7 +191,7 @@ async function repl() {
     }
   })
 
-  console.log(`Vektra CLI → ${url}`)
+  console.log(`Lotus CLI → ${url}`)
   console.log('Waiting for editor…')
 
   try {
@@ -256,7 +256,7 @@ try {
   } else if (sub === 'exec') {
     const source = args.slice(1).join(' ')
     if (!source) {
-      console.error('Usage: npm run vektra -- exec "<command>"')
+      console.error('Usage: npm run lotus -- exec "<command>"')
       code = 1
     } else {
       code = await cmdExec(source)

@@ -12,7 +12,7 @@ import { useEditor } from './store'
  * Instance roots track per-actor property overrides against the source prefab.
  */
 
-const KEY = 'vektra-engine.prefabs'
+const KEY = 'lotus-engine.prefabs'
 
 export interface Prefab {
   name: string

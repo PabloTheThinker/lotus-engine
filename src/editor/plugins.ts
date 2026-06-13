@@ -4,7 +4,7 @@
  *
  * Plugins are JavaScript snippets evaluated at boot (localStorage) or installed
  * via the Plugin Manager. They register editor hooks through `registerPlugin`
- * or the granular helpers on `window.vektra`.
+ * or the granular helpers on `window.lotus`.
  *
  * ## Quick start
  *
@@ -26,7 +26,7 @@
  * registerPanelCallback('my-panel', (el) => { el.innerHTML = '<p>Hello panel</p>' })
  * ```
  *
- * ## API surface (`window.vektra`)
+ * ## API surface (`window.lotus`)
  *
  * | Function | Description |
  * |----------|-------------|
@@ -45,7 +45,7 @@
  *
  * ## Persistence
  *
- * Installed plugins are stored in `localStorage` (`vektra-engine.plugins.v2`) with
+ * Installed plugins are stored in `localStorage` (`lotus-engine.plugins.v2`) with
  * enable/disable flags. Disabled plugins are not evaluated until re-enabled.
  *
  * ## Example
@@ -126,8 +126,8 @@ const nodeTypes = new Map<string, PluginNodeTypeDef>()
 const importers: PluginImporterDef[] = []
 const consoleCommands = new Map<string, PluginConsoleCommandDef>()
 
-const PLUGIN_KEY_V2 = 'vektra-engine.plugins.v2'
-const PLUGIN_KEY_LEGACY = 'vektra-engine.plugins'
+const PLUGIN_KEY_V2 = 'lotus-engine.plugins.v2'
+const PLUGIN_KEY_LEGACY = 'lotus-engine.plugins'
 
 function bumpPlugins() {
   useEditor.getState().touch()
@@ -333,7 +333,8 @@ export function savePluginRecords(records: PluginRecord[]) {
 }
 
 function makeEvalScope() {
-  const vektra = (window as unknown as Record<string, unknown>).vektra
+  const vektra = (window as unknown as Record<string, unknown>).lotus ??
+    (window as unknown as Record<string, unknown>).vektra
   return {
     registerPlugin,
     registerNodeType,

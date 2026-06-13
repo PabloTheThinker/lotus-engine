@@ -15,7 +15,7 @@ export interface Prefs {
   exportQuality: ExportQuality
 }
 
-const KEY = 'vektra-engine.prefs'
+const KEY = 'lotus-engine.prefs'
 
 export function loadPrefs(): Prefs {
   try {

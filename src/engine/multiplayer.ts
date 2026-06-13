@@ -53,7 +53,7 @@ export interface MPSettings {
   enabled: boolean
 }
 
-const KEY = 'vektra-engine.multiplayer'
+const KEY = 'lotus-engine.multiplayer'
 export function loadMPSettings(): MPSettings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}')

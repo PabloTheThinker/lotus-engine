@@ -206,6 +206,7 @@ export class World {
     this.playing = true
     if (!this.pieSnapshot) this.pieSnapshot = this.serialize()
     this.playClock = 0
+    this.physicsAccumulator = 0
     resetSignals()
     resetGameplay()
     resetAbilities()
@@ -415,13 +416,25 @@ export class World {
   }
 
   editorClock = 0
+  private physicsAccumulator = 0
+
+  private fixedPhysicsDt(): number {
+    const hz = this.environment.fixedPhysicsHz ?? 60
+    return 1 / Math.max(1, Math.min(240, hz))
+  }
 
   tick(dt: number) {
     if (!this.playing) return
     this.playClock += dt
     setAbilityPlayClock(this.playClock)
     tickEffects(this.actors.values(), dt)
-    this.physics.step(dt)
+    const physDt = this.fixedPhysicsDt()
+    this.physicsAccumulator += dt
+    while (this.physicsAccumulator >= physDt) {
+      this.physics.step(physDt)
+      for (const a of this.actors.values()) a.physicsTick(physDt)
+      this.physicsAccumulator -= physDt
+    }
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
       const st = this.playClock % this.sequence.duration
@@ -534,7 +547,7 @@ export class World {
       assignStreamCellOnSave(a.serialize(), streaming.gridSize, streaming.enabled),
     )
     const split = splitLevelByCells({
-      engine: 'vektra',
+      engine: 'lotus',
       version: 4,
       name: this.levelName,
       environment: { ...this.environment },
@@ -543,7 +556,7 @@ export class World {
     })
     this.cellManifest = split.cells
     return {
-      engine: 'vektra',
+      engine: 'lotus',
       version: 4,
       name: this.levelName,
       environment: { ...this.environment },

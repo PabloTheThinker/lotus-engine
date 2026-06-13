@@ -1,15 +1,15 @@
-# Vektra Engine
+# Lotus Engine
 
-A professional Three.js level editor built on Unreal Engine's framework — Vektra Software.
+A professional Three.js game engine and level editor built on Unreal Engine's framework — Lotus Engine (formerly Vektra Engine).
 
 ```bash
 npm install
 npm run dev
 ```
 
-## The framework (Unreal → Vektra)
+## The framework (Unreal → Lotus)
 
-| Unreal | Vektra Engine |
+| Unreal | Lotus Engine |
 |---|---|
 | `UWorld` | `World` (`src/engine/World.ts`) — actor registry, scene graph, PIE lifecycle |
 | `AActor` | `Actor` (`src/engine/Actor.ts`) — root component + typed components + tick |

@@ -13,7 +13,7 @@ import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
 import { useEditor } from './store'
 
-const HISTORY_KEY = 'vektra-engine.terminal.history'
+const HISTORY_KEY = 'lotus-engine.terminal.history'
 const MAX_HISTORY = 100
 
 export interface TerminalResult {

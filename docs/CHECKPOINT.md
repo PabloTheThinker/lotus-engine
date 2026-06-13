@@ -1,10 +1,11 @@
-# CHECKPOINT — 2026-06-13 (agent swarm through v0.72)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 9)
 
-> Working doc: `docs/UE5.7-GAP-LIST.md` — synced through v0.72.
+> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v0.78.
 
 ## State
 
-- **Last clean commit: v0.72 (wave 8).** v0.33–v0.72 shipped across eight agent swarms; **build clean**, **`npm run test` — 14 passed**.
+- **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
+- **Last clean commit: v0.78 (wave 9).** v0.33–v0.78 shipped; **build clean**, **`npm run test` — 14 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -44,7 +45,7 @@
 |---|---|
 | v0.38 | FSM animation editor + 1D blend space (`AnimStateEditor` tab, `animStateMachine.ts`) |
 | v0.39 | MetaSounds-lite WebAudio graph (`MetaSoundEditor`), HRTF PannerNode spatialization, TriggerVolume reverb zones, SoundEmitter actor |
-| v0.40 | Multi-level export (`__VEKTRA_LEVELS__` + `api.loadLevel`), PWA export, mobile/desktop quality presets; BP function collapse/macros (`collapseToFunction`) |
+| v0.40 | Multi-level export (`__LOTUS_LEVELS__` + `api.loadLevel`), PWA export, mobile/desktop quality presets; BP function collapse/macros (`collapseToFunction`) |
 | v0.41 | Plugin API — `registerNodeType`/`registerPanel`/importers/consoleCommands, Plugin Manager, drag-drop install |
 | v0.42 | GAS-lite (attribute sets + abilities + `api.activateAbility`), piercing pick menu (Ctrl+RMB), particle ribbon renderer + 4-stop gradient + ground bounce |
 | v0.43 | Wave 2 integration commit — gap-list doc sync, build verification |
@@ -116,14 +117,26 @@
 | v0.71 | MP 2-tab relay integration test (14 tests total) |
 | v0.72 | AO map bake to UV2 (`build ao map`) |
 
-## Next up (v0.73+)
+## Shipped wave 9 (v0.73 → v0.78, Lotus rename)
 
-1. **GPU particles** — WebGPU compute Niagara stretch
-2. **Buffer viz polish** — AO, emissive, scene depth as post pass
-3. **MP polish** — dedicated server mode, lag compensation
-4. **xatlas uv2** — proper lightmap unwrapping for AO map bake
-5. **Toolbar reorder** — exact UE5 main toolbar order
-6. **Expanded E2E** — PIE physics, export playable roundtrip
+| Ver | What |
+|---|---|
+| v0.73 | Lotus Engine rebrand + `LOTUS-ENGINE-RESEARCH.md` |
+| v0.74 | Fixed physics timestep + `onPhysicsTick` |
+| v0.75 | Particle bounds + GPU backend stub |
+| v0.76 | AO bake worker + xatlas UV2 path |
+| v0.77 | TSL material preview stub |
+| v0.78 | Buffer viz AO + emissive |
+
+## Next up (v0.79+, Wave 10)
+
+1. **WebGPU quality tier** — `WebGPURenderer` opt-in in World Settings
+2. **GPU particles compute** — full TSL `ComputeNode` sim (stub shipped v0.75)
+3. **xatlas-three integration** — replace box-projection UV2 fallback
+4. **TSL post stack** — bloom/SSAO/DOF via `PostProcessing`
+5. **MP polish** — dedicated server mode, lag compensation
+6. **Toolbar reorder** — exact UE5 main toolbar order
+7. **Expanded E2E** — PIE physics, export playable roundtrip (16+ tests)
 
 ## Remaining gap-list queue (post–wave 7)
 

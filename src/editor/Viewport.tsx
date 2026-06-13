@@ -172,6 +172,8 @@ const BUFFER_VIZ_LABELS: Record<Exclude<BufferViz, 'none'>, string> = {
   depth: 'Scene Depth',
   roughness: 'Roughness',
   metallic: 'Metallic',
+  ao: 'Ambient Occlusion',
+  emissive: 'Emissive',
 }
 
 function ViewModeSelect() {
@@ -359,7 +361,9 @@ export function Viewport() {
     })
     const composer = new EffectComposer(renderer, composerTarget)
     if (import.meta.env.DEV) {
-      ;(window as unknown as Record<string, unknown>).vektraGfx = { renderer, composer }
+      const winGfx = window as unknown as Record<string, unknown>
+      winGfx.lotusGfx = { renderer, composer }
+      winGfx.vektraGfx = winGfx.lotusGfx
     }
     const renderPass = new RenderPass(world.scene, editorCamera)
     const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.6, 0.9)
@@ -599,6 +603,8 @@ export function Viewport() {
         roughness: std.roughness ?? 0.5,
         metalness: std.metalness ?? 0,
         normalMap: std.normalMap ?? null,
+        aoMap: std.aoMap ?? null,
+        emissive: std.emissive?.clone?.() ?? new THREE.Color(0x000000),
       }
     }
 
@@ -628,8 +634,18 @@ export function Viewport() {
         const g = p.roughness
         return new THREE.MeshBasicMaterial({ color: new THREE.Color(g, g, g) })
       }
-      const g = p.metalness
-      return new THREE.MeshBasicMaterial({ color: new THREE.Color(g, g, g) })
+      if (bv === 'metallic') {
+        const g = p.metalness
+        return new THREE.MeshBasicMaterial({ color: new THREE.Color(g, g, g) })
+      }
+      if (bv === 'emissive') {
+        return new THREE.MeshBasicMaterial({ color: p.emissive })
+      }
+      // ao — show aoMap channel or vertex color bake
+      if (p.aoMap) {
+        return new THREE.MeshBasicMaterial({ map: p.aoMap, color: 0xffffff })
+      }
+      return new THREE.MeshBasicMaterial({ color: p.color, vertexColors: true })
     }
 
     function applyViewMode(mode: ViewMode, bufferViz: BufferViz, sceneVersion: number, camera: THREE.Camera) {
@@ -1097,7 +1113,7 @@ export function Viewport() {
       const hit = new THREE.Vector3()
       const onPlane = raycaster.ray.intersectPlane(plane, hit)
 
-      const prefabName = e.dataTransfer?.getData('vektra/prefab')
+      const prefabName = e.dataTransfer?.getData('lotus/prefab')
       if (prefabName) {
         const prefab = listPrefabs().find((p) => p.name === prefabName)
         if (prefab) {
@@ -1106,14 +1122,14 @@ export function Viewport() {
         }
         return
       }
-      const materialId = e.dataTransfer?.getData('vektra/material')
+      const materialId = e.dataTransfer?.getData('lotus/material')
       if (materialId) {
         const target = pick(e)
         if (target?.mesh) assignMaterialAsset(target.id, materialId)
         else useEditor.getState().setStatus('Drop material onto a mesh actor')
         return
       }
-      const raw = e.dataTransfer?.getData('vektra/asset')
+      const raw = e.dataTransfer?.getData('lotus/asset')
       if (!raw) return
       const payload = JSON.parse(raw) as AssetPayload
       const sp = surfacePointAt(e)

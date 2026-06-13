@@ -1,7 +1,7 @@
 export type ViewportPane = 'perspective' | 'top' | 'front' | 'side'
 export type ViewportLayout = 'single' | 'quad'
 
-export const VIEWPORT_STORAGE_KEY = 'vektra-engine.viewport'
+export const VIEWPORT_STORAGE_KEY = 'lotus-engine.viewport'
 
 export interface ViewportPrefs {
   layout: ViewportLayout

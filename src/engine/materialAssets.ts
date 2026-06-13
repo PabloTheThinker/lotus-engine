@@ -10,7 +10,7 @@ import { DEFAULT_MATERIAL } from './types'
  * Base materials live in localStorage; actors reference by id and store per-instance overrides.
  */
 
-const KEY = 'vektra-engine.materials'
+const KEY = 'lotus-engine.materials'
 
 export interface MaterialAsset {
   id: string

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  readonly VITE_VEKTRA_TERMINAL_PORT: string
+  readonly VITE_LOTUS_TERMINAL_PORT: string
 }
 
 interface ImportMeta {

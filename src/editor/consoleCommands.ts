@@ -47,6 +47,9 @@ const BUFFER_VIZ_ALIASES: Record<string, BufferViz> = {
   roughness: 'roughness',
   metallic: 'metallic',
   metalness: 'metallic',
+  ao: 'ao',
+  ambientocclusion: 'ao',
+  emissive: 'emissive',
 }
 
 /** returns a response string if the input was a console command, else null */

@@ -1,6 +1,31 @@
 # Changelog
 
-Notable changes to Vektra Engine. Newest entries first.
+Notable changes to Lotus Engine. Newest entries first.
+
+---
+
+## 2026-06-13 — Wave 9 + Lotus rename: v0.73–v0.78
+
+### Added
+- **Lotus Engine rebrand** — `lotus-engine` package, `Software/lotus-engine` folder, `window.lotus` bridge (`window.vektra` legacy alias), `__LOTUS_*` export globals with `__VEKTRA_*` fallback, `npm run lotus` CLI
+- **v0.73** `docs/LOTUS-ENGINE-RESEARCH.md` — Three.js r184+ engine substrate roadmap (Waves 9–12)
+- **v0.74** Fixed physics timestep — 60 Hz accumulator (`fixedPhysicsHz` in World Settings), `onPhysicsTick(dt)` script hook
+- **v0.75** Particle bounds fix — dynamic bounding spheres, `frustumCulled` re-enabled; GPU particle backend stub (`particlesGPU.ts`)
+- **v0.76** AO bake Web Worker — `lightmapBakeWorker.ts` off main thread; xatlas UV2 unwrap path (`xatlasUV2.ts`)
+- **v0.77** Material graph TSL preview stub — `compileMaterialGraphTSL()` parallel to GLSL path
+- **v0.78** Buffer viz AO + Emissive modes (`show bufferviz ao|emissive`)
+
+### Changed
+- Level files serialize `engine: 'lotus'` (still load `vektra` legacy levels)
+- localStorage keys `lotus-engine.*` with read-time migration from `vektra-engine.*` (`storage.ts`)
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 14 passed
+npm run dev
+npm run lotus
+```
 
 ---
 
@@ -150,7 +175,7 @@ Eight parallel agent swarms shipped **40 version bumps** in one research-and-bui
 ### Verification (current)
 
 ```bash
-cd "~/Vektra Industries/Software/vektra-engine"
+cd "~/Vektra Industries/Software/lotus-engine"
 npm install
 npm run build    # exit 0
 npm run test     # 14 passed

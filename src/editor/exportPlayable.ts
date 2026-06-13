@@ -60,7 +60,7 @@ function pwaBootScript(): string {
 if ('serviceWorker' in navigator) {
   const sw = [
     "self.addEventListener('install', (e) => {",
-    "  e.waitUntil(caches.open('vektra-v1').then((c) => c.add(self.location.href)));",
+    "  e.waitUntil(caches.open('lotus-v1').then((c) => c.add(self.location.href)));",
     "  self.skipWaiting();",
     "});",
     "self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });",
@@ -95,7 +95,7 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const { levels, main } = buildLevelsManifest(mainLevel)
   const levelsJSON = escapeJsonForScript(JSON.stringify(levels))
   const exportJSON = escapeJsonForScript(JSON.stringify({ quality, pixelRatio: quality === 'mobile' ? 1 : undefined }))
-  const title = s.levelName || 'Vektra Level'
+  const title = s.levelName || 'Lotus Level'
   const pwa = !!opts.pwa
 
   return `<!doctype html>
@@ -103,7 +103,7 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${title} — Vektra Engine</title>
+<title>${title} — Lotus Engine</title>
 ${pwa ? pwaHeadExtras(title) : ''}
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0f12; }
@@ -130,8 +130,8 @@ ${pwa ? pwaHeadExtras(title) : ''}
 </head>
 <body>
 <div id="overlay">Loading…</div>
-<div id="badge">VEKTRA ENGINE${pwa ? ' · PWA' : ''}</div>
-<script>window.__VEKTRA_LEVELS__ = ${levelsJSON}; window.__VEKTRA_MAIN__ = '${main}'; window.__VEKTRA_EXPORT__ = ${exportJSON}; window.__VEKTRA_CELLS__ = ${cellsJSON};</script>
+<div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}
