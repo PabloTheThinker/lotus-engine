@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { redo, undo, runCommand, DeleteActorCommand } from './commands'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
 import { exportPlayable, exportPlayablePWA } from './exportPlayable'
+import { bakeAO } from '../engine/lightmapBake'
+import { world } from '../engine/World'
 import { spawnAsset } from './spawn'
 import { useEditor } from './store'
 import { formatShortcutLabel, getShortcutsVersion, subscribeShortcuts } from './shortcuts'
@@ -92,6 +94,30 @@ export function MenuBar() {
             action: () => {
               const id = useEditor.getState().selectedId
               if (id) runCommand(new DeleteActorCommand(id))
+            },
+          },
+        ]}
+      />
+      <Menu
+        title="Build"
+        items={[
+          {
+            label: 'Bake AO (approx)',
+            action: () => {
+              const s = useEditor.getState()
+              s.setStatus('Baking AO (approx)…')
+              void bakeAO(world.actors, {
+                samples: 16,
+                radius: 1,
+                onProgress: (_done, _total, label) => s.setStatus(label),
+              }).then((res) => {
+                s.setStatus(
+                  res.ok
+                    ? `Baked AO (approx): ${res.actorsBaked} actors, ${res.verticesProcessed} verts`
+                    : `Bake AO failed: ${res.error ?? 'unknown'}`,
+                )
+                s.touch()
+              })
             },
           },
         ]}

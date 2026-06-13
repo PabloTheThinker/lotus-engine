@@ -13,12 +13,30 @@ interface VektraBridge {
   }
   terminal: { exec: (source: string) => { output: string | null; error: string | null; level: string } }
   world: {
-    actors: { size: number }
+    actors: { size: number; values: () => IterableIterator<{
+      id: string
+      name: string
+      type: string
+      script?: string
+      blueprint?: unknown
+      materialAssetId?: string
+      materialOverrides?: { color?: string }
+      mesh?: unknown
+    }> }
     serialize: () => { engine: string; name: string; actors: unknown[] }
     load: (level: unknown) => Promise<void>
   }
+  useEditor: { getState: () => { select: (id: string | null) => void } }
   undo: () => void
   redo: () => void
+  bakeNavMesh: () => Promise<boolean>
+  isNavMeshReady: () => boolean
+  compileBlueprint: (graph: unknown) => string
+  emptyGraph: () => unknown
+  multiplayer: {
+    loadSettings: () => { url: string; room: string; enabled: boolean }
+    enabled: () => boolean
+  }
 }
 
 declare global {
@@ -28,12 +46,28 @@ declare global {
   }
 }
 
-async function bootEditor(page: import('@playwright/test').Page) {
-  await page.addInitScript(() => localStorage.clear())
+async function bootEditor(
+  page: import('@playwright/test').Page,
+  localStorageSeed?: Record<string, string>,
+) {
+  await page.addInitScript((seed) => {
+    localStorage.clear()
+    if (seed) {
+      for (const [key, value] of Object.entries(seed)) localStorage.setItem(key, value)
+    }
+  }, localStorageSeed ?? {})
   await page.goto('/')
   await page.waitForFunction(() => {
     const v = window.vektra
-    return Boolean(v?.world && v.world.actors.size > 0 && v.terminal?.exec && v.getLiveSnapshot)
+    return Boolean(
+      v?.world &&
+        v.world.actors.size > 0 &&
+        v.terminal?.exec &&
+        v.getLiveSnapshot &&
+        v.bakeNavMesh &&
+        v.compileBlueprint &&
+        v.multiplayer?.loadSettings,
+    )
   })
 }
 
@@ -188,4 +222,128 @@ test('level save/load roundtrip via terminal world API', async ({ page }) => {
   expect(result.afterSpawn).toBeGreaterThan(result.baseline)
   expect(result.afterLoad).toBe(result.baseline)
   expect(result.levelName.length).toBeGreaterThan(0)
+})
+
+test('navmesh bake and show navmesh overlay', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.vektra!
+    const bakeOk = await v.bakeNavMesh()
+    const show = v.terminal.exec('show navmesh')
+    const toggleOff = v.terminal.exec('show navmesh')
+    return {
+      bakeOk,
+      navReady: v.isNavMeshReady(),
+      showError: show.error,
+      showOutput: show.output,
+      toggleOutput: toggleOff.output,
+    }
+  })
+
+  expect(result.showError).toBeNull()
+  expect(result.showOutput).toMatch(/show navmesh (ON|OFF)/)
+  expect(result.toggleOutput).toMatch(/show navmesh (ON|OFF)/)
+  expect(result.bakeOk).toBe(true)
+  expect(result.navReady).toBe(true)
+})
+
+test('material instance assignment via terminal', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.vektra!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+
+    const box = [...v.world.actors.values()].filter((a) => a.type === 'StaticMesh' && /^box/i.test(a.name)).at(-1)
+    if (!box) throw new Error('spawned box not found')
+
+    const mat = v.terminal.exec(`createMaterial('E2E_Base', { color: '#cc2244', roughness: 0.4 })`)
+    if (mat.error) throw new Error(mat.error)
+    const matId = mat.output?.match(/"id":\s*"([^"]+)"/)?.[1]
+    if (!matId) throw new Error(`material id missing: ${mat.output}`)
+
+    const assign = v.terminal.exec(`assignMaterial('${box.name}', '${matId}')`)
+    if (assign.error) throw new Error(assign.error)
+
+    const override = v.terminal.exec(`setMaterialOverrides('${box.name}', { color: '#22cc44' })`)
+    if (override.error) throw new Error(override.error)
+
+    const actor = [...v.world.actors.values()].find((a) => a.id === box.id)
+    return {
+      materialAssetId: actor?.materialAssetId,
+      overrideColor: actor?.materialOverrides?.color,
+      hasMesh: Boolean(actor?.mesh),
+    }
+  })
+
+  expect(result.hasMesh).toBe(true)
+  expect(result.materialAssetId).toBeTruthy()
+  expect(result.overrideColor).toBe('#22cc44')
+})
+
+test('blueprint compile and play starts', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.vektra!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+
+    const actor = [...v.world.actors.values()].filter((a) => a.type === 'StaticMesh' && /^box/i.test(a.name)).at(-1)
+    if (!actor) throw new Error('spawned box not found')
+
+    v.useEditor.getState().select(actor.id)
+    const graph = v.emptyGraph()
+    actor.blueprint = graph
+    actor.script = v.compileBlueprint(graph)
+
+    const play = v.terminal.exec('/play')
+    if (play.error) throw new Error(play.error)
+  })
+
+  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === true)
+  const playing = await page.evaluate(() => window.vektra!.getLiveSnapshot().playing)
+  expect(playing).toBe(true)
+
+  const compiled = await page.evaluate(() => {
+    const actor = [...window.vektra!.world.actors.values()].find((a) => /^box/i.test(a.name) && a.script)
+    return actor?.script?.includes('onBeginPlay') ?? false
+  })
+  expect(compiled).toBe(true)
+
+  await page.evaluate(() => window.vektra!.terminal.exec('/stop'))
+})
+
+test('multiplayer settings load without crash when disabled', async ({ page }) => {
+  await bootEditor(page, {
+    'vektra-engine.multiplayer': JSON.stringify({
+      url: 'ws://localhost:24690',
+      room: 'e2e-off',
+      enabled: false,
+    }),
+  })
+
+  const mp = await page.evaluate(() => {
+    const v = window.vektra!
+    const settings = v.multiplayer.loadSettings()
+    const play = v.terminal.exec('/play')
+    return {
+      enabled: v.multiplayer.enabled(),
+      settings,
+      playError: play.error,
+      playing: v.getLiveSnapshot().playing,
+    }
+  })
+
+  expect(mp.settings.enabled).toBe(false)
+  expect(mp.enabled).toBe(false)
+  expect(mp.playError).toBeNull()
+
+  await page.waitForFunction(() => window.vektra?.getLiveSnapshot().playing === true)
+  await expect(page.locator('.editor-root')).toBeVisible()
+  await expect(page.locator('.viewport canvas')).toBeVisible()
+
+  await page.evaluate(() => window.vektra!.terminal.exec('/stop'))
 })

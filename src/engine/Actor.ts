@@ -4,6 +4,7 @@ import type {
   FoliageProps,
   LandscapeProps,
   Label3DProps,
+  Widget3DProps,
   Behavior,
   CameraProps,
   GeometryKind,
@@ -19,7 +20,9 @@ import type {
   LookAtTarget,
 } from './types'
 import { DEFAULT_MOBILITY } from './types'
+import { disposeWidget3D } from './widget3d'
 import { resetAnimRuntime } from './animStateMachine'
+import { extractBakedAOMeshes } from './lightmapBake'
 import { compileScript, scriptLog, type CompiledScript, type ScriptApi } from './scripting'
 
 let actorCounter = 0
@@ -85,6 +88,9 @@ export class Actor {
   /** PCGVolume — sample→filter→transform→spawn node graph */
   pcgGraph?: import('./pcgGraph').PCGGraph
   label3DProps?: Label3DProps
+  widget3DProps?: Widget3DProps
+  /** CSS3DObject child — editor / PIE only */
+  css3dObject?: import('three/addons/renderers/CSS3DRenderer.js').CSS3DObject
   pcgMesh?: THREE.InstancedMesh
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** material node graph — evaluated per frame onto the material */
@@ -115,10 +121,16 @@ export class Actor {
   syncProperties?: string[]
   /** Godot MultiplayerSpawner-lite — host replicates instantiation */
   syncSpawn = false
+  /** Network owner peer id — empty = host-owned */
+  netOwnerId?: string
+  /** Client-side transform prediction for locally-owned actors */
+  clientPredicted?: boolean
   /** two-bone IK targets (glTF skinned meshes) */
   ikTargets?: IKTarget[]
   /** head LookAt target */
   lookAtTarget?: LookAtTarget
+  /** Baked AO (approx) applied to mesh vertex colors */
+  bakedAO = false
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -320,8 +332,11 @@ export class Actor {
       trigger: this.triggerProps ? { ...this.triggerProps } : undefined,
       soundEmitter: this.soundEmitterProps ? { ...this.soundEmitterProps } : undefined,
       label3D: this.label3DProps ? { ...this.label3DProps } : undefined,
+      widget3D: this.widget3DProps ? { ...this.widget3DProps } : undefined,
       syncProperties: this.syncProperties?.length ? [...this.syncProperties] : undefined,
       syncSpawn: this.syncSpawn || undefined,
+      netOwnerId: this.netOwnerId || undefined,
+      clientPredicted: this.clientPredicted || undefined,
       ikTargets: this.ikTargets?.length
         ? this.ikTargets.map((t) => ({
             chain: t.chain,
@@ -337,13 +352,18 @@ export class Actor {
               : undefined,
           }
         : undefined,
+      bakedAO: this.bakedAO || undefined,
+      bakedAOMeshes: extractBakedAOMeshes(this),
     }
   }
 
   dispose() {
+    disposeWidget3D(this)
     this.particleSystem?.dispose()
-    this.mesh?.geometry.dispose()
-    if (this.mesh && this.mesh.material instanceof THREE.Material) this.mesh.material.dispose()
+    if (this.mesh && !this.mesh.userData.isWidget3DPick) {
+      this.mesh.geometry.dispose()
+      if (this.mesh.material instanceof THREE.Material) this.mesh.material.dispose()
+    }
     this.cameraHelper?.dispose()
   }
 }

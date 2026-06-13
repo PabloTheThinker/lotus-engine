@@ -1,3 +1,4 @@
+import { bakeAO } from '../engine/lightmapBake'
 import { world } from '../engine/World'
 import { execPluginConsoleCommand, getPluginConsoleCommands, pluginConsoleSuggestions } from './plugins'
 import { useEditor } from './store'
@@ -29,6 +30,7 @@ export const CONSOLE_COMMANDS = [
   'show collision',
   'show navmesh',
   'show streaming',
+  'build ao',
 ]
 
 /** returns a response string if the input was a console command, else null */
@@ -96,6 +98,19 @@ export function execConsoleCommand(raw: string): string | null {
   if (lower === 'show streaming') {
     consoleState.showStreaming = !consoleState.showStreaming
     return `show streaming ${consoleState.showStreaming ? 'ON' : 'OFF'}`
+  }
+  if (lower === 'build ao') {
+    void bakeAO(world.actors, {
+      onProgress: (_done, _total, label) => useEditor.getState().setStatus(label),
+    }).then((res) => {
+      useEditor.getState().setStatus(
+        res.ok
+          ? `Baked AO (approx): ${res.actorsBaked} actors, ${res.verticesProcessed} verts`
+          : `Bake AO failed: ${res.error ?? 'unknown'}`,
+      )
+      useEditor.getState().touch()
+    })
+    return 'Baked AO (approx) bake started…'
   }
   if (lower === 'help' || lower === '?') {
     const pluginLines = getPluginConsoleCommands().map((c) => `${c.name} — ${c.help}`)

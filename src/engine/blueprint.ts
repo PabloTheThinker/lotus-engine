@@ -10,6 +10,8 @@ export interface BPNode {
   x: number
   y: number
   props: Record<string, string | number | boolean>
+  /** exec breakpoint — pauses PIE/Simulate when this node runs (v0.63) */
+  breakpoint?: boolean
 }
 
 /** exec edge: from "nodeId:outPort" to "nodeId:in" */
@@ -610,6 +612,28 @@ export function emptyGraph(): BlueprintGraph {
   }
 }
 
+/** Find a node by id in the root graph or any function subgraph. */
+export function findNodeInGraph(graph: BlueprintGraph, nodeId: string): BPNode | undefined {
+  const direct = graph.nodes.find((n) => n.id === nodeId)
+  if (direct) return direct
+  for (const fn of Object.values(graph.functions ?? {})) {
+    const n = fn.nodes.find((x) => x.id === nodeId)
+    if (n) return n
+  }
+  return undefined
+}
+
+/** True when a node participates in exec flow (eligible for breakpoints). */
+export function nodeHasExec(node: BPNode): boolean {
+  const def = NODE_DEFS[node.type]
+  if (!def || def.pure) return false
+  return def.hasExecIn || def.execOuts.length > 0
+}
+
+function execPrefix(nodeId: string): string {
+  return `if (globalThis.__bpBreakpoint && globalThis.__bpBreakpoint(actor.id, '${nodeId}')) debugger;\n__pulse('${nodeId}');\n`
+}
+
 type CompileCtx = {
   nodes: BPNode[]
   edges: BPEdge[]
@@ -901,10 +925,10 @@ function compileGraphBody(graph: BlueprintGraph, rootCtx?: Partial<CompileCtx>):
       for (const p of def.execOuts) outs[p] = subFollow(node.id, p, depth)
       const body = def.emit(node, outs, subDataInsFor(node, def))
       if (!body.trim()) return body
-      return `__pulse('${node.id}');\n${body}`
+      return `${execPrefix(node.id)}${body}`
     }
 
-    return `__pulse('${callNode.id}');\n${subEmitNode(entry, depth)}`
+    return `${execPrefix(callNode.id)}${subEmitNode(entry, depth)}`
   }
 
   const emitNode = (node: BPNode, depth: number): string => {
@@ -920,7 +944,7 @@ function compileGraphBody(graph: BlueprintGraph, rootCtx?: Partial<CompileCtx>):
     for (const port of def.execOuts) outs[port] = follow(node.id, port, depth)
     const body = def.emit(node, outs, dataInsFor(node, def))
     if (!body.trim()) return body
-    return `__pulse('${node.id}');\n${body}`
+    return `${execPrefix(node.id)}${body}`
   }
 
   const beginChains: string[] = []

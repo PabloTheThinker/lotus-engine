@@ -11,8 +11,9 @@ import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage, updateLabel3DBillboards } from '../engine/factory'
+import { Widget3DLayer } from './Widget3DLayer'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
-import { hasHudTracks, sampleSequence, setKey } from '../engine/sequencer'
+import { hasAudioTracks, hasHudTracks, sampleSequence, setKey } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, isHudMounted, mountHud, syncAuthoredHud, unmountHud } from '../engine/gameplay'
 import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
@@ -218,6 +219,10 @@ export function Viewport() {
     renderer.outputColorSpace = THREE.SRGBColorSpace
     mount.appendChild(renderer.domElement)
     renderer.domElement.tabIndex = -1
+
+    const widget3dLayer = new Widget3DLayer()
+    widget3dLayer.attach(mount)
+    widget3dLayer.syncAll(world.actors.values(), world.hudWidgets)
 
     const editorCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
     editorCamera.position.set(8, 6, 10)
@@ -1055,6 +1060,12 @@ export function Viewport() {
         return
       }
       if (s.playing) {
+        if (matchesShortcutId(e, 'play.continue') && s.breakpointHit) {
+          e.preventDefault()
+          s.continueFromBreakpoint()
+          s.setStatus('Continuing…')
+          return
+        }
         if (matchesShortcutId(e, 'play.stop')) s.stopPlay()
         if (matchesShortcutId(e, 'play.eject') && !s.simulate) {
           e.preventDefault()
@@ -1191,6 +1202,8 @@ export function Viewport() {
         editorCamera.aspect = w / h
         editorCamera.updateProjectionMatrix()
       }
+      widget3dLayer.setViewportRect(null)
+      widget3dLayer.setSize(w, h)
     }
     const ro = new ResizeObserver(resize)
     ro.observe(mount)
@@ -1213,6 +1226,7 @@ export function Viewport() {
     let liveBumpAcc = 0
     let lastFrameAt = 0
     let lastHudPreviewVersion = -1
+    let lastWidget3DVersion = -1
     renderer.setAnimationLoop(() => {
       const __t0 = performance.now()
       if (consoleState.maxFPS > 0 && __t0 - lastFrameAt < 1000 / consoleState.maxFPS) return
@@ -1253,6 +1267,11 @@ export function Viewport() {
       } else if (!s.playing && isHudMounted()) {
         unmountHud()
         lastHudPreviewVersion = -1
+      }
+
+      if (lastWidget3DVersion !== s.sceneVersion) {
+        widget3dLayer.syncAll(world.actors.values(), world.hudWidgets)
+        lastWidget3DVersion = s.sceneVersion
       }
 
       // eject / re-possess transitions
@@ -1341,7 +1360,7 @@ export function Viewport() {
       if (s.seqPlaying && !s.playing && world.sequence.tracks.length > 0) {
         const nt = (s.seqTime + dt) % world.sequence.duration
         s.setSeqTime(nt)
-        sampleSequence(world, world.sequence, nt)
+        sampleSequence(world, world.sequence, nt, hasAudioTracks(world.sequence))
       }
 
       // gizmo sync — only in the active/focused pane (quad layout)
@@ -1529,6 +1548,17 @@ export function Viewport() {
         gizmoHelper.visible = savedGizmoVisible
         renderer.setScissorTest(false)
         renderer.setViewport(0, 0, mount.clientWidth, canvasH)
+        const perspPane = panes.find((p) => p.pane === 'perspective')
+        if (perspPane) {
+          widget3dLayer.setViewportRect({
+            screenX: perspPane.screenX,
+            screenY: perspPane.screenY,
+            w: perspPane.w,
+            h: perspPane.h,
+          })
+          widget3dLayer.setSize(perspPane.w, perspPane.h)
+          widget3dLayer.render(world.scene, paneCameras.perspective)
+        }
       } else {
         world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
         updateLabel3DBillboards(activeCam, world.actors.values())
@@ -1568,6 +1598,9 @@ export function Viewport() {
           if (usePostFx) composer.render()
           else renderer.render(world.scene, activeCam)
         }
+        widget3dLayer.setViewportRect(null)
+        widget3dLayer.setSize(mount.clientWidth, mount.clientHeight)
+        widget3dLayer.render(world.scene, activeCam)
       }
 
       // camera PiP preview when a camera actor is selected
@@ -1704,6 +1737,7 @@ export function Viewport() {
       ;(brushRing.material as THREE.Material).dispose()
       world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)
       world.pawnPosition = null
+      widget3dLayer.dispose()
       renderer.dispose()
       mount.removeChild(renderer.domElement)
     }

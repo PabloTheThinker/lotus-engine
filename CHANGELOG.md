@@ -4,6 +4,36 @@ Notable changes to Vektra Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — v0.66 Baked AO (approx)
+
+### Added
+- **Lightmass-approx MVP:** hemisphere raycast AO bake to vertex colors (`src/engine/lightmapBake.ts`)
+- **Build → Bake AO (approx)** + World Settings → Lighting (approx) with progress
+- **Console:** `build ao` · **Devtools:** `vektra.BakeAO({ samples, radius })`
+- **Serialization:** `bakedAO` flag + `bakedAOMeshes` color arrays; restored on load and in playable export
+
+### Notes
+- Labeled honestly as **Baked AO (approx)** — not Lightmass. Main-thread bake with chunked yields.
+
+---
+
+## 2026-06-13 — Agent swarm wave 7: v0.62–v0.67
+
+### Added
+- **v0.62 Audio:** attenuation falloff curves (linear/inverse/inverseSquare/custom), Sequencer audio tracks with scrubbing
+- **v0.63 Blueprint:** exec breakpoints — pause PIE on node hit, F5 Continue, gutter toggle
+- **v0.64 Widget3D:** CSS3DRenderer world-space HTML widgets (canvas fallback in export)
+- **v0.65 Networking:** ownership (`netOwnerId`), client prediction + reconcile, `own` protocol message
+- **v0.66 Lightmap:** Baked AO (approx) — hemisphere raycast via mesh-bvh, vertex colors, `build ao` console
+- **v0.67 Tests:** Playwright expanded to **13 specs** — navmesh bake, material instance, blueprint compile, MP settings
+
+### Verification
+```bash
+npm run build && npm run test   # 13 passed
+```
+
+---
+
 ## 2026-06-13 — Agent swarm wave 6: v0.59–v0.61 + expanded tests
 
 ### Added

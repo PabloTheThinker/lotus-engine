@@ -6,6 +6,10 @@ import { world } from '../engine/World'
 import { makeScriptApi } from '../engine/scripting'
 import type { GeometryKind } from '../engine/types'
 import { DeleteActorCommand, redo, runCommand, undo } from './commands'
+import { saveMaterialFromProps } from '../engine/materialAssets'
+import type { Actor } from '../engine/Actor'
+import { DEFAULT_MATERIAL, type MaterialProps } from '../engine/types'
+import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
 import { useEditor } from './store'
 
@@ -40,6 +44,9 @@ JAVASCRIPT (world, api, THREE, editor helpers in scope)
   find('Crate1')
   select('Sun')
   spawn('sphere', [0, 2, 0])
+  createMaterial('MyMat', { color: '#e5484d' })
+  assignMaterial('Box', mat.id)
+  setMaterialOverrides('Box', { color: '#46a758' })
   actors().filter(a => a.type === 'StaticMesh').map(a => a.name)
   play() / stop()
   runCommand, undo, redo, useEditor
@@ -61,16 +68,7 @@ export function saveTerminalHistory(lines: string[]) {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(lines.slice(-MAX_HISTORY)))
 }
 
-interface ActorLike {
-  id: string
-  name: string
-  type: string
-  tags: string[]
-  transform: { position: [number, number, number] }
-  root: THREE.Object3D
-}
-
-function findActor(query: string): ActorLike | undefined {
+function findActor(query: string): Actor | undefined {
   const q = query.toLowerCase()
   return (
     world.actors.get(query) ??
@@ -101,6 +99,21 @@ function makeScope() {
   const play = () => useEditor.getState().startPlay('pie')
   const stop = () => useEditor.getState().stopPlay()
   const simulate = () => useEditor.getState().startPlay('simulate')
+  const createMaterial = (name: string, props?: Partial<MaterialProps>) =>
+    saveMaterialFromProps(name, { ...DEFAULT_MATERIAL, ...props })
+  const assignMaterial = (nameOrId: string, materialId: string) => {
+    const a = findActor(nameOrId)
+    if (!a) throw new Error(`Actor not found: ${nameOrId}`)
+    assignMaterialAsset(a.id, materialId)
+    return a
+  }
+  const setMaterialOverrides = (nameOrId: string, overrides: Partial<MaterialProps>) => {
+    const a = findActor(nameOrId)
+    if (!a) throw new Error(`Actor not found: ${nameOrId}`)
+    if (!a.materialAssetId) throw new Error(`${a.name} has no material asset — use assignMaterial first`)
+    patchMaterialOverrides(a, (prev) => ({ ...prev, ...overrides }), 'Terminal material override')
+    return a
+  }
 
   return {
     world,
@@ -117,6 +130,9 @@ function makeScope() {
     play,
     stop,
     simulate,
+    createMaterial,
+    assignMaterial,
+    setMaterialOverrides,
   }
 }
 
@@ -136,8 +152,8 @@ export function formatTerminalValue(value: unknown): string {
     return `${value.type} "${value.name}" @ [${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)}]`
   }
   if (typeof value === 'object' && value && 'id' in value && 'name' in value && 'type' in value && 'transform' in value) {
-    const a = value as ActorLike
-    const pos = a.transform.position.map((v) => v.toFixed(2))
+    const a = value as Actor
+    const pos = a.transform.position.map((v: number) => v.toFixed(2))
     const tags = a.tags.length ? ` tags=[${a.tags.join(',')}]` : ''
     return `Actor "${a.name}" (${a.type}) pos=[${pos.join(', ')}]${tags}`
   }

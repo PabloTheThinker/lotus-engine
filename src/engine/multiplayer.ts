@@ -14,6 +14,7 @@ import type { SerializedActor } from './types'
  *   spawn   { t, id, actor: SerializedActor } — host spawner replication
  *   despawn { t, id, aid }                      — host removes replicated actor
  *   input   { t, id, p?, ry?, actions? }      — client input (optional v1)
+ *   own     { t, id, aid, ownerId }           — host reassigns actor ownership (empty ownerId = host)
  *
  * Host = lexicographically smallest peer id in the room.
  */
@@ -38,6 +39,9 @@ let peers = new Map<string, Peer>()
 const remoteSync = new Map<string, RemoteSync>()
 const knownPeerIds = new Set<string>()
 let localId = ''
+/** snap predicted transform when host sync error exceeds these thresholds */
+const PREDICT_POS_THRESHOLD = 0.5
+const PREDICT_ROT_THRESHOLD = 0.35
 let sendAcc = 0
 let worldRef: World | null = null
 /** ids spawned by the network host (safe to despawn on disconnect) */
@@ -68,6 +72,31 @@ export function mpEnabled(): boolean {
 
 export function mpConnected(): boolean {
   return !!ws && ws.readyState === 1
+}
+
+export function mpLocalId(): string {
+  return localId
+}
+
+/** Other peers in the room (excludes this client). */
+export function mpKnownPeerIds(): string[] {
+  return [...knownPeerIds].sort()
+}
+
+function actorOwnerId(actor: import('./Actor').Actor): string {
+  return actor.netOwnerId ?? ''
+}
+
+/** Whether this client may drive the actor locally (prediction / input). */
+export function mpIsLocallyOwned(actor: import('./Actor').Actor): boolean {
+  if (!mpConnected()) return true
+  const owner = actorOwnerId(actor)
+  if (mpIsHost()) return owner === '' || owner === localId
+  return owner === localId
+}
+
+function shouldPredict(actor: import('./Actor').Actor): boolean {
+  return !!actor.clientPredicted && mpIsLocallyOwned(actor) && !mpIsHost()
 }
 
 function allPeerIds(): string[] {
@@ -121,11 +150,44 @@ function packSyncProps(actor: import('./Actor').Actor, keys: string[]): Record<s
   return out
 }
 
+/** Reconcile host-authoritative transform onto a locally-predicted actor. */
+function reconcilePredictedTransform(actor: import('./Actor').Actor, props: Record<string, unknown>) {
+  if (Array.isArray(props.position) && props.position.length === 3) {
+    const tx = props.position[0] as number
+    const ty = props.position[1] as number
+    const tz = props.position[2] as number
+    const err = actor.root.position.distanceTo(new THREE.Vector3(tx, ty, tz))
+    if (err > PREDICT_POS_THRESHOLD) actor.root.position.set(tx, ty, tz)
+  }
+  if (Array.isArray(props.rotation) && props.rotation.length === 3) {
+    const rx = props.rotation[0] as number
+    const ry = props.rotation[1] as number
+    const rz = props.rotation[2] as number
+    const err = Math.max(
+      Math.abs(actor.root.rotation.x - rx),
+      Math.abs(actor.root.rotation.y - ry),
+      Math.abs(actor.root.rotation.z - rz),
+    )
+    if (err > PREDICT_ROT_THRESHOLD) actor.root.rotation.set(rx, ry, rz)
+  }
+}
+
 /** Apply a property delta on a client (sets interpolation targets for transforms). */
 function applySyncProps(aid: string, props: Record<string, unknown>) {
   if (!worldRef) return
   const actor = worldRef.actors.get(aid)
   if (!actor) return
+
+  if (shouldPredict(actor)) {
+    reconcilePredictedTransform(actor, props)
+    if (typeof props.visible === 'boolean') actor.setVisible(props.visible)
+    for (const [k, v] of Object.entries(props)) {
+      if (!k.startsWith('sv:')) continue
+      const name = k.slice(3)
+      actor.scriptVars = { ...(actor.scriptVars ?? {}), [name]: v }
+    }
+    return
+  }
 
   let state = remoteSync.get(aid)
   if (!state) {
@@ -158,6 +220,14 @@ function applySyncProps(aid: string, props: Record<string, unknown>) {
   }
 }
 
+function applyOwnership(aid: string, ownerId: string) {
+  if (!worldRef) return
+  const actor = worldRef.actors.get(aid)
+  if (!actor) return
+  actor.netOwnerId = ownerId || undefined
+  remoteSync.delete(aid)
+}
+
 function handleSpawn(fromId: string, sa: SerializedActor) {
   if (!worldRef || fromId === localId || !isFromHost(fromId)) return
   if (worldRef.actors.has(sa.id)) return
@@ -175,9 +245,23 @@ function handleDespawn(fromId: string, aid: string) {
   netSpawned.delete(aid)
 }
 
+function resolveNetOwnerId(ownerId?: string): string {
+  if (!ownerId || ownerId === '__local__') return localId
+  return ownerId
+}
+
 export function mpNotifySpawn(sa: SerializedActor) {
   if (!mpConnected() || !mpIsHost() || !sa.syncSpawn) return
-  send({ t: 'spawn', id: localId, actor: sa })
+  const ownerId = resolveNetOwnerId(sa.netOwnerId)
+  const actor: SerializedActor = { ...sa, netOwnerId: ownerId || undefined }
+  send({ t: 'spawn', id: localId, actor })
+  send({ t: 'own', id: localId, aid: sa.id, ownerId })
+}
+
+/** Host broadcasts ownership reassignment (empty ownerId = host-owned). */
+export function mpNotifyOwnership(aid: string, ownerId?: string) {
+  if (!mpConnected() || !mpIsHost()) return
+  send({ t: 'own', id: localId, aid, ownerId: ownerId ?? '' })
 }
 
 export function mpNotifyDespawn(aid: string) {
@@ -229,6 +313,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       props?: Record<string, unknown>
       actor?: SerializedActor
       actions?: string[]
+      ownerId?: string
     }
     try {
       msg = JSON.parse(String(ev.data))
@@ -275,6 +360,10 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       handleDespawn(msg.id, msg.aid)
       return
     }
+    if (msg.t === 'own' && msg.aid && !mpIsHost() && isFromHost(msg.id)) {
+      applyOwnership(msg.aid, msg.ownerId ?? '')
+      return
+    }
     if (msg.t === 'input' && msg.p && worldRef && mpIsHost()) {
       // host may mirror remote pawn input as ghost pose (co-presence v1)
       let peer = peers.get(msg.id)
@@ -319,7 +408,7 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
     }
   }
 
-  // clients interpolate replicated actor transforms
+  // clients interpolate replicated actor transforms (skip locally-predicted owned actors)
   if (!mpIsHost()) {
     for (const [aid, state] of remoteSync) {
       const actor = worldRef.actors.get(aid)
@@ -327,6 +416,7 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
         remoteSync.delete(aid)
         continue
       }
+      if (shouldPredict(actor)) continue
       const t = Math.min(1, 12 * dt)
       actor.root.position.lerp(state.targetPos, t)
       actor.root.rotation.x = THREE.MathUtils.lerp(actor.root.rotation.x, state.targetRot.x, t)

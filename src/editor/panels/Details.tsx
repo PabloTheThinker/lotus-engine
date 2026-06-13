@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import * as THREE from 'three'
 import type { Actor } from '../../engine/Actor'
 import { applyMaterialProps, rebuildLabel3D } from '../../engine/factory'
+import { syncWidget3D } from '../../engine/widget3d'
 import {
   applyActorMaterial,
   getEffectiveMaterialGraph,
@@ -10,7 +11,8 @@ import {
 } from '../../engine/materialAssets'
 import { applyLightProps, world } from '../../engine/World'
 import { listMetaSounds } from '../../engine/metaSoundAssets'
-import type { Behavior, IKChain, IKTarget, Label3DProps, LookAtTarget, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps } from '../../engine/types'
+import type { Behavior, IKChain, IKTarget, Label3DProps, LookAtTarget, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps, Widget3DProps } from '../../engine/types'
+import { AttenuationFields } from './AttenuationFields'
 import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
 import { patchMaterialOverrides, revertMaterialOverride } from '../materialCommands'
@@ -22,7 +24,7 @@ import { regeneratePCG } from '../../engine/pcg'
 import { collectAnimParams } from '../../engine/animStateMachine'
 import { getChainBoneLabels, hasActorSkeleton } from '../../engine/ik'
 import { getActorActiveEffects, getActorAttributes, listAbilities, listAttributeSets } from '../../engine/gameplayAbilities'
-import { mpConnected, mpEnabled, mpIsHost } from '../../engine/multiplayer'
+import { mpConnected, mpEnabled, mpIsHost, mpKnownPeerIds, mpLocalId, mpNotifyOwnership } from '../../engine/multiplayer'
 import { parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
@@ -506,6 +508,67 @@ function IkSection({ actor }: { actor: Actor }) {
   )
 }
 
+function Widget3DSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.widget3DProps) return null
+  const props = actor.widget3DProps
+  const hudWidgets = world.hudWidgets
+  const set = <K extends keyof Widget3DProps>(key: K, value: Widget3DProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Widget ${String(key)}`,
+        () => {
+          props[key] = value
+          syncWidget3D(actor, hudWidgets)
+        },
+        () => {
+          props[key] = prev
+          syncWidget3D(actor, hudWidgets)
+        },
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="3D Widget">
+      <label className="field">
+        <span>HUD Widget</span>
+        <select
+          value={props.hudWidgetId ?? ''}
+          onChange={(e) => set('hudWidgetId', e.target.value || undefined)}
+        >
+          <option value="">— Custom HTML —</option>
+          {hudWidgets.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.id} ({w.type})
+            </option>
+          ))}
+        </select>
+      </label>
+      {!props.hudWidgetId && (
+        <label className="field">
+          <span>HTML</span>
+          <textarea
+            rows={6}
+            value={props.html}
+            onChange={(e) => set('html', e.target.value)}
+            spellCheck={false}
+            style={{ fontFamily: 'monospace', fontSize: 11 }}
+          />
+        </label>
+      )}
+      <Num label="Width" value={props.width} step={0.25} min={0.25} max={16} onLive={(v) => set('width', v)} onCommit={() => {}} />
+      <Num label="Height" value={props.height} step={0.25} min={0.25} max={16} onLive={(v) => set('height', v)} onCommit={() => {}} />
+      <Num label="Opacity" value={props.opacity} step={0.05} min={0} max={1} onLive={(v) => set('opacity', v)} onCommit={() => {}} />
+      <label className="field check">
+        <span>Billboard</span>
+        <input type="checkbox" checked={props.billboard} onChange={(e) => set('billboard', e.target.checked)} />
+      </label>
+    </Section>
+  )
+}
+
 function Label3DSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   if (!actor.label3DProps) return null
@@ -787,6 +850,22 @@ function SoundEmitterSection({ actor }: { actor: Actor }) {
         <span>Spatial (3D)</span>
         <input type="checkbox" checked={props.spatial} onChange={(e) => set('spatial', e.target.checked)} />
       </label>
+      {props.spatial && (
+        <AttenuationFields
+          value={props}
+          onChange={(patch) => {
+            const prev = { ...props }
+            runCommand(
+              new PropertyCommand(
+                'Sound attenuation',
+                () => Object.assign(props, patch),
+                () => Object.assign(props, prev),
+              ),
+            )
+            touch()
+          }}
+        />
+      )}
       <div className="panel-empty" style={{ padding: '2px 0' }}>
         Plays api.playMetaSound at this actor&apos;s position during Play when Auto Play is on.
       </div>
@@ -804,6 +883,14 @@ function NetworkSection({ actor }: { actor: Actor }) {
   const synced = new Set(actor.syncProperties ?? [])
   const scriptExports = parseExports(actor.script ?? '').map((e) => e.name)
   const options = [...SYNC_BUILTIN, ...scriptExports.filter((n) => !SYNC_BUILTIN.includes(n as (typeof SYNC_BUILTIN)[number]))]
+  const localId = mpLocalId()
+  const ownerValue = !actor.netOwnerId
+    ? ''
+    : actor.netOwnerId === '__local__' || actor.netOwnerId === localId
+      ? localId || '__local__'
+      : actor.netOwnerId
+  const peerIds = mpConnected() ? mpKnownPeerIds() : []
+  const ownerLocked = playing && mpConnected() && !mpIsHost()
 
   const toggleProp = (name: string, on: boolean) => {
     const prev = actor.syncProperties ? [...actor.syncProperties] : undefined
@@ -821,8 +908,62 @@ function NetworkSection({ actor }: { actor: Actor }) {
     touch()
   }
 
+  const setOwner = (nextOwner: string) => {
+    const prev = actor.netOwnerId
+    const resolved = nextOwner === '__local__' ? '__local__' : nextOwner || undefined
+    runCommand(
+      new PropertyCommand(
+        'Set network owner',
+        () => {
+          actor.netOwnerId = resolved
+          if (playing && mpConnected() && mpIsHost()) {
+            mpNotifyOwnership(actor.id, resolved === '__local__' ? localId : resolved)
+          }
+        },
+        () => {
+          actor.netOwnerId = prev
+          if (playing && mpConnected() && mpIsHost()) {
+            mpNotifyOwnership(actor.id, prev === '__local__' ? localId : prev)
+          }
+        },
+      ),
+    )
+    touch()
+  }
+
   return (
     <Section title="Network (MultiplayerSynchronizer)">
+      <label className="field">
+        <span>Owner</span>
+        <select
+          value={ownerValue}
+          disabled={ownerLocked}
+          onChange={(e) => setOwner(e.target.value)}
+        >
+          <option value="">Host</option>
+          <option value={localId || '__local__'}>Local{localId ? ` (${localId})` : ''}</option>
+          {peerIds.map((pid) => (
+            <option key={pid} value={pid}>
+              Peer {pid}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Check
+        label="Client Predicted"
+        value={!!actor.clientPredicted}
+        onToggle={(v) => {
+          const prev = actor.clientPredicted
+          runCommand(
+            new PropertyCommand(
+              v ? 'Enable client prediction' : 'Disable client prediction',
+              () => (actor.clientPredicted = v || undefined),
+              () => (actor.clientPredicted = prev),
+            ),
+          )
+          touch()
+        }}
+      />
       <Check
         label="Sync Spawn"
         value={actor.syncSpawn}
@@ -842,8 +983,10 @@ function NetworkSection({ actor }: { actor: Actor }) {
         <Check key={name} label={name} value={synced.has(name)} onToggle={(v) => toggleProp(name, v)} />
       ))}
       <div className="panel-empty" style={{ padding: '2px 0' }}>
-        Host broadcasts checked properties at 10 Hz; clients interpolate position/rotation.
+        Host broadcasts checked properties at 10 Hz. Non-owned actors interpolate; locally-owned + Client Predicted
+        actors apply input immediately and reconcile on sync (snap if error &gt; 0.5 m / 0.35 rad).
         {playing && mpConnected() ? ` This session: ${mpIsHost() ? 'host (authority)' : 'client'}.` : ''}
+        {ownerLocked ? ' Only the host can reassign ownership during Play.' : ''}
       </div>
     </Section>
   )
@@ -2205,6 +2348,7 @@ export function Details() {
         {actor.type === 'TriggerVolume' && <TriggerSection actor={actor} />}
         {actor.type === 'SoundEmitter' && <SoundEmitterSection actor={actor} />}
         {actor.type === 'Label3D' && <Label3DSection actor={actor} />}
+        {actor.type === 'Widget3D' && <Widget3DSection actor={actor} />}
         {actor.type === 'PlayerStart' && <PawnSection actor={actor} />}
         {actor.mesh && actor.materialProps && actor.materialAssetId && <MaterialInstanceSection actor={actor} />}
         {actor.mesh && actor.materialProps && !actor.materialAssetId && <MaterialSection actor={actor} />}

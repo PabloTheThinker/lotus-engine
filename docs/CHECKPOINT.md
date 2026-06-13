@@ -1,10 +1,10 @@
-# CHECKPOINT — 2026-06-13 (agent swarm through v0.61)
+# CHECKPOINT — 2026-06-13 (agent swarm through v0.67)
 
 > Working doc: `docs/UE5.7-GAP-LIST.md` — update statuses as items ship.
 
 ## State
 
-- **Last clean commit: `d3f163e` — v0.61.** v0.33–v0.61 shipped across six agent swarms; **build clean**, **`npm run test` — 9 passed**.
+- **Last clean commit: v0.67 (wave 7).** v0.33–v0.67 shipped across seven agent swarms; **build clean**, **`npm run test` — 13 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -84,14 +84,25 @@
 | v0.60 | Material GPU WPO — WorldPosition, ObjectPosition → vertex displacement |
 | v0.61 | Visual PCG graph editor (`pcgGraph.ts`, 🎲 PCG tab); Playwright **9 tests** |
 
-## Next up (v0.62+)
+## Shipped wave 7 (v0.62 → v0.67)
 
-1. **Audio polish** — falloff curve picker, Sequencer audio tracks + scrubbing
-2. **BP breakpoints** — pause on exec node during play
-3. **3D widgets** — CSS3DRenderer world-space UI (Label3D ✅)
-4. **Networking polish** — ownership, client prediction
-5. **Lightmass-approx** — offline AO/lightmap bake (stretch)
-6. **E2E expansion** — navmesh bake, multiplayer 2-tab, material instance tests
+| Ver | What |
+|---|---|
+| v0.62 | Audio falloff curves + Sequencer audio tracks with scrubbing |
+| v0.63 | Blueprint exec breakpoints (gutter toggle, F5 Continue) |
+| v0.64 | Widget3D — CSS3DRenderer world-space HTML (export canvas fallback) |
+| v0.65 | MP ownership + client prediction + `own` protocol |
+| v0.66 | Baked AO (approx) — `lightmapBake.ts`, Build → Bake AO |
+| v0.67 | Playwright **13 tests** — navmesh, materials, blueprint, MP mock |
+
+## Next up (v0.68+)
+
+1. **Buffer visualization** view modes (World Normal, Depth, Base Color)
+2. **Sequencer audio** polish — waveform display, loop regions
+3. **Multiplayer 2-tab live test** — relay integration test (optional CI)
+4. **Second UV lightmaps** — stretch beyond vertex-color AO
+5. **Status bar** — save indicator, autosave countdown
+6. **PCG / Niagara** — GPU particles (WebGPU stretch)
 
 ## Remaining gap-list queue
 

@@ -5,8 +5,10 @@ import {
   collapseToFunction,
   compileBlueprint,
   emptyGraph,
+  findNodeInGraph,
   getFunctionPins,
   newNodeId,
+  nodeHasExec,
   type BlueprintGraph,
   type BPNode,
 } from '../../engine/blueprint'
@@ -53,17 +55,37 @@ export function BlueprintEditor() {
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
   const panState = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
   const pulseRef = useRef<Record<string, number>>({})
+  const graphRef = useRef<BlueprintGraph | null>(null)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [pulseAt, setPulseAt] = useState<Record<string, number>>({})
+  const [breakpointHitNode, setBreakpointHitNode] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [editFunctionId, setEditFunctionId] = useState<string | null>(null)
+  const breakpointHit = useEditor((s) => s.breakpointHit)
+
+  useEffect(() => {
+    graphRef.current = graph
+  }, [graph])
+
+  useEffect(() => {
+    if (!breakpointHit || breakpointHit.actorId !== actor?.id) {
+      setBreakpointHitNode(null)
+      return
+    }
+    setBreakpointHitNode(breakpointHit.nodeId)
+    pulseRef.current[breakpointHit.nodeId] = Date.now()
+    setPulseAt({ ...pulseRef.current })
+  }, [breakpointHit, actor?.id])
 
   useEffect(() => {
     if (!actor) return
     const aid = actor.id
     let throttle: ReturnType<typeof setTimeout> | null = null
 
-    const g = globalThis as typeof globalThis & { __bpPulse?: (actorId: string, nodeId: string) => void }
+    const g = globalThis as typeof globalThis & {
+      __bpPulse?: (actorId: string, nodeId: string) => void
+      __bpBreakpoint?: (actorId: string, nodeId: string) => boolean
+    }
     g.__bpPulse = (actorId: string, nodeId: string) => {
       if (actorId !== aid) return
       pulseRef.current[nodeId] = Date.now()
@@ -75,10 +97,38 @@ export function BlueprintEditor() {
       }
     }
 
+    g.__bpBreakpoint = (actorId: string, nodeId: string) => {
+      const st = useEditor.getState()
+      if (!st.playing || (st.paused && st.breakpointHit)) return false
+
+      const target = world.actors.get(actorId)
+      if (!target) return false
+
+      const liveGraph = actorId === aid ? graphRef.current : null
+      const bp = liveGraph ?? target.blueprint
+      if (!bp) return false
+
+      const node = findNodeInGraph(bp, nodeId)
+      if (!node?.breakpoint) return false
+
+      const def = NODE_DEFS[node.type]
+      const title = def?.title ?? node.type
+
+      st.setPaused(true)
+      st.setBreakpointHit({ actorId, nodeId })
+      pulseRef.current[nodeId] = Date.now()
+      setPulseAt({ ...pulseRef.current })
+      setBreakpointHitNode(nodeId)
+      st.setStatus(`Breakpoint hit: ${title} · ${target.name}`)
+      return true
+    }
+
     const tick = setInterval(() => {
       const now = Date.now()
       let changed = false
+      const hold = useEditor.getState().breakpointHit?.nodeId
       for (const [id, t] of Object.entries(pulseRef.current)) {
+        if (id === hold) continue
         if (now - t >= 300) {
           delete pulseRef.current[id]
           changed = true
@@ -89,6 +139,7 @@ export function BlueprintEditor() {
 
     return () => {
       delete g.__bpPulse
+      delete g.__bpBreakpoint
       if (throttle) clearTimeout(throttle)
       clearInterval(tick)
     }
@@ -133,6 +184,13 @@ export function BlueprintEditor() {
       if (next.has(nodeId)) next.delete(nodeId)
       else next.add(nodeId)
       return next
+    })
+  }
+
+  const toggleBreakpoint = (nodeId: string) => {
+    mutate((g) => {
+      const n = g.nodes.find((x) => x.id === nodeId)
+      if (n) n.breakpoint = !n.breakpoint
     })
   }
 
@@ -280,6 +338,19 @@ export function BlueprintEditor() {
         >
           Level BP
         </button>
+        {breakpointHit && breakpointHit.actorId === actor.id && (
+          <button
+            className="apply"
+            title="Continue from breakpoint (F5)"
+            onClick={() => {
+              useEditor.getState().continueFromBreakpoint()
+              setBreakpointHitNode(null)
+              useEditor.getState().setStatus('Continuing…')
+            }}
+          >
+            ▶ Continue
+          </button>
+        )}
         <button className="apply" onClick={compile}>
           ⚙ Compile
         </button>
@@ -373,10 +444,13 @@ export function BlueprintEditor() {
           if (!def) return null
           const pins = nodeDataPins(node)
           const fnList = Object.values(graph.functions ?? {})
+          const canBreakpoint = nodeHasExec(node)
+          const isPulsing = pulseAt[node.id] != null && Date.now() - pulseAt[node.id] < 300
+          const isBpHit = breakpointHitNode === node.id
           return (
             <div
               key={node.id}
-              className={`bp-node${selected.has(node.id) ? ' selected' : ''}`}
+              className={`bp-node${selected.has(node.id) ? ' selected' : ''}${node.breakpoint ? ' has-breakpoint' : ''}`}
               style={{ left: node.x + offset.x, top: node.y + offset.y, width: NODE_W }}
               onDoubleClick={() => {
                 if (node.type === 'CallFunction') {
@@ -385,8 +459,19 @@ export function BlueprintEditor() {
                 }
               }}
             >
+              {canBreakpoint && (
+                <button
+                  type="button"
+                  className={`bp-breakpoint-gutter${node.breakpoint ? ' on' : ''}`}
+                  title={node.breakpoint ? 'Remove exec breakpoint' : 'Set exec breakpoint'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleBreakpoint(node.id)
+                  }}
+                />
+              )}
               <div
-                className={`bp-node-header${pulseAt[node.id] != null && Date.now() - pulseAt[node.id] < 300 ? ' pulsing' : ''}`}
+                className={`bp-node-header${isBpHit ? ' breakpoint-hit' : isPulsing ? ' pulsing' : ''}`}
                 style={{ background: def.color }}
                 onMouseDown={(e) => {
                   if (e.shiftKey) {
@@ -400,6 +485,19 @@ export function BlueprintEditor() {
                 }}
               >
                 <span>
+                  {canBreakpoint && (
+                    <input
+                      type="checkbox"
+                      className="bp-bp-toggle"
+                      checked={!!node.breakpoint}
+                      title="Exec breakpoint"
+                      onChange={(e) => {
+                        e.stopPropagation()
+                        toggleBreakpoint(node.id)
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
                   {node.type === 'CallFunction'
                     ? `Call ${graph.functions?.[String(node.props.functionId)]?.name ?? 'Function'}`
                     : def.title}

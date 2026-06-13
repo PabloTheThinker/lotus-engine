@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { playSound, stopScrubAudio } from './audio'
 import { applyHudCssProperty } from './gameplay'
 import type { HudWidget, SeqHudProperty } from './types'
 import type { World } from './World'
@@ -38,11 +39,13 @@ export interface SeqKey {
   tangentOut?: SeqTangent
 }
 
+export type SeqAudioProperty = 'volume'
+
 export interface SeqTrack {
-  /** 'hud' for DOM widget tracks; omitted or 'actor' for scene actors */
-  trackType?: 'actor' | 'hud'
+  /** 'hud' for DOM widget tracks; 'audio' for imported sound clips; omitted or 'actor' for scene actors */
+  trackType?: 'actor' | 'hud' | 'audio'
   actorId: string
-  property: SeqProperty | SeqHudProperty
+  property: SeqProperty | SeqHudProperty | SeqAudioProperty
   keys: SeqKey[]
 }
 
@@ -75,8 +78,16 @@ export function isHudTrack(track: SeqTrack): boolean {
   return track.trackType === 'hud'
 }
 
+export function isAudioTrack(track: SeqTrack): boolean {
+  return track.trackType === 'audio'
+}
+
 export function hasHudTracks(seq: Sequence): boolean {
   return seq.tracks.some(isHudTrack)
+}
+
+export function hasAudioTracks(seq: Sequence): boolean {
+  return seq.tracks.some(isAudioTrack)
 }
 
 export function keyableProperties(actor: { mesh?: unknown; light?: unknown; camera?: unknown; materialProps?: unknown }): SeqProperty[] {
@@ -95,8 +106,8 @@ export function keyableHudProperties(_widget: HudWidget): SeqHudProperty[] {
 export function findTrack(
   seq: Sequence,
   id: string,
-  property: SeqProperty | SeqHudProperty,
-  trackType: 'actor' | 'hud' = 'actor',
+  property: SeqProperty | SeqHudProperty | SeqAudioProperty,
+  trackType: 'actor' | 'hud' | 'audio' = 'actor',
 ): SeqTrack | undefined {
   return seq.tracks.find((tr) => (tr.trackType ?? 'actor') === trackType && tr.actorId === id && tr.property === property)
 }
@@ -105,10 +116,10 @@ export function findTrack(
 export function setKey(
   seq: Sequence,
   id: string,
-  property: SeqProperty | SeqHudProperty,
+  property: SeqProperty | SeqHudProperty | SeqAudioProperty,
   t: number,
   v: SeqKey['v'],
-  trackType: 'actor' | 'hud' = 'actor',
+  trackType: 'actor' | 'hud' | 'audio' = 'actor',
 ) {
   let track = findTrack(seq, id, property, trackType)
   if (!track) {
@@ -256,9 +267,29 @@ export function sampleTrack(track: SeqTrack, t: number): SeqKey['v'] | null {
   return null
 }
 
-/** apply the sequence at time t to the world's actors and HUD widgets */
-export function sampleSequence(world: World, seq: Sequence, t: number) {
+/** Play imported sounds at the playhead for audio tracks (scrub / editor playback). */
+export function scrubSequenceAudio(seq: Sequence, t: number) {
+  stopScrubAudio()
   for (const track of seq.tracks) {
+    if (!isAudioTrack(track) || track.keys.length === 0) continue
+    const soundName = track.actorId
+    const startT = track.keys[0].t
+    if (t < startT) continue
+    const vol = sampleTrack(track, t)
+    const volume = typeof vol === 'number' ? vol : 1
+    playSound(soundName, {
+      volume,
+      currentTime: t - startT,
+      scrub: true,
+      loop: true,
+    })
+  }
+}
+
+/** apply the sequence at time t to the world's actors and HUD widgets */
+export function sampleSequence(world: World, seq: Sequence, t: number, withAudio = false) {
+  for (const track of seq.tracks) {
+    if (isAudioTrack(track)) continue
     const v = sampleTrack(track, t)
     if (v === null) continue
     if (isHudTrack(track)) {
@@ -312,6 +343,7 @@ export function sampleSequence(world: World, seq: Sequence, t: number) {
         break
     }
   }
+  if (withAudio) scrubSequenceAudio(seq, t)
 }
 
 /** active camera cut at time t (PIE: routed through setViewCamera) */

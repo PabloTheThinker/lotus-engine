@@ -65,9 +65,33 @@ export interface ScriptApi {
   /** clip names available on an actor */
   listClips: (actor: Actor) => string[]
   /** play an imported sound: api.playSound('boom', { at: [x,y,z], volume: 0.8 }) */
-  playSound: (name: string, opts?: { volume?: number; bus?: 'sfx' | 'music'; loop?: boolean; at?: [number, number, number] }) => void
+  playSound: (
+    name: string,
+    opts?: {
+      volume?: number
+      bus?: 'sfx' | 'music'
+      loop?: boolean
+      at?: [number, number, number]
+      falloff?: import('./types').AttenuationCurve
+      minDistance?: number
+      maxDistance?: number
+      customCurve?: [number, number][]
+    },
+  ) => void
   /** play a procedural MetaSound graph: api.playMetaSound('Laser', { at: [x,y,z] }) */
-  playMetaSound: (name: string, opts?: { volume?: number; bus?: 'sfx' | 'music'; loop?: boolean; at?: [number, number, number] }) => void
+  playMetaSound: (
+    name: string,
+    opts?: {
+      volume?: number
+      bus?: 'sfx' | 'music'
+      loop?: boolean
+      at?: [number, number, number]
+      falloff?: import('./types').AttenuationCurve
+      minDistance?: number
+      maxDistance?: number
+      customCurve?: [number, number][]
+    },
+  ) => void
   /** GAS-lite: activate an assigned ability by name or id */
   activateAbility: (abilityId: string) => boolean
   /** GAS-lite: read a gameplay attribute on this actor */

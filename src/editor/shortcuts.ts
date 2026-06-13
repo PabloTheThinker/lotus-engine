@@ -44,6 +44,7 @@ export const SHORTCUT_REGISTRY: ShortcutDef[] = [
   { id: 'play.stop', label: 'Stop Play / Simulate', category: 'Play', defaultBinding: { code: 'Escape' } },
   { id: 'play.eject', label: 'Eject (PIE)', category: 'Play', defaultBinding: { code: 'F8' } },
   { id: 'play.keepChanges', label: 'Keep Simulation Changes', category: 'Play', defaultBinding: { code: 'KeyK' } },
+  { id: 'play.continue', label: 'Continue from Breakpoint', category: 'Play', defaultBinding: { code: 'F5' } },
 
   // Tools
   { id: 'tools.save', label: 'Save Level', category: 'Tools', defaultBinding: { code: 'KeyS', ctrl: true } },

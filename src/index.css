@@ -250,6 +250,16 @@ input[type='checkbox'] {
 .viewport canvas {
   display: block;
 }
+.widget3d-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+.vektra-widget3d {
+  transform-origin: 0 0;
+}
 .viewport-stats {
   position: absolute;
   top: 8px;
@@ -1312,6 +1322,33 @@ input[type='checkbox'] {
   font-size: 11px;
   user-select: none;
 }
+.bp-node.has-breakpoint {
+  border-left: 3px solid #e5484d;
+}
+.bp-breakpoint-gutter {
+  position: absolute;
+  left: -14px;
+  top: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid #5a6270;
+  background: var(--bg-1);
+  padding: 0;
+  cursor: pointer;
+  z-index: 3;
+}
+.bp-breakpoint-gutter.on {
+  background: #e5484d;
+  border-color: #ff8a8a;
+  box-shadow: 0 0 6px rgba(229, 72, 77, 0.75);
+}
+.bp-bp-toggle {
+  margin-right: 4px;
+  vertical-align: middle;
+  accent-color: #e5484d;
+  cursor: pointer;
+}
 .bp-node.selected {
   border-color: #8b5cf6;
   box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.45), 0 4px 14px rgba(0, 0, 0, 0.45);
@@ -1340,6 +1377,20 @@ input[type='checkbox'] {
 .bp-node-header.pulsing {
   box-shadow: 0 0 10px 2px rgba(255, 220, 80, 0.85), inset 0 0 6px rgba(255, 255, 255, 0.35);
   outline: 1px solid rgba(255, 220, 80, 0.6);
+}
+.bp-node-header.breakpoint-hit {
+  animation: bp-breakpoint-pulse 0.85s ease-in-out infinite;
+  outline: 2px solid #ff4d4d;
+}
+@keyframes bp-breakpoint-pulse {
+  0%, 100% {
+    box-shadow: 0 0 12px 3px rgba(229, 72, 77, 0.9), inset 0 0 8px rgba(255, 120, 120, 0.45);
+    filter: brightness(1.15);
+  }
+  50% {
+    box-shadow: 0 0 18px 6px rgba(255, 60, 60, 1), inset 0 0 12px rgba(255, 180, 180, 0.55);
+    filter: brightness(1.35);
+  }
 }
 .bp-node-body {
   position: relative;

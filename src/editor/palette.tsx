@@ -5,6 +5,7 @@ import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
 import { spawnAsset, type AssetPayload } from './spawn'
 import { useEditor } from './store'
 import { runCSG } from './csg'
+import { bakeAO } from '../engine/lightmapBake'
 import { world } from '../engine/World'
 import { getPluginPaletteCommands, type PaletteCommand } from './plugins'
 import { isTypingTarget, matchesShortcutId } from './shortcuts'
@@ -66,6 +67,24 @@ function buildCommands(): PaletteCommand[] {
       run: () => {
         for (const a of world.actors.values()) if (a.type === 'ReflectionProbe') world.probeBakeQueue.push(a.id)
         s.setStatus('Probe bake queued')
+      },
+    },
+    {
+      label: 'Bake AO (approx)',
+      run: () => {
+        s.setStatus('Baking AO (approx)…')
+        void bakeAO(world.actors, {
+          samples: 16,
+          radius: 1,
+          onProgress: (_done, _total, label) => useEditor.getState().setStatus(label),
+        }).then((res) => {
+          s.setStatus(
+            res.ok
+              ? `Baked AO (approx): ${res.actorsBaked} actors, ${res.verticesProcessed} verts`
+              : `Bake AO failed: ${res.error ?? 'unknown'}`,
+          )
+          s.touch()
+        })
       },
     },
     ...SPAWNABLES.map(([label, payload]): PaletteCommand => ({ label: `Place: ${label}`, run: () => spawnAsset(payload) })),

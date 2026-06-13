@@ -9,6 +9,7 @@ import { PlaceActors } from './editor/panels/PlaceActors'
 import { Details } from './editor/panels/Details'
 import { Outliner } from './editor/panels/Outliner'
 import { autosave, newLevel, restoreAutosave, saveLevelToFile } from './editor/levelIO'
+import { bakeAO } from './engine/lightmapBake'
 import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
 import { getLiveSnapshot } from './engine/liveSnapshot'
@@ -30,6 +31,9 @@ import { PluginManagerModal } from './editor/PluginManager'
 import { PreferencesModal, loadPrefs } from './editor/Preferences'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
+import { bakeNavMesh, isRecastNavReady } from './engine/nav'
+import { compileBlueprint, emptyGraph } from './engine/blueprint'
+import { loadMPSettings, mpEnabled } from './engine/multiplayer'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 ;(window as unknown as Record<string, unknown>).vektra = {
@@ -56,6 +60,30 @@ import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
   getLiveSnapshot: () => {
     const s = useEditor.getState()
     return getLiveSnapshot(world, s)
+  },
+  /** Baked AO (approx) — hemisphere raycast, not Lightmass */
+  BakeAO: (opts?: { samples?: number; radius?: number }) =>
+    bakeAO(world.actors, {
+      samples: opts?.samples ?? 16,
+      radius: opts?.radius ?? 1,
+      onProgress: (_done, _total, label) => useEditor.getState().setStatus(label),
+    }).then((res) => {
+      useEditor.getState().setStatus(
+        res.ok
+          ? `Baked AO (approx): ${res.actorsBaked} actors, ${res.verticesProcessed} verts`
+          : `Bake AO failed: ${res.error ?? 'unknown'}`,
+      )
+      useEditor.getState().touch()
+      return res
+    }),
+  /** E2E / devtools — bake Recast navmesh from current static + landscape geometry */
+  bakeNavMesh: () => bakeNavMesh(world.actors),
+  isNavMeshReady: isRecastNavReady,
+  compileBlueprint,
+  emptyGraph,
+  multiplayer: {
+    loadSettings: loadMPSettings,
+    enabled: mpEnabled,
   },
 }
 

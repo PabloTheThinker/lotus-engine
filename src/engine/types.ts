@@ -23,6 +23,7 @@ export type ActorType =
   | 'Water'
   | 'PCGVolume'
   | 'Label3D'
+  | 'Widget3D'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -50,6 +51,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   Water: 'static',
   PCGVolume: 'static',
   Label3D: 'movable',
+  Widget3D: 'movable',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -237,14 +239,24 @@ export interface SerializedActor {
   soundEmitter?: SoundEmitterProps
   /** Label3D only — billboard text plane */
   label3D?: Label3DProps
+  /** Widget3D only — interactive HTML in world space */
+  widget3D?: Widget3DProps
   /** MultiplayerSynchronizer-lite: property names to replicate (position, rotation, visible, script var names) */
   syncProperties?: string[]
   /** MultiplayerSpawner-lite: host replicates spawn/despawn of this actor during Play */
   syncSpawn?: boolean
+  /** Network owner peer id — empty/undefined = host-owned */
+  netOwnerId?: string
+  /** Client predicts transform locally; host sync reconciles (snap if error > threshold) */
+  clientPredicted?: boolean
   /** Godot SkeletonIK3D-lite — two-bone chains toward actor or world targets */
   ikTargets?: IKTarget[]
   /** Head LookAt toward actor or world position */
   lookAtTarget?: LookAtTarget
+  /** Baked AO (approx) — hemisphere raycast, not Lightmass */
+  bakedAO?: boolean
+  /** Per-mesh vertex color arrays (traversal order) from bakeAO */
+  bakedAOMeshes?: number[][]
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
@@ -331,6 +343,27 @@ export interface TriggerProps {
   reverbPreset?: ReverbPreset
 }
 
+/** Distance attenuation curve — normalized distance 0 (min) → 1 (max). */
+export type AttenuationCurve = 'linear' | 'inverse' | 'inverseSquare' | 'custom'
+
+export interface AttenuationSettings {
+  falloff?: AttenuationCurve
+  minDistance?: number
+  maxDistance?: number
+  /** distance→volume points (0–1 normalized distance) */
+  customCurve?: [number, number][]
+}
+
+export const DEFAULT_ATTENUATION: AttenuationSettings = {
+  falloff: 'inverse',
+  minDistance: 1,
+  maxDistance: 80,
+  customCurve: [
+    [0, 1],
+    [1, 0],
+  ],
+}
+
 /** SoundEmitter — plays a MetaSound (or imported sound) at this actor's position. */
 export interface SoundEmitterProps {
   metaSoundName: string
@@ -338,6 +371,10 @@ export interface SoundEmitterProps {
   loop: boolean
   autoPlay: boolean
   spatial: boolean
+  falloff?: AttenuationCurve
+  minDistance?: number
+  maxDistance?: number
+  customCurve?: [number, number][]
 }
 
 export const DEFAULT_SOUND_EMITTER: SoundEmitterProps = {
@@ -346,6 +383,13 @@ export const DEFAULT_SOUND_EMITTER: SoundEmitterProps = {
   loop: false,
   autoPlay: true,
   spatial: true,
+  falloff: 'inverse',
+  minDistance: 1,
+  maxDistance: 80,
+  customCurve: [
+    [0, 1],
+    [1, 0],
+  ],
 }
 
 export interface EnvironmentSettings {
@@ -423,6 +467,31 @@ export const DEFAULT_LABEL3D: Label3DProps = {
   billboard: true,
 }
 
+/** Widget3D — CSS3D world-space HTML widget (UE Widget Component analog). */
+export interface Widget3DProps {
+  /** Raw HTML content (ignored when hudWidgetId is set). */
+  html: string
+  /** Optional authored HUD widget id — renders that widget's markup in 3D. */
+  hudWidgetId?: string
+  /** World-space width in meters. */
+  width: number
+  /** World-space height in meters. */
+  height: number
+  /** Face the active camera (CSS3DSprite in editor, canvas billboard in export). */
+  billboard: boolean
+  opacity: number
+}
+
+export const DEFAULT_WIDGET3D: Widget3DProps = {
+  html: `<div style="padding:12px;background:#1a1d24;border:1px solid #3a4150;border-radius:8px;color:#e8eaed;font:14px system-ui,sans-serif;text-align:center;">
+  <button style="padding:8px 16px;background:#2f80ed;color:#fff;border:none;border-radius:6px;cursor:pointer;">Interact</button>
+</div>`,
+  width: 2,
+  height: 1,
+  billboard: true,
+  opacity: 1,
+}
+
 /** Linked level entry — embedded JSON for export / PIE scene switching. */
 export interface LevelLink {
   /** manifest key (e.g. dungeon) — used by api.loadLevel('dungeon') */
@@ -444,6 +513,8 @@ export interface SerializedLevel {
   data?: Record<string, unknown>
   /** imported audio clips, base64 */
   sounds?: Record<string, string>
+  /** per-imported-sound attenuation defaults */
+  soundAttenuation?: Record<string, AttenuationSettings>
   /** authored HUD widgets (UMG designer) */
   hud?: HudWidget[]
   /** HDRI environment (base64 .hdr) — overrides the sky when set */

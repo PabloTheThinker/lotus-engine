@@ -115,11 +115,28 @@ function buildGeometry(kind) {
     default: return new THREE.BoxGeometry(1, 1, 1)
   }
 }
-function buildMaterial(m) {
+function buildMaterial(m, vertexColors = false) {
   return new THREE.MeshStandardMaterial({
     color: m?.color ?? '#9da4ae', roughness: m?.roughness ?? 0.6, metalness: m?.metalness ?? 0.1,
     emissive: m?.emissive ?? '#000', emissiveIntensity: m?.emissiveIntensity ?? 1,
     transparent: !!m?.transparent || (m?.opacity ?? 1) < 1, opacity: m?.opacity ?? 1, wireframe: !!m?.wireframe,
+    vertexColors,
+  })
+}
+
+/** Re-apply Baked AO (approx) vertex colors saved on the actor. */
+function applyBakedAO(root, sa) {
+  if (!sa.bakedAO || !sa.bakedAOMeshes?.length) return
+  const meshes = []
+  root.traverse((o) => { if (o.isMesh) meshes.push(o) })
+  sa.bakedAOMeshes.forEach((colors, i) => {
+    const mesh = meshes[i]
+    if (!mesh || !colors?.length) return
+    mesh.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    for (const mat of mats) {
+      if (mat.isMeshStandardMaterial) mat.vertexColors = true
+    }
   })
 }
 
@@ -197,16 +214,30 @@ function instantiate(sa) {
   const actor = { id: sa.id, name: sa.name, type: sa.type, root, data: sa, mesh: null, autoload: (sa.tags ?? []).some((t) => String(t).toLowerCase() === 'autoload') }
 
   if (sa.type === 'StaticMesh') {
-    const mesh = new THREE.Mesh(buildGeometry(sa.geometry), buildMaterial(sa.material))
+    const mesh = new THREE.Mesh(buildGeometry(sa.geometry), buildMaterial(sa.material, !!sa.bakedAO))
     mesh.castShadow = sa.castShadow !== false
     mesh.receiveShadow = sa.receiveShadow !== false
     if (sa.geometry === 'plane') mesh.rotation.x = -Math.PI / 2
     actor.mesh = mesh
     root.add(mesh)
+    applyBakedAO(root, sa)
+  } else if (sa.type === 'CustomMesh' && sa.customGeometry) {
+    const g = sa.customGeometry
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(g.positions, 3))
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.normals, 3))
+    if (g.index) geo.setIndex(g.index)
+    const mesh = new THREE.Mesh(geo, buildMaterial(sa.material, !!sa.bakedAO))
+    mesh.castShadow = sa.castShadow !== false
+    mesh.receiveShadow = sa.receiveShadow !== false
+    actor.mesh = mesh
+    root.add(mesh)
+    applyBakedAO(root, sa)
   } else if (sa.type === 'ImportedMesh' && sa.assetId && gltfAssets[sa.assetId]) {
     const inst = gltfAssets[sa.assetId].clone(true)
     inst.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (!actor.mesh) actor.mesh = o } })
     root.add(inst)
+    applyBakedAO(root, sa)
   } else if (sa.type === 'DirectionalLight') {
     const l = new THREE.DirectionalLight(sa.light?.color ?? '#fff', sa.light?.intensity ?? 2)
     l.castShadow = true
@@ -236,6 +267,44 @@ function instantiate(sa) {
     mesh.count = f.instances.length
     root.add(mesh)
     actor.mesh = mesh
+  } else if (sa.type === 'Widget3D' && sa.widget3D) {
+    const W = sa.widget3D
+    const wPx = Math.max(32, Math.round((W.width ?? 2) * 100))
+    const hPx = Math.max(32, Math.round((W.height ?? 1) * 100))
+    let html = W.html ?? '<div>Widget</div>'
+    if (W.hudWidgetId && LEVEL.hud) {
+      const hw = LEVEL.hud.find((h) => h.id === W.hudWidgetId)
+      if (hw) {
+        if (hw.type === 'text') html = `<div style="padding:8px 12px;background:#1a1d24aa;border-radius:6px;color:${hw.color};font:14px system-ui;">${hw.text}</div>`
+        else if (hw.type === 'bar') {
+          const pct = Math.round((hw.value ?? 1) * 100)
+          html = `<div style="width:160px;background:#2a2f38;border-radius:6px;overflow:hidden;height:20px;"><div style="width:${pct}%;height:100%;background:${hw.color};"></div></div>`
+        } else html = `<button style="padding:8px 16px;background:${hw.color};color:#fff;border:none;border-radius:6px;">${hw.text}</button>`
+      }
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = wPx
+    canvas.height = hPx
+    const ctx = canvas.getContext('2d')
+    const svg = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="${wPx}" height="${hPx}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${wPx}px;height:${hPx}px;overflow:hidden;">${html}</div></foreignObject></svg>`
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.colorSpace = THREE.SRGBColorSpace
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(W.width ?? 2, W.height ?? 1),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: (W.opacity ?? 1) < 1, opacity: W.opacity ?? 1, side: THREE.DoubleSide, depthWrite: false }),
+    )
+    mesh.userData.isWidget3D = true
+    actor.mesh = mesh
+    root.add(mesh)
+    const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+    const img = new Image()
+    img.onload = () => { ctx.drawImage(img, 0, 0, wPx, hPx); tex.needsUpdate = true }
+    img.onerror = () => {
+      ctx.fillStyle = '#1a1d24'; ctx.fillRect(0, 0, wPx, hPx)
+      ctx.fillStyle = '#e8eaed'; ctx.font = '14px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText('Widget3D', wPx / 2, hPx / 2); tex.needsUpdate = true
+    }
+    img.src = url
   } else if (sa.type === 'Label3D' && sa.label3D) {
     const L = sa.label3D
     const canvas = document.createElement('canvas')
@@ -286,6 +355,7 @@ function instantiate(sa) {
     mesh.receiveShadow = true
     actor.mesh = mesh
     root.add(mesh)
+    applyBakedAO(root, sa)
   }
   scene.add(root)
   actors.set(sa.id, actor)
@@ -498,6 +568,90 @@ async function startPhysics() {
   }
 }
 
+// ---- audio (sequencer audio tracks) ----
+let audioCtx = null
+const soundBuffers = new Map()
+/** @type {{ src: AudioBufferSourceNode, gain: GainNode, keys: object[] }[]} */
+let seqAudioVoices = []
+let seqAudioLastT = -1
+
+async function loadSounds(level) {
+  if (!level.sounds) return
+  if (!audioCtx) audioCtx = new AudioContext()
+  if (audioCtx.state === 'suspended') await audioCtx.resume()
+  for (const [name, b64] of Object.entries(level.sounds)) {
+    if (soundBuffers.has(name)) continue
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    soundBuffers.set(name, await audioCtx.decodeAudioData(bytes.buffer))
+  }
+}
+
+function stopSeqAudio() {
+  for (const v of seqAudioVoices) {
+    try { v.src.stop() } catch (_) { /* already stopped */ }
+    v.src.disconnect()
+    v.gain.disconnect()
+  }
+  seqAudioVoices = []
+}
+
+function sampleSeqValue(keys, t) {
+  if (!keys.length) return null
+  if (t <= keys[0].t) return keys[0].v
+  if (t >= keys[keys.length - 1].t) return keys[keys.length - 1].v
+  for (let i = 0; i < keys.length - 1; i++) {
+    const a = keys[i]
+    const b = keys[i + 1]
+    if (t >= a.t && t <= b.t) {
+      const f = (b.t - a.t) ? (t - a.t) / (b.t - a.t) : 0
+      if (typeof a.v === 'number' && typeof b.v === 'number') return a.v + (b.v - a.v) * f
+      if (Array.isArray(a.v) && Array.isArray(b.v)) return a.v.map((av, j) => av + ((b.v[j] ?? av) - av) * f)
+      return a.v
+    }
+  }
+  return null
+}
+
+function startSeqAudioVoice(soundName, keys, t) {
+  if (!audioCtx) return
+  const buf = soundBuffers.get(soundName)
+  if (!buf) return
+  const startT = keys[0].t
+  if (t < startT) return
+  const offset = t - startT
+  const vol = sampleSeqValue(keys, t)
+  const volume = typeof vol === 'number' ? vol : 1
+  const src = audioCtx.createBufferSource()
+  const gain = audioCtx.createGain()
+  src.buffer = buf
+  src.loop = true
+  gain.gain.value = volume
+  src.connect(gain)
+  gain.connect(audioCtx.destination)
+  src.start(0, Math.min(offset, Math.max(0, buf.duration - 0.001)))
+  seqAudioVoices.push({ src, gain, keys })
+}
+
+function updateSeqAudio(t) {
+  if (!audioCtx) return
+  const seq = LEVEL.sequence
+  if (!seq) return
+  const wrapped = seqAudioLastT > t
+  if (wrapped || seqAudioVoices.length === 0) {
+    stopSeqAudio()
+    for (const tr of seq.tracks) {
+      if (tr.trackType !== 'audio' || !tr.keys.length) continue
+      startSeqAudioVoice(tr.actorId, tr.keys, t)
+    }
+  } else {
+    for (const v of seqAudioVoices) {
+      const vol = sampleSeqValue(v.keys, t)
+      v.gain.gain.value = typeof vol === 'number' ? vol : 1
+    }
+  }
+  seqAudioLastT = t
+}
+
 // ---- scripts & behaviors ----
 const api = {
   log: (...a) => console.log('[vektra]', ...a),
@@ -526,6 +680,8 @@ const api = {
       LEVEL = resolved
       applyEnvironment()
       await loadAssets(LEVEL)
+      await loadSounds(LEVEL)
+      stopSeqAudio()
       spawnLevelActors(LEVEL)
       resetPawnFromStart()
       await startPhysics()
@@ -558,6 +714,7 @@ function compileScripts() {
 const overlay = document.getElementById('overlay')
 async function boot() {
   await loadAssets(LEVEL)
+  await loadSounds(LEVEL)
   spawnLevelActors(LEVEL)
   if (CELL_MANIFEST) {
     const start = LEVEL.actors.find((a) => a.type === 'PlayerStart')
@@ -590,7 +747,9 @@ async function boot() {
     const seq = LEVEL.sequence
     if (seq && seq.autoPlay && seq.tracks.length) {
       const t = clock % seq.duration
+      let hasAudio = false
       for (const tr of seq.tracks) {
+        if (tr.trackType === 'audio') { hasAudio = true; continue }
         const a = actors.get(tr.actorId)
         if (!a || !tr.keys.length) continue
         let v
@@ -609,11 +768,23 @@ async function boot() {
         else if (tr.property === 'rotation') a.root.rotation.set(v[0], v[1], v[2])
         else a.root.scale.fromArray(v)
       }
+      if (hasAudio) updateSeqAudio(t)
     }
     for (const ps of particleSystems) ps.update(dt)
     updatePawn(dt)
     if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
     applyStreamingVisibility(pawnCam.position)
+    // Widget3D export fallback — canvas billboard planes (no CSS3D)
+    const camPos = pawnCam.position
+    for (const a of actors.values()) {
+      if (a.data.type !== 'Widget3D' || !a.data.widget3D?.billboard || !a.mesh) continue
+      const obj = new THREE.Vector3(); a.root.getWorldPosition(obj)
+      const parentQ = new THREE.Quaternion(); a.mesh.parent?.getWorldQuaternion(parentQ)
+      const invQ = parentQ.clone().invert()
+      const lookM = new THREE.Matrix4().lookAt(obj, camPos, new THREE.Vector3(0, 1, 0))
+      const lookQ = new THREE.Quaternion().setFromRotationMatrix(lookM)
+      a.mesh.quaternion.copy(invQ).multiply(lookQ)
+    }
     pressed.clear()
     renderer.render(scene, pawnCam)
   })

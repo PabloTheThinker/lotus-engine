@@ -32,6 +32,7 @@ const ITEMS: PlaceItem[] = [
   // Cinematic
   { label: 'Camera', icon: '🎥', category: 'Cinematic', payload: { kind: 'camera' } },
   { label: '3D Label', icon: '🏷', category: 'Cinematic', payload: { kind: 'label3d' } },
+  { label: '3D Widget', icon: '🖥', category: 'Cinematic', payload: { kind: 'widget3d' } },
   // Visual Effects
   { label: 'Particle Emitter', icon: '✨', category: 'Visual Effects', payload: { kind: 'particles' } },
   { label: 'Foliage Layer', icon: '🌿', category: 'Visual Effects', payload: { kind: 'foliage' } },

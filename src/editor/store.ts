@@ -64,6 +64,10 @@ interface EditorState {
   /** UE pause + frame-step */
   paused: boolean
   setPaused: (v: boolean) => void
+  /** Blueprint exec breakpoint — set when __bpBreakpoint pauses play (v0.63) */
+  breakpointHit: { actorId: string; nodeId: string } | null
+  setBreakpointHit: (h: { actorId: string; nodeId: string } | null) => void
+  continueFromBreakpoint: () => void
   stepFrames: number
   requestStep: () => void
   setPlaying: (p: boolean) => void
@@ -223,10 +227,13 @@ export const useEditor = create<EditorState>((set) => ({
   playing: false,
   simulate: false,
   ejected: false,
-  startPlay: (mode) => set({ playing: true, simulate: mode === 'simulate', ejected: false, paused: false }),
-  stopPlay: () => set({ playing: false, simulate: false, ejected: false, paused: false }),
+  startPlay: (mode) => set({ playing: true, simulate: mode === 'simulate', ejected: false, paused: false, breakpointHit: null }),
+  stopPlay: () => set({ playing: false, simulate: false, ejected: false, paused: false, breakpointHit: null }),
   paused: false,
   setPaused: (v) => set({ paused: v }),
+  breakpointHit: null,
+  setBreakpointHit: (h) => set({ breakpointHit: h }),
+  continueFromBreakpoint: () => set({ paused: false, breakpointHit: null }),
   stepFrames: 0,
   requestStep: () => set((st) => ({ stepFrames: st.stepFrames + 1 })),
   setPlaying: (p) => set(p ? { playing: true, simulate: false, ejected: false } : { playing: false, simulate: false, ejected: false }),

@@ -17,12 +17,14 @@ import {
   type EffectModifierOp,
   type GameplayEffect,
 } from '../../engine/gameplayAbilities'
+import { aoBakeProgress, aoBaking, bakeAO, lastAOBakeError } from '../../engine/lightmapBake'
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { sanitizeLevelKey, world } from '../../engine/World'
 import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
-import { setBusVolume } from '../../engine/audio'
+import { setBusVolume, setSoundAttenuationDefaults } from '../../engine/audio'
+import { AttenuationFields } from './AttenuationFields'
 import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
 import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
 import { useEditor } from '../store'
@@ -100,7 +102,11 @@ function MultiplayerSection() {
           Enable Network on actors (Details) for property sync @ 10 Hz and spawner replication.
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>leave</code>
+          <strong>Ownership:</strong> empty owner = host authority. Assign a peer id (or Local) so that client
+          may predict movement when <em>Client Predicted</em> is on; host still syncs @ 10 Hz and clients snap on large error.
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>leave</code>
         </div>
       </div>
     </details>
@@ -109,8 +115,15 @@ function MultiplayerSection() {
 
 function AudioSection() {
   const touch = useEditor((s) => s.touch)
+  useEditor((s) => s.sceneVersion)
   const setEditing = useEditor((s) => s.setEditingMetaSound)
   const metaSounds = listMetaSounds()
+  const importedSounds = Object.keys(world.sounds)
+  const setSoundAttenuation = (name: string, patch: Partial<import('../../engine/types').AttenuationSettings>) => {
+    world.soundAttenuation[name] = { ...world.soundAttenuation[name], ...patch }
+    setSoundAttenuationDefaults(world.soundAttenuation)
+    touch()
+  }
   return (
     <details className="details-section">
       <summary>Audio</summary>
@@ -122,6 +135,17 @@ function AudioSection() {
           </label>
         ))}
         <div className="panel-empty" style={{ padding: '2px 0' }}>Imported clips: api.playSound(name). Procedural graphs: api.playMetaSound(name).</div>
+        {importedSounds.map((name) => (
+          <details className="details-section" key={name} style={{ gridColumn: '1 / -1' }}>
+            <summary>♫ {name} — attenuation</summary>
+            <div className="details-grid">
+              <AttenuationFields
+                value={world.soundAttenuation[name] ?? {}}
+                onChange={(patch) => setSoundAttenuation(name, patch)}
+              />
+            </div>
+          </details>
+        ))}
         {metaSounds.map((m) => (
           <label className="field" key={m.id} style={{ gridTemplateColumns: '1fr auto auto', display: 'grid', gap: 4 }}>
             <span>♪ {m.name}</span>
@@ -305,6 +329,49 @@ function StreamingSection() {
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           Actors are assigned streamCell on save. Only cells within radius of the camera are visible during edit and play.
           Console: show streaming · Scripts: api.loadCell(cx, cz)
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function LightingBakeSection() {
+  const touch = useEditor((s) => s.touch)
+  const [status, setStatus] = useState('No baked AO')
+
+  return (
+    <details className="details-section">
+      <summary>Lighting (approx)</summary>
+      <div className="details-grid">
+        <button
+          disabled={aoBaking}
+          onClick={async () => {
+            setStatus('Baking AO (approx)…')
+            const res = await bakeAO(world.actors, {
+              samples: 16,
+              radius: 1,
+              onProgress: (_done, total, label) => {
+                setStatus(total > 0 ? label : 'Baking AO (approx)…')
+              },
+            })
+            setStatus(
+              res.ok
+                ? `Baked AO (approx): ${res.actorsBaked} actors, ${res.verticesProcessed} vertices`
+                : `Bake failed: ${lastAOBakeError ?? 'unknown error'}`,
+            )
+            touch()
+          }}
+        >
+          {aoBaking ? 'Baking AO (approx)…' : 'Bake AO (approx)'}
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          {status}
+          {aoBaking && aoBakeProgress.total > 0
+            ? ` · ${aoBakeProgress.done}/${aoBakeProgress.total} verts`
+            : ''}
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Hemisphere raycast AO into vertex colors on static meshes — not Lightmass. Console: build ao · vektra.BakeAO()
         </div>
       </div>
     </details>
@@ -777,6 +844,7 @@ export function WorldSettings() {
       </div>
       <LinkedLevelsSection />
       <StreamingSection />
+      <LightingBakeSection />
       <NavigationSection />
       <InputMapSection />
       <DataAssetsSection />

@@ -27,6 +27,8 @@ export function Toolbar() {
   const setScaleSnap = useEditor((s) => s.setScaleSnap)
   const paused = useEditor((s) => s.paused)
   const setPaused = useEditor((s) => s.setPaused)
+  const breakpointHit = useEditor((s) => s.breakpointHit)
+  const continueFromBreakpoint = useEditor((s) => s.continueFromBreakpoint)
   const requestStep = useEditor((s) => s.requestStep)
   const playing = useEditor((s) => s.playing)
   const simulate = useEditor((s) => s.simulate)
@@ -149,10 +151,23 @@ export function Toolbar() {
         </button>
         {playing && (
           <>
-            <button className={paused ? 'active' : ''} title="Pause (UE toolbar pause)" onClick={() => setPaused(!paused)}>
-              ⏸
-            </button>
-            {paused && (
+            {breakpointHit ? (
+              <button
+                className="active"
+                title={`Continue from breakpoint (${formatShortcutLabel('play.continue')})`}
+                onClick={() => {
+                  continueFromBreakpoint()
+                  useEditor.getState().setStatus('Continuing…')
+                }}
+              >
+                ▶ Continue
+              </button>
+            ) : (
+              <button className={paused ? 'active' : ''} title="Pause (UE toolbar pause)" onClick={() => setPaused(!paused)}>
+                ⏸
+              </button>
+            )}
+            {paused && !breakpointHit && (
               <button title="Advance one frame" onClick={requestStep}>
                 ⏭
               </button>

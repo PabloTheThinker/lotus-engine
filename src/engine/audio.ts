@@ -5,6 +5,10 @@
 
 import { compileMetaSound } from './metaSounds'
 import { getMetaSoundByName } from './metaSoundAssets'
+import type { AttenuationCurve, AttenuationSettings } from './types'
+import { DEFAULT_ATTENUATION } from './types'
+
+export type { AttenuationCurve, AttenuationSettings } from './types'
 
 let ctx: AudioContext | null = null
 let master: GainNode | null = null
@@ -18,6 +22,13 @@ let reverbConvolver: ConvolverNode | null = null
 let reverbWet = 0
 
 const compiledMeta = new Map<string, ReturnType<typeof compileMetaSound>>()
+
+/** per-imported-sound attenuation defaults (set by World on load) */
+let soundAttenuationDefaults: Record<string, AttenuationSettings> = {}
+
+export function setSoundAttenuationDefaults(m: Record<string, AttenuationSettings>) {
+  soundAttenuationDefaults = m
+}
 
 function ensureCtx(): AudioContext {
   if (!ctx) {
@@ -141,25 +152,139 @@ export interface PlayOpts {
   /** world position — routed through a PannerNode (HRTF) */
   at?: [number, number, number]
   listener?: () => [number, number, number] | null
+  falloff?: AttenuationCurve
+  minDistance?: number
+  maxDistance?: number
+  customCurve?: [number, number][]
+  /** start playback at this offset in seconds (sequencer scrubbing) */
+  currentTime?: number
+  /** marks a scrub-preview voice (stopped by stopScrubAudio) */
+  scrub?: boolean
 }
 
 interface ActiveVoice {
   stop: () => void
   panner?: PannerNode
   at?: [number, number, number]
+  falloffGain?: GainNode
+  falloff?: AttenuationCurve
+  minDistance?: number
+  maxDistance?: number
+  customCurve?: [number, number][]
+  listener?: () => [number, number, number] | null
 }
 
 const playing: ActiveVoice[] = []
+const scrubVoices: ActiveVoice[] = []
 
-/** Move active PannerNodes when the source position changes (optional fallback). */
+function resolveAttenuation(name: string, opts: PlayOpts) {
+  const defaults = soundAttenuationDefaults[name] ?? {}
+  return {
+    falloff: opts.falloff ?? defaults.falloff ?? DEFAULT_ATTENUATION.falloff ?? 'inverse',
+    minDistance: opts.minDistance ?? defaults.minDistance ?? DEFAULT_ATTENUATION.minDistance ?? 1,
+    maxDistance: opts.maxDistance ?? defaults.maxDistance ?? DEFAULT_ATTENUATION.maxDistance ?? 80,
+    customCurve: opts.customCurve ?? defaults.customCurve ?? DEFAULT_ATTENUATION.customCurve,
+  }
+}
+
+function distanceModelFor(curve: AttenuationCurve): DistanceModelType {
+  switch (curve) {
+    case 'linear':
+      return 'linear'
+    case 'inverseSquare':
+      return 'exponential'
+    case 'inverse':
+    default:
+      return 'inverse'
+  }
+}
+
+export function evaluateCustomCurve(points: [number, number][], t: number): number {
+  if (points.length === 0) return 1
+  const sorted = [...points].sort((a, b) => a[0] - b[0])
+  if (t <= sorted[0][0]) return sorted[0][1]
+  if (t >= sorted[sorted.length - 1][0]) return sorted[sorted.length - 1][1]
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const [t0, v0] = sorted[i]
+    const [t1, v1] = sorted[i + 1]
+    if (t >= t0 && t <= t1) {
+      const f = t1 === t0 ? 0 : (t - t0) / (t1 - t0)
+      return v0 + (v1 - v0) * f
+    }
+  }
+  return 1
+}
+
+function normalizedDistance(dist: number, minD: number, maxD: number): number {
+  const span = Math.max(0.001, maxD - minD)
+  return Math.max(0, Math.min(1, (dist - minD) / span))
+}
+
+function listenerPosition(listener?: () => [number, number, number] | null): [number, number, number] | null {
+  if (listener) return listener()
+  const ac = ctx
+  if (!ac?.listener) return null
+  const l = ac.listener
+  if ('positionX' in l) return [l.positionX.value, l.positionY.value, l.positionZ.value]
+  return null
+}
+
+function computeCustomGain(
+  at: [number, number, number],
+  minD: number,
+  maxD: number,
+  customCurve: [number, number][],
+  listener?: () => [number, number, number] | null,
+): number {
+  const lp = listenerPosition(listener)
+  if (!lp) return 1
+  const dx = at[0] - lp[0]
+  const dy = at[1] - lp[1]
+  const dz = at[2] - lp[2]
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  const nd = normalizedDistance(dist, minD, maxD)
+  return evaluateCustomCurve(customCurve, nd)
+}
+
+function configurePanner(panner: PannerNode, falloff: AttenuationCurve, minD: number, maxD: number) {
+  panner.panningModel = 'HRTF'
+  if (falloff === 'custom') {
+    panner.distanceModel = 'linear'
+    panner.refDistance = minD
+    panner.maxDistance = maxD
+    panner.rolloffFactor = 0
+  } else {
+    panner.distanceModel = distanceModelFor(falloff)
+    panner.refDistance = minD
+    panner.maxDistance = maxD
+    panner.rolloffFactor = 1
+  }
+}
+
+function pushVoice(voice: ActiveVoice, scrub?: boolean) {
+  if (scrub) scrubVoices.push(voice)
+  else playing.push(voice)
+}
+
+function removeVoice(voice: ActiveVoice, scrub?: boolean) {
+  const list = scrub ? scrubVoices : playing
+  const i = list.indexOf(voice)
+  if (i >= 0) list.splice(i, 1)
+}
+
+/** Move active PannerNodes when the source position changes; update custom falloff gains. */
 export function updatePannerPositions() {
   const ac = ensureCtx()
   const t = ac.currentTime
-  for (const v of playing) {
+  for (const v of [...playing, ...scrubVoices]) {
     if (v.panner && v.at) {
       v.panner.positionX.setValueAtTime(v.at[0], t)
       v.panner.positionY.setValueAtTime(v.at[1], t)
       v.panner.positionZ.setValueAtTime(v.at[2], t)
+    }
+    if (v.falloff === 'custom' && v.falloffGain && v.at) {
+      const g = computeCustomGain(v.at, v.minDistance ?? 1, v.maxDistance ?? 80, v.customCurve ?? [[0, 1], [1, 0]], v.listener)
+      v.falloffGain.gain.setValueAtTime(g, t)
     }
   }
 }
@@ -172,28 +297,34 @@ export function playSound(name: string, opts: PlayOpts = {}) {
   src.buffer = buf
   src.loop = !!opts.loop
 
+  const att = resolveAttenuation(name, opts)
   let panner: PannerNode | undefined
   let entryGain: GainNode | undefined
+  let falloffGain: GainNode | undefined
 
   if (opts.at) {
     panner = ac.createPanner()
-    panner.panningModel = 'HRTF'
-    panner.distanceModel = 'inverse'
-    panner.refDistance = 1
-    panner.maxDistance = 80
-    panner.rolloffFactor = 1.5
+    configurePanner(panner, att.falloff, att.minDistance, att.maxDistance)
     panner.positionX.value = opts.at[0]
     panner.positionY.value = opts.at[1]
     panner.positionZ.value = opts.at[2]
     entryGain = ac.createGain()
     entryGain.gain.value = opts.volume ?? 1
-    src.connect(entryGain)
-    entryGain.connect(panner)
+    if (att.falloff === 'custom') {
+      falloffGain = ac.createGain()
+      falloffGain.gain.value = computeCustomGain(opts.at, att.minDistance, att.maxDistance, att.customCurve ?? [[0, 1], [1, 0]], opts.listener)
+      src.connect(entryGain)
+      entryGain.connect(falloffGain)
+      falloffGain.connect(panner)
+    } else {
+      src.connect(entryGain)
+      entryGain.connect(panner)
+    }
     panner.connect(buses.get(opts.bus ?? 'sfx') ?? dryBus!)
     if (reverbConvolver && reverbWet > 0) {
       const send = ac.createGain()
       send.gain.value = reverbWet * 0.6
-      entryGain.connect(send)
+      ;(falloffGain ?? entryGain)!.connect(send)
       send.connect(reverbConvolver)
     }
   } else {
@@ -209,10 +340,18 @@ export function playSound(name: string, opts: PlayOpts = {}) {
     }
   }
 
-  src.start()
+  const offset = Math.max(0, opts.currentTime ?? 0)
+  src.start(0, Math.min(offset, buf.duration - 0.001))
+
   const voice: ActiveVoice = {
     panner,
     at: opts.at,
+    falloffGain,
+    falloff: opts.at ? att.falloff : undefined,
+    minDistance: att.minDistance,
+    maxDistance: att.maxDistance,
+    customCurve: att.customCurve,
+    listener: opts.listener,
     stop: () => {
       try {
         src.stop()
@@ -221,13 +360,13 @@ export function playSound(name: string, opts: PlayOpts = {}) {
       }
       src.disconnect()
       entryGain?.disconnect()
+      falloffGain?.disconnect()
       panner?.disconnect()
     },
   }
-  playing.push(voice)
+  pushVoice(voice, opts.scrub)
   src.onended = () => {
-    const i = playing.indexOf(voice)
-    if (i >= 0) playing.splice(i, 1)
+    removeVoice(voice, opts.scrub)
     voice.stop()
   }
 }
@@ -254,23 +393,28 @@ export function playMetaSound(name: string, opts: PlayOpts = {}) {
   const ac = ensureCtx()
   const inst = factory()
   const vol = opts.volume ?? 1
+  const att = resolveAttenuation(name, opts)
 
   let panner: PannerNode | undefined
   let entryGain = ac.createGain()
   entryGain.gain.value = vol
+  let falloffGain: GainNode | undefined
   inst.output.connect(entryGain)
 
   if (opts.at) {
     panner = ac.createPanner()
-    panner.panningModel = 'HRTF'
-    panner.distanceModel = 'inverse'
-    panner.refDistance = 1
-    panner.maxDistance = 80
-    panner.rolloffFactor = 1.5
+    configurePanner(panner, att.falloff, att.minDistance, att.maxDistance)
     panner.positionX.value = opts.at[0]
     panner.positionY.value = opts.at[1]
     panner.positionZ.value = opts.at[2]
-    entryGain.connect(panner)
+    if (att.falloff === 'custom') {
+      falloffGain = ac.createGain()
+      falloffGain.gain.value = computeCustomGain(opts.at, att.minDistance, att.maxDistance, att.customCurve ?? [[0, 1], [1, 0]], opts.listener)
+      entryGain.connect(falloffGain)
+      falloffGain.connect(panner)
+    } else {
+      entryGain.connect(panner)
+    }
     panner.connect(buses.get(opts.bus ?? 'sfx') ?? dryBus!)
   } else {
     entryGain.connect(buses.get(opts.bus ?? 'sfx') ?? dryBus!)
@@ -279,7 +423,7 @@ export function playMetaSound(name: string, opts: PlayOpts = {}) {
   if (reverbConvolver && reverbWet > 0) {
     const send = ac.createGain()
     send.gain.value = reverbWet * 0.6
-    entryGain.connect(send)
+    ;(falloffGain ?? entryGain).connect(send)
     send.connect(reverbConvolver)
   }
 
@@ -288,27 +432,38 @@ export function playMetaSound(name: string, opts: PlayOpts = {}) {
   const voice: ActiveVoice = {
     panner,
     at: opts.at,
+    falloffGain,
+    falloff: opts.at ? att.falloff : undefined,
+    minDistance: att.minDistance,
+    maxDistance: att.maxDistance,
+    customCurve: att.customCurve,
+    listener: opts.listener,
     stop: () => {
       inst.stop()
       entryGain.disconnect()
+      falloffGain?.disconnect()
       panner?.disconnect()
     },
   }
-  playing.push(voice)
+  pushVoice(voice, opts.scrub)
 
   // one-shot procedural sounds auto-stop after a few seconds if not looping
   if (!opts.loop) {
     window.setTimeout(() => {
-      const i = playing.indexOf(voice)
-      if (i >= 0) {
-        playing.splice(i, 1)
-        voice.stop()
-      }
+      removeVoice(voice, opts.scrub)
+      voice.stop()
     }, 8000)
   }
 }
 
+/** Stop scrub-preview voices (sequencer scrub end). */
+export function stopScrubAudio() {
+  for (const s of [...scrubVoices]) s.stop()
+  scrubVoices.length = 0
+}
+
 export function stopAllSounds() {
+  stopScrubAudio()
   for (const s of [...playing]) s.stop()
   playing.length = 0
 }

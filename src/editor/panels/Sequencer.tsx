@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import { getHudElement } from '../../engine/gameplay'
+import { stopScrubAudio } from '../../engine/audio'
 import {
   ensureBezierTangents,
+  isAudioTrack,
   isHudTrack,
   keyableHudProperties,
   keyableProperties,
@@ -42,11 +44,15 @@ export function Sequencer() {
   const seq = world.sequence
   const pct = (t: number) => `${(t / seq.duration) * 100}%`
 
+  const applyAtTime = (t: number, withAudio: boolean) => {
+    sampleSequence(world, seq, t, withAudio)
+  }
+
   const scrubTo = (clientX: number) => {
     const rect = timelineRef.current!.getBoundingClientRect()
     const t = Math.max(0, Math.min(seq.duration, ((clientX - rect.left) / rect.width) * seq.duration))
     setSeqTime(t)
-    sampleSequence(world, seq, t)
+    applyAtTime(t, true)
     touch()
   }
 
@@ -121,6 +127,30 @@ export function Sequencer() {
       default:
         return null
     }
+  }
+
+  const addAudioTrack = (soundName: string) => {
+    const existing = seq.tracks.find((tr) => isAudioTrack(tr) && tr.actorId === soundName)
+    if (existing) {
+      setCurveTrack(existing)
+      setCurveOpen(true)
+      return
+    }
+    const before = JSON.stringify(seq.tracks)
+    setKey(seq, soundName, 'volume', seqTime, 1, 'audio')
+    const after = JSON.stringify(seq.tracks)
+    const track = seq.tracks.find((tr) => isAudioTrack(tr) && tr.actorId === soundName)
+    if (track) {
+      setCurveTrack(track)
+      setCurveOpen(true)
+    }
+    runCommand(
+      new PropertyCommand(
+        `Audio track ${soundName}`,
+        () => (seq.tracks = JSON.parse(after)),
+        () => (seq.tracks = JSON.parse(before)),
+      ),
+    )
   }
 
   const addHudTrack = (widgetId: string, property: SeqHudProperty) => {
@@ -213,7 +243,7 @@ export function Sequencer() {
     }
     // play the timeline from 0 and record one full pass
     setSeqTime(0)
-    sampleSequence(world, seq, 0)
+    applyAtTime(0, true)
     setSeqPlaying(true)
     rec.start()
     useEditor.getState().setStatus('Rendering movie…')
@@ -263,11 +293,15 @@ export function Sequencer() {
     )
   }
 
-  // group tracks by actor / HUD widget for display
+  // group tracks by actor / HUD widget / audio for display
   const byActor = new Map<string, SeqTrack[]>()
   const byWidget = new Map<string, SeqTrack[]>()
+  const byAudio = new Map<string, SeqTrack[]>()
   for (const tr of seq.tracks) {
-    if (isHudTrack(tr)) {
+    if (isAudioTrack(tr)) {
+      if (!byAudio.has(tr.actorId)) byAudio.set(tr.actorId, [])
+      byAudio.get(tr.actorId)!.push(tr)
+    } else if (isHudTrack(tr)) {
       if (!byWidget.has(tr.actorId)) byWidget.set(tr.actorId, [])
       byWidget.get(tr.actorId)!.push(tr)
     } else {
@@ -285,13 +319,20 @@ export function Sequencer() {
   return (
     <div className="sequencer">
       <div className="seq-toolbar">
-        <button title={seqPlaying ? 'Pause' : 'Play timeline'} onClick={() => setSeqPlaying(!seqPlaying)}>
+        <button
+          title={seqPlaying ? 'Pause' : 'Play timeline'}
+          onClick={() => {
+            if (seqPlaying) stopScrubAudio()
+            setSeqPlaying(!seqPlaying)
+          }}
+        >
           {seqPlaying ? '⏸' : '▶'}
         </button>
         <button
           title="Stop — return to 0"
           onClick={() => {
             setSeqPlaying(false)
+            stopScrubAudio()
             setSeqTime(0)
             sampleSequence(world, seq, 0)
             touch()
@@ -365,6 +406,23 @@ export function Sequencer() {
             )),
           )}
         </select>
+        <select
+          className="snap-size"
+          value=""
+          title="Add an imported audio track (import clips in Content Browser)"
+          disabled={Object.keys(world.sounds).length === 0}
+          onChange={(e) => {
+            if (e.target.value) addAudioTrack(e.target.value)
+            e.target.value = ''
+          }}
+        >
+          <option value="">+ Audio Track…</option>
+          {Object.keys(world.sounds).map((name) => (
+            <option key={name} value={name}>
+              ♫ {name}
+            </option>
+          ))}
+        </select>
         <button
           className="seq-key"
           onClick={keyCurveTrack}
@@ -436,8 +494,25 @@ export function Sequencer() {
               ))}
             </div>
           ))}
-          {byActor.size === 0 && byWidget.size === 0 && (
-            <div className="panel-empty">Select an actor or add a HUD track, move the playhead, hit ◆ Key.</div>
+          {[...byAudio.entries()].map(([soundName, tracks]) => (
+            <div key={`audio-${soundName}`}>
+              <div className="seq-actor-row seq-audio-row" title="Imported audio track">
+                ♫ {soundName}
+              </div>
+              {tracks.map((tr) => (
+                <div
+                  key={tr.property}
+                  className={`seq-track-name ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                  title="Click to open curve editor"
+                >
+                  {tr.property}
+                </div>
+              ))}
+            </div>
+          ))}
+          {byActor.size === 0 && byWidget.size === 0 && byAudio.size === 0 && (
+            <div className="panel-empty">Select an actor or add a HUD/audio track, move the playhead, hit ◆ Key.</div>
           )}
         </div>
         <div
@@ -451,8 +526,14 @@ export function Sequencer() {
           onMouseMove={(e) => {
             if (scrubbing.current) scrubTo(e.clientX)
           }}
-          onMouseUp={() => (scrubbing.current = false)}
-          onMouseLeave={() => (scrubbing.current = false)}
+          onMouseUp={() => {
+            scrubbing.current = false
+            stopScrubAudio()
+          }}
+          onMouseLeave={() => {
+            if (scrubbing.current) stopScrubAudio()
+            scrubbing.current = false
+          }}
         >
           <div className="seq-ruler">
             {ruler.map((t) => (
@@ -518,7 +599,7 @@ export function Sequencer() {
                           return
                         }
                         setSeqTime(k.t)
-                        sampleSequence(world, seq, k.t)
+                        applyAtTime(k.t, true)
                         touch()
                       }}
                     >
@@ -556,7 +637,45 @@ export function Sequencer() {
                           return
                         }
                         setSeqTime(k.t)
-                        sampleSequence(world, seq, k.t)
+                        applyAtTime(k.t, true)
+                        touch()
+                      }}
+                    >
+                      {interpIcon(k.interp)}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+          {[...byAudio.entries()].map(([soundName, tracks]) => (
+            <div key={`audio-lane-${soundName}`}>
+              <div className="seq-actor-lane seq-audio-lane" />
+              {tracks.map((tr) => (
+                <div
+                  key={tr.property}
+                  className={`seq-lane ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                >
+                  {tr.keys.map((k, i) => (
+                    <span
+                      key={i}
+                      className="seq-keyframe"
+                      style={{ left: pct(k.t) }}
+                      title={`${soundName} volume @ ${k.t.toFixed(2)}s — click jumps · Shift+click cycles interp · right-click deletes`}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        deleteKey(tr, i)
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        selectTrack(tr)
+                        if (e.shiftKey) {
+                          cycleInterp(k, tr, i)
+                          return
+                        }
+                        setSeqTime(k.t)
+                        applyAtTime(k.t, true)
                         touch()
                       }}
                     >
@@ -574,9 +693,11 @@ export function Sequencer() {
         <div className="seq-curve-panel">
           <div className="seq-curve-header">
             <span>
-              {isHudTrack(curveTrack)
-                ? `🖥 ${widgetLabel(curveTrack.actorId)}`
-                : (world.actors.get(curveTrack.actorId)?.name ?? '(deleted)')}{' '}
+              {isAudioTrack(curveTrack)
+                ? `♫ ${curveTrack.actorId}`
+                : isHudTrack(curveTrack)
+                  ? `🖥 ${widgetLabel(curveTrack.actorId)}`
+                  : (world.actors.get(curveTrack.actorId)?.name ?? '(deleted)')}{' '}
               · {curveTrack.property}
             </span>
             {isVectorTrack(curveTrack) && (

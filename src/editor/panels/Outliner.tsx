@@ -16,6 +16,7 @@ const TYPE_ICONS: Record<string, string> = {
   RectLight: '▤',
   Camera: '🎥',
   Label3D: '🏷',
+  Widget3D: '🖥',
   PlayerStart: '🚩',
   ParticleEmitter: '✨',
   FoliageLayer: '🌿',

@@ -25,7 +25,7 @@ import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, 
 import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
-import { playMetaSound, registerSound, setReverbZone, stopAllSounds, type ReverbPreset } from './audio'
+import { playMetaSound, registerSound, setReverbZone, setSoundAttenuationDefaults, stopAllSounds, type ReverbPreset } from './audio'
 import {
   createTriggerVolumeActor,
   createSoundEmitterActor,
@@ -34,9 +34,10 @@ import {
   createLabel3DActor,
   rebuildLabel3D,
 } from './factory'
+import { createWidget3DActor, syncWidget3D } from './widget3d'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
-import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
+import { cameraCutAt, emptySequence, eventsBetween, hasAudioTracks, sampleSequence, type Sequence } from './sequencer'
 import { setViewCamera } from './gameplay'
 import { applyActorMaterial, getEffectiveMaterialGraph, getEffectiveMaterialGraphMode } from './materialAssets'
 import { applyMaterialGraph } from './materialGraph'
@@ -45,6 +46,7 @@ import {
   cellKey,
   splitLevelByCells,
 } from './streaming'
+import { applySerializedBakedAO } from './lightmapBake'
 import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
 import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
@@ -82,6 +84,9 @@ export class World {
 
   /** imported audio (base64) — registered with the audio engine on load */
   sounds: Record<string, string> = {}
+
+  /** per-imported-sound attenuation defaults */
+  soundAttenuation: Record<string, import('./types').AttenuationSettings> = {}
 
   /** authored HUD widgets (UMG designer) */
   hudWidgets: HudWidget[] = []
@@ -224,10 +229,15 @@ export class World {
       }
       if (a.type === 'SoundEmitter' && a.soundEmitterProps?.autoPlay && a.soundEmitterProps.metaSoundName) {
         const p = a.root.getWorldPosition(new THREE.Vector3())
-        playMetaSound(a.soundEmitterProps.metaSoundName, {
-          volume: a.soundEmitterProps.volume,
-          loop: a.soundEmitterProps.loop,
-          at: a.soundEmitterProps.spatial ? ([p.x, p.y, p.z] as [number, number, number]) : undefined,
+        const sp = a.soundEmitterProps
+        playMetaSound(sp.metaSoundName, {
+          volume: sp.volume,
+          loop: sp.loop,
+          at: sp.spatial ? ([p.x, p.y, p.z] as [number, number, number]) : undefined,
+          falloff: sp.falloff,
+          minDistance: sp.minDistance,
+          maxDistance: sp.maxDistance,
+          customCurve: sp.customCurve,
         })
       }
     }
@@ -355,6 +365,8 @@ export class World {
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.sounds = level.sounds ? { ...level.sounds } : {}
+    this.soundAttenuation = level.soundAttenuation ? JSON.parse(JSON.stringify(level.soundAttenuation)) : {}
+    setSoundAttenuationDefaults(this.soundAttenuation)
     this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
     this.hdri = level.hdri ?? null
     for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
@@ -413,7 +425,7 @@ export class World {
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
       const st = this.playClock % this.sequence.duration
-      sampleSequence(this, this.sequence, st)
+      sampleSequence(this, this.sequence, st, hasAudioTracks(this.sequence))
       const cut = cameraCutAt(this.sequence, st)
       if (cut !== this.lastCameraCut) {
         this.lastCameraCut = cut
@@ -541,6 +553,9 @@ export class World {
       sequence: JSON.parse(JSON.stringify(this.sequence)),
       data: JSON.parse(JSON.stringify(this.dataTables)),
       sounds: { ...this.sounds },
+      soundAttenuation: Object.keys(this.soundAttenuation).length
+        ? JSON.parse(JSON.stringify(this.soundAttenuation))
+        : undefined,
       hud: JSON.parse(JSON.stringify(this.hudWidgets)),
       hdri: this.hdri ?? undefined,
       levelLinks: this.levelLinks.length
@@ -571,6 +586,8 @@ export class World {
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
     this.sounds = level.sounds ? { ...level.sounds } : {}
+    this.soundAttenuation = level.soundAttenuation ? JSON.parse(JSON.stringify(level.soundAttenuation)) : {}
+    setSoundAttenuationDefaults(this.soundAttenuation)
     this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
     this.hdri = level.hdri ?? null
     this.levelLinks = level.levelLinks ? JSON.parse(JSON.stringify(level.levelLinks)) : []
@@ -730,6 +747,13 @@ export class World {
           rebuildLabel3D(actor)
         }
         break
+      case 'Widget3D':
+        actor = createWidget3DActor(sa.name, sa.id)
+        if (sa.widget3D) {
+          actor.widget3DProps = { ...sa.widget3D }
+          syncWidget3D(actor, this.hudWidgets)
+        }
+        break
       default:
         actor = createEmptyActor(sa.name, sa.id)
     }
@@ -772,6 +796,8 @@ export class World {
     }
     if (sa.syncProperties?.length) actor.syncProperties = [...sa.syncProperties]
     if (sa.syncSpawn) actor.syncSpawn = true
+    if (sa.netOwnerId) actor.netOwnerId = sa.netOwnerId
+    if (sa.clientPredicted) actor.clientPredicted = true
     if (sa.ikTargets?.length) {
       actor.ikTargets = sa.ikTargets.map((t) => ({
         chain: t.chain,
@@ -787,6 +813,7 @@ export class World {
           : undefined,
       }
     }
+    applySerializedBakedAO(actor, sa)
     return actor
   }
 }
