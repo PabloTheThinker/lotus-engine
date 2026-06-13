@@ -18,6 +18,14 @@ import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
 import { undo, redo, runCommand } from './editor/commands'
 import { CommandPalette, installPlugin, loadUserPlugins, registerPlugin } from './editor/palette'
+import {
+  registerConsoleCommand,
+  registerImporter,
+  registerNodeType,
+  registerPanel,
+  registerPanelCallback,
+} from './editor/plugins'
+import { PluginManagerModal } from './editor/PluginManager'
 import { PreferencesModal, loadPrefs } from './editor/Preferences'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
@@ -37,6 +45,11 @@ import { PreferencesModal, loadPrefs } from './editor/Preferences'
   buildPlayableHTML,
   registerPlugin,
   installPlugin,
+  registerNodeType,
+  registerPanel,
+  registerImporter,
+  registerConsoleCommand,
+  registerPanelCallback,
   getLiveSnapshot: () => {
     const s = useEditor.getState()
     return getLiveSnapshot(world, s)
@@ -132,6 +145,7 @@ export default function App() {
       <StatusBar />
       <CommandPalette />
       <PrefsHost />
+      <PluginManagerHost />
     </div>
   )
 }
@@ -141,4 +155,11 @@ function PrefsHost() {
   const setShow = useEditor((s) => s.setShowPrefs)
   if (!show) return null
   return <PreferencesModal onClose={() => setShow(false)} />
+}
+
+function PluginManagerHost() {
+  const show = useEditor((s) => s.showPluginManager)
+  const setShow = useEditor((s) => s.setShowPluginManager)
+  if (!show) return null
+  return <PluginManagerModal onClose={() => setShow(false)} />
 }

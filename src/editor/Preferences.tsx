@@ -5,10 +5,14 @@ import { useEditor } from './store'
  * Editor Preferences — UE Editor Preferences modal (the most-touched subset):
  * camera, invert look, autosave. Persisted in localStorage; applied live.
  */
+export type ExportQuality = 'desktop' | 'mobile'
+
 export interface Prefs {
   invertLookY: boolean
   autosaveSeconds: number
   defaultCameraSpeed: number
+  /** playable HTML export preset — mobile disables bloom + caps resolution */
+  exportQuality: ExportQuality
 }
 
 const KEY = 'vektra-engine.prefs'
@@ -20,9 +24,10 @@ export function loadPrefs(): Prefs {
       invertLookY: !!raw.invertLookY,
       autosaveSeconds: raw.autosaveSeconds ?? 5,
       defaultCameraSpeed: raw.defaultCameraSpeed ?? 4,
+      exportQuality: raw.exportQuality === 'mobile' ? 'mobile' : 'desktop',
     }
   } catch {
-    return { invertLookY: false, autosaveSeconds: 5, defaultCameraSpeed: 4 }
+    return { invertLookY: false, autosaveSeconds: 5, defaultCameraSpeed: 4, exportQuality: 'desktop' }
   }
 }
 
@@ -72,9 +77,25 @@ export function PreferencesModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => update({ autosaveSeconds: Math.max(2, parseInt(e.target.value) || 5) })}
             />
           </label>
+          <label className="field">
+            <span>Export Quality</span>
+            <select value={prefs.exportQuality} onChange={(e) => update({ exportQuality: e.target.value as ExportQuality })}>
+              <option value="desktop">Desktop (default bloom + resolution)</option>
+              <option value="mobile">Mobile (no bloom, 1× pixel ratio)</option>
+            </select>
+          </label>
           <div className="panel-empty" style={{ padding: '4px 0' }}>
-            Autosave interval applies on next reload. Snap presets live in the toolbar dropdowns; input bindings in World Settings → Input Map.
+            Autosave interval applies on next reload. Export quality applies to File → Export Playable HTML. Input bindings in World Settings → Input Map.
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              useEditor.getState().setShowPluginManager(true)
+            }}
+          >
+            Open Plugin Manager…
+          </button>
         </div>
       </div>
     </div>

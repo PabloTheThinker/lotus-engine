@@ -23,11 +23,30 @@ export interface BPVariable {
   value: number
 }
 
+/** Data pin on a blueprint function (macro inputs/outputs). */
+export interface BPFunctionPin {
+  key: string
+  label: string
+  default?: number
+}
+
+/** Collapsed subgraph — inlined at compile time when CallFunction is emitted. */
+export interface BPFunction {
+  id: string
+  name: string
+  nodes: BPNode[]
+  edges: BPEdge[]
+  dataIns: BPFunctionPin[]
+  dataOuts: BPFunctionPin[]
+}
+
 export interface BlueprintGraph {
   nodes: BPNode[]
   edges: BPEdge[]
   /** typed blueprint variables (compiled as locals, set/get via nodes) */
   variables?: BPVariable[]
+  /** macro/function subgraphs keyed by id */
+  functions?: Record<string, BPFunction>
 }
 
 export interface BPPropDef {
@@ -40,13 +59,15 @@ export interface BPPropDef {
 
 export interface BPNodeDef {
   title: string
-  category: 'Events' | 'Actions' | 'Flow' | 'Data'
+  category: 'Events' | 'Actions' | 'Flow' | 'Data' | 'Function'
   color: string
   hasExecIn: boolean
   execOuts: string[] // port names
   props: BPPropDef[]
   /** prop keys that accept data-pin wires (expression overrides the literal) */
   dataIns?: string[]
+  /** optional data output port keys (CallFunction / FunctionReturn) */
+  dataOuts?: string[]
   /** pure data node: no exec pins, one data output, evaluated lazily on pull */
   pure?: boolean
   /** emit JS given the node, exec-out chains, and data-input expressions */
@@ -437,6 +458,39 @@ export const NODE_DEFS: Record<string, BPNodeDef> = {
     props: [],
     emit: (n, o) => `__flip['${n.id}'] = !__flip['${n.id}'];\nif (__flip['${n.id}']) {\n${o.a ?? ''}\n} else {\n${o.b ?? ''}\n}`,
   },
+
+  // ───── Functions / Macros (subgraphs inlined at compile) ─────
+  FunctionEntry: {
+    title: 'Function Entry',
+    category: 'Function',
+    color: '#8b5cf6',
+    hasExecIn: false,
+    execOuts: ['then'],
+    props: [],
+    dataOuts: ['out'],
+    emit: (_n, o) => o.then ?? '',
+  },
+  FunctionReturn: {
+    title: 'Function Return',
+    category: 'Function',
+    color: '#8b5cf6',
+    hasExecIn: true,
+    execOuts: [],
+    props: [],
+    dataIns: ['out'],
+    emit: () => '',
+  },
+  CallFunction: {
+    title: 'Call Function',
+    category: 'Function',
+    color: '#7c3aed',
+    hasExecIn: true,
+    execOuts: ['then'],
+    props: [{ key: 'functionId', label: 'Function', kind: 'text', default: '' }],
+    dataIns: [],
+    dataOuts: [],
+    emit: () => '/* CallFunction — inlined by compiler */',
+  },
 }
 
 let bpCounter = 0
@@ -452,20 +506,196 @@ export function emptyGraph(): BlueprintGraph {
   }
 }
 
-/** Compile a blueprint graph to per-actor script JS. */
-export function compileBlueprint(graph: BlueprintGraph): string {
-  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+type CompileCtx = {
+  nodes: BPNode[]
+  edges: BPEdge[]
+  byId: Map<string, BPNode>
+  dataBindings?: Map<string, string>
+  returnOuts?: Record<string, string>
+}
 
-  // lazy data-pin pull: walk backwards through pure nodes building an expression
-  const dataExpr = (nodeId: string, depth: number): string => {
+/** Resolve function data pins for editor rendering / compile. */
+export function getFunctionPins(graph: BlueprintGraph, functionId: string): { dataIns: BPFunctionPin[]; dataOuts: BPFunctionPin[] } {
+  const fn = graph.functions?.[functionId]
+  return { dataIns: fn?.dataIns ?? [], dataOuts: fn?.dataOuts ?? [] }
+}
+
+/** Collapse selected nodes into a macro function + CallFunction replacement. */
+export function collapseToFunction(graph: BlueprintGraph, selectedIds: Set<string>, name: string): string | null {
+  if (selectedIds.size < 1) return 'Select at least one node'
+  const blocked = [...selectedIds].filter((id) => {
+    const n = graph.nodes.find((x) => x.id === id)
+    return n && NODE_DEFS[n.type]?.category === 'Events'
+  })
+  if (blocked.length) return 'Cannot collapse event nodes into a function'
+
+  const fnId = newNodeId()
+  const nodes = graph.nodes.filter((n) => selectedIds.has(n.id))
+  const internalEdges = graph.edges.filter((e) => {
+    const fromId = e.from.split(':')[0]
+    const toId = e.to.split(':')[0]
+    return selectedIds.has(fromId) && selectedIds.has(toId)
+  })
+
+  const boundaryExecIns: string[] = []
+  const boundaryExecOuts: { from: string; port: string }[] = []
+  const boundaryDataIns: { toNode: string; prop: string; fromNode: string }[] = []
+  const boundaryDataOuts: { fromNode: string; toNode: string; prop: string }[] = []
+
+  for (const e of graph.edges) {
+    const fromId = e.from.split(':')[0]
+    const toId = e.to.split(':')[0]
+    const fromIn = selectedIds.has(fromId)
+    const toIn = selectedIds.has(toId)
+    if (!fromIn && toIn && e.to.endsWith(':in')) boundaryExecIns.push(toId)
+    if (fromIn && !toIn && !e.to.includes(':prop:')) {
+      const [, port] = e.from.split(':')
+      boundaryExecOuts.push({ from: fromId, port })
+    }
+    if (!fromIn && toIn && e.to.includes(':prop:')) {
+      boundaryDataIns.push({ toNode: toId, prop: e.to.split(':prop:')[1], fromNode: fromId })
+    }
+    if (fromIn && !toIn && e.to.includes(':prop:')) {
+      boundaryDataOuts.push({ fromNode: fromId, toNode: toId, prop: e.to.split(':prop:')[1] })
+    }
+  }
+
+  const dataIns: BPFunctionPin[] = boundaryDataIns.map((_, i) => ({
+    key: `in${i}`,
+    label: `In ${i + 1}`,
+    default: 0,
+  }))
+  const dataOuts: BPFunctionPin[] = boundaryDataOuts.map((_, i) => ({
+    key: `out${i}`,
+    label: `Out ${i + 1}`,
+  }))
+
+  const entryId = newNodeId()
+  const returnId = newNodeId()
+  const fnNodes = nodes.map((n) => ({ ...n }))
+  const fnEdges = internalEdges.map((e) => ({ ...e }))
+  fnNodes.push({ id: entryId, type: 'FunctionEntry', x: 20, y: 60, props: {} })
+  fnNodes.push({ id: returnId, type: 'FunctionReturn', x: 420, y: 60, props: {} })
+
+  for (const targetId of boundaryExecIns) fnEdges.push({ from: `${entryId}:then`, to: `${targetId}:in` })
+  for (const b of boundaryExecOuts) fnEdges.push({ from: `${b.from}:${b.port}`, to: `${returnId}:in` })
+  for (let i = 0; i < boundaryDataIns.length; i++) {
+    fnEdges.push({ from: `${entryId}:data:${dataIns[i].key}`, to: `${boundaryDataIns[i].toNode}:prop:${boundaryDataIns[i].prop}` })
+  }
+  for (let i = 0; i < boundaryDataOuts.length; i++) {
+    fnEdges.push({ from: `${boundaryDataOuts[i].fromNode}:data`, to: `${returnId}:prop:${dataOuts[i].key}` })
+  }
+
+  graph.functions = graph.functions ?? {}
+  graph.functions[fnId] = { id: fnId, name, nodes: fnNodes, edges: fnEdges, dataIns, dataOuts }
+
+  const minX = Math.min(...nodes.map((n) => n.x))
+  const minY = Math.min(...nodes.map((n) => n.y))
+  const callId = newNodeId()
+
+  const remainingEdges = graph.edges.filter((e) => {
+    const fromId = e.from.split(':')[0]
+    const toId = e.to.split(':')[0]
+    return !selectedIds.has(fromId) && !selectedIds.has(toId)
+  })
+
+  for (const targetId of boundaryExecIns) {
+    const ext = graph.edges.find((e) => e.to === `${targetId}:in` && !selectedIds.has(e.from.split(':')[0]))
+    if (ext) remainingEdges.push({ from: ext.from, to: `${callId}:in` })
+  }
+  for (const b of boundaryExecOuts) {
+    const ext = graph.edges.find((e) => e.from === `${b.from}:${b.port}`)
+    if (ext) remainingEdges.push({ from: `${callId}:then`, to: ext.to })
+  }
+  for (let i = 0; i < boundaryDataIns.length; i++) {
+    const ext = graph.edges.find(
+      (e) => e.to === `${boundaryDataIns[i].toNode}:prop:${boundaryDataIns[i].prop}` && !selectedIds.has(e.from.split(':')[0]),
+    )
+    if (ext) remainingEdges.push({ from: ext.from, to: `${callId}:prop:${dataIns[i].key}` })
+  }
+  for (let i = 0; i < boundaryDataOuts.length; i++) {
+    const ext = graph.edges.find(
+      (e) => e.from.startsWith(`${boundaryDataOuts[i].fromNode}:`) && !selectedIds.has(e.to.split(':')[0]),
+    )
+    if (ext) remainingEdges.push({ from: `${callId}:data:${dataOuts[i].key}`, to: ext.to })
+  }
+
+  graph.nodes = graph.nodes.filter((n) => !selectedIds.has(n.id))
+  graph.nodes.push({ id: callId, type: 'CallFunction', x: minX, y: minY, props: { functionId: fnId } })
+  graph.edges = remainingEdges
+  return null
+}
+
+function compileGraphBody(graph: BlueprintGraph, rootCtx?: Partial<CompileCtx>): { begin: string[]; tick: string[] } {
+  const ctx: CompileCtx = {
+    nodes: rootCtx?.nodes ?? graph.nodes,
+    edges: rootCtx?.edges ?? graph.edges,
+    byId: new Map((rootCtx?.nodes ?? graph.nodes).map((n) => [n.id, n])),
+    dataBindings: rootCtx?.dataBindings,
+    returnOuts: rootCtx?.returnOuts,
+  }
+
+  const compileCallDataOut = (callNode: BPNode, port: string, depth: number): string => {
+    const fnId = String(callNode.props.functionId ?? '')
+    const fn = graph.functions?.[fnId]
+    if (!fn) return '0'
+    const pin = fn.dataOuts.find((p) => p.key === port)
+    if (!pin) return '0'
+    const ret = fn.nodes.find((n) => n.type === 'FunctionReturn')
+    if (!ret) return '0'
+    const edge = fn.edges.find((e) => e.to === `${ret.id}:prop:${port}`)
+    if (!edge) return '0'
+    const subCtx: CompileCtx = {
+      nodes: fn.nodes,
+      edges: fn.edges,
+      byId: new Map(fn.nodes.map((n) => [n.id, n])),
+      dataBindings: new Map(),
+    }
+    const subDataExpr = (nodeId: string, d: number, dataPort?: string): string => {
+      if (d > 32) return '0'
+      const node = subCtx.byId.get(nodeId)
+      if (!node) return '0'
+      if (node.type === 'FunctionEntry' && dataPort) {
+        const bindEdge = graph.edges.find((e) => e.to === `${callNode.id}:prop:${dataPort}`)
+        return bindEdge ? dataExpr(bindEdge.from.split(':')[0], d + 1) : '0'
+      }
+      const def = NODE_DEFS[node.type]
+      if (!def?.pure || !def.emitExpr) return '0'
+      const ins: Record<string, string> = {}
+      for (const key of def.dataIns ?? []) {
+        const e2 = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+        if (e2) {
+          const [src, kind, p] = e2.from.split(':')
+          ins[key] = kind === 'data' && p ? subDataExpr(src, d + 1, p) : subDataExpr(src, d + 1)
+        }
+      }
+      return def.emitExpr(node, ins)
+    }
+    const [src, kind, p] = edge.from.split(':')
+    return kind === 'data' && p ? subDataExpr(src, depth + 1, p) : subDataExpr(src, depth + 1)
+  }
+
+  const dataExpr = (nodeId: string, depth: number, dataPort?: string): string => {
     if (depth > 32) return '0'
-    const node = byId.get(nodeId)
-    const def = node && NODE_DEFS[node.type]
-    if (!node || !def?.pure || !def.emitExpr) return '0'
+    const node = ctx.byId.get(nodeId)
+    if (!node) return '0'
+
+    if (node.type === 'FunctionEntry' && dataPort) {
+      return ctx.dataBindings?.get(dataPort) ?? '0'
+    }
+    if (node.type === 'CallFunction' && dataPort) {
+      return compileCallDataOut(node, dataPort, depth)
+    }
+
+    const def = NODE_DEFS[node.type]
+    if (!def?.pure || !def.emitExpr) return '0'
     const ins: Record<string, string> = {}
     for (const key of def.dataIns ?? []) {
-      const edge = graph.edges.find((e) => e.to === `${node.id}:prop:${key}`)
-      if (edge) ins[key] = dataExpr(edge.from.split(':')[0], depth + 1)
+      const edge = ctx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+      if (edge) {
+        const [src, kind, port] = edge.from.split(':')
+        ins[key] = kind === 'data' && port ? dataExpr(src, depth + 1, port) : dataExpr(src, depth + 1)
+      }
     }
     return def.emitExpr(node, ins)
   }
@@ -473,42 +703,131 @@ export function compileBlueprint(graph: BlueprintGraph): string {
   const dataInsFor = (node: BPNode, def: BPNodeDef): Record<string, string> => {
     const ins: Record<string, string> = {}
     for (const key of def.dataIns ?? []) {
-      const edge = graph.edges.find((e) => e.to === `${node.id}:prop:${key}`)
-      if (edge) ins[key] = dataExpr(edge.from.split(':')[0], 0)
+      const edge = ctx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+      if (!edge) continue
+      const [src, kind, port] = edge.from.split(':')
+      ins[key] = kind === 'data' && port ? dataExpr(src, 0, port) : dataExpr(src, 0)
     }
     return ins
   }
 
   const follow = (nodeId: string, port: string, depth: number): string => {
     if (depth > 64) return '/* chain too deep */'
-    const edge = graph.edges.find((e) => e.from === `${nodeId}:${port}` && !e.to.includes(':prop:'))
+    const edge = ctx.edges.find((e) => e.from === `${nodeId}:${port}` && !e.to.includes(':prop:'))
     if (!edge) return ''
-    const next = byId.get(edge.to.split(':')[0])
+    const next = ctx.byId.get(edge.to.split(':')[0])
     if (!next) return ''
     return emitNode(next, depth + 1)
   }
 
+  const inlineCallFunction = (callNode: BPNode, outerOuts: Record<string, string>, depth: number): string => {
+    const fnId = String(callNode.props.functionId ?? '')
+    const fn = graph.functions?.[fnId]
+    if (!fn) return `/* unknown function ${fnId} */\n${outerOuts.then ?? ''}`
+
+    const bindings = new Map<string, string>()
+    for (const pin of fn.dataIns) {
+      const edge = graph.edges.find((e) => e.to === `${callNode.id}:prop:${pin.key}`)
+      bindings.set(pin.key, edge ? dataExpr(edge.from.split(':')[0], 0, edge.from.split(':')[2]) : `${pin.default ?? 0}`)
+    }
+
+    const entry = fn.nodes.find((n) => n.type === 'FunctionEntry')
+    if (!entry) return outerOuts.then ?? ''
+
+    const subCtx: CompileCtx = {
+      nodes: fn.nodes,
+      edges: fn.edges,
+      byId: new Map(fn.nodes.map((n) => [n.id, n])),
+      dataBindings: bindings,
+      returnOuts: outerOuts,
+    }
+
+    const subDataExpr = (nodeId: string, depth: number, dataPort?: string): string => {
+      if (depth > 32) return '0'
+      const node = subCtx.byId.get(nodeId)
+      if (!node) return '0'
+      if (node.type === 'FunctionEntry' && dataPort) return bindings.get(dataPort) ?? '0'
+      const def = NODE_DEFS[node.type]
+      if (!def?.pure || !def.emitExpr) return '0'
+      const ins: Record<string, string> = {}
+      for (const key of def.dataIns ?? []) {
+        const edge = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+        if (edge) {
+          const [src, kind, port] = edge.from.split(':')
+          ins[key] = kind === 'data' && port ? subDataExpr(src, depth + 1, port) : subDataExpr(src, depth + 1)
+        }
+      }
+      return def.emitExpr(node, ins)
+    }
+
+    const subDataInsFor = (node: BPNode, def: BPNodeDef): Record<string, string> => {
+      const ins: Record<string, string> = {}
+      for (const key of def.dataIns ?? []) {
+        const edge = subCtx.edges.find((e) => e.to === `${node.id}:prop:${key}`)
+        if (!edge) continue
+        const [src, kind, port] = edge.from.split(':')
+        ins[key] = kind === 'data' && port ? subDataExpr(src, 0, port) : subDataExpr(src, 0)
+      }
+      return ins
+    }
+
+    const subFollow = (nodeId: string, port: string, depth: number): string => {
+      if (depth > 64) return ''
+      const edge = subCtx.edges.find((e) => e.from === `${nodeId}:${port}` && !e.to.includes(':prop:'))
+      if (!edge) return ''
+      const next = subCtx.byId.get(edge.to.split(':')[0])
+      if (!next) return ''
+      return subEmitNode(next, depth + 1)
+    }
+
+    const subEmitNode = (node: BPNode, depth: number): string => {
+      if (node.type === 'FunctionReturn') return outerOuts.then ?? ''
+      const def = NODE_DEFS[node.type]
+      if (!def) return ''
+      const outs: Record<string, string> = {}
+      for (const p of def.execOuts) outs[p] = subFollow(node.id, p, depth)
+      const body = def.emit(node, outs, subDataInsFor(node, def))
+      if (!body.trim()) return body
+      return `__pulse('${node.id}');\n${body}`
+    }
+
+    return `__pulse('${callNode.id}');\n${subEmitNode(entry, depth)}`
+  }
+
   const emitNode = (node: BPNode, depth: number): string => {
+    if (node.type === 'CallFunction') {
+      const outs: Record<string, string> = {}
+      for (const port of NODE_DEFS.CallFunction.execOuts) outs[port] = follow(node.id, port, depth)
+      return inlineCallFunction(node, outs, depth)
+    }
+    if (node.type === 'FunctionReturn') return ctx.returnOuts?.then ?? ''
     const def = NODE_DEFS[node.type]
     if (!def) return `/* unknown node ${node.type} */`
     const outs: Record<string, string> = {}
     for (const port of def.execOuts) outs[port] = follow(node.id, port, depth)
     const body = def.emit(node, outs, dataInsFor(node, def))
     if (!body.trim()) return body
-    // exec pulse → blueprint debugger highlights this node live
     return `__pulse('${node.id}');\n${body}`
   }
 
   const beginChains: string[] = []
   const tickChains: string[] = []
-  for (const node of graph.nodes) {
+  for (const node of ctx.nodes) {
     const def = NODE_DEFS[node.type]
     if (!def || def.hasExecIn) continue
+    if (node.type === 'FunctionEntry' || node.type === 'FunctionReturn') continue
     const code = emitNode(node, 0)
     if (!code.trim()) continue
     if (node.type === 'EventBeginPlay' || node.type === 'EventSignal') beginChains.push(code)
     else tickChains.push(code)
   }
+
+  return { begin: beginChains, tick: tickChains }
+}
+
+/** Compile a blueprint graph to per-actor script JS. */
+export function compileBlueprint(graph: BlueprintGraph): string {
+  const { begin, tick } = compileGraphBody(graph)
 
   const varInit = (graph.variables ?? [])
     .map((v) => `__vars[${JSON.stringify(v.name)}] = ${Number(v.value) || 0}`)
@@ -527,7 +846,7 @@ function __after(s, fn) { __timers.push({ t: api.time() + s, fn }) }
 function __pulse(id) { if (globalThis.__bpPulse) globalThis.__bpPulse(actor.id, id) }
 
 function onBeginPlay() {
-${indent(beginChains.join('\n'))}
+${indent(begin.join('\n'))}
 }
 
 function onTick(dt) {
@@ -536,7 +855,7 @@ function onTick(dt) {
   for (let i = __timers.length - 1; i >= 0; i--) {
     if (api.time() >= __timers[i].t) { const f = __timers[i].fn; __timers.splice(i, 1); f() }
   }
-${indent(tickChains.join('\n'))}
+${indent(tick.join('\n'))}
 }
 `
 }

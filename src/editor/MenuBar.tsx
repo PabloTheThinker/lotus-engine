@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { redo, undo, runCommand, DeleteActorCommand } from './commands'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
-import { exportPlayable } from './exportPlayable'
+import { exportPlayable, exportPlayablePWA } from './exportPlayable'
 import { spawnAsset } from './spawn'
 import { useEditor } from './store'
 
@@ -71,7 +71,8 @@ export function MenuBar() {
           { label: 'Open Level…', action: openLevelFromFile },
           { label: 'Save Level', shortcut: 'Ctrl+S', action: saveLevelToFile },
           { label: '', divider: true },
-          { label: 'Export Playable HTML', action: exportPlayable },
+          { label: 'Export Playable HTML', action: () => exportPlayable() },
+          { label: 'Export Playable HTML (PWA)', action: exportPlayablePWA },
         ]}
       />
       <Menu
@@ -90,6 +91,14 @@ export function MenuBar() {
               if (id) runCommand(new DeleteActorCommand(id))
             },
           },
+        ]}
+      />
+      <Menu
+        title="Window"
+        items={[
+          { label: 'Plugin Manager…', action: () => useEditor.getState().setShowPluginManager(true) },
+          { label: '', divider: true },
+          { label: 'Editor Preferences…', action: () => useEditor.getState().setShowPrefs(true) },
         ]}
       />
       <Menu

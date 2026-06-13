@@ -176,3 +176,44 @@ export function sculptStamp(
   }
   return changed
 }
+
+/** Bilinear sample of landscape height at world XZ (returns world Y or null if no hit). */
+export function sampleLandscapeHeight(actors: Iterable<Actor>, worldX: number, worldZ: number): number | null {
+  let best: number | null = null
+  const probe = new THREE.Vector3(worldX, 0, worldZ)
+  const local = new THREE.Vector3()
+  const worldPt = new THREE.Vector3()
+
+  for (const actor of actors) {
+    if (actor.type !== 'Landscape' || !actor.landscapeProps || !actor.mesh) continue
+    const props = actor.landscapeProps
+    const mesh = actor.mesh
+    local.copy(probe)
+    mesh.worldToLocal(local)
+
+    const half = props.size / 2
+    const n = props.resolution + 1
+    const step = props.size / props.resolution
+    const gx = (local.x + half) / step
+    const gy = (half - local.y) / step
+    if (gx < 0 || gy < 0 || gx > n - 1 || gy > n - 1) continue
+
+    const x0 = Math.floor(gx)
+    const y0 = Math.floor(gy)
+    const fx = gx - x0
+    const fy = gy - y0
+    const x1 = Math.min(x0 + 1, n - 1)
+    const y1 = Math.min(y0 + 1, n - 1)
+    const h00 = props.heights[y0 * n + x0] ?? 0
+    const h10 = props.heights[y0 * n + x1] ?? h00
+    const h01 = props.heights[y1 * n + x0] ?? h00
+    const h11 = props.heights[y1 * n + x1] ?? h00
+    const h = THREE.MathUtils.lerp(THREE.MathUtils.lerp(h00, h10, fx), THREE.MathUtils.lerp(h01, h11, fx), fy)
+
+    local.z = h
+    worldPt.copy(local)
+    mesh.localToWorld(worldPt)
+    if (best === null || worldPt.y > best) best = worldPt.y
+  }
+  return best
+}

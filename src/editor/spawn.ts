@@ -8,6 +8,7 @@ import { DEFAULT_LANDSCAPE } from '../engine/landscape'
 import { DEFAULT_WATER } from '../engine/water'
 import { DEFAULT_PCG } from '../engine/pcg'
 import { AddActorCommand, runCommand } from './commands'
+import { getPluginNodeType } from './plugins'
 
 export type AssetPayload =
   | { kind: 'mesh'; geometry: GeometryKind }
@@ -20,12 +21,14 @@ export type AssetPayload =
   | { kind: 'foliage' }
   | { kind: 'landscape' }
   | { kind: 'trigger' }
+  | { kind: 'soundemitter' }
   | { kind: 'gridmap' }
   | { kind: 'probe' }
   | { kind: 'water' }
   | { kind: 'pcg' }
   | { kind: 'playerstart' }
   | { kind: 'imported'; assetId: string; name: string }
+  | { kind: 'plugin-node'; nodeType: string }
 
 const LIGHT_DEFAULTS = {
   RectLight: { color: '#ffffff', intensity: 8, width: 3, height: 2 },
@@ -159,7 +162,16 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         ...base,
         name: uniqueName('Trigger'),
         type: 'TriggerVolume',
+        trigger: { reverbPreset: '' },
         transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]], scale: [3, 2, 3] },
+      }
+    case 'soundemitter':
+      return {
+        ...base,
+        name: uniqueName('SoundEmitter'),
+        type: 'SoundEmitter',
+        soundEmitter: { metaSoundName: '', volume: 1, loop: false, autoPlay: true, spatial: true },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]] },
       }
     case 'playerstart':
       return {
@@ -170,6 +182,11 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
       }
     case 'imported':
       return { ...base, name: uniqueName(payload.name), type: 'ImportedMesh', assetId: payload.assetId }
+    case 'plugin-node': {
+      const def = getPluginNodeType(payload.nodeType)
+      if (!def) throw new Error(`Unknown plugin node type: ${payload.nodeType}`)
+      return def.factory(position)
+    }
   }
 }
 

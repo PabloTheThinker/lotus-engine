@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
 import { ParticleSystem, DEFAULT_PARTICLES } from './particles'
 import type { ActorType, CameraProps, GeometryKind, LightProps, MaterialProps } from './types'
-import { DEFAULT_FOLIAGE, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS } from './types'
+import { DEFAULT_FOLIAGE, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS, DEFAULT_SOUND_EMITTER } from './types'
 import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
@@ -160,8 +160,10 @@ export function createParticleEmitterActor(name: string, id = nextActorId()): Ac
   actor.particleProps = { ...DEFAULT_PARTICLES }
   const system = new ParticleSystem(actor.particleProps)
   system.points.userData.actorId = id
+  system.ribbon.userData.actorId = id
   actor.particleSystem = system
   actor.root.add(system.points)
+  actor.root.add(system.ribbon)
   // editor pick proxy + icon
   const proxy = new THREE.Mesh(
     new THREE.SphereGeometry(0.25, 10, 8),
@@ -298,6 +300,7 @@ export function createCustomMeshActor(
 /** TriggerVolume — unit box volume emitting enter:/exit: signals for the pawn. */
 export function createTriggerVolumeActor(name: string, id = nextActorId()): Actor {
   const actor = new Actor(id, name, 'TriggerVolume')
+  actor.triggerProps = { reverbPreset: '' }
   const box = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshBasicMaterial({ color: 0x46a758, wireframe: true, transparent: true, opacity: 0.5, depthWrite: false }),
@@ -306,6 +309,23 @@ export function createTriggerVolumeActor(name: string, id = nextActorId()): Acto
   box.userData.isEditorOnly = true
   actor.mesh = box
   actor.root.add(box)
+  return actor
+}
+
+/** SoundEmitter — plays a MetaSound at this actor's world position during Play. */
+export function createSoundEmitterActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'SoundEmitter')
+  actor.soundEmitterProps = { ...DEFAULT_SOUND_EMITTER }
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.25, 0.5, 8),
+    new THREE.MeshBasicMaterial({ color: 0xc77dff, wireframe: true }),
+  )
+  cone.rotation.x = Math.PI
+  cone.position.y = 0.25
+  cone.userData.actorId = id
+  cone.userData.isEditorOnly = true
+  actor.mesh = cone
+  actor.root.add(cone)
   return actor
 }
 

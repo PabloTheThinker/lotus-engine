@@ -1,4 +1,5 @@
 import { world } from '../engine/World'
+import { execPluginConsoleCommand, getPluginConsoleCommands, pluginConsoleSuggestions } from './plugins'
 import { useEditor } from './store'
 
 /**
@@ -78,9 +79,14 @@ export function execConsoleCommand(raw: string): string | null {
     return `show navmesh ${consoleState.showNavMesh ? 'ON' : 'OFF'}`
   }
   if (lower === 'help' || lower === '?') {
-    push('log', CONSOLE_COMMANDS.join('\n'))
+    const pluginLines = getPluginConsoleCommands().map((c) => `${c.name} — ${c.help}`)
+    const lines = [...CONSOLE_COMMANDS, ...pluginLines]
+    push('log', lines.join('\n'))
     return 'console commands listed (anything else evaluates as JS: world, api, THREE in scope)'
   }
+
+  const pluginHandled = execPluginConsoleCommand(input)
+  if (pluginHandled !== null) return pluginHandled
   // quality-of-life: actor count like UE's `obj list`
   if (lower === 'obj list') {
     return `${world.actors.size} actors`
@@ -92,5 +98,7 @@ export function execConsoleCommand(raw: string): string | null {
 export function consoleSuggestions(prefix: string): string[] {
   const p = prefix.toLowerCase()
   if (!p) return []
-  return CONSOLE_COMMANDS.filter((c) => c.toLowerCase().startsWith(p)).slice(0, 6)
+  const builtin = CONSOLE_COMMANDS.filter((c) => c.toLowerCase().startsWith(p))
+  const plugin = pluginConsoleSuggestions(p)
+  return [...builtin, ...plugin].slice(0, 8)
 }

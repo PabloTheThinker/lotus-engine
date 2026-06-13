@@ -16,22 +16,25 @@ import {
   buildFoliageMesh,
   createPostProcessVolumeActor,
 } from './factory'
-import { createLandscapeActor, buildLandscapeMesh } from './landscape'
+import { createLandscapeActor, buildLandscapeMesh, sampleLandscapeHeight } from './landscape'
+import { DEFAULT_PARTICLES } from './particles'
 import { createWaterActor, buildWaterMesh, updateWater } from './water'
 import { createPCGVolumeActor } from './pcg'
+import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock } from './gameplayAbilities'
 import { hud, resetGameplay, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
 import { resetNav } from './nav'
-import { registerSound, stopAllSounds } from './audio'
-import { createTriggerVolumeActor, createReflectionProbeActor, createCustomMeshActor } from './factory'
+import { playMetaSound, registerSound, setReverbZone, stopAllSounds, type ReverbPreset } from './audio'
+import { createTriggerVolumeActor, createSoundEmitterActor, createReflectionProbeActor, createCustomMeshActor } from './factory'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
 import { setViewCamera } from './gameplay'
 import { applyActorMaterial, getEffectiveMaterialGraph } from './materialAssets'
 import { applyMaterialGraph } from './materialGraph'
-import type { EnvironmentSettings, HudWidget, SerializedActor, SerializedLevel } from './types'
+import type { EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
+import { tickAnimSM, tickBlendSpace1D } from './animStateMachine'
 import { clearActorTicks, recordActorTick } from './profiler'
 
 /**
@@ -70,6 +73,15 @@ export class World {
 
   /** HDRI environment (base64 .hdr) — overrides the sky when set */
   hdri: string | null = null
+
+  /** linked levels for multi-level export + api.loadLevel during PIE */
+  levelLinks: LevelLink[] = []
+
+  /** editor snapshot taken at PIE start — restored when play stops */
+  pieSnapshot: SerializedLevel | null = null
+
+  /** called after api.loadLevel swaps scenes (viewport re-possesses pawn) */
+  onLevelSwitched: (() => void) | null = null
 
   /** probe ids awaiting a cubemap bake (processed by the viewport) */
   probeBakeQueue: string[] = []
@@ -166,21 +178,35 @@ export class World {
 
   beginPlay() {
     this.playing = true
+    if (!this.pieSnapshot) this.pieSnapshot = this.serialize()
     this.playClock = 0
     resetSignals()
     resetGameplay()
+    resetAbilities()
     resetBTs()
     resetNav()
     this.lastCameraCut = null
     this.lastSeqTime = 0
     setDataStore(this.dataTables)
     this.triggerState.clear()
-    this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
-    const api = this.playApi ?? makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition)
+    this.activeReverb = ''
+    setReverbZone('')
+    const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
+    this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel)
+    initAllActorGAS(this.actors.values())
     for (const a of this.actors.values()) {
+      const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, a)
       a.beginPlay(api)
       if (a.particleSystem && a.particleProps && a.particleProps.burst > 0) {
         a.particleSystem.burst(a.particleProps.burst)
+      }
+      if (a.type === 'SoundEmitter' && a.soundEmitterProps?.autoPlay && a.soundEmitterProps.metaSoundName) {
+        const p = a.root.getWorldPosition(new THREE.Vector3())
+        playMetaSound(a.soundEmitterProps.metaSoundName, {
+          volume: a.soundEmitterProps.volume,
+          loop: a.soundEmitterProps.loop,
+          at: a.soundEmitterProps.spatial ? ([p.x, p.y, p.z] as [number, number, number]) : undefined,
+        })
       }
     }
     this.physics.start(this.actors.values())
@@ -200,6 +226,7 @@ export class World {
   private lastCameraCut: string | null = null
   private lastSeqTime = 0
   private triggerState = new Map<string, boolean>()
+  private activeReverb: ReverbPreset = ''
 
   endPlay() {
     this.playing = false
@@ -209,12 +236,110 @@ export class World {
     clearActorTicks()
   }
 
+  /** Restore the editor level after PIE (including mid-play loadLevel switches). */
+  async restoreEditorAfterPIE() {
+    const snap = this.pieSnapshot
+    this.pieSnapshot = null
+    if (snap) await this.load(snap)
+  }
+
+  /** Resolve a linked level name to serialized data (main = editor snapshot at PIE start). */
+  resolveLinkedLevel(name: string): SerializedLevel | null {
+    const key = name.trim().toLowerCase()
+    if (key === 'main') return this.pieSnapshot
+    const link = this.levelLinks.find(
+      (l) => l.name === name || l.name.toLowerCase() === key || sanitizeLevelKey(l.name) === sanitizeLevelKey(name),
+    )
+    return link?.level ?? null
+  }
+
+  /** Switch to a linked level during PIE — preserves Autoload-tagged actors. */
+  async loadLevelDuringPlay(name: string): Promise<boolean> {
+    if (!this.playing) {
+      scriptLog('error', `loadLevel('${name}'): not playing`)
+      return false
+    }
+    const level = this.resolveLinkedLevel(name)
+    if (!level) {
+      scriptLog('error', `loadLevel('${name}'): level not linked (configure in World Settings)`)
+      return false
+    }
+
+    const autoloadIds = new Set(
+      [...this.actors.values()].filter((a) => a.tags.some((t) => t.toLowerCase() === 'autoload')).map((a) => a.id),
+    )
+    const autoloadRoots = [...autoloadIds].map((id) => this.actors.get(id)!.root)
+
+    stopAllSounds()
+    this.physics.stop()
+    for (const a of this.actors.values()) a.endPlay()
+    clearActorTicks()
+    resetSignals()
+    resetGameplay()
+    resetAbilities()
+    resetBTs()
+    resetNav()
+    this.triggerState.clear()
+    hud.clear()
+
+    for (const id of [...this.actors.keys()]) {
+      if (!autoloadIds.has(id)) this.removeActor(id)
+    }
+
+    await this.ingestLevelContent(level, autoloadRoots)
+    this.beginPlay()
+    this.onLevelSwitched?.()
+    scriptLog('log', `loadLevel('${name}')`)
+    return true
+  }
+
+  /** Merge assets + actors from a level blob without clearing the whole world. */
+  private async ingestLevelContent(level: SerializedLevel, preserveRoots: THREE.Object3D[] = []) {
+    this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
+    this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
+    this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}
+    this.sounds = level.sounds ? { ...level.sounds } : {}
+    this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
+    this.hdri = level.hdri ?? null
+    for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
+    this.applyEnvironment()
+
+    for (const [id, asset] of Object.entries(level.assets ?? {})) {
+      if (this.assets.has(id)) continue
+      const bytes = Uint8Array.from(atob(asset.data), (c) => c.charCodeAt(0))
+      const gltf = await new GLTFLoader().parseAsync(bytes.buffer, '')
+      this.assets.set(id, { ...asset, template: gltf.scene, animations: gltf.animations })
+    }
+
+    const preserveSet = new Set(preserveRoots)
+    for (const sa of level.actors) {
+      const actor = this.instantiate(sa)
+      this.actors.set(actor.id, actor)
+      this.scene.add(actor.root)
+      if (actor.cameraHelper) this.scene.add(actor.cameraHelper)
+    }
+    for (const sa of level.actors) {
+      if (sa.parentId && this.actors.has(sa.parentId)) {
+        const child = this.actors.get(sa.id)!
+        child.parentId = sa.parentId
+        this.actors.get(sa.parentId)!.root.add(child.root)
+      }
+    }
+    for (const root of preserveSet) {
+      if (root.parent !== this.scene) this.scene.add(root)
+    }
+  }
+
   /** advance all particle systems — editor preview AND play */
   updateParticles(dt: number) {
     this.editorClock += dt
     const t = this.playing ? this.playClock : this.editorClock
     for (const a of this.actors.values()) {
-      if (a.particleSystem) a.particleSystem.update(dt, a.visible)
+      if (a.particleSystem) {
+        a.root.updateMatrixWorld()
+        const terrainAt = (x: number, z: number) => sampleLandscapeHeight(this.actors.values(), x, z)
+        a.particleSystem.update(dt, a.visible, a.root.matrixWorld, terrainAt)
+      }
       const matGraph = getEffectiveMaterialGraph(a)
       if (matGraph) applyMaterialGraph(a, t, matGraph)
       if (a.waterProps) updateWater(a, t)
@@ -226,6 +351,7 @@ export class World {
   tick(dt: number) {
     if (!this.playing) return
     this.playClock += dt
+    setAbilityPlayClock(this.playClock)
     this.physics.step(dt)
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
@@ -246,17 +372,35 @@ export class World {
     for (const a of this.actors.values()) {
       const t0 = performance.now()
       a.tick(dt)
+      const params = a.animParams ?? {}
+      if (a.blendSpace1D?.samples.length) {
+        tickBlendSpace1D(a, params[a.blendSpace1D.param] ?? 0)
+      } else if (a.animStateMachine) {
+        tickAnimSM(a, dt, params)
+      }
       a.mixer?.update(dt)
       recordActorTick(a.id, a.name, performance.now() - t0)
     }
     tickGameplay(dt, scriptLog)
     if (this.playApi) {
-      tickBTs(dt, () => this.pawnPosition, this.playApi.emit, (m) => scriptLog('log', m))
+      tickBTs(
+        dt,
+        () => this.pawnPosition,
+        this.playApi.emit,
+        (m) => scriptLog('log', m),
+        (actor, abilityId) =>
+          activateAbility(
+            actor,
+            abilityId,
+            makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, (n) => this.loadLevelDuringPlay(n), actor),
+          ),
+      )
     }
-    // trigger volumes: pawn enter/exit → signals "enter:Name" / "exit:Name"
+    // trigger volumes: pawn enter/exit → signals + reverb zones
     if (this.pawnPosition && this.playApi) {
       const p = this.pawnPosition
       const local = new THREE.Vector3()
+      let reverb: ReverbPreset = ''
       for (const a of this.actors.values()) {
         if (a.type !== 'TriggerVolume') continue
         local.copy(p)
@@ -267,6 +411,11 @@ export class World {
           this.triggerState.set(a.id, inside)
           this.playApi.emit(`${inside ? 'enter' : 'exit'}:${a.name}`, a.name)
         }
+        if (inside && a.triggerProps?.reverbPreset) reverb = a.triggerProps.reverbPreset
+      }
+      if (reverb !== this.activeReverb) {
+        this.activeReverb = reverb
+        setReverbZone(reverb)
       }
     }
   }
@@ -301,7 +450,7 @@ export class World {
     }
     return {
       engine: 'vektra',
-      version: 3,
+      version: 4,
       name: this.levelName,
       environment: { ...this.environment },
       assets,
@@ -311,6 +460,9 @@ export class World {
       sounds: { ...this.sounds },
       hud: JSON.parse(JSON.stringify(this.hudWidgets)),
       hdri: this.hdri ?? undefined,
+      levelLinks: this.levelLinks.length
+        ? this.levelLinks.map((l) => ({ name: l.name, level: JSON.parse(JSON.stringify(l.level)) }))
+        : undefined,
     }
   }
 
@@ -328,6 +480,7 @@ export class World {
     this.sounds = level.sounds ? { ...level.sounds } : {}
     this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
     this.hdri = level.hdri ?? null
+    this.levelLinks = level.levelLinks ? JSON.parse(JSON.stringify(level.levelLinks)) : []
     for (const [n, b64] of Object.entries(this.sounds)) void registerSound(n, b64)
     this.applyEnvironment()
     for (const [id, asset] of Object.entries(level.assets ?? {})) {
@@ -395,7 +548,7 @@ export class World {
       case 'ParticleEmitter':
         actor = createParticleEmitterActor(sa.name, sa.id)
         if (sa.particles) {
-          actor.particleProps = { ...sa.particles }
+          actor.particleProps = { ...DEFAULT_PARTICLES, ...sa.particles }
           actor.particleSystem!.props = actor.particleProps
           actor.particleSystem!.refresh()
         }
@@ -442,6 +595,11 @@ export class World {
         break
       case 'TriggerVolume':
         actor = createTriggerVolumeActor(sa.name, sa.id)
+        if (sa.trigger) actor.triggerProps = { ...sa.trigger }
+        break
+      case 'SoundEmitter':
+        actor = createSoundEmitterActor(sa.name, sa.id)
+        if (sa.soundEmitter) actor.soundEmitterProps = { ...sa.soundEmitter }
         break
       case 'PlayerStart':
         actor = createPlayerStartActor(sa.name, sa.id)
@@ -464,6 +622,9 @@ export class World {
     if (sa.scriptVars) actor.scriptVars = { ...sa.scriptVars }
     if (sa.cullDistance) actor.cullDistance = sa.cullDistance
     if (sa.autoPlayClip) actor.autoPlayClip = sa.autoPlayClip
+    if (sa.animStateMachine) actor.animStateMachine = JSON.parse(JSON.stringify(sa.animStateMachine))
+    if (sa.blendSpace1D) actor.blendSpace1D = JSON.parse(JSON.stringify(sa.blendSpace1D))
+    if (sa.animParams) actor.animParams = { ...sa.animParams }
     if (sa.materialGraph && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
       actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
     }
@@ -475,6 +636,8 @@ export class World {
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]
+    if (sa.attributeSetId) actor.attributeSetId = sa.attributeSetId
+    if (sa.abilityIds?.length) actor.abilityIds = [...sa.abilityIds]
     if (sa.postProcess && actor.postProcessProps) Object.assign(actor.postProcessProps, sa.postProcess)
     if (sa.prefabSource) actor.prefabSource = sa.prefabSource
     if (sa.prefabActorId) actor.prefabActorId = sa.prefabActorId
@@ -511,6 +674,12 @@ export function applyLightProps(actor: Actor, props: NonNullable<Actor['lightPro
   if (actor.lightHelper && 'update' in actor.lightHelper) {
     ;(actor.lightHelper as THREE.PointLightHelper).update()
   }
+}
+
+/** Sanitize a level name for manifest keys (dungeon_level → dungeon_level). */
+export function sanitizeLevelKey(name: string): string {
+  const k = name.trim().replace(/[^\w-]+/g, '_').replace(/^_|_$/g, '').toLowerCase()
+  return k || 'level'
 }
 
 // Singleton editor world — one runtime, one world.

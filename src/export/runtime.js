@@ -1,18 +1,25 @@
 /* Vektra Engine — standalone playable runtime. Injected into exported HTML
    alongside the level JSON. Loads three.js (+ optional Rapier physics) from
    CDN and runs the level: scripts, behaviors, particles, foliage, landscape,
-   pawn controllers. */
+   pawn controllers. Supports multi-level manifests + api.loadLevel(). */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { Sky } from 'three/addons/objects/Sky.js'
 
-const LEVEL = window.__VEKTRA_LEVEL__
+const LEVELS = window.__VEKTRA_LEVELS__ ?? (window.__VEKTRA_LEVEL__ ? { main: window.__VEKTRA_LEVEL__ } : null)
+const MAIN_KEY = window.__VEKTRA_MAIN__ ?? 'main'
+const EXPORT = window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
+if (!LEVELS || !LEVELS[MAIN_KEY]) throw new Error('Vektra: no level data')
 
-const renderer = new THREE.WebGLRenderer({ antialias: true })
+let LEVEL = LEVELS[MAIN_KEY]
+const pixelRatio = EXPORT.pixelRatio ?? (EXPORT.quality === 'mobile' ? 1 : Math.min(devicePixelRatio, 2))
+
+const renderer = new THREE.WebGLRenderer({ antialias: EXPORT.quality !== 'mobile' })
 renderer.shadowMap.enabled = true
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = LEVEL.environment.exposure ?? 0.75
 renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.setPixelRatio(pixelRatio)
 renderer.setSize(innerWidth, innerHeight)
 document.body.appendChild(renderer.domElement)
 
@@ -23,21 +30,36 @@ const pressed = new Set()
 addEventListener('keydown', (e) => { if (!keys.has(e.code)) pressed.add(e.code); keys.add(e.code) })
 addEventListener('keyup', (e) => keys.delete(e.code))
 
+let skyObj = null
+let particleSystems = []
+let ticks = []
+let physWorld = null
+let bindings = []
+let clock = 0
+let loadingLevel = false
+
 // ---- environment ----
-const env = LEVEL.environment
-if (env.skyEnabled) {
-  const sky = new Sky()
-  sky.scale.setScalar(450000)
-  const u = sky.material.uniforms
-  u.turbidity.value = 4; u.rayleigh.value = 1.1; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8
-  const phi = THREE.MathUtils.degToRad(90 - env.sunElevation)
-  const theta = THREE.MathUtils.degToRad(env.sunAzimuth)
-  u.sunPosition.value.setFromSphericalCoords(1, phi, theta)
-  scene.add(sky)
-} else {
-  scene.background = new THREE.Color(env.background)
+function applyEnvironment() {
+  const env = LEVEL.environment
+  if (skyObj) { scene.remove(skyObj); skyObj = null }
+  if (env.skyEnabled) {
+    const sky = new Sky()
+    sky.scale.setScalar(450000)
+    const u = sky.material.uniforms
+    u.turbidity.value = 4; u.rayleigh.value = 1.1; u.mieCoefficient.value = 0.004; u.mieDirectionalG.value = 0.8
+    const phi = THREE.MathUtils.degToRad(90 - env.sunElevation)
+    const theta = THREE.MathUtils.degToRad(env.sunAzimuth)
+    u.sunPosition.value.setFromSphericalCoords(1, phi, theta)
+    scene.add(sky)
+    skyObj = sky
+    scene.background = null
+  } else {
+    scene.background = new THREE.Color(env.background)
+  }
+  scene.fog = env.fogEnabled ? new THREE.FogExp2(env.fogColor, env.fogDensity) : null
+  renderer.toneMappingExposure = env.exposure ?? 0.75
 }
-if (env.fogEnabled) scene.fog = new THREE.FogExp2(env.fogColor, env.fogDensity)
+applyEnvironment()
 
 // ---- geometry / actor builders ----
 function buildGeometry(kind) {
@@ -61,9 +83,10 @@ function buildMaterial(m) {
 }
 
 const gltfAssets = {}
-async function loadAssets() {
+async function loadAssets(level) {
   const loader = new GLTFLoader()
-  for (const [id, a] of Object.entries(LEVEL.assets ?? {})) {
+  for (const [id, a] of Object.entries(level.assets ?? {})) {
+    if (gltfAssets[id]) continue
     const bytes = Uint8Array.from(atob(a.data), (c) => c.charCodeAt(0))
     gltfAssets[id] = (await loader.parseAsync(bytes.buffer, '')).scene
   }
@@ -124,14 +147,13 @@ function makeParticles(props) {
   }
 }
 
-const particleSystems = []
 function instantiate(sa) {
   const root = new THREE.Group()
   root.position.fromArray(sa.transform.position)
   root.rotation.set(...sa.transform.rotation)
   root.scale.fromArray(sa.transform.scale)
   root.visible = sa.visible !== false
-  const actor = { id: sa.id, name: sa.name, type: sa.type, root, data: sa, mesh: null }
+  const actor = { id: sa.id, name: sa.name, type: sa.type, root, data: sa, mesh: null, autoload: (sa.tags ?? []).some((t) => String(t).toLowerCase() === 'autoload') }
 
   if (sa.type === 'StaticMesh') {
     const mesh = new THREE.Mesh(buildGeometry(sa.geometry), buildMaterial(sa.material))
@@ -203,6 +225,25 @@ function instantiate(sa) {
   return actor
 }
 
+function teardownActors() {
+  for (const a of [...actors.values()]) {
+    if (a.autoload) continue
+    scene.remove(a.root)
+    actors.delete(a.id)
+  }
+  particleSystems = []
+  ticks = []
+  bindings = []
+  physWorld = null
+}
+
+function spawnLevelActors(level) {
+  for (const sa of level.actors) instantiate(sa)
+  for (const sa of level.actors) {
+    if (sa.parentId && actors.has(sa.parentId)) actors.get(sa.parentId).root.add(actors.get(sa.id).root)
+  }
+}
+
 // ---- pawn ----
 const pawnCam = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 5000)
 let yaw = 0, pitch = 0
@@ -224,6 +265,17 @@ addEventListener('mousemove', (e) => {
   pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * 0.0023))
 })
 renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock())
+
+function resetPawnFromStart() {
+  const start = LEVEL.actors.find((a) => a.type === 'PlayerStart')
+  pawnMode = start?.pawnMode ?? 'fly'
+  if (start) {
+    feet.fromArray(start.transform.position)
+    pawnCam.position.copy(feet).add(new THREE.Vector3(0, 1.65, 0))
+    yaw = start.transform.rotation?.[1] ?? 0
+    pitch = 0
+  }
+}
 
 function updatePawn(dt) {
   const move = new THREE.Vector3()
@@ -272,7 +324,6 @@ function updatePawn(dt) {
 }
 
 // ---- physics (optional) ----
-let physWorld = null, bindings = []
 async function startPhysics() {
   try {
     const R = await import('@dimforge/rapier3d-compat')
@@ -315,7 +366,6 @@ async function startPhysics() {
 }
 
 // ---- scripts & behaviors ----
-let clock = 0
 const api = {
   log: (...a) => console.log('[vektra]', ...a),
   isKeyDown: (c) => keys.has(c),
@@ -323,9 +373,36 @@ const api = {
   getActor: (n) => [...actors.values()].find((a) => a.name === n),
   time: () => clock,
   pawnPosition: () => (pawnMode === 'fly' ? pawnCam.position : feet),
+  async loadLevel(name) {
+    if (loadingLevel) return false
+    const key = String(name).trim().toLowerCase()
+    const resolved = LEVELS[key] ?? LEVELS[name] ?? (key === 'main' ? LEVELS[MAIN_KEY] : null)
+    if (!resolved) {
+      api.log('loadLevel: unknown level', name)
+      return false
+    }
+    loadingLevel = true
+    try {
+      teardownActors()
+      LEVEL = resolved
+      applyEnvironment()
+      await loadAssets(LEVEL)
+      spawnLevelActors(LEVEL)
+      resetPawnFromStart()
+      await startPhysics()
+      compileScripts()
+      api.log('loadLevel:', name)
+      return true
+    } catch (e) {
+      console.warn('loadLevel failed:', e)
+      return false
+    } finally {
+      loadingLevel = false
+    }
+  },
 }
-const ticks = []
 function compileScripts() {
+  ticks = []
   for (const a of actors.values()) {
     const src = a.data.script
     if (!src) continue
@@ -341,15 +418,9 @@ function compileScripts() {
 // ---- boot ----
 const overlay = document.getElementById('overlay')
 async function boot() {
-  await loadAssets()
-  for (const sa of LEVEL.actors) instantiate(sa)
-  // hierarchy pass
-  for (const sa of LEVEL.actors) {
-    if (sa.parentId && actors.has(sa.parentId)) actors.get(sa.parentId).root.add(actors.get(sa.id).root)
-  }
-  const start = LEVEL.actors.find((a) => a.type === 'PlayerStart')
-  pawnMode = start?.pawnMode ?? 'fly'
-  if (start) { feet.fromArray(start.transform.position); pawnCam.position.copy(feet).add(new THREE.Vector3(0, 1.65, 0)) }
+  await loadAssets(LEVEL)
+  spawnLevelActors(LEVEL)
+  resetPawnFromStart()
   await startPhysics()
   compileScripts()
   overlay.textContent = 'Click to play — WASD + mouse · Space jump · Shift sprint'
@@ -402,6 +473,7 @@ async function boot() {
   })
 }
 addEventListener('resize', () => {
+  renderer.setPixelRatio(pixelRatio)
   renderer.setSize(innerWidth, innerHeight)
   pawnCam.aspect = innerWidth / innerHeight
   pawnCam.updateProjectionMatrix()

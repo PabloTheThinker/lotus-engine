@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import {
   NODE_DEFS,
+  collapseToFunction,
   compileBlueprint,
   emptyGraph,
+  getFunctionPins,
   newNodeId,
   type BlueprintGraph,
   type BPNode,
@@ -53,6 +55,8 @@ export function BlueprintEditor() {
   const pulseRef = useRef<Record<string, number>>({})
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [pulseAt, setPulseAt] = useState<Record<string, number>>({})
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [editFunctionId, setEditFunctionId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!actor) return
@@ -96,6 +100,8 @@ export function BlueprintEditor() {
       setGraph(actor.blueprint ? (JSON.parse(JSON.stringify(actor.blueprint)) as BlueprintGraph) : emptyGraph())
       setDirty(false)
       setPendingFrom(null)
+      setSelected(new Set())
+      setEditFunctionId(null)
     }
     if (!actor) lastActor.current = null
   }, [actor])
@@ -104,11 +110,44 @@ export function BlueprintEditor() {
     return <div className="panel-empty">Select an actor to open its Blueprint. Events fire during Play; Compile writes the generated code into the actor's script slot.</div>
   }
 
+  const viewNodes = editFunctionId && graph.functions?.[editFunctionId] ? graph.functions[editFunctionId].nodes : graph.nodes
+  const viewEdges = editFunctionId && graph.functions?.[editFunctionId] ? graph.functions[editFunctionId].edges : graph.edges
+
   const mutate = (fn: (g: BlueprintGraph) => void) => {
     const next = JSON.parse(JSON.stringify(graph)) as BlueprintGraph
-    fn(next)
+    if (editFunctionId && next.functions?.[editFunctionId]) {
+      const slice = { nodes: next.functions[editFunctionId].nodes, edges: next.functions[editFunctionId].edges, variables: next.variables, functions: next.functions }
+      fn(slice)
+      next.functions[editFunctionId].nodes = slice.nodes
+      next.functions[editFunctionId].edges = slice.edges
+    } else {
+      fn(next)
+    }
     setGraph(next)
     setDirty(true)
+  }
+
+  const toggleSelect = (nodeId: string, additive: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(additive ? prev : [])
+      if (next.has(nodeId)) next.delete(nodeId)
+      else next.add(nodeId)
+      return next
+    })
+  }
+
+  const nodeDataPins = (node: BPNode) => {
+    if (node.type === 'CallFunction') {
+      const fnId = String(node.props.functionId ?? '')
+      return getFunctionPins(graph, fnId)
+    }
+    if (node.type === 'FunctionEntry' || node.type === 'FunctionReturn') {
+      const fn = Object.values(graph.functions ?? {}).find((f) => f.nodes.some((n) => n.id === node.id))
+      if (!fn) return { dataIns: [], dataOuts: [] }
+      if (node.type === 'FunctionEntry') return { dataIns: [], dataOuts: fn.dataIns }
+      return { dataIns: fn.dataOuts, dataOuts: [] }
+    }
+    return { dataIns: [], dataOuts: [] }
   }
 
   const compile = () => {
@@ -194,6 +233,28 @@ export function BlueprintEditor() {
             </em>
           </span>
         ))}
+        <button
+          title="Collapse selected nodes into a macro function (Shift+click headers to select)"
+          disabled={selected.size < 1 || !!editFunctionId}
+          onClick={() => {
+            const name = prompt('Function name?', 'MyFunction')
+            if (!name) return
+            const count = selected.size
+            mutate((g) => {
+              const err = collapseToFunction(g, selected, name)
+              if (err) useEditor.getState().setStatus(err)
+              else useEditor.getState().setStatus(`Collapsed ${count} nodes → function "${name}"`)
+            })
+            setSelected(new Set())
+          }}
+        >
+          ⊟ Collapse to Function
+        </button>
+        {editFunctionId && graph.functions?.[editFunctionId] && (
+          <button onClick={() => setEditFunctionId(null)}>
+            ← Back ({graph.functions[editFunctionId].name})
+          </button>
+        )}
         <button onClick={() => mutate((g) => Object.assign(g, emptyGraph()))}>Clear</button>
         <button
           title="Level Blueprint — Empty actor named LevelScript (UE equivalent)"
@@ -235,12 +296,13 @@ export function BlueprintEditor() {
           }
           if (dragState.current) {
             const { nodeId, dx, dy } = dragState.current
-            setGraph((g) => {
-              if (!g) return g
-              const next = { ...g, nodes: g.nodes.map((n) => (n.id === nodeId ? { ...n, x: p.x - dx, y: p.y - dy } : n)) }
-              return next
+            mutate((g) => {
+              const n = g.nodes.find((x) => x.id === nodeId)
+              if (n) {
+                n.x = p.x - dx
+                n.y = p.y - dy
+              }
             })
-            setDirty(true)
           }
         }}
         onMouseUp={() => {
@@ -253,21 +315,29 @@ export function BlueprintEditor() {
       >
         <svg className="bp-wires">
           <g transform={`translate(${offset.x},${offset.y})`}>
-            {graph.edges.map((edge, i) => {
-              const [fn, fp] = edge.from.split(':')
+            {viewEdges.map((edge, i) => {
+              const [fn, fp, fData] = edge.from.split(':')
               const toParts = edge.to.split(':')
               const tn = toParts[0]
-              const a = graph.nodes.find((n) => n.id === fn)
-              const b = graph.nodes.find((n) => n.id === tn)
+              const a = viewNodes.find((n) => n.id === fn)
+              const b = viewNodes.find((n) => n.id === tn)
               if (!a || !b) return null
               const isData = toParts[1] === 'prop'
-              const p1 = portPos(a, fp, true)
+              let p1 = portPos(a, fp, true)
+              if (fp === 'data') {
+                const pins = nodeDataPins(a)
+                const idx = pins.dataOuts.findIndex((p) => p.key === fData)
+                p1 = { x: a.x + NODE_W, y: a.y + HEADER_H + 8 + Math.max(0, idx) * 18 }
+              }
               let p2 = portPos(b, 'in', false)
               if (isData) {
+                const pins = nodeDataPins(b)
+                const dynIdx = pins.dataIns.findIndex((p) => p.key === toParts[2])
                 const bdef = NODE_DEFS[b.type]
-                const propIdx = bdef?.props.findIndex((pr) => pr.key === toParts[2]) ?? 0
+                const propIdx = dynIdx >= 0 ? dynIdx : (bdef?.props.findIndex((pr) => pr.key === toParts[2]) ?? 0)
                 const portCount = (bdef?.hasExecIn ? 1 : 0) + (bdef?.execOuts.length ?? 0)
-                p2 = { x: b.x, y: b.y + HEADER_H + 10 + Math.max(portCount - 1, 0) * 4 + propIdx * 22 + 12 }
+                const dynCount = pins.dataIns.length
+                p2 = { x: b.x, y: b.y + HEADER_H + 10 + Math.max(portCount - 1, 0) * 4 + dynCount * 4 + propIdx * 22 + 12 }
               }
               return (
                 <path
@@ -281,7 +351,7 @@ export function BlueprintEditor() {
             {pendingFrom &&
               (() => {
                 const [fn, fp] = pendingFrom.split(':')
-                const a = graph.nodes.find((n) => n.id === fn)
+                const a = viewNodes.find((n) => n.id === fn)
                 if (!a) return null
                 const p1 = portPos(a, fp, true)
                 return <path className="bp-wire pending" d={edgePath(p1.x, p1.y, mouse.x, mouse.y)} />
@@ -289,25 +359,42 @@ export function BlueprintEditor() {
           </g>
         </svg>
 
-        {graph.nodes.map((node) => {
+        {viewNodes.map((node) => {
           const def = NODE_DEFS[node.type]
           if (!def) return null
+          const pins = nodeDataPins(node)
+          const fnList = Object.values(graph.functions ?? {})
           return (
             <div
               key={node.id}
-              className="bp-node"
+              className={`bp-node${selected.has(node.id) ? ' selected' : ''}`}
               style={{ left: node.x + offset.x, top: node.y + offset.y, width: NODE_W }}
+              onDoubleClick={() => {
+                if (node.type === 'CallFunction') {
+                  const fid = String(node.props.functionId ?? '')
+                  if (graph.functions?.[fid]) setEditFunctionId(fid)
+                }
+              }}
             >
               <div
                 className={`bp-node-header${pulseAt[node.id] != null && Date.now() - pulseAt[node.id] < 300 ? ' pulsing' : ''}`}
                 style={{ background: def.color }}
                 onMouseDown={(e) => {
+                  if (e.shiftKey) {
+                    toggleSelect(node.id, true)
+                    e.stopPropagation()
+                    return
+                  }
                   const p = canvasPoint(e)
                   dragState.current = { nodeId: node.id, dx: p.x - node.x, dy: p.y - node.y }
                   e.stopPropagation()
                 }}
               >
-                <span>{def.title}</span>
+                <span>
+                  {node.type === 'CallFunction'
+                    ? `Call ${graph.functions?.[String(node.props.functionId)]?.name ?? 'Function'}`
+                    : def.title}
+                </span>
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -336,6 +423,17 @@ export function BlueprintEditor() {
                     ●
                   </div>
                 )}
+                {pins.dataOuts.map((pin, i) => (
+                  <div
+                    key={pin.key}
+                    className={`bp-port out data ${pendingFrom === `${node.id}:data:${pin.key}` ? 'pending' : ''}`}
+                    style={{ top: 8 + i * 18 }}
+                    title={`data out: ${pin.label}`}
+                    onClick={() => onPortClick(node.id, `data:${pin.key}`, true)}
+                  >
+                    <em>{pin.label}</em>●
+                  </div>
+                ))}
                 {def.execOuts.map((port, i) => (
                   <div
                     key={port}
@@ -347,10 +445,36 @@ export function BlueprintEditor() {
                     {def.execOuts.length > 1 ? <em>{port}</em> : null}▸
                   </div>
                 ))}
+                {pins.dataIns.map((pin) => (
+                  <label className="bp-prop" key={pin.key}>
+                    <span>
+                      <button
+                        className="bp-data-in"
+                        title="data input"
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          if (pendingFrom) {
+                            const from = pendingFrom
+                            mutate((g) => {
+                              g.edges = g.edges.filter((ed) => ed.to !== `${node.id}:prop:${pin.key}`)
+                              g.edges.push({ from, to: `${node.id}:prop:${pin.key}` })
+                            })
+                            setPendingFrom(null)
+                          }
+                        }}
+                      >
+                        ◦
+                      </button>
+                      {pin.label}
+                    </span>
+                    <span className="bp-pin-type">data</span>
+                  </label>
+                ))}
                 {def.props.map((prop) => (
                   <label className="bp-prop" key={prop.key}>
                     <span>
-                      {def.dataIns?.includes(prop.key) && (
+                      {(def.dataIns?.includes(prop.key) || pins.dataIns.some((p) => p.key === prop.key)) && (
                         <button
                           className="bp-data-in"
                           title="data input — click after picking a data out"
@@ -372,7 +496,23 @@ export function BlueprintEditor() {
                       )}
                       {prop.label}
                     </span>
-                    {prop.kind === 'check' ? (
+                    {node.type === 'CallFunction' && prop.key === 'functionId' ? (
+                      <select
+                        value={String(node.props.functionId ?? '')}
+                        onChange={(e) =>
+                          mutate((g) => {
+                            g.nodes.find((n) => n.id === node.id)!.props.functionId = e.target.value
+                          })
+                        }
+                      >
+                        <option value="">— pick —</option>
+                        {fnList.map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : prop.kind === 'check' ? (
                       <input
                         type="checkbox"
                         checked={Boolean(node.props[prop.key] ?? prop.default)}
@@ -419,11 +559,16 @@ export function BlueprintEditor() {
 
         {addMenu && (
           <div className="bp-add-menu" style={{ left: addMenu.x + offset.x, top: addMenu.y + offset.y }}>
-            {(['Events', 'Actions', 'Flow', 'Data'] as const).map((cat) => (
+            {(['Events', 'Actions', 'Flow', 'Data', ...(editFunctionId ? (['Function'] as const) : [])] as const).map((cat) => (
               <div key={cat}>
                 <div className="bp-add-cat">{cat}</div>
                 {Object.entries(NODE_DEFS)
-                  .filter(([, d]) => d.category === cat)
+                  .filter(([type, d]) => {
+                    if (d.category !== cat) return false
+                    if (!editFunctionId && (type === 'FunctionEntry' || type === 'FunctionReturn')) return false
+                    if (editFunctionId && type === 'CallFunction') return false
+                    return true
+                  })
                   .map(([type, d]) => (
                     <button
                       key={type}

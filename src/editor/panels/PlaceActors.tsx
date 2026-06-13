@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getPluginNodeTypes } from '../plugins'
 import { dragGhost, spawnAsset, type AssetPayload } from '../spawn'
 import { useEditor } from '../store'
 
@@ -42,7 +43,7 @@ const ITEMS: PlaceItem[] = [
   { label: 'Reflection Probe', icon: '🔮', category: 'Volumes', payload: { kind: 'probe' } },
 ]
 
-const CATEGORIES = ['Recently Placed', 'Basic', 'Lights', 'Shapes', 'Cinematic', 'Visual Effects', 'Volumes']
+const BASE_CATEGORIES = ['Recently Placed', 'Basic', 'Lights', 'Shapes', 'Cinematic', 'Visual Effects', 'Volumes']
 
 const recentlyPlaced: PlaceItem[] = []
 function notePlaced(item: PlaceItem) {
@@ -55,16 +56,27 @@ function notePlaced(item: PlaceItem) {
 /** Place Actors — the UE left dock: searchable categorized actor palette. */
 export function PlaceActors() {
   const open = useEditor((s) => s.placeActorsOpen)
+  void useEditor((s) => s.sceneVersion)
   const [query, setQuery] = useState('')
   const [cat, setCat] = useState('Basic')
   if (!open) return null
 
+  const pluginItems: PlaceItem[] = getPluginNodeTypes().map((n) => ({
+    label: n.label,
+    icon: n.icon ?? '🔌',
+    category: n.category ?? 'Plugins',
+    payload: { kind: 'plugin-node', nodeType: n.type },
+  }))
+  const allItems = [...ITEMS, ...pluginItems]
+  const pluginCats = [...new Set(pluginItems.map((i) => i.category))]
+  const categories = [...BASE_CATEGORIES, ...pluginCats.filter((c) => !BASE_CATEGORIES.includes(c))]
+
   const searching = query.trim().length > 0
   const list = searching
-    ? ITEMS.filter((i) => i.label.toLowerCase().includes(query.toLowerCase()))
+    ? allItems.filter((i) => i.label.toLowerCase().includes(query.toLowerCase()))
     : cat === 'Recently Placed'
       ? recentlyPlaced
-      : ITEMS.filter((i) => i.category === cat)
+      : allItems.filter((i) => i.category === cat)
 
   return (
     <div className="place-actors">
@@ -83,9 +95,23 @@ export function PlaceActors() {
       <div className="place-body">
         {!searching && (
           <div className="place-cats">
-            {CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <button key={c} className={cat === c ? 'active' : ''} onClick={() => setCat(c)} title={c}>
-                {c === 'Recently Placed' ? '🕘' : c === 'Basic' ? '◇' : c === 'Lights' ? '✦' : c === 'Shapes' ? '⬛' : c === 'Cinematic' ? '🎥' : c === 'Visual Effects' ? '✨' : '◫'}
+                {c === 'Recently Placed'
+                  ? '🕘'
+                  : c === 'Basic'
+                    ? '◇'
+                    : c === 'Lights'
+                      ? '✦'
+                      : c === 'Shapes'
+                        ? '⬛'
+                        : c === 'Cinematic'
+                          ? '🎥'
+                          : c === 'Visual Effects'
+                            ? '✨'
+                            : c === 'Volumes'
+                              ? '◫'
+                              : '🔌'}
               </button>
             ))}
           </div>

@@ -1,9 +1,23 @@
 import { useState } from 'react'
+import {
+  deleteAbility,
+  deleteAttributeSet,
+  listAbilities,
+  listAttributeSets,
+  nextAbilityId,
+  nextAttributeSetId,
+  saveAbility,
+  saveAttributeSet,
+  type Ability,
+  type AttributeSet,
+} from '../../engine/gameplayAbilities'
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
-import { world } from '../../engine/World'
+import { sanitizeLevelKey, world } from '../../engine/World'
+import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
 import { setBusVolume } from '../../engine/audio'
+import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
 import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
 import { useEditor } from '../store'
 
@@ -79,9 +93,12 @@ function MultiplayerSection() {
 }
 
 function AudioSection() {
+  const touch = useEditor((s) => s.touch)
+  const setEditing = useEditor((s) => s.setEditingMetaSound)
+  const metaSounds = listMetaSounds()
   return (
     <details className="details-section">
-      <summary>Audio Buses</summary>
+      <summary>Audio</summary>
       <div className="details-grid">
         {(['master', 'sfx', 'music'] as const).map((bus) => (
           <label className="field" key={bus}>
@@ -89,7 +106,35 @@ function AudioSection() {
             <input type="range" min={0} max={1.5} step={0.05} defaultValue={1} onChange={(e) => setBusVolume(bus, parseFloat(e.target.value))} />
           </label>
         ))}
-        <div className="panel-empty" style={{ padding: '2px 0' }}>Import sounds in the Content Browser; scripts call api.playSound(name).</div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>Imported clips: api.playSound(name). Procedural graphs: api.playMetaSound(name).</div>
+        {metaSounds.map((m) => (
+          <label className="field" key={m.id} style={{ gridTemplateColumns: '1fr auto auto', display: 'grid', gap: 4 }}>
+            <span>♪ {m.name}</span>
+            <button onClick={() => setEditing(m.id)}>Edit</button>
+            <button
+              onClick={() => {
+                deleteMetaSound(m.id)
+                touch()
+              }}
+            >
+              ✕
+            </button>
+          </label>
+        ))}
+        <button
+          onClick={() => {
+            const name = prompt('MetaSound name?')
+            if (!name) return
+            const asset = createMetaSound(name)
+            setEditing(asset.id)
+            touch()
+          }}
+        >
+          + New MetaSound
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Trigger volumes with a Reverb Preset apply ConvolverNode sends while the pawn is inside.
+        </div>
       </div>
     </details>
   )
@@ -234,6 +279,232 @@ function NavigationSection() {
   )
 }
 
+function LinkedLevelsSection() {
+  const touch = useEditor((s) => s.touch)
+  useEditor((s) => s.sceneVersion)
+  const links = world.levelLinks
+
+  const importLevel = (index: number) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json,.vlevel.json,application/json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      try {
+        const level = JSON.parse(await file.text()) as SerializedLevel
+        if (level.engine !== 'vektra') throw new Error('Not a Vektra level')
+        links[index].level = level
+        touch()
+      } catch (err) {
+        useEditor.getState().setStatus(`Import failed: ${(err as Error).message}`)
+      }
+    }
+    input.click()
+  }
+
+  return (
+    <details className="details-section">
+      <summary>Linked Levels</summary>
+      <div className="details-grid">
+        {links.map((link, i) => (
+          <div className="hud-widget-row" key={`${link.name}-${i}`}>
+            <input
+              value={link.name}
+              placeholder="key (e.g. dungeon)"
+              spellCheck={false}
+              onChange={(e) => {
+                link.name = e.target.value
+                touch()
+              }}
+            />
+            <span className="panel-empty" style={{ padding: 0, fontSize: 11 }}>
+              {link.level.actors?.length ?? 0} actors · key: {sanitizeLevelKey(link.name) || '…'}
+            </span>
+            <button type="button" onClick={() => importLevel(i)} title="Import .vlevel.json">
+              Import
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                links.splice(i, 1)
+                touch()
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            const name = prompt('Linked level key? (used by api.loadLevel)', 'dungeon')
+            if (!name?.trim()) return
+            links.push({
+              name: name.trim(),
+              level: {
+                engine: 'vektra',
+                version: 4,
+                name: name.trim(),
+                environment: { ...world.environment },
+                actors: [],
+              },
+            })
+            touch()
+          }}
+        >
+          + Add Linked Level
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Bundled into playable export as <code>window.__VEKTRA_LEVELS__</code>. Scripts: <code>api.loadLevel('dungeon')</code>.
+          Tag actors <code>Autoload</code> to persist across switches.
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function AbilitiesLibrarySection() {
+  const [, bump] = useState(0)
+  const refresh = () => bump((n) => n + 1)
+  const sets = listAttributeSets()
+  const abilities = listAbilities()
+
+  const updateSet = (set: AttributeSet) => {
+    saveAttributeSet(set)
+    refresh()
+  }
+
+  const updateAbility = (ability: Ability) => {
+    saveAbility(ability)
+    refresh()
+  }
+
+  return (
+    <details className="details-section">
+      <summary>Gameplay Abilities (GAS-lite)</summary>
+      <div className="details-grid">
+        <div className="panel-empty" style={{ padding: '2px 0' }}>Attribute sets + ability assets (localStorage). Actors assign sets/abilities in Details.</div>
+        <strong style={{ fontSize: 11 }}>Attribute Sets</strong>
+        {sets.map((set) => (
+          <div key={set.id} className="hud-widget-row">
+            <input
+              value={set.name}
+              onChange={(e) => updateSet({ ...set, name: e.target.value })}
+              spellCheck={false}
+            />
+            <input
+              value={JSON.stringify(set.attributes)}
+              title="JSON attribute defaults"
+              spellCheck={false}
+              onBlur={(e) => {
+                try {
+                  updateSet({ ...set, attributes: JSON.parse(e.target.value) as Record<string, number> })
+                } catch { /* keep prior */ }
+              }}
+            />
+            {set.id !== 'default' && (
+              <button onClick={() => { deleteAttributeSet(set.id); refresh() }}>✕</button>
+            )}
+          </div>
+        ))}
+        <button
+          onClick={() => {
+            const id = nextAttributeSetId()
+            updateSet({ id, name: 'New Set', attributes: { Health: 100, Mana: 50, Stamina: 100 } })
+          }}
+        >
+          + Attribute Set
+        </button>
+        <strong style={{ fontSize: 11 }}>Abilities</strong>
+        {abilities.map((abil) => (
+          <div key={abil.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+            <div className="hud-widget-row">
+              <input
+                value={abil.name}
+                placeholder="Name"
+                onChange={(e) => updateAbility({ ...abil, name: e.target.value })}
+                spellCheck={false}
+              />
+              <input
+                type="number"
+                step={0.1}
+                min={0}
+                value={abil.cooldownSeconds}
+                title="Cooldown (s)"
+                onChange={(e) => updateAbility({ ...abil, cooldownSeconds: parseFloat(e.target.value) || 0 })}
+              />
+              <button onClick={() => { deleteAbility(abil.id); refresh() }}>✕</button>
+            </div>
+            <div className="hud-widget-row">
+              <input
+                value={abil.costAttribute ?? ''}
+                placeholder="Cost attr"
+                onChange={(e) => updateAbility({ ...abil, costAttribute: e.target.value || undefined })}
+                spellCheck={false}
+              />
+              <input
+                type="number"
+                step={1}
+                min={0}
+                value={abil.costAmount ?? 0}
+                placeholder="Cost"
+                onChange={(e) => updateAbility({ ...abil, costAmount: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+            <input
+              value={(abil.tagsRequired ?? []).join(', ')}
+              placeholder="Tags required"
+              spellCheck={false}
+              onBlur={(e) =>
+                updateAbility({
+                  ...abil,
+                  tagsRequired: e.target.value.split(',').map((t) => t.trim()).filter(Boolean),
+                })
+              }
+            />
+            <input
+              value={(abil.tagsBlocked ?? []).join(', ')}
+              placeholder="Tags blocked"
+              spellCheck={false}
+              onBlur={(e) =>
+                updateAbility({
+                  ...abil,
+                  tagsBlocked: e.target.value.split(',').map((t) => t.trim()).filter(Boolean),
+                })
+              }
+            />
+            <textarea
+              value={abil.onActivate}
+              placeholder="function onActivate(api, actor) { api.log('Fired!') }"
+              rows={3}
+              spellCheck={false}
+              onChange={(e) => updateAbility({ ...abil, onActivate: e.target.value })}
+              style={{ fontFamily: 'monospace', fontSize: 11 }}
+            />
+          </div>
+        ))}
+        <button
+          onClick={() => {
+            const id = nextAbilityId()
+            updateAbility({
+              id,
+              name: 'NewAbility',
+              cooldownSeconds: 1,
+              onActivate: "function onActivate(api, actor) {\n  api.log(actor.name + ' used ability')\n}",
+            })
+          }}
+        >
+          + Ability
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Scripts: api.activateAbility('Fireball') · api.getAttribute('Health') · api.setAttribute('Health', 50)
+        </div>
+      </div>
+    </details>
+  )
+}
+
 /** World Settings — environment + post stack (UE World Settings analog). */
 export function WorldSettings() {
   const touch = useEditor((s) => s.touch)
@@ -350,12 +621,14 @@ export function WorldSettings() {
           </>
         )}
       </div>
+      <LinkedLevelsSection />
       <NavigationSection />
       <InputMapSection />
       <DataAssetsSection />
       <AudioSection />
       <MultiplayerSection />
       <HudDesignerSection />
+      <AbilitiesLibrarySection />
     </details>
   )
 }

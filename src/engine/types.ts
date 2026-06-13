@@ -17,6 +17,7 @@ export type ActorType =
   | 'FoliageLayer'
   | 'Landscape'
   | 'TriggerVolume'
+  | 'SoundEmitter'
   | 'ReflectionProbe'
   | 'CustomMesh'
   | 'Water'
@@ -42,6 +43,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   FoliageLayer: 'static',
   Landscape: 'static',
   TriggerVolume: 'movable',
+  SoundEmitter: 'movable',
   ReflectionProbe: 'stationary',
   CustomMesh: 'static',
   Water: 'static',
@@ -177,6 +179,10 @@ export interface SerializedActor {
   mobility?: Mobility
   /** UE-style actor tags for filtering and gameplay queries */
   tags?: string[]
+  /** GAS-lite: attribute set asset id (localStorage) */
+  attributeSetId?: string
+  /** GAS-lite: ability asset ids assigned to this actor */
+  abilityIds?: string[]
   /** distance streaming: hide beyond this range from the camera (0 = never) */
   cullDistance?: number
   /** PostProcessVolume only */
@@ -197,6 +203,12 @@ export interface SerializedActor {
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** animation clip to play at BeginPlay */
   autoPlayClip?: string
+  /** authored animation state machine (FSM) */
+  animStateMachine?: import('./animStateMachine').AnimStateMachine
+  /** 1D blend space — locomotion-style clip blending */
+  blendSpace1D?: import('./animStateMachine').BlendSpace1D
+  /** runtime animation parameters (speed, direction, etc.) */
+  animParams?: Record<string, number>
   /** material node graph */
   materialGraph?: import('./materialGraph').MaterialGraph
   /** shared material asset (UE Material) — base props live in localStorage */
@@ -209,6 +221,10 @@ export interface SerializedActor {
   prefabActorId?: string
   /** prefab instance root only: per-actor overrides keyed by original prefab id */
   prefabOverrides?: Record<string, Partial<SerializedActor>>
+  /** TriggerVolume only */
+  trigger?: TriggerProps
+  /** SoundEmitter only */
+  soundEmitter?: SoundEmitterProps
 }
 
 /** Landscape — UE heightmap terrain. heights is (resolution+1)^2 floats. */
@@ -273,6 +289,30 @@ export const DEFAULT_FOLIAGE: FoliageProps = {
 
 export type PawnMode = 'fly' | 'firstperson' | 'thirdperson' | 'vehicle'
 
+/** TriggerVolume — optional reverb zone preset applied while the pawn is inside. */
+export type ReverbPreset = '' | 'room' | 'hall' | 'cave'
+
+export interface TriggerProps {
+  reverbPreset?: ReverbPreset
+}
+
+/** SoundEmitter — plays a MetaSound (or imported sound) at this actor's position. */
+export interface SoundEmitterProps {
+  metaSoundName: string
+  volume: number
+  loop: boolean
+  autoPlay: boolean
+  spatial: boolean
+}
+
+export const DEFAULT_SOUND_EMITTER: SoundEmitterProps = {
+  metaSoundName: '',
+  volume: 1,
+  loop: false,
+  autoPlay: true,
+  spatial: true,
+}
+
 export interface EnvironmentSettings {
   background: string
   fogEnabled: boolean
@@ -305,9 +345,16 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   exposure: 0.75,
 }
 
+/** Linked level entry — embedded JSON for export / PIE scene switching. */
+export interface LevelLink {
+  /** manifest key (e.g. dungeon) — used by api.loadLevel('dungeon') */
+  name: string
+  level: SerializedLevel
+}
+
 export interface SerializedLevel {
   engine: 'vektra'
-  version: 1 | 2 | 3
+  version: 1 | 2 | 3 | 4
   name: string
   environment: EnvironmentSettings
   // imported glTF binaries, base64-encoded, keyed by assetId
@@ -323,6 +370,8 @@ export interface SerializedLevel {
   hud?: HudWidget[]
   /** HDRI environment (base64 .hdr) — overrides the sky when set */
   hdri?: string
+  /** bundled linked levels for multi-level export + api.loadLevel */
+  levelLinks?: LevelLink[]
 }
 
 /** UMG-lite authored widget */

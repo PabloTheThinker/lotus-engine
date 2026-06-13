@@ -1,18 +1,95 @@
 import runtimeSource from '../export/runtime.js?raw'
-import { world } from '../engine/World'
+import { sanitizeLevelKey, world } from '../engine/World'
+import type { SerializedLevel } from '../engine/types'
+import { loadPrefs, type ExportQuality } from './Preferences'
 import { useEditor } from './store'
+
+export interface ExportOptions {
+  /** add PWA manifest + service worker stub for offline single-file play */
+  pwa?: boolean
+  /** mobile: no bloom, capped pixel ratio; desktop: editor defaults */
+  quality?: ExportQuality
+}
+
+function escapeJsonForScript(json: string): string {
+  return json.replace(/</g, '\\u003c')
+}
+
+function applyQualityToLevel(level: SerializedLevel, quality: ExportQuality): SerializedLevel {
+  if (quality !== 'mobile') return level
+  return {
+    ...level,
+    environment: {
+      ...level.environment,
+      bloomEnabled: false,
+      bloomStrength: 0,
+    },
+  }
+}
+
+function buildLevelsManifest(mainLevel: SerializedLevel): { levels: Record<string, SerializedLevel>; main: string } {
+  const levels: Record<string, SerializedLevel> = { main: mainLevel }
+  for (const link of world.levelLinks) {
+    const key = sanitizeLevelKey(link.name)
+    if (key === 'main') continue
+    levels[key] = link.level
+  }
+  return { levels, main: 'main' }
+}
+
+function pwaHeadExtras(title: string): string {
+  const manifest = {
+    name: title,
+    short_name: title.slice(0, 12),
+    display: 'fullscreen',
+    orientation: 'landscape',
+    background_color: '#0d0f12',
+    theme_color: '#0d0f12',
+    start_url: '.',
+    icons: [],
+  }
+  const manifestB64 = btoa(JSON.stringify(manifest))
+  return `<link rel="manifest" href="data:application/manifest+json;base64,${manifestB64}" />
+<meta name="theme-color" content="#0d0f12" />
+<meta name="apple-mobile-web-app-capable" content="yes" />`
+}
+
+function pwaBootScript(): string {
+  return `<script>
+if ('serviceWorker' in navigator) {
+  const sw = [
+    "self.addEventListener('install', (e) => {",
+    "  e.waitUntil(caches.open('vektra-v1').then((c) => c.add(self.location.href)));",
+    "  self.skipWaiting();",
+    "});",
+    "self.addEventListener('activate', (e) => { e.waitUntil(self.clients.claim()); });",
+    "self.addEventListener('fetch', (e) => {",
+    "  if (e.request.method !== 'GET') return;",
+    "  e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)));",
+    "});",
+  ].join('\\n');
+  const blob = new Blob([sw], { type: 'application/javascript' });
+  navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+}
+</script>`
+}
 
 /**
  * One-click playable export (the Godot HTML5-export analog, but native):
- * a single standalone .html embedding the level JSON + runtime, with
+ * a single standalone .html embedding level JSON + runtime, with
  * three.js and Rapier resolved from CDN. Open the file — play the game.
  */
-export function buildPlayableHTML(): string {
+export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const s = useEditor.getState()
+  const prefs = loadPrefs()
+  const quality = opts.quality ?? prefs.exportQuality
   world.levelName = s.levelName
-  const level = world.serialize()
-  const levelJSON = JSON.stringify(level).replace(/</g, '\\u003c')
+  const mainLevel = applyQualityToLevel(world.serialize(), quality)
+  const { levels, main } = buildLevelsManifest(mainLevel)
+  const levelsJSON = escapeJsonForScript(JSON.stringify(levels))
+  const exportJSON = escapeJsonForScript(JSON.stringify({ quality, pixelRatio: quality === 'mobile' ? 1 : undefined }))
   const title = s.levelName || 'Vektra Level'
+  const pwa = !!opts.pwa
 
   return `<!doctype html>
 <html lang="en">
@@ -20,6 +97,7 @@ export function buildPlayableHTML(): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${title} — Vektra Engine</title>
+${pwa ? pwaHeadExtras(title) : ''}
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0f12; }
   canvas { display: block; }
@@ -45,8 +123,9 @@ export function buildPlayableHTML(): string {
 </head>
 <body>
 <div id="overlay">Loading…</div>
-<div id="badge">VEKTRA ENGINE</div>
-<script>window.__VEKTRA_LEVEL__ = ${levelJSON}</script>
+<div id="badge">VEKTRA ENGINE${pwa ? ' · PWA' : ''}</div>
+<script>window.__VEKTRA_LEVELS__ = ${levelsJSON}; window.__VEKTRA_MAIN__ = '${main}'; window.__VEKTRA_EXPORT__ = ${exportJSON};</script>
+${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}
 </script>
@@ -54,14 +133,22 @@ ${runtimeSource}
 </html>`
 }
 
-export function exportPlayable() {
-  const s = useEditor.getState()
-  const html = buildPlayableHTML()
+function downloadHtml(filename: string, html: string) {
   const blob = new Blob([html], { type: 'text/html' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `${(s.levelName || 'level').replace(/[^\w-]+/g, '_')}.play.html`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(a.href)
-  s.setStatus(`Exported playable: ${a.download}`)
+  useEditor.getState().setStatus(`Exported playable: ${a.download}`)
+}
+
+export function exportPlayable(opts: ExportOptions = {}) {
+  const s = useEditor.getState()
+  const base = (s.levelName || 'level').replace(/[^\w-]+/g, '_')
+  downloadHtml(`${base}.play.html`, buildPlayableHTML(opts))
+}
+
+export function exportPlayablePWA() {
+  exportPlayable({ pwa: true })
 }

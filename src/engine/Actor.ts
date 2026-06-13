@@ -16,6 +16,7 @@ import type {
   TransformSnapshot,
 } from './types'
 import { DEFAULT_MOBILITY } from './types'
+import { resetAnimRuntime } from './animStateMachine'
 import { compileScript, scriptLog, type CompiledScript, type ScriptApi } from './scripting'
 
 let actorCounter = 0
@@ -61,6 +62,9 @@ export class Actor {
   pawnMode?: PawnMode
   mobility: Mobility
   tags: string[]
+  /** GAS-lite attribute set + assigned abilities */
+  attributeSetId?: string
+  abilityIds: string[] = []
   /** world streaming: hide when farther than this from the camera (0 = off) */
   cullDistance = 0
   postProcessProps?: PostProcessProps
@@ -83,12 +87,19 @@ export class Actor {
   currentAction?: THREE.AnimationAction
   /** clip to start playing at BeginPlay */
   autoPlayClip?: string
+  animStateMachine?: import('./animStateMachine').AnimStateMachine
+  blendSpace1D?: import('./animStateMachine').BlendSpace1D
+  animParams?: Record<string, number>
   /** prefab instance root: source prefab asset name */
   prefabSource?: string
   /** original prefab actor id — set on every actor in an instance subtree */
   prefabActorId?: string
   /** prefab instance root only: overrides keyed by original prefab actor id */
   prefabOverrides?: Record<string, Partial<SerializedActor>>
+  /** TriggerVolume — reverb zone preset */
+  triggerProps?: import('./types').TriggerProps
+  /** SoundEmitter — procedural/imported sound playback */
+  soundEmitterProps?: import('./types').SoundEmitterProps
   private compiled: CompiledScript | null = null
 
   // PIE state restore
@@ -156,7 +167,10 @@ export class Actor {
     this.mixer?.stopAllAction()
     this.mixer = undefined
     this.currentAction = undefined
-    if (this.autoPlayClip) this.playAnimation(this.autoPlayClip)
+    resetAnimRuntime(this)
+    if (!this.animStateMachine && !this.blendSpace1D?.samples.length && this.autoPlayClip) {
+      this.playAnimation(this.autoPlayClip)
+    }
     this.elapsed = 0
     this.baseY = this.root.position.y
     this.compiled = null
@@ -176,6 +190,7 @@ export class Actor {
     this.mixer?.stopAllAction()
     this.mixer = undefined
     this.currentAction = undefined
+    resetAnimRuntime(this)
     if (this.editorTransform) this.setTransform(this.editorTransform)
     this.editorTransform = null
     this.compiled = null
@@ -243,11 +258,21 @@ export class Actor {
       pawnMode: this.pawnMode,
       mobility: this.mobility,
       tags: [...this.tags],
+      attributeSetId: this.attributeSetId,
+      abilityIds: this.abilityIds.length ? [...this.abilityIds] : undefined,
       cullDistance: this.cullDistance || undefined,
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
       foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
       autoPlayClip: this.autoPlayClip,
+      animStateMachine: this.animStateMachine
+        ? JSON.parse(JSON.stringify(this.animStateMachine))
+        : undefined,
+      blendSpace1D: this.blendSpace1D ? JSON.parse(JSON.stringify(this.blendSpace1D)) : undefined,
+      animParams:
+        this.animParams && Object.keys(this.animParams).length
+          ? { ...this.animParams }
+          : undefined,
       materialGraph: this.materialGraph ? JSON.parse(JSON.stringify(this.materialGraph)) : undefined,
       probe: this.probeProps ? { ...this.probeProps } : undefined,
       water: this.waterProps ? { ...this.waterProps } : undefined,
@@ -264,6 +289,8 @@ export class Actor {
             Object.entries(this.prefabOverrides).map(([k, v]) => [k, { ...v }]),
           )
         : undefined,
+      trigger: this.triggerProps ? { ...this.triggerProps } : undefined,
+      soundEmitter: this.soundEmitterProps ? { ...this.soundEmitterProps } : undefined,
     }
   }
 

@@ -1,23 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { redo, undo } from './commands'
-import { exportPlayable } from './exportPlayable'
+import { exportPlayable, exportPlayablePWA } from './exportPlayable'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
 import { spawnAsset, type AssetPayload } from './spawn'
 import { useEditor } from './store'
 import { runCSG } from './csg'
 import { world } from '../engine/World'
+import { getPluginPaletteCommands, type PaletteCommand } from './plugins'
 
 /**
- * Command palette (Ctrl+Shift+P) + plugin API — the web-native extensibility
- * layer. Plugins register commands at runtime:
- *   window.vektra.registerPlugin({ name, commands: [{ label, run }] })
- * User plugin sources persist in localStorage and load at boot.
+ * Command palette (Ctrl+Shift+P) — built-in commands + plugin-registered commands.
+ * Plugin API lives in `src/editor/plugins.ts` and `window.vektra`.
  */
 
-export interface PaletteCommand {
-  label: string
-  run: () => void
-}
+export type { PaletteCommand } from './plugins'
+export {
+  registerPlugin,
+  registerNodeType,
+  registerPanel,
+  registerImporter,
+  registerConsoleCommand,
+  registerPanelCallback,
+  installPlugin,
+  loadUserPlugins,
+} from './plugins'
 
 const SPAWNABLES: Array<[string, AssetPayload]> = [
   ['Cube', { kind: 'mesh', geometry: 'box' }],
@@ -31,40 +37,6 @@ const SPAWNABLES: Array<[string, AssetPayload]> = [
   ['Player Start', { kind: 'playerstart' }],
 ]
 
-const pluginCommands: PaletteCommand[] = []
-
-export function registerPlugin(plugin: { name: string; commands?: PaletteCommand[] }) {
-  for (const c of plugin.commands ?? []) {
-    pluginCommands.push({ ...c, label: `${plugin.name}: ${c.label}` })
-  }
-  useEditor.getState().setStatus(`Plugin loaded: ${plugin.name}`)
-}
-
-const PLUGIN_KEY = 'vektra-engine.plugins'
-
-/** load persisted user plugin sources (JS evaluated with registerPlugin in scope) */
-export function loadUserPlugins() {
-  try {
-    const sources = JSON.parse(localStorage.getItem(PLUGIN_KEY) ?? '[]') as string[]
-    for (const src of sources) {
-      try {
-        new Function('registerPlugin', 'vektra', src)(registerPlugin, (window as unknown as Record<string, unknown>).vektra)
-      } catch (err) {
-        console.warn('plugin failed:', err)
-      }
-    }
-  } catch {
-    /* no plugins */
-  }
-}
-
-export function installPlugin(source: string) {
-  const sources = JSON.parse(localStorage.getItem(PLUGIN_KEY) ?? '[]') as string[]
-  sources.push(source)
-  localStorage.setItem(PLUGIN_KEY, JSON.stringify(sources))
-  new Function('registerPlugin', 'vektra', source)(registerPlugin, (window as unknown as Record<string, unknown>).vektra)
-}
-
 function buildCommands(): PaletteCommand[] {
   const s = useEditor.getState()
   return [
@@ -74,7 +46,8 @@ function buildCommands(): PaletteCommand[] {
     { label: 'New Level', run: newLevel },
     { label: 'Open Level…', run: openLevelFromFile },
     { label: 'Save Level', run: saveLevelToFile },
-    { label: 'Export Playable HTML', run: exportPlayable },
+    { label: 'Export Playable HTML', run: () => exportPlayable() },
+    { label: 'Export Playable HTML (PWA)', run: exportPlayablePWA },
     { label: 'Undo', run: undo },
     { label: 'Redo', run: redo },
     { label: 'Toggle Game View', run: () => s.toggleGameView() },
@@ -83,6 +56,7 @@ function buildCommands(): PaletteCommand[] {
     { label: 'Open Blueprint Editor', run: () => s.setBottomTab('blueprint') },
     { label: 'Open AI Copilot', run: () => s.setBottomTab('ai') },
     { label: 'Open Debug Panel', run: () => s.setBottomTab('debug') },
+    { label: 'Open Plugin Manager', run: () => s.setShowPluginManager(true) },
     { label: 'CSG: Union (2 selected)', run: () => runCSG('union') },
     { label: 'CSG: Subtract (2 selected)', run: () => runCSG('subtract') },
     { label: 'CSG: Intersect (2 selected)', run: () => runCSG('intersect') },
@@ -94,7 +68,7 @@ function buildCommands(): PaletteCommand[] {
       },
     },
     ...SPAWNABLES.map(([label, payload]): PaletteCommand => ({ label: `Place: ${label}`, run: () => spawnAsset(payload) })),
-    ...pluginCommands,
+    ...getPluginPaletteCommands(),
   ]
 }
 
@@ -103,6 +77,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const sceneVersion = useEditor((s) => s.sceneVersion)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -122,7 +97,7 @@ export function CommandPalette() {
     if (open) inputRef.current?.focus()
   }, [open])
 
-  const commands = useMemo(buildCommands, [open])
+  const commands = useMemo(buildCommands, [open, sceneVersion])
   const filtered = commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
 
   if (!open) return null

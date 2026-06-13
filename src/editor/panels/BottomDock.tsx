@@ -1,5 +1,7 @@
+import { getPluginPanels } from '../plugins'
 import { useEditor, type BottomTab } from '../store'
 import { ContentBrowser } from './ContentBrowser'
+import { PluginPanelView } from './PluginPanelView'
 import { ScriptEditor } from './ScriptEditor'
 import { BlueprintEditor } from './BlueprintEditor'
 import { Sequencer } from './Sequencer'
@@ -7,17 +9,25 @@ import { Console } from './Console'
 import { AIChat } from './AIChat'
 import { DebugPanel } from './DebugPanel'
 import { MaterialEditor } from './MaterialEditor'
+import { AnimStateEditor } from './AnimStateEditor'
+import { MetaSoundEditor } from './MetaSoundEditor'
 
 const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'content', label: '🗄 Content' },
   { id: 'script', label: '𝒇 Script' },
   { id: 'blueprint', label: '⬡ Blueprint' },
   { id: 'material', label: '⚛ Material' },
+  { id: 'metasound', label: '♪ MetaSound' },
+  { id: 'anim', label: '🎬 Anim' },
   { id: 'sequencer', label: '🎞 Sequencer' },
   { id: 'console', label: '>_ Console' },
   { id: 'ai', label: '✦ AI' },
   { id: 'debug', label: '📈 Debug' },
 ]
+
+function pluginTabId(panelId: string): BottomTab {
+  return `plugin:${panelId}`
+}
 
 /** Bottom dock — Godot-style tabbed drawer under the viewport. */
 export function BottomDock() {
@@ -25,11 +35,25 @@ export function BottomDock() {
   const tab = useEditor((s) => s.bottomTab)
   const setTab = useEditor((s) => s.setBottomTab)
   const toggle = useEditor((s) => s.toggleContentBrowser)
+  useEditor((s) => s.sceneVersion)
+  const pluginTabs = getPluginPanels().map((p) => ({ id: pluginTabId(p.id), label: p.title, panelId: p.id }))
 
   return (
     <div className={`bottom-dock ${open ? '' : 'closed'}`}>
       <div className="bottom-tabs">
         {TABS.map((t) => (
+          <button
+            key={t.id}
+            className={open && tab === t.id ? 'active' : ''}
+            onClick={() => {
+              if (open && tab === t.id) toggle()
+              else setTab(t.id)
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+        {pluginTabs.map((t) => (
           <button
             key={t.id}
             className={open && tab === t.id ? 'active' : ''}
@@ -52,10 +76,13 @@ export function BottomDock() {
           {tab === 'script' && <ScriptEditor />}
           {tab === 'blueprint' && <BlueprintEditor />}
           {tab === 'material' && <MaterialEditor />}
+          {tab === 'metasound' && <MetaSoundEditor />}
+          {tab === 'anim' && <AnimStateEditor />}
           {tab === 'sequencer' && <Sequencer />}
           {tab === 'console' && <Console />}
           {tab === 'ai' && <AIChat />}
           {tab === 'debug' && <DebugPanel />}
+          {tab.startsWith('plugin:') && <PluginPanelView panelId={tab.slice('plugin:'.length)} />}
         </div>
       )}
     </div>

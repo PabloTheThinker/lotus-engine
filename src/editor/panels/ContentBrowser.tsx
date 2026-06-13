@@ -1,6 +1,8 @@
 import { world } from '../../engine/World'
 import { deleteMaterial, listMaterials } from '../../engine/materialAssets'
+import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
 import { deletePrefab, instantiatePrefab, listPrefabs } from '../prefabs'
+import { getPluginImporters, getPluginNodeTypes } from '../plugins'
 import { dragGhost, spawnAsset, type AssetPayload } from '../spawn'
 import { useEditor } from '../store'
 
@@ -30,6 +32,7 @@ const ASSETS: AssetDef[] = [
   { label: 'Folder', icon: '📁', category: 'Gameplay', payload: { kind: 'folder' } },
   { label: 'Post Process', icon: '◫', category: 'Volumes', payload: { kind: 'postprocess' } },
   { label: 'Trigger', icon: '⏚', category: 'Volumes', payload: { kind: 'trigger' } },
+  { label: 'Sound Emitter', icon: '♪', category: 'Volumes', payload: { kind: 'soundemitter' } },
   { label: 'Refl. Probe', icon: '🔮', category: 'Volumes', payload: { kind: 'probe' } },
   { label: 'Particles', icon: '✨', category: 'VFX', payload: { kind: 'particles' } },
   { label: 'Foliage', icon: '🌿', category: 'VFX', payload: { kind: 'foliage' } },
@@ -113,6 +116,10 @@ export function ContentBrowser() {
   const imported = [...world.assets.entries()]
   const prefabs = listPrefabs()
   const materials = listMaterials()
+  const metaSounds = listMetaSounds()
+  const pluginNodes = getPluginNodeTypes()
+  const pluginImporters = getPluginImporters()
+  const pluginCategories = [...new Set(pluginNodes.map((n) => n.category ?? 'Plugins'))]
 
   return (
     <div className="content-browser-body">
@@ -140,6 +147,34 @@ export function ContentBrowser() {
           </div>
         </div>
       ))}
+      {metaSounds.length > 0 && (
+        <div className="asset-category">
+          <div className="asset-category-label">MetaSounds</div>
+          <div className="asset-grid">
+            {metaSounds.map((m) => (
+              <div
+                key={m.id}
+                className="asset-tile material"
+                title={`${m.name} — double-click to edit graph`}
+                onDoubleClick={() => useEditor.getState().setEditingMetaSound(m.id)}
+              >
+                <button
+                  className="prefab-delete"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    deleteMetaSound(m.id)
+                    useEditor.getState().touch()
+                  }}
+                >
+                  ✕
+                </button>
+                <div className="asset-icon">♪</div>
+                <div className="asset-label">{m.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {materials.length > 0 && (
         <div className="asset-category">
           <div className="asset-category-label">Materials</div>
@@ -203,6 +238,37 @@ export function ContentBrowser() {
           </div>
         </div>
       )}
+      {pluginCategories.map((cat) => {
+        const nodes = pluginNodes.filter((n) => (n.category ?? 'Plugins') === cat)
+        if (!nodes.length) return null
+        return (
+          <div className="asset-category" key={`plugin-${cat}`}>
+            <div className="asset-category-label">{cat}</div>
+            <div className="asset-grid">
+              {nodes.map((n) => {
+                const payload: AssetPayload = { kind: 'plugin-node', nodeType: n.type }
+                return (
+                  <div
+                    key={n.type}
+                    className="asset-tile plugin-node"
+                    title={`${n.label} (${n.pluginName}) — drag or double-click`}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('vektra/asset', JSON.stringify(payload))
+                      dragGhost.payload = payload
+                    }}
+                    onDragEnd={() => (dragGhost.payload = null)}
+                    onDoubleClick={() => spawnAsset(payload)}
+                  >
+                    <div className="asset-icon">{n.icon ?? '🔌'}</div>
+                    <div className="asset-label">{n.label}</div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })}
       {imported.length > 0 && (
         <div className="asset-category">
           <div className="asset-category-label">Imported</div>
@@ -241,10 +307,52 @@ export function ContentBrowser() {
             <div className="asset-icon">🔊</div>
             <div className="asset-label">Audio…</div>
           </div>
+          <div
+            className="asset-tile"
+            onClick={() => {
+              const name = prompt('MetaSound name?')
+              if (!name) return
+              const asset = createMetaSound(name)
+              useEditor.getState().setEditingMetaSound(asset.id)
+              useEditor.getState().setStatus(`MetaSound created: ${name} — api.playMetaSound('${name}')`)
+              useEditor.getState().touch()
+            }}
+            title="Create a procedural MetaSound graph"
+          >
+            <div className="asset-icon">♪</div>
+            <div className="asset-label">MetaSound…</div>
+          </div>
           <div className="asset-tile" onClick={importHdri} title="Import an .hdr environment (replaces the sky + IBL)">
             <div className="asset-icon">🌅</div>
             <div className="asset-label">HDRI…</div>
           </div>
+          {pluginImporters.map((imp) => (
+            <div
+              key={`${imp.pluginName}-${imp.ext}`}
+              className="asset-tile"
+              title={`${imp.label} (${imp.ext}) — or drag file onto viewport`}
+              onClick={() => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.accept = imp.ext
+                input.onchange = async () => {
+                  const file = input.files?.[0]
+                  if (!file) return
+                  try {
+                    await imp.import(file)
+                    useEditor.getState().setStatus(`${imp.label}: imported ${file.name}`)
+                    useEditor.getState().touch()
+                  } catch (err) {
+                    useEditor.getState().setStatus(`${imp.label} failed: ${(err as Error).message}`)
+                  }
+                }
+                input.click()
+              }}
+            >
+              <div className="asset-icon">🔌</div>
+              <div className="asset-label">{imp.label}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

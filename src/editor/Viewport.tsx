@@ -25,7 +25,9 @@ import { PlayController } from './PlayController'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
 import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
+import { handlePluginFileDrop } from './plugins'
 import { dragGhost, spawnAsset, type AssetPayload } from './spawn'
+import { updateListener } from '../engine/audio'
 import { useEditor, type ViewMode } from './store'
 
 function Projection() {
@@ -70,14 +72,23 @@ interface CtxMenu {
   actorId: string | null
 }
 
+interface PickMenu {
+  x: number
+  y: number
+  hits: { id: string; name: string; distance: number }[]
+}
+
 export function Viewport() {
   const mountRef = useRef<HTMLDivElement>(null)
   const statsRef = useRef<HTMLDivElement>(null)
   const statHudRef = useRef<HTMLDivElement>(null)
   const pipRef = useRef<HTMLDivElement>(null)
   const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
+  const [pickMenu, setPickMenu] = useState<PickMenu | null>(null)
   const ctxMenuSetter = useRef(setCtxMenu)
+  const pickMenuSetter = useRef(setPickMenu)
   ctxMenuSetter.current = setCtxMenu
+  pickMenuSetter.current = setPickMenu
 
   useEffect(() => {
     const mount = mountRef.current!
@@ -370,6 +381,41 @@ export function Viewport() {
       return world.actorFromObject(hits[0].object)
     }
 
+    function pickAll(e: MouseEvent): { actor: import('../engine/Actor').Actor; distance: number }[] {
+      const rect = renderer.domElement.getBoundingClientRect()
+      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+      raycaster.setFromCamera(pointer, editorCamera)
+      const pickables: THREE.Object3D[] = []
+      for (const actor of world.actors.values()) {
+        actor.root.traverse((o) => {
+          if (o.userData.isHelper) return
+          if (o instanceof THREE.Mesh) pickables.push(o)
+        })
+        if (!actor.mesh) pickables.push(actor.root)
+      }
+      const hits = raycaster.intersectObjects(pickables, false)
+      const seen = new Set<string>()
+      const results: { actor: import('../engine/Actor').Actor; distance: number }[] = []
+      for (const hit of hits) {
+        const actor = world.actorFromObject(hit.object)
+        if (actor && !seen.has(actor.id)) {
+          seen.add(actor.id)
+          results.push({ actor, distance: hit.distance })
+        }
+      }
+      for (const actor of world.actors.values()) {
+        if (actor.mesh || seen.has(actor.id)) continue
+        const p = new THREE.Vector3()
+        actor.root.getWorldPosition(p)
+        const d = raycaster.ray.distanceToPoint(p)
+        if (d < 0.6) {
+          results.push({ actor, distance: raycaster.ray.origin.distanceTo(p) })
+          seen.add(actor.id)
+        }
+      }
+      return results.sort((a, b) => a.distance - b.distance)
+    }
+
     let altLatch = false
     let rmbDown: [number, number] | null = null
     renderer.domElement.addEventListener('mousedown', (e) => {
@@ -377,15 +423,29 @@ export function Viewport() {
       if (e.button === 0) downPos = [e.clientX, e.clientY]
       if (e.button === 2) rmbDown = [e.clientX, e.clientY]
       ctxMenuSetter.current(null)
+      pickMenuSetter.current(null)
     })
 
-    // RMB click (no drag) → context menu, UE-style
+    // RMB click (no drag) → piercing pick (Unity Ctrl+RMB) or UE context menu
     renderer.domElement.addEventListener('mouseup', (e) => {
       if (e.button !== 2 || !rmbDown) return
       const moved = Math.hypot(e.clientX - rmbDown[0], e.clientY - rmbDown[1])
       rmbDown = null
       if (moved > 4 || useEditor.getState().playing) return
       const rect = renderer.domElement.getBoundingClientRect()
+      const s = useEditor.getState()
+      const piercing = e.ctrlKey || e.metaKey || s.gizmoMode === 'select'
+      if (piercing) {
+        const all = pickAll(e)
+        if (all.length > 0) {
+          pickMenuSetter.current({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+            hits: all.map(({ actor, distance }) => ({ id: actor.id, name: actor.name, distance })),
+          })
+          return
+        }
+      }
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, editorCamera)
       const hitActor = pick(e)
@@ -686,6 +746,13 @@ export function Viewport() {
       e.preventDefault()
       if (ghostMesh) ghostMesh.visible = false
       dragGhost.payload = null
+
+      const droppedFiles = e.dataTransfer?.files
+      if (droppedFiles && droppedFiles.length > 0) {
+        void handlePluginFileDrop(droppedFiles)
+        return
+      }
+
       const rect = renderer.domElement.getBoundingClientRect()
       pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
       raycaster.setFromCamera(pointer, editorCamera)
@@ -900,6 +967,13 @@ export function Viewport() {
     ro.observe(mount)
     resize()
 
+    world.onLevelSwitched = () => {
+      if (!useEditor.getState().simulate) {
+        pawn.possess(world.playerStart())
+      }
+      useEditor.getState().touch()
+    }
+
     // ---- main loop ----
     const clock = new THREE.Clock()
     let frames = 0
@@ -930,6 +1004,7 @@ export function Viewport() {
       }
       if (!s.playing && wasPlaying) {
         world.endPlay()
+        void world.restoreEditorAfterPIE()
         pawn.unpossess()
         unmountHud()
         mpDisconnect()
@@ -1026,6 +1101,16 @@ export function Viewport() {
       // scripts can ask where the player is
       world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
       if (s.playing) mpTick(dt, world.pawnPosition, pawn.camera.rotation.y)
+
+      // WebAudio listener — true 3D spatialization (PannerNode / HRTF)
+      const listenCam = possessed ? pawn.camera : editorCamera
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(listenCam.quaternion)
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(listenCam.quaternion)
+      updateListener(
+        [listenCam.position.x, listenCam.position.y, listenCam.position.z],
+        [fwd.x, fwd.y, fwd.z],
+        [up.x, up.y, up.z],
+      )
 
       if (!s.sculptActive || s.playing) brushRing.visible = false
 
@@ -1243,6 +1328,7 @@ export function Viewport() {
     })
 
     return () => {
+      world.onLevelSwitched = null
       renderer.setAnimationLoop(null)
       window.removeEventListener('keydown', onKeyDown)
       ro.disconnect()
@@ -1282,7 +1368,10 @@ export function Viewport() {
         ? '⏏ EJECTED — F8 to possess · Esc to stop'
         : '▶ PLAYING — WASD+mouse · F8 eject · Esc stop'
 
-  const closeMenu = () => setCtxMenu(null)
+  const closeMenu = () => {
+    setCtxMenu(null)
+    setPickMenu(null)
+  }
 
   return (
     <div className="viewport" ref={mountRef}>
@@ -1304,6 +1393,23 @@ export function Viewport() {
       {pilotingId && !playing && (
         <div className="viewport-pilot-banner" onClick={() => useEditor.getState().setPiloting(null)}>
           🛩 Piloting {world.actors.get(pilotingId)?.name ?? '?'} — click to eject
+        </div>
+      )}
+      {pickMenu && (
+        <div className="viewport-ctx" style={{ left: pickMenu.x, top: pickMenu.y }}>
+          <div className="panel-empty" style={{ padding: '4px 10px', fontSize: 10, opacity: 0.75 }}>Select actor</div>
+          {pickMenu.hits.map((h) => (
+            <button
+              key={h.id}
+              onClick={() => {
+                useEditor.getState().select(h.id)
+                closeMenu()
+              }}
+            >
+              {h.name}
+              <span style={{ float: 'right', opacity: 0.55, marginLeft: 12, fontSize: 10 }}>{h.distance.toFixed(1)}m</span>
+            </button>
+          ))}
         </div>
       )}
       {ctxMenu && (

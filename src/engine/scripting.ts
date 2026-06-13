@@ -1,10 +1,11 @@
 import * as THREE from 'three'
 import { Input } from './Input'
 import { isActionDown, actionJustPressed, actionHeldTime } from './inputActions'
+import { activateAbility, getAttribute, setAttribute } from './gameplayAbilities'
 import { cameraShake, canSeePoint, hud, queryBestPoint, raycastActors, setTimer, setViewCamera } from './gameplay'
 import { runBT, type BTNode } from './behaviorTree'
 import { findPath } from './nav'
-import { playSound } from './audio'
+import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
 
 /**
@@ -65,9 +66,19 @@ export interface ScriptApi {
   listClips: (actor: Actor) => string[]
   /** play an imported sound: api.playSound('boom', { at: [x,y,z], volume: 0.8 }) */
   playSound: (name: string, opts?: { volume?: number; bus?: 'sfx' | 'music'; loop?: boolean; at?: [number, number, number] }) => void
+  /** play a procedural MetaSound graph: api.playMetaSound('Laser', { at: [x,y,z] }) */
+  playMetaSound: (name: string, opts?: { volume?: number; bus?: 'sfx' | 'music'; loop?: boolean; at?: [number, number, number] }) => void
+  /** GAS-lite: activate an assigned ability by name or id */
+  activateAbility: (abilityId: string) => boolean
+  /** GAS-lite: read a gameplay attribute on this actor */
+  getAttribute: (name: string) => number | null
+  /** GAS-lite: set a gameplay attribute on this actor */
+  setAttribute: (name: string, value: number) => boolean
   time: () => number
   /** world position of the player pawn while playing, else null */
   pawnPosition: () => THREE.Vector3 | null
+  /** switch to a linked level (PIE + exported playable) — returns false if unknown */
+  loadLevel: (name: string) => boolean | Promise<boolean>
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -104,8 +115,10 @@ export function makeScriptApi(
   actors: Map<string, Actor>,
   clock: () => number,
   pawnPosition: () => THREE.Vector3 | null = () => null,
+  loadLevel: (name: string) => boolean | Promise<boolean> = () => false,
+  boundActor?: Actor,
 ): ScriptApi {
-  return {
+  const api: ScriptApi = {
     log: (...args) =>
       logSink(
         'log',
@@ -160,13 +173,19 @@ export function makeScriptApi(
           return p ? [p.x, p.y, p.z] : null
         },
       }),
+    playMetaSound: (name, opts = {}) => playMetaSound(name, opts),
     raycast: (origin, dir, maxDist) => raycastActors(actors, origin, dir, maxDist),
     hud,
     cameraShake,
     setViewCamera,
     time: clock,
     pawnPosition,
+    loadLevel,
+    activateAbility: (abilityId) => (boundActor ? activateAbility(boundActor, abilityId, api) : false),
+    getAttribute: (name) => (boundActor ? getAttribute(boundActor, name) : null),
+    setAttribute: (name, value) => (boundActor ? setAttribute(boundActor, name, value) : false),
   }
+  return api
 }
 
 // ---- @export script variables (Godot's killer bridge) ----
@@ -248,6 +267,7 @@ export const DEFAULT_SCRIPT = `// Vektra script — runs during Play.
 
 function onBeginPlay() {
   api.log(actor.name + ' ready')
+  // api.loadLevel('dungeon') — switch to a linked level (World Settings)
 }
 
 function onTick(dt) {

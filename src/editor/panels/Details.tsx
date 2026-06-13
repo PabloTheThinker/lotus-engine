@@ -9,7 +9,8 @@ import {
   saveMaterialFromProps,
 } from '../../engine/materialAssets'
 import { applyLightProps, world } from '../../engine/World'
-import type { Behavior, MaterialProps, Mobility, PostProcessProps, TransformSnapshot } from '../../engine/types'
+import { listMetaSounds } from '../../engine/metaSoundAssets'
+import type { Behavior, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps } from '../../engine/types'
 import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
 import { patchMaterialOverrides, revertMaterialOverride } from '../materialCommands'
@@ -18,6 +19,8 @@ import { buildFoliageMesh } from '../../engine/factory'
 import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
+import { collectAnimParams } from '../../engine/animStateMachine'
+import { getActorAttributes, listAbilities, listAttributeSets } from '../../engine/gameplayAbilities'
 import { parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
@@ -227,16 +230,45 @@ function MobilitySection({ actor }: { actor: Actor }) {
 
 function AnimationSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
+  const setBottomTab = useEditor((s) => s.setBottomTab)
   const clips = (actor.animations ?? []).map((c) => c.name)
   if (clips.length === 0) return null
+  const paramNames = collectAnimParams(actor)
+  if (actor.blendSpace1D?.param && !paramNames.includes(actor.blendSpace1D.param)) {
+    paramNames.push(actor.blendSpace1D.param)
+  }
+  const hasFsm = (actor.animStateMachine?.states.length ?? 0) > 0
+  const hasBlend = (actor.blendSpace1D?.samples.length ?? 0) > 0
+  const setAnimParam = (name: string, value: number) => {
+    if (!actor.animParams) actor.animParams = {}
+    actor.animParams[name] = value
+  }
   return (
     <Section title="Animation">
+      <button type="button" onClick={() => setBottomTab('anim')}>
+        Open Animation Editor
+      </button>
+      {(hasFsm || hasBlend) && (
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          {hasFsm && `FSM: ${actor.animStateMachine!.states.length} state(s)`}
+          {hasFsm && hasBlend && ' · '}
+          {hasBlend && `Blend: ${actor.blendSpace1D!.samples.length} sample(s)`}
+        </div>
+      )}
       <label className="field">
         <span>Auto Play</span>
         <select
           value={actor.autoPlayClip ?? ''}
           onChange={(e) => {
-            actor.autoPlayClip = e.target.value || undefined
+            const prev = actor.autoPlayClip
+            const next = e.target.value || undefined
+            runCommand(
+              new PropertyCommand(
+                'Auto play clip',
+                () => (actor.autoPlayClip = next),
+                () => (actor.autoPlayClip = prev),
+              ),
+            )
             touch()
           }}
         >
@@ -246,6 +278,30 @@ function AnimationSection({ actor }: { actor: Actor }) {
           ))}
         </select>
       </label>
+      {paramNames.map((name) => (
+        <Num
+          key={name}
+          label={name}
+          value={actor.animParams?.[name] ?? 0}
+          step={0.05}
+          onLive={(v) => {
+            setAnimParam(name, v)
+            touch()
+          }}
+          onCommit={(before, after) => {
+            const prev = { ...(actor.animParams ?? {}) }
+            const next = { ...prev, [name]: after }
+            runCommand(
+              new PropertyCommand(
+                `Anim param ${name}`,
+                () => (actor.animParams = next),
+                () => (actor.animParams = Object.keys(prev).length ? prev : undefined),
+              ),
+            )
+            if (before !== after) touch()
+          }}
+        />
+      ))}
       <div className="panel-empty" style={{ padding: '2px 0' }}>
         {clips.length} clip(s). Scripts: api.playAnimation(actor, '{clips[0]}')
       </div>
@@ -320,6 +376,88 @@ function ProbeSection({ actor }: { actor: Actor }) {
   )
 }
 
+function TriggerSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.triggerProps) actor.triggerProps = { reverbPreset: '' }
+  const props = actor.triggerProps
+  const set = <K extends keyof TriggerProps>(key: K, value: TriggerProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Trigger ${String(key)}`,
+        () => (props[key] = value),
+        () => (props[key] = prev),
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="Trigger Volume">
+      <label className="field">
+        <span>Reverb Preset</span>
+        <select value={props.reverbPreset ?? ''} onChange={(e) => set('reverbPreset', e.target.value as ReverbPreset)}>
+          <option value="">None</option>
+          <option value="room">Room</option>
+          <option value="hall">Hall</option>
+          <option value="cave">Cave</option>
+        </select>
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        While the pawn is inside, audio routes through a ConvolverNode reverb send. Also emits enter:/exit: signals.
+      </div>
+    </Section>
+  )
+}
+
+function SoundEmitterSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.soundEmitterProps) return null
+  const props = actor.soundEmitterProps
+  const metaSounds = listMetaSounds()
+  const set = <K extends keyof SoundEmitterProps>(key: K, value: SoundEmitterProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Sound ${String(key)}`,
+        () => (props[key] = value),
+        () => (props[key] = prev),
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="Sound Emitter">
+      <label className="field">
+        <span>MetaSound</span>
+        <select value={props.metaSoundName} onChange={(e) => set('metaSoundName', e.target.value)}>
+          <option value="">— select —</option>
+          {metaSounds.map((m) => (
+            <option key={m.id} value={m.name}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Num label="Volume" value={props.volume} step={0.05} min={0} max={2} onLive={(v) => set('volume', v)} onCommit={() => {}} />
+      <label className="field check">
+        <span>Auto Play</span>
+        <input type="checkbox" checked={props.autoPlay} onChange={(e) => set('autoPlay', e.target.checked)} />
+      </label>
+      <label className="field check">
+        <span>Loop</span>
+        <input type="checkbox" checked={props.loop} onChange={(e) => set('loop', e.target.checked)} />
+      </label>
+      <label className="field check">
+        <span>Spatial (3D)</span>
+        <input type="checkbox" checked={props.spatial} onChange={(e) => set('spatial', e.target.checked)} />
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Plays api.playMetaSound at this actor&apos;s position during Play when Auto Play is on.
+      </div>
+    </Section>
+  )
+}
+
 function StreamingSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   return (
@@ -336,6 +474,79 @@ function StreamingSection({ actor }: { actor: Actor }) {
         onCommit={() => {}}
       />
       <div className="panel-empty" style={{ padding: '2px 0' }}>0 = always visible. Hidden beyond this range from the camera.</div>
+    </Section>
+  )
+}
+
+function AbilitiesSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const playing = useEditor((s) => s.playing)
+  const sets = listAttributeSets()
+  const abilities = listAbilities()
+  const liveAttrs = playing ? getActorAttributes(actor) : null
+
+  const setAttrSet = (id: string) => {
+    const prev = actor.attributeSetId
+    runCommand(
+      new PropertyCommand(
+        'Attribute set',
+        () => (actor.attributeSetId = id || undefined),
+        () => (actor.attributeSetId = prev),
+      ),
+    )
+    touch()
+  }
+
+  const toggleAbility = (id: string) => {
+    const prev = [...actor.abilityIds]
+    const has = actor.abilityIds.includes(id)
+    const next = has ? actor.abilityIds.filter((x) => x !== id) : [...actor.abilityIds, id]
+    runCommand(
+      new PropertyCommand(
+        'Abilities',
+        () => (actor.abilityIds = next),
+        () => (actor.abilityIds = prev),
+      ),
+    )
+    touch()
+  }
+
+  return (
+    <Section title="Gameplay Abilities">
+      <label className="field">
+        <span>Attribute Set</span>
+        <select
+          value={actor.attributeSetId ?? ''}
+          onChange={(e) => setAttrSet(e.target.value)}
+        >
+          <option value="">(none)</option>
+          {sets.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      </label>
+      {abilities.length > 0 && (
+        <div className="details-grid">
+          {abilities.map((a) => (
+            <label className="field check" key={a.id}>
+              <span>{a.name}</span>
+              <input
+                type="checkbox"
+                checked={actor.abilityIds.includes(a.id)}
+                onChange={() => toggleAbility(a.id)}
+              />
+            </label>
+          ))}
+        </div>
+      )}
+      {liveAttrs && (
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Live: {Object.entries(liveAttrs).map(([k, v]) => `${k}=${v.toFixed(1)}`).join(' · ')}
+        </div>
+      )}
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Scripts: api.activateAbility('{abilities[0]?.name ?? 'AbilityName'}')
+      </div>
     </Section>
   )
 }
@@ -985,6 +1196,35 @@ function PhysicsSection({ actor }: { actor: Actor }) {
   )
 }
 
+function ColorGradient4({
+  colors,
+  onChange,
+}: {
+  colors: [string, string, string, string]
+  onChange: (c: [string, string, string, string]) => void
+}) {
+  return (
+    <div className="color-gradient-4">
+      <div className="color-gradient-bar" style={{ background: `linear-gradient(90deg, ${colors.join(', ')})` }} />
+      <div className="color-gradient-stops">
+        {colors.map((c, i) => (
+          <input
+            key={i}
+            type="color"
+            title={`Stop ${i + 1}`}
+            value={c}
+            onChange={(e) => {
+              const next = [...colors] as [string, string, string, string]
+              next[i] = e.target.value
+              onChange(next)
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ParticlesSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const props = actor.particleProps!
@@ -1036,16 +1276,52 @@ function ParticlesSection({ actor }: { actor: Actor }) {
       <Module id="forces" title="Forces (Gravity + Drag)">
         <Num label="Gravity" value={props.gravity} step={0.2} onLive={(v) => setNum('gravity', v)} onCommit={() => {}} />
         <Num label="Drag" value={props.drag} step={0.1} min={0} onLive={(v) => setNum('drag', v)} onCommit={() => {}} />
+        <Check label="Ground Bounce" value={props.groundBounce ?? false} onToggle={(v) => { props.groundBounce = v; touch() }} />
+        {(props.groundBounce ?? false) && (
+          <Num label="Bounce Factor" value={props.bounceFactor ?? 0.45} step={0.05} min={0} max={1} onLive={(v) => setNum('bounceFactor', v)} onCommit={() => {}} />
+        )}
       </Module>
       <Module id="colorOverLife" title="Color Over Life">
         <ColorField label="Start" value={props.colorStart} onLive={(v) => { props.colorStart = v; touch() }} onCommit={() => {}} />
         <ColorField label="End" value={props.colorEnd} onLive={(v) => { props.colorEnd = v; touch() }} onCommit={() => {}} />
+        <label className="field span-2">
+          <span>4-Point Gradient</span>
+          <ColorGradient4
+            colors={props.colorGradient ?? [props.colorStart, props.colorStart, props.colorEnd, props.colorEnd]}
+            onChange={(c) => {
+              props.colorGradient = c
+              props.colorStart = c[0]
+              props.colorEnd = c[3]
+              touch()
+            }}
+          />
+        </label>
       </Module>
       <Module id="sizeOverLife" title="Size Over Life">
         <Num label="Start" value={props.sizeStart} step={0.02} min={0.01} onLive={(v) => setNum('sizeStart', v)} onCommit={() => {}} />
         <Num label="End" value={props.sizeEnd} step={0.02} min={0} onLive={(v) => setNum('sizeEnd', v)} onCommit={() => {}} />
       </Module>
-      <Module id="renderer" title="Sprite Renderer">
+      <Module id="renderer" title="Renderer">
+        <label className="field">
+          <span>Render Mode</span>
+          <select
+            value={props.renderMode ?? 'points'}
+            onChange={(e) => {
+              props.renderMode = e.target.value as typeof props.renderMode
+              sys.refresh()
+              touch()
+            }}
+          >
+            <option value="points">Points (sprites)</option>
+            <option value="ribbon">Ribbon (trail strip)</option>
+          </select>
+        </label>
+        {(props.renderMode ?? 'points') === 'ribbon' && (
+          <>
+            <Num label="Ribbon Width" value={props.ribbonWidth ?? 0.08} step={0.01} min={0.01} onLive={(v) => { setNum('ribbonWidth', v); sys.refresh() }} onCommit={() => {}} />
+            <Num label="Trail Segments" value={props.ribbonSegments ?? 8} step={1} min={3} max={32} onLive={(v) => { setNum('ribbonSegments', v); sys.refresh() }} onCommit={() => {}} />
+          </>
+        )}
         <Check label="Additive Glow" value={props.additive} onToggle={(v) => { props.additive = v; sys.refresh(); touch() }} />
         <Num label="Max Particles" value={props.maxParticles} step={50} min={10} onLive={(v) => setNum('maxParticles', v)} onCommit={() => {}} />
       </Module>
@@ -1353,7 +1629,10 @@ export function Details() {
         <TransformSection actor={actor} />
         <MobilitySection actor={actor} />
         <TagsSection actor={actor} />
+        <AbilitiesSection actor={actor} />
         {actor.type === 'PostProcessVolume' && actor.postProcessProps && <PostProcessSection actor={actor} />}
+        {actor.type === 'TriggerVolume' && <TriggerSection actor={actor} />}
+        {actor.type === 'SoundEmitter' && <SoundEmitterSection actor={actor} />}
         {actor.type === 'PlayerStart' && <PawnSection actor={actor} />}
         {actor.mesh && actor.materialProps && actor.materialAssetId && <MaterialInstanceSection actor={actor} />}
         {actor.mesh && actor.materialProps && !actor.materialAssetId && <MaterialSection actor={actor} />}

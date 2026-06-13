@@ -24,6 +24,7 @@ export type BTNode =
   | { task: 'set'; key: string; value: unknown }
   | { task: 'emit'; signal: string }
   | { task: 'log'; text: string }
+  | { task: 'activateAbility'; abilityId: string }
 
 export interface BTContext {
   actor: Actor
@@ -32,6 +33,7 @@ export interface BTContext {
   emit: (signal: string, ...args: unknown[]) => void
   log: (msg: string) => void
   dt: number
+  activateAbility: (abilityId: string) => boolean
 }
 
 interface BTState {
@@ -129,6 +131,8 @@ export function tickBT(node: BTNode, ctx: BTContext): BTStatus {
     case 'log':
       ctx.log(node.text)
       return 'success'
+    case 'activateAbility':
+      return ctx.activateAbility(node.abilityId) ? 'success' : 'failure'
   }
   return 'failure'
 }
@@ -150,9 +154,23 @@ export function runBT(actor: Actor, tree: BTNode, bb: Record<string, unknown>) {
   active.push({ actor, tree, bb })
 }
 
-export function tickBTs(dt: number, pawn: () => THREE.Vector3 | null, emit: BTContext['emit'], log: (m: string) => void) {
+export function tickBTs(
+  dt: number,
+  pawn: () => THREE.Vector3 | null,
+  emit: BTContext['emit'],
+  log: (m: string) => void,
+  activateAbility: (actor: Actor, abilityId: string) => boolean,
+) {
   for (const a of active) {
     if (!a.actor.root.visible) continue
-    tickBT(a.tree, { actor: a.actor, bb: a.bb, pawn, emit, log: (m) => log(m), dt })
+    tickBT(a.tree, {
+      actor: a.actor,
+      bb: a.bb,
+      pawn,
+      emit,
+      log: (m) => log(m),
+      dt,
+      activateAbility: (id) => activateAbility(a.actor, id),
+    })
   }
 }

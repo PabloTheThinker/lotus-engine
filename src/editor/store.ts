@@ -2,7 +2,8 @@ import { create } from 'zustand'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
-export type BottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'sequencer' | 'console' | 'ai' | 'debug'
+export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug'
+export type BottomTab = BuiltinBottomTab | `plugin:${string}`
 
 export interface ConsoleEntry {
   level: 'log' | 'error' | 'cmd' | 'ai'
@@ -98,6 +99,10 @@ interface EditorState {
   bottomTab: BottomTab
   setBottomTab: (t: BottomTab) => void
 
+  /** MetaSound asset open in the bottom dock editor */
+  editingMetaSoundId: string | null
+  setEditingMetaSound: (id: string | null) => void
+
   // console / output log
   consoleEntries: ConsoleEntry[]
   pushConsole: (level: ConsoleEntry['level'], message: string) => void
@@ -140,6 +145,10 @@ interface EditorState {
   // preferences modal
   showPrefs: boolean
   setShowPrefs: (v: boolean) => void
+
+  // plugin manager modal
+  showPluginManager: boolean
+  setShowPluginManager: (v: boolean) => void
 
   // external CLI bridge (dev WebSocket)
   bridgeConnected: boolean
@@ -220,6 +229,9 @@ export const useEditor = create<EditorState>((set) => ({
   bottomTab: 'content',
   setBottomTab: (t) => set({ bottomTab: t, contentBrowserOpen: true }),
 
+  editingMetaSoundId: null,
+  setEditingMetaSound: (id) => set({ editingMetaSoundId: id, bottomTab: 'metasound', contentBrowserOpen: true }),
+
   consoleEntries: [],
   pushConsole: (level, message) =>
     set((s) => ({ consoleEntries: [...s.consoleEntries.slice(-199), { level, message }] })),
@@ -260,6 +272,9 @@ export const useEditor = create<EditorState>((set) => ({
 
   showPrefs: false,
   setShowPrefs: (v) => set({ showPrefs: v }),
+
+  showPluginManager: false,
+  setShowPluginManager: (v) => set({ showPluginManager: v }),
 
   bridgeConnected: false,
   setBridgeConnected: (v) => set({ bridgeConnected: v }),

@@ -20,6 +20,7 @@ const TYPE_ICONS: Record<string, string> = {
   FoliageLayer: '🌿',
   Landscape: '⛰',
   TriggerVolume: '⏚',
+  SoundEmitter: '♪',
   ReflectionProbe: '🔮',
   Water: '🌊',
   PCGVolume: '🎲',

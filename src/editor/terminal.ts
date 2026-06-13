@@ -1,4 +1,5 @@
 import { consoleSuggestions, execConsoleCommand } from './consoleCommands'
+import { getPluginConsoleCommands } from './plugins'
 import * as THREE from 'three'
 
 import { world } from '../engine/World'
@@ -311,6 +312,7 @@ export function terminalCompletions(partial: string): string[] {
   }
 
   const actorNames = [...world.actors.values()].map((a) => `"${a.name}"`)
+  const pluginCmds = getPluginConsoleCommands().map((c) => `${c.name} `)
   const builtins = [
     'world',
     'world.actors',
@@ -348,7 +350,7 @@ export function terminalCompletions(partial: string): string[] {
     const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
-  const all = [...builtins, ...actorNames]
+  const all = [...builtins, ...pluginCmds, ...actorNames]
   const lastToken = partial.split(/[\s;,(]+/).pop() ?? partial
   if (!lastToken) return []
   return all.filter((c) => c.toLowerCase().startsWith(lastToken.toLowerCase()) && c !== lastToken).slice(0, 12)
