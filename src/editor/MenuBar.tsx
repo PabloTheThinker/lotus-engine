@@ -4,6 +4,8 @@ import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
 import { exportPlayable, exportPlayablePWA } from './exportPlayable'
 import { spawnAsset } from './spawn'
 import { useEditor } from './store'
+import { formatShortcutLabel, getShortcutsVersion, subscribeShortcuts } from './shortcuts'
+import { useSyncExternalStore } from 'react'
 
 interface MenuItem {
   label: string
@@ -56,6 +58,7 @@ function Menu({ title, items }: { title: string; items: MenuItem[] }) {
 }
 
 export function MenuBar() {
+  useSyncExternalStore(subscribeShortcuts, getShortcutsVersion)
   const levelName = useEditor((s) => s.levelName)
   const setLevelName = useEditor((s) => s.setLevelName)
 
@@ -69,7 +72,7 @@ export function MenuBar() {
         items={[
           { label: 'New Level', action: newLevel },
           { label: 'Open Level…', action: openLevelFromFile },
-          { label: 'Save Level', shortcut: 'Ctrl+S', action: saveLevelToFile },
+          { label: 'Save Level', shortcut: formatShortcutLabel('tools.save'), action: saveLevelToFile },
           { label: '', divider: true },
           { label: 'Export Playable HTML', action: () => exportPlayable() },
           { label: 'Export Playable HTML (PWA)', action: exportPlayablePWA },
@@ -78,8 +81,8 @@ export function MenuBar() {
       <Menu
         title="Edit"
         items={[
-          { label: 'Undo', shortcut: 'Ctrl+Z', action: undo },
-          { label: 'Redo', shortcut: 'Ctrl+Y', action: redo },
+          { label: 'Undo', shortcut: formatShortcutLabel('tools.undo'), action: undo },
+          { label: 'Redo', shortcut: formatShortcutLabel('tools.redo'), action: redo },
           { label: '', divider: true },
           { label: 'Editor Preferences…', action: () => useEditor.getState().setShowPrefs(true) },
           { label: '', divider: true },

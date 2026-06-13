@@ -2,7 +2,7 @@
 
 > The complete worklist: every area of the official UE 5.7 documentation
 > (dev.epicgames.com/documentation/unreal-engine/unreal-engine-5-7-documentation)
-> mapped against what Vektra Engine has as of v0.20.
+> mapped against what Vektra Engine has as of v0.43.
 > Sourced from docs/UE5-TOOL-CENSUS.md + docs/UE5.7-EDITOR-UX-RESEARCH.md.
 >
 > Legend: ✅ shipped · ◐ partial (v1 shipped, upgrade listed) · ⏳ to do · 🚫 non-goal (infeasible in browser / wrong category — approximate or skip honestly)
@@ -42,12 +42,12 @@
 | Blueprint exec-pin graph (Events/Actions/Flow) → runs in game | ✅ | — (compiles to the script slot) |
 | **Data pins** (lazy-pulled through pure nodes) | ✅ | v0.26: pure Data nodes (Number/Get Variable/Time/Random/DistanceToPlayer/Add/Multiply/Sine) wire into ◦ data inputs on actions (MoveBy xyz, Delay, SetVariable); expressions inline at compile. Typed pins + auto-conversion = polish |
 | Variables (get/set) | ✅ | v0.26: + Variable strip, Get Variable (pure) + Set Variable (action, data-wireable), Branch 'variable >' condition |
-| Functions / Macros (subgraphs) | ⏳ | Collapse selection to subgraph; inline at compile |
+| Functions / Macros (subgraphs) | ✅ | v0.40: Collapse to Function (⊟), CallFunction inlined at compile; edit subgraphs in BP editor |
 | Flow nodes: ForLoop, DoOnce, FlipFlop | ✅ | Shipped (v0.24, runtime-verified). Gate/MultiGate/Switch = next |
 | Event Dispatchers / BP Interfaces | ◐ | Signals (api.emit/on) cover the runtime; add Bind/Call BP nodes |
-| Construction Script (runs on edit-time placement) | ⏳ | onConstruct hook evaluated in-editor when actor is placed/moved |
-| Blueprint debugger (exec pulse visualization, breakpoints) | ⏳ | Animate wire highlights during play; huge perceived quality |
-| Level Blueprint | ⏳ | One world-level blueprint (no actor) — trivially: a hidden Empty actor convention or world.blueprint slot |
+| Construction Script (runs on edit-time placement) | ✅ | v0.33: onConstruct() via runConstructScript on AddActorCommand + gizmo release |
+| Blueprint debugger (exec pulse visualization, breakpoints) | ✅ | v0.33: __bpPulse wire highlights during Play (breakpoints = polish) |
+| Level Blueprint | ✅ | v0.33: Level BP button spawns LevelScript Empty actor convention |
 | Per-actor JS scripting (our GDScript analog) | ✅ | — |
 | @export vars → Details widgets | ✅ | Add @export_range slider / @export_enum dropdown variants |
 
@@ -55,8 +55,8 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Material node editor | ◐ | CPU property-graph shipped (Color/Scalar/Time/Sine/Pulse/Mul/Add/Lerp). **Upgrade: per-pixel via TSL/onBeforeCompile** — TextureSample, UV, Fresnel, Noise, WPO; live preview sphere; material *assets* shared across actors with per-instance parameters |
-| Material instances + parameters | ⏳ | Material as named asset; instances override scalar/vector params |
+| Material node editor | ◐ | CPU property-graph shipped (Color/Scalar/Time/Sine/Pulse/Mul/Add/Lerp); material assets + instances ✅ v0.34. **Upgrade: per-pixel via TSL/onBeforeCompile** — TextureSample, UV, Fresnel, Noise, WPO; live preview sphere |
+| Material instances + parameters | ✅ | v0.34: MaterialAsset library + per-actor materialAssetId/overrides in Details |
 | Post-process volumes (blend radius, priority) | ✅ | Add vignette, color grading (lift/gamma/gain), DOF to the override set |
 | Sky atmosphere + sun binding | ✅ | Volumetric clouds 🚫 (billboard/raymarch-lite later) |
 | Exponential height fog | ◐ | FogExp2 shipped; height-falloff variant via shader |
@@ -79,7 +79,7 @@
 | Foliage painting | ✅ | Slope/height filters; multi-type painting in one stroke |
 | Water system | ✅ | v0.32: Water actor — animated Gerstner-lite surface, size/color/wave props, serialized (verified vertex animation) |
 | World Partition / streaming | ◐ | Cull-distance streaming shipped; grid-chunked auto load/unload around camera = upgrade |
-| Level instances (nested prefabs) | ◐ | Prefabs ✅; nested prefab-in-prefab + per-instance overrides (Godot editable children) = upgrade |
+| Level instances (nested prefabs) | ◐ | v0.35: prefabSource/prefabOverrides + per-field revert (⟲). Nested prefab-in-prefab = upgrade |
 | PCG (sample→filter→spawn) | ✅ | v0.32: PCG Scatter volume — seeded jittered-grid sampling, surface raycast + slope filter, scale/rotation jitter + normal alignment, live regen, deterministic (verified 24 instances). Full node-graph editor = v2 |
 | Modeling mode (CSG/booleans) | ◐ | Union/Subtract/Intersect shipped; add Mirror, Merge, meshopt Simplify; poly editing 🚫 v1 |
 | Fracture mode | ◐ | Breakable shatter shipped (8 fragments); Voronoi pre-fracture = upgrade |
@@ -92,10 +92,10 @@
 |---|---|---|
 | Emitter + params (rate/burst/shapes/velocity/gravity/drag/color & size over life) | ✅ | — |
 | Module *stack* UI | ✅ | v0.27: Spawn/Shape/Velocity/Forces/ColorOverLife/SizeOverLife/Renderer cards with enable toggles, sim-respected (A/B verified: 4.0m vs 0.4m rise) |
-| Curve-driven params (color ramp / size curve widgets) | ⏳ | Reusable gradient + curve widgets (shared with Sequencer) |
-| Ribbon / mesh renderers | ⏳ | Trail ribbons (Line2/strip), InstancedMesh renderer |
+| Curve-driven params (color ramp / size curve widgets) | ◐ | v0.42: 4-stop color gradient widget in Details; graphical size curve + Sequencer-shared widgets = polish |
+| Ribbon / mesh renderers | ◐ | v0.42: ribbon trail strip renderer; InstancedMesh mesh renderer = next |
 | GPU sim | 🚫 | WebGPU compute later; CPU ≤5k fine |
-| Sub-emitters / events / collision | ⏳ | Particle ground-bounce via heightfield lookup = cheap win |
+| Sub-emitters / events / collision | ◐ | v0.42: ground-bounce via heightfield lookup; sub-emitters/events = next |
 
 ## 6. Animating Characters & Objects
 
@@ -107,8 +107,8 @@
 | Camera Cut track | ✅ | v0.25: 🎬 Cut keys on the ruler, drives setViewCamera in PIE |
 | Event/visibility tracks | ✅ | v0.25: ⚡ Event keys emit signals (scripts subscribe via api.on); visibility is a property track. Audio keys = wire signal → playSound in a script |
 | glTF clip playback + crossfade | ✅ | — |
-| Anim state machine editor (FSM graph) | ⏳ | Graph UI over the existing crossfade primitive |
-| Blend spaces 1D/2D | ⏳ | 1D lerp weights (easy); 2D triangulation |
+| Anim state machine editor (FSM graph) | ◐ | v0.38: AnimStateEditor tab — draggable states + transition arrows; full AnimGraph polish = next |
+| Blend spaces 1D/2D | ◐ | v0.38: 1D blend space lerp weights; 2D triangulation = next |
 | Control Rig / IK | ⏳ | Two-bone IK + LookAt on glTF skeletons; rig graphs 🚫 |
 | Retargeting / Motion Matching | 🚫 | — |
 | Take Recorder | ✅ | v0.31: ⏺ Take arms 10Hz transform sampling of the selected actor during Play → sequencer keys (verified 15 keys) |
@@ -122,13 +122,13 @@
 | Pawn types: fly / first / third / vehicle | ✅ | Raycast-suspension vehicle = upgrade |
 | Enhanced Input (actions, rebind, hold) | ✅ | v0.28: api.actionHeldTime (Hold trigger). Mapping-context stacks + gamepad = polish |
 | Behavior Trees + Blackboard | ✅ | Graph editor UI + live execution highlight = upgrade |
-| Navmesh + pathfinding | ◐ | Grid A* shipped; recast-navigation-js polygon navmesh + crowd avoidance = upgrade |
+| Navmesh + pathfinding | ✅ | v0.36: Recast WASM bake + show navmesh + api.findPath polygon paths; grid A* fallback; crowd avoidance = upgrade |
 | EQS | ✅ | v0.28: api.queryBestPoint (ring generator, far/near-player + near-point scoring) |
 | AI Perception (sight) | ✅ | v0.28: api.canSeePlayer (FOV cone + occlusion raycast) |
 | Physics: rigid bodies, mobility gate, trimesh terrain | ✅ | Physics layers/masks matrix; joints as actor links |
 | Collision layers/masks | ✅ | v0.28: per-actor Layer 0-7 + collides-with bitmask buttons → Rapier groups (verified: filtered ball fell through ground) |
 | Destruction | ✅ (lite) | Voronoi fracture, strain propagation = upgrade |
-| Gameplay Ability System | ⏳ | Simplified: attributes + abilities with cooldown/cost + effect stacks over tags (tags ✅) |
+| Gameplay Ability System | ◐ | v0.42: GAS-lite — attribute sets + abilities (cooldown/cost/tags) + api.activateAbility; effect stacks = next |
 | Gameplay Tags (hierarchical) | ✅ | v0.28: 'Enemy.Boss' prefix-matches 'Enemy.Boss.Fire' in getActorsByTag |
 | Data tables / curve assets | ◐ | JSON tables shipped; grid editor UI + curve assets |
 | Networking / replication | ◐ | Pawn co-presence relay shipped; per-actor property replication checklist (Synchronizer), spawner replication, ownership |
@@ -137,9 +137,9 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Sound playback + distance attenuation + buses | ✅ | True PannerNode spatialization (THREE.PositionalAudio) instead of manual falloff |
-| MetaSounds (procedural node graph) | ⏳ | WebAudio IS a node graph — node editor → AudioNode topology; near-1:1 |
-| Attenuation curve shapes / reverb zones | ⏳ | Falloff picker; ConvolverNode reverb send per TriggerVolume |
+| Sound playback + distance attenuation + buses | ✅ | v0.39: HRTF PannerNode spatialization + bus mixer (replaces manual falloff) |
+| MetaSounds (procedural node graph) | ✅ | v0.39: MetaSoundEditor — Osc/Gain/Filter/ADSR/Noise/Buffer → WebAudio; api.playMetaSound + SoundEmitter actor |
+| Attenuation curve shapes / reverb zones | ◐ | v0.39: ConvolverNode reverb zones via TriggerVolume preset; falloff curve picker = polish |
 | Sequencer audio scrubbing | ⏳ | After audio tracks land |
 
 ## 9. UI (UMG)
@@ -157,7 +157,7 @@
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
 | Console (`, Cmd field, stat commands, cvars, autocomplete) | ✅ | v0.30: UE commands in Tab-completion; screen percentage scales targets (v0.21) |
-| Profiler (FPS/tick/render graphs, draw calls) | ✅ | Per-actor tick timings (flame list) = upgrade |
+| Profiler (FPS/tick/render graphs, draw calls) | ✅ | v0.37: per-actor tick breakdown bars in Debug Monitors during Play |
 | PIE: pause / frame-step / eject / possess | ✅ | "Click for Mouse Control" + "Shift+F1 for cursor" overlay text; Alt+P play hotkey |
 | Simulate / Play From Here / Keep Sim Changes | ✅ | — |
 | Collision/navmesh debug draw (`show collision`) | ✅ | Wireframe outlines shipped (v0.21) |
@@ -166,14 +166,14 @@
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Packaging/export | ✅ | 22 KB playable HTML beats UE here. Add: PWA manifest option, share-to-URL host integration, multi-level export (scene switching) |
+| Packaging/export | ✅ | v0.40: multi-level export (`__VEKTRA_LEVELS__` + api.loadLevel) + PWA manifest option + mobile/desktop quality presets |
 | Platforms menu | 🚫 | Web is the platform |
 
 ## 12. Editor Extensibility
 
 | UE 5.7 feature | Status | What needs to be done |
 |---|---|---|
-| Plugins | ✅ | Plugin API surface: register nodeTypes/panels/importers (commands shipped) |
+| Plugins | ✅ | v0.41: full Plugin API — registerNodeType/registerPanel/importers/consoleCommands + Plugin Manager + drag-drop install |
 | Command palette | ✅ | (UE has Ctrl+P open-asset; ours is Ctrl+Shift+P commands — add asset search to it) |
 | Project Settings | ◐ | World Settings covers level scope; add project-scope settings modal |
 | AI copilot (no UE equivalent) | ✅ | Our differentiator — keep feeding it every new command |
@@ -182,15 +182,15 @@
 
 ## Priority queue (next 10, by recognition × effort)
 
-1. ~~Fix hotkey order~~ ✅ v0.21
-2. ~~Ortho views~~ ✅ v0.22
-3. ~~Details reset-to-default arrows~~ ✅ v0.23 (right-click property menu remains)
-4. **Material editor v2** — per-pixel TSL nodes (TextureSample/UV/Fresnel/Noise) + material assets with instances
-5. **Sequencer phase 2** — property tracks + camera-cut track + curve editor
-6. **Niagara module-stack UI** + curve/gradient widgets (shared with Sequencer)
-7. **Blueprint data pins** + variables + ForLoop/Gate/FlipFlow nodes + exec pulse debugging
-8. **Surface snapping** (rotate-to-normal placement) + outliner search operators + full right-click menu
-9. **UMG widget designer** over the DOM HUD
-10. **Movie Render Queue** — WebCodecs video export of Sequencer playback (web-native flex)
+1. ~~Blueprint completion~~ ✅ v0.33 (onConstruct, exec pulse, Level BP)
+2. ~~Material assets + instances~~ ✅ v0.34
+3. ~~Recast navmesh~~ ✅ v0.36
+4. ~~Live debugger + tick profiler~~ ✅ v0.37
+5. ~~FSM editor + 1D blend space~~ ◐ v0.38 (2D blend + IK = next)
+6. ~~MetaSounds-lite~~ ✅ v0.39
+7. ~~Multi-level export + PWA~~ ✅ v0.40
+8. ~~Plugin API + GAS-lite + BP functions~~ ✅ v0.40–v0.42
+9. **Material editor v2** — per-pixel TSL nodes (TextureSample/UV/Fresnel/Noise) + live preview sphere
+10. **Viewport quad layouts** + keyboard shortcut editor + Content Drawer dock-pin + toolbar Modes dropdown
 
 *Update this file as items ship — it is the working successor to ROADMAP.md (which records the completed 34-task arc).*

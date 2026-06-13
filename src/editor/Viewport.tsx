@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import * as THREE from 'three'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
@@ -29,21 +30,110 @@ import { handlePluginFileDrop } from './plugins'
 import { dragGhost, spawnAsset, type AssetPayload } from './spawn'
 import { updateListener } from '../engine/audio'
 import { useEditor, type ViewMode } from './store'
+import { isTypingTarget, matchesShortcutId } from './shortcuts'
+import {
+  computePanes,
+  paneAt,
+  PANE_LABELS,
+  toWebGLViewport,
+  type PaneRect,
+  type ViewportLayout,
+  type ViewportPane,
+} from './viewportLayout'
 
 function Projection() {
   const proj = useEditor((s) => s.viewProjection)
+  const layout = useEditor((s) => s.viewportLayout)
+  const activePane = useEditor((s) => s.activeViewportPane)
   const setProj = useEditor((s) => s.setViewProjection)
+  const setActivePane = useEditor((s) => s.setActiveViewportPane)
+  const value = layout === 'quad' ? activePane : proj
   return (
     <select
       className="cam-speed"
-      title="Projection (Alt+G/H/J/K)"
-      value={proj}
-      onChange={(e) => setProj(e.target.value as 'perspective' | 'top' | 'front' | 'side')}
+      title={layout === 'quad' ? 'Active pane (Alt+G/H/J/K)' : 'Projection (Alt+G/H/J/K)'}
+      value={value}
+      onChange={(e) => {
+        const p = e.target.value as ViewportPane
+        if (layout === 'quad') setActivePane(p)
+        else setProj(p)
+      }}
     >
       <option value="perspective">Perspective</option>
       <option value="top">Top</option>
       <option value="front">Front</option>
       <option value="side">Side</option>
+    </select>
+  )
+}
+
+function paneChromeStyle(pane: ViewportPane, maximized: ViewportPane | null): CSSProperties {
+  if (maximized) {
+    if (pane !== maximized) return { display: 'none' }
+    return { left: 0, top: 0, width: '100%', height: '100%' }
+  }
+  switch (pane) {
+    case 'perspective':
+      return { left: 0, top: 0, width: '50%', height: '50%' }
+    case 'top':
+      return { left: '50%', top: 0, width: '50%', height: '50%' }
+    case 'front':
+      return { left: 0, top: '50%', width: '50%', height: '50%' }
+    default:
+      return { left: '50%', top: '50%', width: '50%', height: '50%' }
+  }
+}
+
+function ViewportPaneChrome() {
+  const layout = useEditor((s) => s.viewportLayout)
+  const playing = useEditor((s) => s.playing)
+  const activePane = useEditor((s) => s.activeViewportPane)
+  const maximizedPane = useEditor((s) => s.maximizedPane)
+  const setActivePane = useEditor((s) => s.setActiveViewportPane)
+  const setMaximizedPane = useEditor((s) => s.setMaximizedPane)
+  if (layout !== 'quad' || playing) return null
+
+  const panes: ViewportPane[] = maximizedPane ? [maximizedPane] : ['perspective', 'top', 'front', 'side']
+
+  return (
+    <div className="viewport-pane-overlay" aria-hidden>
+      {panes.map((pane) => (
+        <div
+          key={pane}
+          className={`viewport-pane-chrome${activePane === pane ? ' active' : ''}${maximizedPane === pane ? ' maximized' : ''}`}
+          style={paneChromeStyle(pane, maximizedPane)}
+          onMouseDown={() => setActivePane(pane)}
+        >
+          <span className="viewport-pane-label">{PANE_LABELS[pane]}</span>
+          <button
+            type="button"
+            className="viewport-pane-maximize"
+            title={maximizedPane === pane ? 'Restore layout (double-click)' : 'Maximize pane (double-click)'}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              setMaximizedPane(maximizedPane === pane ? null : pane)
+            }}
+          >
+            {maximizedPane === pane ? '⧉' : '⬚'}
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ViewportLayoutSelect() {
+  const layout = useEditor((s) => s.viewportLayout)
+  const setLayout = useEditor((s) => s.setViewportLayout)
+  return (
+    <select
+      className="cam-speed"
+      title="Viewport Layout (UE: 1 or 4 panes)"
+      value={layout}
+      onChange={(e) => setLayout(e.target.value as ViewportLayout)}
+    >
+      <option value="single">Layout: Single</option>
+      <option value="quad">Layout: Quad</option>
     </select>
   )
 }
@@ -106,6 +196,88 @@ export function Viewport() {
     editorCamera.position.set(8, 6, 10)
     editorCamera.lookAt(0, 0, 0)
     const controls = new EditorCameraControls(editorCamera, renderer.domElement)
+
+    const topCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
+    const frontCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
+    const sideCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
+    const topControls = new EditorCameraControls(topCamera, renderer.domElement)
+    const frontControls = new EditorCameraControls(frontCamera, renderer.domElement)
+    const sideControls = new EditorCameraControls(sideCamera, renderer.domElement)
+    topControls.setProjection('top')
+    frontControls.setProjection('front')
+    sideControls.setProjection('side')
+    for (const oc of [topControls, frontControls, sideControls]) oc.pivot.copy(controls.pivot)
+
+    const paneCameras: Record<ViewportPane, THREE.PerspectiveCamera> = {
+      perspective: editorCamera,
+      top: topCamera,
+      front: frontCamera,
+      side: sideCamera,
+    }
+    const paneControls: Record<ViewportPane, EditorCameraControls> = {
+      perspective: controls,
+      top: topControls,
+      front: frontControls,
+      side: sideControls,
+    }
+
+    function canvasPaneRects(): PaneRect[] {
+      const w = mount.clientWidth
+      const h = mount.clientHeight
+      const st = useEditor.getState()
+      return computePanes(w, h, st.viewportLayout, st.maximizedPane)
+    }
+
+    function paneRectFor(pane: ViewportPane): PaneRect {
+      const panes = canvasPaneRects()
+      return panes.find((p) => p.pane === pane) ?? panes[0]
+    }
+
+    function activePane(): ViewportPane {
+      const st = useEditor.getState()
+      if (st.playing || st.viewportLayout === 'single') return 'perspective'
+      return st.activeViewportPane
+    }
+
+    function activeCamera(): THREE.PerspectiveCamera {
+      const st = useEditor.getState()
+      if (st.playing) return editorCamera
+      if (st.viewportLayout === 'single') return editorCamera
+      return paneCameras[st.activeViewportPane]
+    }
+
+    function activeControls(): EditorCameraControls {
+      const st = useEditor.getState()
+      if (st.viewportLayout === 'single') return controls
+      return paneControls[st.activeViewportPane]
+    }
+
+    function pointerInPane(e: MouseEvent | { clientX: number; clientY: number }, pane?: PaneRect): void {
+      const rect = renderer.domElement.getBoundingClientRect()
+      const pr = pane ?? paneRectFor(activePane())
+      pointer.set(
+        ((e.clientX - rect.left - pr.screenX) / Math.max(pr.w, 1)) * 2 - 1,
+        -((e.clientY - rect.top - pr.screenY) / Math.max(pr.h, 1)) * 2 + 1,
+      )
+    }
+
+    function syncOrthoPivots() {
+      for (const oc of [topControls, frontControls, sideControls]) oc.pivot.copy(controls.pivot)
+    }
+
+    function syncPaneControlEnabled() {
+      const st = useEditor.getState()
+      if (st.playing || st.viewportLayout === 'single') {
+        controls.enabled = !st.playing
+        topControls.enabled = false
+        frontControls.enabled = false
+        sideControls.enabled = false
+        return
+      }
+      for (const pane of ['perspective', 'top', 'front', 'side'] as const) {
+        paneControls[pane].enabled = pane === st.activeViewportPane
+      }
+    }
     const pawn = new PlayController(renderer.domElement)
     world.scene.add(pawn.body)
     pawn.collidables = () => {
@@ -355,9 +527,8 @@ export function Viewport() {
     let downPos: [number, number] | null = null
 
     function pick(e: MouseEvent) {
-      const rect = renderer.domElement.getBoundingClientRect()
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       const pickables: THREE.Object3D[] = []
       for (const actor of world.actors.values()) {
         actor.root.traverse((o) => {
@@ -382,9 +553,8 @@ export function Viewport() {
     }
 
     function pickAll(e: MouseEvent): { actor: import('../engine/Actor').Actor; distance: number }[] {
-      const rect = renderer.domElement.getBoundingClientRect()
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       const pickables: THREE.Object3D[] = []
       for (const actor of world.actors.values()) {
         actor.root.traverse((o) => {
@@ -424,6 +594,12 @@ export function Viewport() {
       if (e.button === 2) rmbDown = [e.clientX, e.clientY]
       ctxMenuSetter.current(null)
       pickMenuSetter.current(null)
+      const st = useEditor.getState()
+      if (!st.playing && st.viewportLayout === 'quad') {
+        const rect = renderer.domElement.getBoundingClientRect()
+        const hit = paneAt(canvasPaneRects(), e.clientX - rect.left, e.clientY - rect.top)
+        if (hit) st.setActiveViewportPane(hit)
+      }
     })
 
     // RMB click (no drag) → piercing pick (Unity Ctrl+RMB) or UE context menu
@@ -446,8 +622,8 @@ export function Viewport() {
           return
         }
       }
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       const hitActor = pick(e)
       let point: [number, number, number]
       const meshHit = hitActor?.mesh ? raycaster.intersectObject(hitActor.root, true)[0] : undefined
@@ -506,9 +682,8 @@ export function Viewport() {
       const s = useEditor.getState()
       const land = s.selectedId ? world.actors.get(s.selectedId) : null
       if (!land?.landscapeProps || !land.mesh) return null
-      const rect = renderer.domElement.getBoundingClientRect()
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       return raycaster.intersectObject(land.mesh, false)[0] ?? null
     }
 
@@ -584,9 +759,8 @@ export function Viewport() {
       const s = useEditor.getState()
       const layer = s.selectedId ? world.actors.get(s.selectedId) : null
       if (!layer?.foliageProps) return null
-      const rect = renderer.domElement.getBoundingClientRect()
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       const targets: THREE.Object3D[] = []
       for (const a of world.actors.values()) {
         if (a.id === layer.id) continue
@@ -715,9 +889,8 @@ export function Viewport() {
       return ghostMesh
     }
     function surfacePointAt(e: { clientX: number; clientY: number }): THREE.Vector3 | null {
-      const rect = renderer.domElement.getBoundingClientRect()
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       const targets: THREE.Object3D[] = []
       for (const a of world.actors.values()) {
         a.root.traverse((o) => {
@@ -753,9 +926,8 @@ export function Viewport() {
         return
       }
 
-      const rect = renderer.domElement.getBoundingClientRect()
-      pointer.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-      raycaster.setFromCamera(pointer, editorCamera)
+      pointerInPane(e)
+      raycaster.setFromCamera(pointer, activeCamera())
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
       const hit = new THREE.Vector3()
       const onPlane = raycaster.ray.intersectPlane(plane, hit)
@@ -815,61 +987,56 @@ export function Viewport() {
 
     // hotkeys
     const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return
+      if (isTypingTarget(e.target)) return
       const s = useEditor.getState()
-      if (e.ctrlKey || e.metaKey) {
-        if (e.code === 'KeyZ') {
-          e.preventDefault()
-          if (e.shiftKey) redo()
-          else undo()
-        } else if (e.code === 'KeyY') {
-          e.preventDefault()
-          redo()
-        } else if (e.code === 'KeyD') {
-          e.preventDefault()
-          // duplicate every top-most selected actor
-          for (const id of topMost(s.selectedIds)) {
-            const sel = world.actors.get(id)
-            if (!sel) continue
-            const copy = sel.serialize()
-            copy.id = `${copy.id}_dup_${Math.floor(performance.now())}_${id.slice(-3)}`
-            copy.name = `${copy.name}_Copy`
-            copy.transform.position = [
-              copy.transform.position[0] + 1,
-              copy.transform.position[1],
-              copy.transform.position[2] + 1,
-            ]
-            runCommand(new AddActorCommand(copy))
-          }
+      if (matchesShortcutId(e, 'tools.undo')) {
+        e.preventDefault()
+        undo()
+        return
+      }
+      if (matchesShortcutId(e, 'tools.redo') || matchesShortcutId(e, 'tools.redoAlt')) {
+        e.preventDefault()
+        redo()
+        return
+      }
+      if (matchesShortcutId(e, 'viewport.duplicate')) {
+        e.preventDefault()
+        for (const id of topMost(s.selectedIds)) {
+          const sel = world.actors.get(id)
+          if (!sel) continue
+          const copy = sel.serialize()
+          copy.id = `${copy.id}_dup_${Math.floor(performance.now())}_${id.slice(-3)}`
+          copy.name = `${copy.name}_Copy`
+          copy.transform.position = [
+            copy.transform.position[0] + 1,
+            copy.transform.position[1],
+            copy.transform.position[2] + 1,
+          ]
+          runCommand(new AddActorCommand(copy))
         }
         return
       }
       if (s.playing) {
-        if (e.code === 'Escape') s.stopPlay()
-        // F8 — eject / possess (only meaningful in PIE, not simulate)
-        if (e.code === 'F8' && !s.simulate) {
+        if (matchesShortcutId(e, 'play.stop')) s.stopPlay()
+        if (matchesShortcutId(e, 'play.eject') && !s.simulate) {
           e.preventDefault()
           s.setEjected(!s.ejected)
         }
-        // K — Keep Simulation Changes (UE): adopt play-time transform
-        if (e.code === 'KeyK' && (s.simulate || s.ejected) && s.selectedId) {
+        if (matchesShortcutId(e, 'play.keepChanges') && (s.simulate || s.ejected) && s.selectedId) {
           const sel = world.actors.get(s.selectedId)
           if (sel) {
             sel.keepSimulationChanges()
             s.setStatus(`Kept simulation changes: ${sel.name}`)
           }
         }
-        // while possessed, the pawn owns the keyboard
         if (!s.simulate && !s.ejected) return
-        if (e.code === 'KeyF') {
+        if (matchesShortcutId(e, 'viewport.focus')) {
           const sel = s.selectedId ? world.actors.get(s.selectedId) : null
-          if (sel) controls.focusOn(sel.root)
+          if (sel) activeControls().focusOn(sel.root)
         }
         return
       }
-      // UE: Spacebar cycles transform tools; Alt+2/3/4/5 = view modes (before bookmarks)
-      if (e.code === 'Space' && !e.ctrlKey) {
+      if (matchesShortcutId(e, 'gizmo.cycle')) {
         const order = ['select', 'translate', 'rotate', 'scale'] as const
         s.setGizmoMode(order[(order.indexOf(s.gizmoMode) + 1) % order.length])
         return
@@ -895,60 +1062,69 @@ export function Viewport() {
       // UE Alt+G/H/J/K = Perspective/Front/Side/Top
       if (e.altKey && ['KeyG', 'KeyH', 'KeyJ', 'KeyK'].includes(e.code)) {
         e.preventDefault()
-        s.setViewProjection(e.code === 'KeyG' ? 'perspective' : e.code === 'KeyH' ? 'front' : e.code === 'KeyJ' ? 'side' : 'top')
-        // UE: ortho panes default to wireframe
-        if (e.code !== 'KeyG' && s.viewMode === 'lit') s.setViewMode('wireframe')
-        if (e.code === 'KeyG' && s.viewMode === 'wireframe') s.setViewMode('lit')
+        const proj = e.code === 'KeyG' ? 'perspective' : e.code === 'KeyH' ? 'front' : e.code === 'KeyJ' ? 'side' : 'top'
+        if (s.viewportLayout === 'quad') {
+          s.setActiveViewportPane(proj)
+        } else {
+          s.setViewProjection(proj)
+          // UE: ortho panes default to wireframe
+          if (e.code !== 'KeyG' && s.viewMode === 'lit') s.setViewMode('wireframe')
+          if (e.code === 'KeyG' && s.viewMode === 'wireframe') s.setViewMode('lit')
+        }
         return
       }
-      if (e.code === 'F11') {
+      if (matchesShortcutId(e, 'viewport.fullscreen')) {
         e.preventDefault()
         const el = mountRef.current
         if (document.fullscreenElement) void document.exitFullscreen()
         else void el?.requestFullscreen()
         return
       }
-      if (e.altKey && e.code === 'KeyP') {
+      if (matchesShortcutId(e, 'play.pie')) {
         e.preventDefault()
         s.startPlay('pie')
         return
       }
-      switch (e.code) {
-        case 'KeyG':
-          s.toggleGameView()
-          break
-        case 'KeyT':
-          s.toggleGizmoSpace()
-          s.setStatus(`Gizmo space: ${useEditor.getState().gizmoSpace}`)
-          break
-        case 'End':
-          if (s.selectedId) snapToFloor(s.selectedId)
-          break
-        case 'KeyQ':
-          s.setGizmoMode('select')
-          break
-        case 'KeyW':
-          if (!controls.isNavigating) s.setGizmoMode('translate')
-          break
-        case 'KeyE':
-          if (!controls.isNavigating) s.setGizmoMode('rotate')
-          break
-        case 'KeyR':
-          s.setGizmoMode('scale')
-          break
-        case 'KeyF': {
-          const sel = s.selectedId ? world.actors.get(s.selectedId) : null
-          if (sel) controls.focusOn(sel.root)
-          break
-        }
-        case 'Delete':
-        case 'Backspace': {
-          if (s.selectedIds.length) deleteSelection(s.selectedIds)
-          break
-        }
-        case 'Escape':
-          s.select(null)
-          break
+      if (matchesShortcutId(e, 'viewport.gameView')) {
+        s.toggleGameView()
+        return
+      }
+      if (matchesShortcutId(e, 'gizmo.space')) {
+        s.toggleGizmoSpace()
+        s.setStatus(`Gizmo space: ${useEditor.getState().gizmoSpace}`)
+        return
+      }
+      if (matchesShortcutId(e, 'viewport.snapFloor') && s.selectedId) {
+        snapToFloor(s.selectedId)
+        return
+      }
+      if (matchesShortcutId(e, 'gizmo.select')) {
+        s.setGizmoMode('select')
+        return
+      }
+      if (matchesShortcutId(e, 'gizmo.translate') && !controls.isNavigating) {
+        s.setGizmoMode('translate')
+        return
+      }
+      if (matchesShortcutId(e, 'gizmo.rotate') && !controls.isNavigating) {
+        s.setGizmoMode('rotate')
+        return
+      }
+      if (matchesShortcutId(e, 'gizmo.scale')) {
+        s.setGizmoMode('scale')
+        return
+      }
+      if (matchesShortcutId(e, 'viewport.focus')) {
+        const sel = s.selectedId ? world.actors.get(s.selectedId) : null
+        if (sel) activeControls().focusOn(sel.root)
+        return
+      }
+      if (matchesShortcutId(e, 'viewport.delete') || (e.code === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+        if (s.selectedIds.length) deleteSelection(s.selectedIds)
+        return
+      }
+      if (matchesShortcutId(e, 'viewport.deselect')) {
+        s.select(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -960,8 +1136,17 @@ export function Viewport() {
       renderer.setSize(w, h)
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       composer.setSize(w, h)
-      editorCamera.aspect = w / h
-      editorCamera.updateProjectionMatrix()
+      const st = useEditor.getState()
+      const panes = computePanes(w, h, st.viewportLayout, st.maximizedPane)
+      for (const pr of panes) {
+        const cam = paneCameras[pr.pane]
+        cam.aspect = pr.w / Math.max(pr.h, 1)
+        cam.updateProjectionMatrix()
+      }
+      if (st.viewportLayout === 'single') {
+        editorCamera.aspect = w / h
+        editorCamera.updateProjectionMatrix()
+      }
     }
     const ro = new ResizeObserver(resize)
     ro.observe(mount)
@@ -1018,9 +1203,30 @@ export function Viewport() {
       }
 
       syncEnvironment()
-      controls.setProjection(s.viewProjection === 'perspective' ? null : s.viewProjection)
-      // ortho panes: flat dark background instead of the sky dome interior
-      world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
+      const quadMode = !s.playing && s.viewportLayout === 'quad'
+      if (quadMode) {
+        if (controls.orthoAxis) controls.setProjection(null)
+        syncOrthoPivots()
+        syncPaneControlEnabled()
+        for (const oc of [topControls, frontControls, sideControls]) {
+          oc.flySpeed = s.cameraSpeed * 2
+          oc.update(dt)
+        }
+        controls.flySpeed = s.cameraSpeed * 2
+        controls.update(dt)
+      } else {
+        controls.setProjection(s.viewProjection === 'perspective' ? null : s.viewProjection)
+        controls.enabled = !possessed
+        controls.flySpeed = s.cameraSpeed * 2
+        controls.update(dt)
+        topControls.enabled = false
+        frontControls.enabled = false
+        sideControls.enabled = false
+      }
+      // ortho panes: flat dark background instead of the sky dome interior (per-pane in quad render)
+      if (!quadMode) {
+        world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
+      }
       let activeCam: THREE.PerspectiveCamera = possessed ? pawn.camera : editorCamera
       // api.setViewCamera('Name') cuts to a Camera actor during play (CineCamera)
       const viewCamName = s.playing ? getViewCamera() : null
@@ -1032,9 +1238,6 @@ export function Viewport() {
       activeCam.getWorldPosition(camPos)
       applyPostSettings(computeBlendedPost(camPos, world.actors.values(), world.environment))
       applyViewMode(s.viewMode, s.sceneVersion)
-      controls.enabled = !possessed
-      controls.flySpeed = s.cameraSpeed * 2
-      controls.update(dt)
       // UE pause + frame-step
       let simDt = dt
       if (s.playing && s.paused) {
@@ -1082,8 +1285,10 @@ export function Viewport() {
         sampleSequence(world, world.sequence, nt)
       }
 
-      // gizmo sync
+      // gizmo sync — only in the active/focused pane (quad layout)
       const selected = s.selectedId ? world.actors.get(s.selectedId) : null
+      const gizmoCam = quadMode ? paneCameras[s.activeViewportPane] : editorCamera
+      gizmo.camera = gizmoCam
       if (selected && s.gizmoMode !== 'select' && !s.playing) {
         if (gizmo.object !== selected.root) gizmo.attach(selected.root)
         gizmo.mode = s.gizmoMode
@@ -1103,7 +1308,7 @@ export function Viewport() {
       if (s.playing) mpTick(dt, world.pawnPosition, pawn.camera.rotation.y)
 
       // WebAudio listener — true 3D spatialization (PannerNode / HRTF)
-      const listenCam = possessed ? pawn.camera : editorCamera
+      const listenCam = possessed ? pawn.camera : quadMode ? paneCameras[s.activeViewportPane] : editorCamera
       const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(listenCam.quaternion)
       const up = new THREE.Vector3(0, 1, 0).applyQuaternion(listenCam.quaternion)
       updateListener(
@@ -1213,13 +1418,46 @@ export function Viewport() {
         renderer.setPixelRatio(targetPR)
         composer.setSize(mount.clientWidth, mount.clientHeight)
       }
-      renderPass.camera = activeCam
       const __t1 = performance.now()
-      if (usePostFx) composer.render()
-      else renderer.render(world.scene, activeCam)
+      if (quadMode) {
+        const panes = canvasPaneRects()
+        const canvasH = mount.clientHeight
+        const savedBg = world.scene.background
+        const savedSkyVisible = world.sky.visible
+        const savedGizmoVisible = gizmoHelper.visible
+        renderer.setScissorTest(true)
+        for (const pr of panes) {
+          const cam = paneCameras[pr.pane]
+          const vp = toWebGLViewport(pr, canvasH)
+          cam.aspect = pr.w / Math.max(pr.h, 1)
+          cam.updateProjectionMatrix()
+          renderer.setViewport(vp.x, vp.y, vp.w, vp.h)
+          renderer.setScissor(vp.x, vp.y, vp.w, vp.h)
+          world.sky.visible = world.environment.skyEnabled && pr.pane === 'perspective'
+          if (pr.pane === 'perspective') {
+            world.scene.background = savedBg
+            renderer.setClearColor(0x000000, 1)
+          } else {
+            world.scene.background = null
+            renderer.setClearColor(0x0d0f12, 1)
+          }
+          gizmoHelper.visible = savedGizmoVisible && pr.pane === s.activeViewportPane && !hideChrome
+          renderer.render(world.scene, cam)
+        }
+        world.scene.background = savedBg
+        world.sky.visible = savedSkyVisible
+        gizmoHelper.visible = savedGizmoVisible
+        renderer.setScissorTest(false)
+        renderer.setViewport(0, 0, mount.clientWidth, canvasH)
+      } else {
+        world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
+        renderPass.camera = activeCam
+        if (usePostFx) composer.render()
+        else renderer.render(world.scene, activeCam)
+      }
 
       // camera PiP preview when a camera actor is selected
-      const showPip = !possessed && !!selected?.camera
+      const showPip = !possessed && !!selected?.camera && !quadMode
       if (pipRef.current) pipRef.current.style.display = showPip ? 'block' : 'none'
       if (showPip && selected?.camera) {
         const W = mount.clientWidth
@@ -1333,6 +1571,9 @@ export function Viewport() {
       window.removeEventListener('keydown', onKeyDown)
       ro.disconnect()
       controls.dispose()
+      topControls.dispose()
+      frontControls.dispose()
+      sideControls.dispose()
       pawn.dispose()
       gizmo.dispose()
       pmrem.dispose()
@@ -1378,6 +1619,7 @@ export function Viewport() {
       <div className="viewport-stats" ref={statsRef} />
       <div className="stat-hud" ref={statHudRef} style={{ display: 'none' }} />
       <div className="viewport-modes">
+        <ViewportLayoutSelect />
         <Projection />
         <CameraSpeed />
         {(['lit', 'detail', 'unlit', 'wireframe'] as const).map((m) => (
@@ -1386,6 +1628,7 @@ export function Viewport() {
           </button>
         ))}
       </div>
+      <ViewportPaneChrome />
       <div className="viewport-pip" ref={pipRef}>
         <span>Camera Preview</span>
       </div>

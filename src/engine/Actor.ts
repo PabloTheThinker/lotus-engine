@@ -81,6 +81,8 @@ export class Actor {
   customGeometry?: { positions: number[]; normals: number[]; index?: number[] }
   /** material node graph — evaluated per frame onto the material */
   materialGraph?: import('./materialGraph').MaterialGraph
+  /** cpu = fast per-object; gpu = per-pixel onBeforeCompile shader */
+  materialGraphMode?: import('./materialGraph').MaterialGraphMode
   /** animation clips (from glTF or scripts) + play-time mixer state */
   animations?: THREE.AnimationClip[]
   mixer?: THREE.AnimationMixer
@@ -274,6 +276,7 @@ export class Actor {
           ? { ...this.animParams }
           : undefined,
       materialGraph: this.materialGraph ? JSON.parse(JSON.stringify(this.materialGraph)) : undefined,
+      materialGraphMode: this.materialGraphMode,
       probe: this.probeProps ? { ...this.probeProps } : undefined,
       water: this.waterProps ? { ...this.waterProps } : undefined,
       pcg: this.pcgProps ? { ...this.pcgProps } : undefined,

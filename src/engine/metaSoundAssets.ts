@@ -52,6 +52,38 @@ export function deleteMetaSound(id: string) {
   persist(listMetaSounds().filter((m) => m.id !== id))
 }
 
+export function renameMetaSound(id: string, newName: string): boolean {
+  const next = newName.trim()
+  if (!next) return false
+  const assets = listMetaSounds()
+  const asset = assets.find((m) => m.id === id)
+  if (!asset || asset.name === next) return false
+  if (assets.some((m) => m.id !== id && m.name === next)) return false
+  saveMetaSound({ ...asset, name: next })
+  return true
+}
+
+export function duplicateMetaSound(id: string): MetaSoundAsset | null {
+  const asset = getMetaSound(id)
+  if (!asset) return null
+  const assets = listMetaSounds()
+  const base = asset.name.replace(/_Copy\d*$/, '')
+  let copyName = `${base}_Copy`
+  const names = new Set(assets.map((m) => m.name))
+  let n = 2
+  while (names.has(copyName)) {
+    copyName = `${base}_Copy${n}`
+    n += 1
+  }
+  const dup: MetaSoundAsset = {
+    id: nextMetaSoundId(),
+    name: copyName,
+    graph: JSON.parse(JSON.stringify(asset.graph)),
+  }
+  saveMetaSound(dup)
+  return dup
+}
+
 export function createMetaSound(name: string): MetaSoundAsset {
   const asset: MetaSoundAsset = {
     id: nextMetaSoundId(),

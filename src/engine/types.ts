@@ -211,6 +211,8 @@ export interface SerializedActor {
   animParams?: Record<string, number>
   /** material node graph */
   materialGraph?: import('./materialGraph').MaterialGraph
+  /** cpu = fast per-object; gpu = per-pixel shader graph */
+  materialGraphMode?: import('./materialGraph').MaterialGraphMode
   /** shared material asset (UE Material) — base props live in localStorage */
   materialAssetId?: string
   /** per-instance material overrides (UE Material Instance) */

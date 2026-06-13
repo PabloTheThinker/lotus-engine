@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { Actor } from './Actor'
 import { applyMaterialProps } from './factory'
-import type { MaterialGraph } from './materialGraph'
+import type { MaterialGraph, MaterialGraphMode } from './materialGraph'
 import type { MaterialProps } from './types'
 import { DEFAULT_MATERIAL } from './types'
 
@@ -17,6 +17,7 @@ export interface MaterialAsset {
   name: string
   material: MaterialProps
   materialGraph?: MaterialGraph
+  materialGraphMode?: MaterialGraphMode
 }
 
 let materialCounter = 0
@@ -54,6 +55,39 @@ export function deleteMaterial(id: string) {
   persist(listMaterials().filter((m) => m.id !== id))
 }
 
+export function renameMaterial(id: string, newName: string): boolean {
+  const next = newName.trim()
+  if (!next) return false
+  const materials = listMaterials()
+  const asset = materials.find((m) => m.id === id)
+  if (!asset || asset.name === next) return false
+  if (materials.some((m) => m.id !== id && m.name === next)) return false
+  saveMaterial({ ...asset, name: next })
+  return true
+}
+
+export function duplicateMaterial(id: string): MaterialAsset | null {
+  const asset = getMaterial(id)
+  if (!asset) return null
+  const materials = listMaterials()
+  const base = asset.name.replace(/_Copy\d*$/, '')
+  let copyName = `${base}_Copy`
+  const names = new Set(materials.map((m) => m.name))
+  let n = 2
+  while (names.has(copyName)) {
+    copyName = `${base}_Copy${n}`
+    n += 1
+  }
+  const dup: MaterialAsset = {
+    id: nextMaterialId(),
+    name: copyName,
+    material: JSON.parse(JSON.stringify(asset.material)),
+    materialGraph: asset.materialGraph ? JSON.parse(JSON.stringify(asset.materialGraph)) : undefined,
+  }
+  saveMaterial(dup)
+  return dup
+}
+
 /** Merge asset base + per-instance overrides into effective MaterialProps. */
 export function resolveMaterialProps(
   assetId: string | undefined,
@@ -69,6 +103,15 @@ export function getEffectiveMaterialGraph(actor: Actor): MaterialGraph | undefin
   if (actor.materialGraph) return actor.materialGraph
   if (actor.materialAssetId) return getMaterial(actor.materialAssetId)?.materialGraph
   return undefined
+}
+
+/** Effective shader mode: graph.mode → actor override → asset default → cpu. */
+export function getEffectiveMaterialGraphMode(actor: Actor): MaterialGraphMode {
+  const graph = getEffectiveMaterialGraph(actor)
+  if (actor.materialGraphMode) return actor.materialGraphMode
+  if (graph?.mode) return graph.mode
+  if (actor.materialAssetId) return getMaterial(actor.materialAssetId)?.materialGraphMode ?? 'cpu'
+  return 'cpu'
 }
 
 /** Recompute effective material props (+ graph) and push onto the actor mesh. */

@@ -9,11 +9,25 @@ export function StatusBar() {
   const bridgeConnected = useEditor((s) => s.bridgeConnected)
   const selectedId = useEditor((s) => s.selectedId)
   const selectedIds = useEditor((s) => s.selectedIds)
+  const drawerOpen = useEditor((s) => s.contentDrawerOpen)
+  const drawerDocked = useEditor((s) => s.contentDrawerDocked)
+  const contentOpen = useEditor((s) => s.contentBrowserOpen)
+  const bottomTab = useEditor((s) => s.bottomTab)
+  const toggleDrawer = useEditor((s) => s.toggleContentDrawer)
   useEditor((s) => s.sceneVersion)
   const selected = selectedId ? world.actors.get(selectedId) : null
+  const drawerActive = drawerDocked ? contentOpen && bottomTab === 'content' : drawerOpen
 
   return (
     <div className="statusbar">
+      <button
+        type="button"
+        className={`status-drawer-btn${drawerActive ? ' active' : ''}`}
+        title="Content Drawer (Ctrl+Space)"
+        onClick={toggleDrawer}
+      >
+        🗄 Content Drawer
+      </button>
       <span className="status-message">
         {import.meta.env.DEV && (
           <span className={`bridge-dot ${bridgeConnected ? 'on' : ''}`} title={bridgeConnected ? 'CLI bridge connected' : 'CLI bridge waiting'}>

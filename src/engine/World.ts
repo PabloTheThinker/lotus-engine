@@ -30,7 +30,7 @@ import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { cameraCutAt, emptySequence, eventsBetween, sampleSequence, type Sequence } from './sequencer'
 import { setViewCamera } from './gameplay'
-import { applyActorMaterial, getEffectiveMaterialGraph } from './materialAssets'
+import { applyActorMaterial, getEffectiveMaterialGraph, getEffectiveMaterialGraphMode } from './materialAssets'
 import { applyMaterialGraph } from './materialGraph'
 import type { EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel } from './types'
 import { DEFAULT_ENVIRONMENT } from './types'
@@ -341,7 +341,7 @@ export class World {
         a.particleSystem.update(dt, a.visible, a.root.matrixWorld, terrainAt)
       }
       const matGraph = getEffectiveMaterialGraph(a)
-      if (matGraph) applyMaterialGraph(a, t, matGraph)
+      if (matGraph) applyMaterialGraph(a, t, matGraph, getEffectiveMaterialGraphMode(a))
       if (a.waterProps) updateWater(a, t)
     }
   }
@@ -511,6 +511,7 @@ export class World {
         if (sa.materialAssetId) actor.materialAssetId = sa.materialAssetId
         if (sa.materialOverrides) actor.materialOverrides = { ...sa.materialOverrides }
         if (sa.materialGraph) actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+        if (sa.materialGraphMode) actor.materialGraphMode = sa.materialGraphMode
         if (sa.materialAssetId) applyActorMaterial(actor)
         else if (sa.material) {
           actor.materialProps = { ...sa.material }
@@ -576,6 +577,7 @@ export class World {
         if (sa.materialAssetId) actor.materialAssetId = sa.materialAssetId
         if (sa.materialOverrides) actor.materialOverrides = { ...sa.materialOverrides }
         if (sa.materialGraph) actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+        if (sa.materialGraphMode) actor.materialGraphMode = sa.materialGraphMode
         if (sa.materialAssetId) applyActorMaterial(actor)
         else if (sa.material && actor.mesh) {
           actor.materialProps = { ...sa.material }
@@ -627,6 +629,9 @@ export class World {
     if (sa.animParams) actor.animParams = { ...sa.animParams }
     if (sa.materialGraph && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
       actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
+    }
+    if (sa.materialGraphMode && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
+      actor.materialGraphMode = sa.materialGraphMode
     }
     if (sa.materialAssetId && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
       actor.materialAssetId = sa.materialAssetId

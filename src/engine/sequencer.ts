@@ -3,9 +3,9 @@ import type { World } from './World'
 
 /**
  * Sequencer — the UE Sequencer / Godot AnimationPlayer analog (v1).
- * One master sequence per level: transform tracks with linearly
- * interpolated keys, sampled onto actors by the editor (scrub/play)
- * and by Play mode when autoPlay is set.
+ * One master sequence per level: transform tracks with interpolated
+ * keys (linear, smooth, step, cubic bezier), sampled onto actors by
+ * the editor (scrub/play) and by Play mode when autoPlay is set.
  */
 
 export type SeqProperty =
@@ -19,12 +19,20 @@ export type SeqProperty =
   | 'intensity'
   | 'fov'
 
-export type SeqInterp = 'linear' | 'smooth' | 'step'
+export type SeqInterp = 'linear' | 'smooth' | 'step' | 'bezier'
+
+/** Cubic-bezier tangent handle offset from key (time, value). */
+export interface SeqTangent {
+  dt: number
+  dv: number | number[]
+}
 
 export interface SeqKey {
   t: number
   v: number[] | number | boolean | string
   interp?: SeqInterp
+  tangentIn?: SeqTangent
+  tangentOut?: SeqTangent
 }
 
 export interface SeqTrack {
@@ -84,6 +92,55 @@ export function setKey(seq: Sequence, actorId: string, property: SeqProperty, t:
   }
 }
 
+/** Read one channel from a key value (for the curve graph). */
+export function keyChannelValue(v: SeqKey['v'], ch = 0): number {
+  if (typeof v === 'number') return v
+  if (Array.isArray(v)) return v[ch] ?? 0
+  if (typeof v === 'boolean') return v ? 1 : 0
+  return 0
+}
+
+/** Write one channel back into a key value. */
+export function setKeyChannelValue(v: SeqKey['v'], ch: number, n: number): SeqKey['v'] {
+  if (typeof v === 'number') return n
+  if (Array.isArray(v)) {
+    const out = [...v]
+    out[ch] = n
+    return out
+  }
+  return v
+}
+
+function valueDelta(a: SeqKey['v'], b: SeqKey['v'], f: number): number | number[] {
+  if (typeof a === 'number' && typeof b === 'number') return (b - a) * f
+  if (Array.isArray(a) && Array.isArray(b)) return a.map((av, i) => ((b[i] ?? av) - av) * f)
+  return 0
+}
+
+export function defaultTangentOut(a: SeqKey, b: SeqKey): SeqTangent {
+  const seg = Math.max(0.001, b.t - a.t)
+  return { dt: seg / 3, dv: valueDelta(a.v, b.v, 1 / 3) }
+}
+
+export function defaultTangentIn(a: SeqKey, b: SeqKey): SeqTangent {
+  const seg = Math.max(0.001, b.t - a.t)
+  return { dt: -seg / 3, dv: valueDelta(a.v, b.v, -1 / 3) }
+}
+
+/** Ensure default tangent handles exist when a key uses bezier interp. */
+export function ensureBezierTangents(keys: SeqKey[], index: number) {
+  const k = keys[index]
+  const prev = keys[index - 1]
+  const next = keys[index + 1]
+  if (k.interp === 'bezier') {
+    if (next && !k.tangentOut) k.tangentOut = defaultTangentOut(k, next)
+    if (prev && !k.tangentIn) k.tangentIn = defaultTangentIn(prev, k)
+  }
+  if (next?.interp === 'bezier' && !next.tangentIn) {
+    next.tangentIn = defaultTangentIn(k, next)
+  }
+}
+
 const _ca = new THREE.Color()
 const _cb = new THREE.Color()
 
@@ -99,7 +156,55 @@ function lerpValue(a: SeqKey['v'], b: SeqKey['v'], f: number): SeqKey['v'] {
   return a
 }
 
-function sampleTrack(track: SeqTrack, t: number): SeqKey['v'] | null {
+function cubic1D(p0: number, p1: number, p2: number, p3: number, u: number): number {
+  const m = 1 - u
+  return m * m * m * p0 + 3 * m * m * u * p1 + 3 * m * u * u * p2 + u * u * u * p3
+}
+
+function bezierUForTime(t0: number, t1: number, t2: number, t3: number, t: number): number {
+  if (t <= t0) return 0
+  if (t >= t3) return 1
+  let lo = 0
+  let hi = 1
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) * 0.5
+    if (cubic1D(t0, t1, t2, t3, mid) < t) lo = mid
+    else hi = mid
+  }
+  return (lo + hi) * 0.5
+}
+
+function bezierValue(v0: SeqKey['v'], v3: SeqKey['v'], outDv: SeqTangent['dv'], inDv: SeqTangent['dv'], u: number): SeqKey['v'] {
+  if (typeof v0 === 'number' && typeof v3 === 'number') {
+    const p1 = v0 + (typeof outDv === 'number' ? outDv : 0)
+    const p2 = v3 + (typeof inDv === 'number' ? inDv : 0)
+    return cubic1D(v0, p1, p2, v3, u)
+  }
+  if (Array.isArray(v0) && Array.isArray(v3)) {
+    const odv = Array.isArray(outDv) ? outDv : []
+    const idv = Array.isArray(inDv) ? inDv : []
+    return v0.map((c0, i) => {
+      const c3 = v3[i] ?? c0
+      const p1 = c0 + (odv[i] ?? 0)
+      const p2 = c3 + (idv[i] ?? 0)
+      return cubic1D(c0, p1, p2, c3, u)
+    })
+  }
+  return lerpValue(v0, v3, u)
+}
+
+function bezierInterp(a: SeqKey, b: SeqKey, t: number): SeqKey['v'] {
+  const out = a.tangentOut ?? defaultTangentOut(a, b)
+  const inn = b.tangentIn ?? defaultTangentIn(a, b)
+  const t0 = a.t
+  const t1 = a.t + out.dt
+  const t2 = b.t + inn.dt
+  const t3 = b.t
+  const u = bezierUForTime(t0, t1, t2, t3, t)
+  return bezierValue(a.v, b.v, out.dv, inn.dv, u)
+}
+
+export function sampleTrack(track: SeqTrack, t: number): SeqKey['v'] | null {
   const keys = track.keys
   if (keys.length === 0) return null
   if (t <= keys[0].t) return keys[0].v
@@ -108,8 +213,9 @@ function sampleTrack(track: SeqTrack, t: number): SeqKey['v'] | null {
     const a = keys[i]
     const b = keys[i + 1]
     if (t >= a.t && t <= b.t) {
-      let f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t)
       const interp = a.interp ?? 'linear'
+      if (interp === 'bezier') return bezierInterp(a, b, t)
+      let f = b.t === a.t ? 0 : (t - a.t) / (b.t - a.t)
       if (interp === 'step') f = 0
       else if (interp === 'smooth') f = f * f * (3 - 2 * f)
       return lerpValue(a.v, b.v, f)

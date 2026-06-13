@@ -7,6 +7,7 @@ import { useEditor } from './store'
 import { runCSG } from './csg'
 import { world } from '../engine/World'
 import { getPluginPaletteCommands, type PaletteCommand } from './plugins'
+import { isTypingTarget, matchesShortcutId } from './shortcuts'
 
 /**
  * Command palette (Ctrl+Shift+P) — built-in commands + plugin-registered commands.
@@ -81,7 +82,7 @@ export function CommandPalette() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyP') {
+      if (!isTypingTarget(e.target) && matchesShortcutId(e, 'panels.commandPalette')) {
         e.preventDefault()
         setOpen((o) => !o)
         setQuery('')

@@ -1,14 +1,14 @@
-# CHECKPOINT — 2026-06-13 (agent swarm)
+# CHECKPOINT — 2026-06-13 (agent swarm wave 2)
 
 > Working doc: `docs/UE5.7-GAP-LIST.md` — update statuses as items ship.
 > Research synthesis: prior session (UE5 + Unity + Godot completion roadmap).
 
 ## State
 
-- **Last clean commit: `8bc3cc3` — v0.32.** v0.33–v0.37 landed in working tree via parallel agent swarm; **build clean** (`npm run build` exit 0), **not yet committed**.
+- **Last clean commit: `4c288ee` — v0.43.** v0.33–v0.43 shipped across two agent swarms; **build clean** (`npm run build` exit 0).
 - Dev server `npm run dev`, relay :24690. Test harness: headless Chromium via `/home/pablothethinker/raven-origin/node_modules/playwright` with `--enable-gpu --use-angle=gl-egl`.
 
-## Shipped this swarm (v0.33 → v0.37, working tree)
+## Shipped wave 1 (v0.33 → v0.37, commit `5017d2c`)
 
 | Ver | What |
 |---|---|
@@ -16,9 +16,20 @@
 | v0.34 | Material assets + instances (`materialAssets.ts`, Content Browser, Details overrides) |
 | v0.35 | Prefab property overrides + revert (⟲) |
 | v0.36 | Recast navmesh bake (worker WASM), show navmesh, World Settings Navigation |
-| v0.37 | Live Tree debugger, per-actor tick profiler, `vektra.getLiveSnapshot()` |
+| v0.37 | Live Tree debugger, per-actor tick profiler, `vektra.getLiveSnapshot()`, live Details during Play |
 
-## Shipped this run (v0.20 → v0.32, all committed + verified)
+## Shipped wave 2 (v0.38 → v0.43, commit `4c288ee`)
+
+| Ver | What |
+|---|---|
+| v0.38 | FSM animation editor + 1D blend space (`AnimStateEditor` tab, `animStateMachine.ts`) |
+| v0.39 | MetaSounds-lite WebAudio graph (`MetaSoundEditor`), HRTF PannerNode spatialization, TriggerVolume reverb zones, SoundEmitter actor |
+| v0.40 | Multi-level export (`__VEKTRA_LEVELS__` + `api.loadLevel`), PWA export, mobile/desktop quality presets; BP function collapse/macros (`collapseToFunction`) |
+| v0.41 | Plugin API — `registerNodeType`/`registerPanel`/importers/consoleCommands, Plugin Manager, drag-drop install |
+| v0.42 | GAS-lite (attribute sets + abilities + `api.activateAbility`), piercing pick menu (Ctrl+RMB), particle ribbon renderer + 4-stop gradient + ground bounce |
+| v0.43 | Wave 2 integration commit — gap-list doc sync, build verification |
+
+## Shipped earlier (v0.20 → v0.32, committed + verified)
 
 | Ver | What |
 |---|---|
@@ -36,32 +47,28 @@
 | v0.31 | Movie Render Queue (🎥 .webm export) + Take Recorder (⏺ 10Hz sampling) |
 | v0.32 | Water actor (Gerstner-lite) + PCG Scatter volume (sample→filter→spawn, seeded) |
 
-## Next up (Phase 2–3 from completion research)
+## Next up (v0.44+)
 
-1. **FSM animation editor** — graph UI over crossfade primitive; 1D blend space
-2. **MetaSounds-lite** — WebAudio node graph editor
-3. **Material editor v2** — TSL per-pixel (TextureSample, UV, Fresnel)
-4. **Blueprint functions/macros** — subgraph collapse at compile
-5. **Multi-level export** — `api.loadLevel` + bundled HTML manifest
-6. **Plugin API surface** — `registerNodeType` / `registerPanel` for user plugins
-7. **Viewport quad layouts** + piercing pick menu (Unity Ctrl+RMB)
-8. **Particles P3** — ribbon renderer, curve widgets
-9. **GAS-lite** — attributes + abilities over gameplay tags
-10. Playwright verify v0.33–v0.37, commit stack, update `UE5.7-GAP-LIST.md` §2–§10 statuses
+1. **Material editor v2** — per-pixel TSL (TextureSample, UV, Fresnel, Noise) + live preview sphere
+2. **Viewport quad layouts** — scissor viewports on one canvas
+3. **Blend space 2D** + two-bone IK + LookAt on glTF skeletons
+4. **Particles P3 polish** — InstancedMesh renderer, graphical size curves, sub-emitters
+5. **GAS effect stacks** — gameplay effects over tags (extend v0.42 GAS-lite)
+6. **Keyboard shortcut editor** — rebindable editor hotkeys
+7. **Path tracer mode** — three-gpu-pathtracer toggle (check dep size first)
+8. **Widget anims** (Sequencer on DOM) + 3D widgets (CSS3DRenderer)
+9. **§1 leftovers**: Content Drawer dock-pin, toolbar Modes dropdown reorder, camera bookmarks persist
+10. **BP polish**: Gate/MultiGate/Switch flow nodes, Bind/Call dispatcher nodes, breakpoints
 
 ## Remaining gap-list queue
 
-1. **Audio cluster**: PannerNode true spatialization, reverb zones (ConvolverNode), MetaSounds-lite graph (Osc/Gain/Filter/Out → WebAudio chain; reuse material-graph canvas pattern)
-2. **Particles P3**: ribbon + mesh renderers, curve/gradient widgets, ground-collision bounce
-3. **Animation tools**: FSM state-machine editor (graph UI over existing crossfade), blend spaces 1D, two-bone IK + LookAt
-4. **Per-actor tick profiler** (flame list in Debug panel)
-5. **Plugin API surface**: registerNodeType/registerPanel for user plugins
-6. **Export extras**: PWA manifest option, multi-level export + scene switching
-7. **Material instances** (named material assets, per-actor param overrides) + **path tracer mode** (three-gpu-pathtracer toggle — check dep size first)
-8. **§1 leftovers**: viewport quad layouts (scissor), keyboard shortcut editor, Content Drawer dock-pin, toolbar Modes dropdown reorder
-9. **Widget anims** (Sequencer on DOM) + 3D widgets (CSS3DRenderer)
-10. **GAS-lite** (attributes + abilities with cooldown/cost over tags)
-11. Honest-skip notes: Lightmass bake (stretch), audio scrubbing (after audio tracks), graphical bezier curve editor (interp modes shipped)
+1. **Material cluster**: TSL per-pixel nodes, material preview sphere, WPO
+2. **Animation cluster**: 2D blend space triangulation, Control Rig graphs 🚫, retargeting 🚫
+3. **Particles cluster**: mesh renderer, graphical curve widgets (shared with Sequencer), sub-emitters/events
+4. **Editor UX**: quad viewport layouts, shortcut editor, Content Drawer dock-pin, Modes dropdown
+5. **GAS**: effect stacks over gameplay tags (attributes/abilities/cooldown/cost ✅)
+6. **Audio**: attenuation falloff curve picker, Sequencer audio scrubbing (after audio tracks)
+7. **Honest-skip notes**: Lightmass bake (stretch), Nanite/Lumen 🚫, graphical bezier tangent editor (interp modes shipped)
 
 ## Gotchas carried forward
 

@@ -91,6 +91,15 @@ export function PreferencesModal({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={() => {
               onClose()
+              useEditor.getState().setShowShortcutEditor(true)
+            }}
+          >
+            Keyboard Shortcuts…
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
               useEditor.getState().setShowPluginManager(true)
             }}
           >

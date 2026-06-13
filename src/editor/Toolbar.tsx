@@ -1,15 +1,18 @@
 import { redo, undo } from './commands'
 import { newLevel, openLevelFromFile, saveLevelToFile } from './levelIO'
 import { useEditor, type GizmoMode } from './store'
+import { formatShortcutLabel, getShortcutsVersion, subscribeShortcuts } from './shortcuts'
+import { useSyncExternalStore } from 'react'
 
-const MODES: Array<{ mode: GizmoMode; label: string; key: string; title: string }> = [
-  { mode: 'select', label: '↖', key: 'Q', title: 'Select (Q)' },
-  { mode: 'translate', label: '✥', key: 'W', title: 'Move (W)' },
-  { mode: 'rotate', label: '↻', key: 'E', title: 'Rotate (E)' },
-  { mode: 'scale', label: '⤢', key: 'R', title: 'Scale (R)' },
+const MODES: Array<{ mode: GizmoMode; label: string; shortcutId: string }> = [
+  { mode: 'select', label: '↖', shortcutId: 'gizmo.select' },
+  { mode: 'translate', label: '✥', shortcutId: 'gizmo.translate' },
+  { mode: 'rotate', label: '↻', shortcutId: 'gizmo.rotate' },
+  { mode: 'scale', label: '⤢', shortcutId: 'gizmo.scale' },
 ]
 
 export function Toolbar() {
+  useSyncExternalStore(subscribeShortcuts, getShortcutsVersion)
   const gizmoMode = useEditor((s) => s.gizmoMode)
   const setGizmoMode = useEditor((s) => s.setGizmoMode)
   const snapEnabled = useEditor((s) => s.snapEnabled)
@@ -49,7 +52,7 @@ export function Toolbar() {
       <div className="toolbar-group">
         <button title="New Level" onClick={newLevel}>🗋 New</button>
         <button title="Open Level" onClick={openLevelFromFile}>📂 Open</button>
-        <button title="Save Level" onClick={saveLevelToFile}>💾 Save</button>
+        <button title={`Save Level (${formatShortcutLabel('tools.save')})`} onClick={saveLevelToFile}>💾 Save</button>
       </div>
       <div className="toolbar-sep" />
       <div className="toolbar-group">
@@ -59,8 +62,8 @@ export function Toolbar() {
       </div>
       <div className="toolbar-sep" />
       <div className="toolbar-group">
-        <button title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>↶</button>
-        <button title="Redo (Ctrl+Y)" disabled={!canRedo} onClick={redo}>↷</button>
+        <button title={`Undo (${formatShortcutLabel('tools.undo')})`} disabled={!canUndo} onClick={undo}>↶</button>
+        <button title={`Redo (${formatShortcutLabel('tools.redo')})`} disabled={!canRedo} onClick={redo}>↷</button>
       </div>
       <div className="toolbar-sep" />
       <div className="toolbar-group">
@@ -68,7 +71,7 @@ export function Toolbar() {
           <button
             key={m.mode}
             className={gizmoMode === m.mode ? 'active' : ''}
-            title={m.title}
+            title={`${m.mode === 'select' ? 'Select' : m.mode === 'translate' ? 'Move' : m.mode === 'rotate' ? 'Rotate' : 'Scale'} (${formatShortcutLabel(m.shortcutId)})`}
             onClick={() => setGizmoMode(m.mode)}
           >
             {m.label}
@@ -114,10 +117,10 @@ export function Toolbar() {
             <option key={v} value={v}>×{v}</option>
           ))}
         </select>
-        <button title="Gizmo space (T)" onClick={toggleGizmoSpace}>
+        <button title={`Gizmo space (${formatShortcutLabel('gizmo.space')})`} onClick={toggleGizmoSpace}>
           {gizmoSpace === 'world' ? '🌐 World' : '⬚ Local'}
         </button>
-        <button className={gameView ? 'active' : ''} title="Game View — hide editor chrome (G)" onClick={toggleGameView}>
+        <button className={gameView ? 'active' : ''} title={`Game View — hide editor chrome (${formatShortcutLabel('viewport.gameView')})`} onClick={toggleGameView}>
           👁 Game
         </button>
         <button
@@ -141,7 +144,7 @@ export function Toolbar() {
       <div className="toolbar-group">
         <button
           className={`play-button ${playing && !simulate ? 'stop' : ''}`}
-          title={playing ? 'Stop (Esc)' : 'Play In Editor — possess pawn at PlayerStart'}
+          title={playing ? `Stop (${formatShortcutLabel('play.stop')})` : `Play In Editor (${formatShortcutLabel('play.pie')}) — possess pawn at PlayerStart`}
           onClick={() => (playing ? stopPlay() : startPlay('pie'))}
         >
           {playing && !simulate ? '■ Stop' : '▶ Play'}
@@ -160,7 +163,7 @@ export function Toolbar() {
         )}
         <button
           className={`play-button simulate ${playing && simulate ? 'stop' : ''}`}
-          title={playing && simulate ? 'Stop (Esc)' : 'Simulate — run the world, keep the editor camera'}
+          title={playing && simulate ? `Stop (${formatShortcutLabel('play.stop')})` : 'Simulate — run the world, keep the editor camera'}
           onClick={() => (playing ? stopPlay() : startPlay('simulate'))}
           disabled={playing && !simulate}
         >
@@ -169,7 +172,7 @@ export function Toolbar() {
       </div>
       <div className="toolbar-sep" />
       <div className="toolbar-group">
-        <button title="Toggle Content Browser" onClick={toggleContentBrowser}>🗄 Content</button>
+        <button title={`Content Drawer (${formatShortcutLabel('panels.contentDrawer')})`} onClick={toggleContentBrowser}>🗄 Content</button>
       </div>
     </div>
   )

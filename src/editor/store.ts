@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail'
@@ -62,6 +63,14 @@ interface EditorState {
   viewProjection: 'perspective' | 'top' | 'front' | 'side'
   setViewProjection: (p: 'perspective' | 'top' | 'front' | 'side') => void
 
+  /** UE viewport layouts — single pane or 2×2 quad (v0.45) */
+  viewportLayout: ViewportLayout
+  setViewportLayout: (l: ViewportLayout) => void
+  activeViewportPane: ViewportPane
+  setActiveViewportPane: (p: ViewportPane) => void
+  maximizedPane: ViewportPane | null
+  setMaximizedPane: (p: ViewportPane | null) => void
+
   // G — game view: hide all editor-only visuals
   gameView: boolean
   toggleGameView: () => void
@@ -92,6 +101,14 @@ interface EditorState {
 
   contentBrowserOpen: boolean
   toggleContentBrowser: () => void
+  /** UE Content Drawer — floating overlay when unpinned (Ctrl+Space) */
+  contentDrawerOpen: boolean
+  openContentDrawer: () => void
+  closeContentDrawer: () => void
+  toggleContentDrawer: () => void
+  /** UE "Dock in Layout" — pinned drawer stays open and does not auto-collapse */
+  contentDrawerDocked: boolean
+  toggleContentDrawerDocked: () => void
   placeActorsOpen: boolean
   togglePlaceActors: () => void
 
@@ -146,6 +163,10 @@ interface EditorState {
   showPrefs: boolean
   setShowPrefs: (v: boolean) => void
 
+  // keyboard shortcuts editor
+  showShortcutEditor: boolean
+  setShowShortcutEditor: (v: boolean) => void
+
   // plugin manager modal
   showPluginManager: boolean
   setShowPluginManager: (v: boolean) => void
@@ -154,6 +175,8 @@ interface EditorState {
   bridgeConnected: boolean
   setBridgeConnected: (v: boolean) => void
 }
+
+const viewportPrefs = loadViewportPrefs()
 
 export const useEditor = create<EditorState>((set) => ({
   selectedId: null,
@@ -197,7 +220,28 @@ export const useEditor = create<EditorState>((set) => ({
   viewMode: 'lit',
   setViewMode: (m) => set({ viewMode: m }),
   viewProjection: 'perspective',
-  setViewProjection: (p) => set({ viewProjection: p }),
+  setViewProjection: (p) => set({ viewProjection: p, activeViewportPane: p }),
+
+  viewportLayout: viewportPrefs.layout,
+  setViewportLayout: (l) =>
+    set((s) => {
+      const next = { layout: l, maximizedPane: l === 'quad' ? s.maximizedPane : null }
+      saveViewportPrefs(next)
+      return {
+        viewportLayout: l,
+        maximizedPane: next.maximizedPane,
+        activeViewportPane: l === 'quad' ? s.activeViewportPane : 'perspective',
+      }
+    }),
+  activeViewportPane: 'perspective',
+  setActiveViewportPane: (p) => set({ activeViewportPane: p, viewProjection: p }),
+  maximizedPane: viewportPrefs.maximizedPane,
+  setMaximizedPane: (p) =>
+    set((s) => {
+      const next = { layout: s.viewportLayout, maximizedPane: p }
+      saveViewportPrefs(next)
+      return { maximizedPane: p, activeViewportPane: p ?? s.activeViewportPane }
+    }),
 
   gameView: false,
   toggleGameView: () => set((s) => ({ gameView: !s.gameView })),
@@ -223,6 +267,51 @@ export const useEditor = create<EditorState>((set) => ({
 
   contentBrowserOpen: true,
   toggleContentBrowser: () => set((s) => ({ contentBrowserOpen: !s.contentBrowserOpen })),
+
+  contentDrawerOpen: false,
+  openContentDrawer: () =>
+    set((s) =>
+      s.contentDrawerDocked
+        ? { bottomTab: 'content', contentBrowserOpen: true }
+        : { contentDrawerOpen: true },
+    ),
+  closeContentDrawer: () =>
+    set((s) =>
+      s.contentDrawerDocked
+        ? s.bottomTab === 'content'
+          ? { contentBrowserOpen: false }
+          : {}
+        : { contentDrawerOpen: false },
+    ),
+  toggleContentDrawer: () =>
+    set((s) => {
+      if (s.contentDrawerDocked) {
+        const onContent = s.contentBrowserOpen && s.bottomTab === 'content'
+        return onContent
+          ? { contentBrowserOpen: false }
+          : { bottomTab: 'content', contentBrowserOpen: true }
+      }
+      return { contentDrawerOpen: !s.contentDrawerOpen }
+    }),
+  contentDrawerDocked: true,
+  toggleContentDrawerDocked: () =>
+    set((s) => {
+      const docked = !s.contentDrawerDocked
+      if (docked) {
+        return {
+          contentDrawerDocked: true,
+          contentDrawerOpen: false,
+          bottomTab: 'content',
+          contentBrowserOpen: true,
+        }
+      }
+      return {
+        contentDrawerDocked: false,
+        contentDrawerOpen: s.contentBrowserOpen && s.bottomTab === 'content',
+        contentBrowserOpen: s.bottomTab === 'content' ? false : s.contentBrowserOpen,
+      }
+    }),
+
   placeActorsOpen: true,
   togglePlaceActors: () => set((s) => ({ placeActorsOpen: !s.placeActorsOpen })),
 
@@ -272,6 +361,9 @@ export const useEditor = create<EditorState>((set) => ({
 
   showPrefs: false,
   setShowPrefs: (v) => set({ showPrefs: v }),
+
+  showShortcutEditor: false,
+  setShowShortcutEditor: (v) => set({ showShortcutEditor: v }),
 
   showPluginManager: false,
   setShowPluginManager: (v) => set({ showPluginManager: v }),

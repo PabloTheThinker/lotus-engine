@@ -1,6 +1,6 @@
 import { getPluginPanels } from '../plugins'
 import { useEditor, type BottomTab } from '../store'
-import { ContentBrowser } from './ContentBrowser'
+import { ContentDrawer } from './ContentDrawer'
 import { PluginPanelView } from './PluginPanelView'
 import { ScriptEditor } from './ScriptEditor'
 import { BlueprintEditor } from './BlueprintEditor'
@@ -35,8 +35,19 @@ export function BottomDock() {
   const tab = useEditor((s) => s.bottomTab)
   const setTab = useEditor((s) => s.setBottomTab)
   const toggle = useEditor((s) => s.toggleContentBrowser)
+  const docked = useEditor((s) => s.contentDrawerDocked)
+  const openDrawer = useEditor((s) => s.openContentDrawer)
   useEditor((s) => s.sceneVersion)
   const pluginTabs = getPluginPanels().map((p) => ({ id: pluginTabId(p.id), label: p.title, panelId: p.id }))
+
+  const selectTab = (id: BottomTab) => {
+    if (id === 'content' && !docked) {
+      openDrawer()
+      return
+    }
+    if (open && tab === id) toggle()
+    else setTab(id)
+  }
 
   return (
     <div className={`bottom-dock ${open ? '' : 'closed'}`}>
@@ -45,10 +56,7 @@ export function BottomDock() {
           <button
             key={t.id}
             className={open && tab === t.id ? 'active' : ''}
-            onClick={() => {
-              if (open && tab === t.id) toggle()
-              else setTab(t.id)
-            }}
+            onClick={() => selectTab(t.id)}
           >
             {t.label}
           </button>
@@ -57,10 +65,7 @@ export function BottomDock() {
           <button
             key={t.id}
             className={open && tab === t.id ? 'active' : ''}
-            onClick={() => {
-              if (open && tab === t.id) toggle()
-              else setTab(t.id)
-            }}
+            onClick={() => selectTab(t.id)}
           >
             {t.label}
           </button>
@@ -72,7 +77,7 @@ export function BottomDock() {
       </div>
       {open && (
         <div className="bottom-body">
-          {tab === 'content' && <ContentBrowser />}
+          {tab === 'content' && docked && <ContentDrawer />}
           {tab === 'script' && <ScriptEditor />}
           {tab === 'blueprint' && <BlueprintEditor />}
           {tab === 'material' && <MaterialEditor />}

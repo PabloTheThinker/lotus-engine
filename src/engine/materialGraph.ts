@@ -1,12 +1,15 @@
 import * as THREE from 'three'
 import type { Actor } from './Actor'
+import { clearMaterialShader, installMaterialShader, updateMaterialShaderTime } from './materialShader'
 
 /**
- * Material graph — the UE Material Editor analog (v1): a dataflow node graph
- * evaluated per frame on the CPU, driving MeshStandardMaterial channels
- * (base color, emissive, roughness, metalness, opacity). Time-driven nodes
- * make materials animate live in the editor, exactly like UE's preview.
+ * Material graph — UE Material Editor analog (v1 CPU / v2 GPU):
+ * dataflow node graph driving MeshStandardMaterial channels
+ * (base color, emissive, roughness, metalness, opacity).
+ * CPU mode evaluates once per frame; GPU mode transpiles to GLSL via onBeforeCompile.
  */
+
+export type MaterialGraphMode = 'cpu' | 'gpu'
 
 export type MatValue = number | [number, number, number]
 
@@ -27,6 +30,8 @@ export interface MatEdge {
 export interface MaterialGraph {
   nodes: MatNode[]
   edges: MatEdge[]
+  /** cpu = per-object fast path; gpu = per-pixel shader (default cpu) */
+  mode?: MaterialGraphMode
 }
 
 export interface MatNodeDef {
@@ -34,7 +39,7 @@ export interface MatNodeDef {
   color: string
   inputs: string[]
   hasOutput: boolean
-  props: Array<{ key: string; label: string; kind: 'number' | 'color'; default: string | number }>
+  props: Array<{ key: string; label: string; kind: 'number' | 'color' | 'text'; default: string | number }>
   evaluate: (inputs: Record<string, MatValue | undefined>, props: Record<string, string | number>, t: number) => MatValue
 }
 
@@ -128,6 +133,112 @@ export const MAT_NODE_DEFS: Record<string, MatNodeDef> = {
       return broadcast(i.a ?? 0, i.b ?? 1, (x, y) => x + (y - x) * t)
     },
   },
+  UV: {
+    title: 'UV',
+    color: '#5a4a7a',
+    inputs: [],
+    hasOutput: true,
+    props: [],
+    evaluate: () => [0.5, 0.5, 0] as [number, number, number],
+  },
+  TextureSample: {
+    title: 'Texture Sample',
+    color: '#5a4a7a',
+    inputs: ['uv'],
+    hasOutput: true,
+    props: [
+      { key: 'color', label: 'Fallback', kind: 'color', default: '#808080' },
+      { key: 'dataUrl', label: 'Data URL', kind: 'text', default: '' },
+    ],
+    evaluate: (_i, p) => hex(String(p.color ?? '#808080')),
+  },
+  Fresnel: {
+    title: 'Fresnel',
+    color: '#7a5a3b',
+    inputs: [],
+    hasOutput: true,
+    props: [
+      { key: 'bias', label: 'Bias', kind: 'number', default: 0.1 },
+      { key: 'power', label: 'Power', kind: 'number', default: 2 },
+      { key: 'scale', label: 'Scale', kind: 'number', default: 1 },
+    ],
+    evaluate: (_i, p) => Number(p.scale ?? 1) * 0.5 + Number(p.bias ?? 0.1),
+  },
+  Noise: {
+    title: 'Noise (simplex)',
+    color: '#7a5a3b',
+    inputs: ['uv'],
+    hasOutput: true,
+    props: [{ key: 'scale', label: 'Scale', kind: 'number', default: 4 }],
+    evaluate: (i, p, t) => {
+      const uv = toVec(i.uv ?? [0.5, 0.5, 0])
+      return 0.5 + 0.5 * simplexNoise3(uv[0] * Number(p.scale ?? 4), uv[1] * Number(p.scale ?? 4), t)
+    },
+  },
+}
+
+/** Compact 3D simplex noise for CPU preview (matches GPU shader qualitatively). */
+function simplexNoise3(x: number, y: number, z: number): number {
+  const F3 = 1 / 3
+  const G3 = 1 / 6
+  const s = (x + y + z) * F3
+  const i = Math.floor(x + s)
+  const j = Math.floor(y + s)
+  const k = Math.floor(z + s)
+  const t = (i + j + k) * G3
+  const x0 = x - (i - t)
+  const y0 = y - (j - t)
+  const z0 = z - (k - t)
+  let i1 = 0
+  let j1 = 0
+  let k1 = 0
+  let i2 = 0
+  let j2 = 0
+  let k2 = 0
+  if (x0 >= y0) {
+    if (y0 >= z0) {
+      i1 = 1
+      j2 = 1
+    } else if (x0 >= z0) {
+      i1 = 1
+      k2 = 1
+    } else {
+      k1 = 1
+      k2 = 1
+    }
+  } else if (y0 < z0) {
+    j1 = 1
+    k2 = 1
+  } else if (x0 < z0) {
+    j1 = 1
+    i2 = 1
+  } else {
+    k1 = 1
+    i2 = 1
+  }
+  const x1 = x0 - i1 + G3
+  const y1 = y0 - j1 + G3
+  const z1 = z0 - k1 + G3
+  const x2 = x0 - i2 + 2 * G3
+  const y2 = y0 - j2 + 2 * G3
+  const z2 = z0 - k2 + 2 * G3
+  const x3 = x0 - 1 + 3 * G3
+  const y3 = y0 - 1 + 3 * G3
+  const z3 = z0 - 1 + 3 * G3
+  const grad = (gi: number, px: number, py: number, pz: number) => {
+    const h = gi & 15
+    const u = h < 8 ? px : py
+    const v = h < 4 ? py : h === 12 || h === 14 ? px : pz
+    return ((h & 1 ? -u : u) + (h & 2 ? -2 * v : 2 * v)) * 0.5
+  }
+  const ii = i & 255
+  const jj = j & 255
+  const kk = k & 255
+  const n0 = Math.max(0, 0.6 - x0 * x0 - y0 * y0 - z0 * z0) ** 4 * grad(ii + jj + kk, x0, y0, z0)
+  const n1 = Math.max(0, 0.6 - x1 * x1 - y1 * y1 - z1 * z1) ** 4 * grad(ii + i1 + jj + j1 + kk + k1, x1, y1, z1)
+  const n2 = Math.max(0, 0.6 - x2 * x2 - y2 * y2 - z2 * z2) ** 4 * grad(ii + i2 + jj + j2 + kk + k2, x2, y2, z2)
+  const n3 = Math.max(0, 0.6 - x3 * x3 - y3 * y3 - z3 * z3) ** 4 * grad(ii + jj + kk + 1, x3, y3, z3)
+  return 32 * (n0 + n1 + n2 + n3)
 }
 
 let matCounter = 0
@@ -171,12 +282,12 @@ export function evaluateMaterialGraph(graph: MaterialGraph, t: number): Record<s
   return result
 }
 
-/** apply evaluated channels onto an actor's material */
-export function applyMaterialGraph(actor: Actor, t: number, graph?: MaterialGraph) {
-  const g = graph ?? actor.materialGraph
-  if (!g || !actor.mesh) return
-  const mat = actor.mesh.material as THREE.MeshStandardMaterial
-  const r = evaluateMaterialGraph(g, t)
+export function getMaterialGraphMode(graph?: MaterialGraph, actorMode?: MaterialGraphMode): MaterialGraphMode {
+  return graph?.mode ?? actorMode ?? 'cpu'
+}
+
+function applyMaterialGraphCpu(mat: THREE.MeshStandardMaterial, graph: MaterialGraph, t: number) {
+  const r = evaluateMaterialGraph(graph, t)
   if (r.baseColor !== undefined) {
     const [cr, cg, cb] = toVec(r.baseColor)
     mat.color.setRGB(cr, cg, cb)
@@ -191,5 +302,55 @@ export function applyMaterialGraph(actor: Actor, t: number, graph?: MaterialGrap
   if (r.opacity !== undefined) {
     mat.opacity = Math.max(0, Math.min(1, toNum(r.opacity)))
     mat.transparent = mat.opacity < 1
+  }
+}
+
+const MAT_APPLY_MODE = Symbol('vektraMatApplyMode')
+
+function applyMaterialGraphGpu(mat: THREE.MeshStandardMaterial, graph: MaterialGraph, t: number) {
+  installMaterialShader(mat, graph)
+  updateMaterialShaderTime(mat, t)
+}
+
+/** Push graph results onto any MeshStandardMaterial (preview sphere, etc.). */
+export function applyMaterialGraphToMaterial(
+  mat: THREE.MeshStandardMaterial,
+  graph: MaterialGraph,
+  t: number,
+  mode?: MaterialGraphMode,
+) {
+  const tagged = mat as THREE.MeshStandardMaterial & { [MAT_APPLY_MODE]?: MaterialGraphMode }
+  const m = getMaterialGraphMode(graph, mode)
+  if (m === 'gpu') {
+    tagged[MAT_APPLY_MODE] = 'gpu'
+    applyMaterialGraphGpu(mat, graph, t)
+  } else {
+    if (tagged[MAT_APPLY_MODE] === 'gpu') clearMaterialShader(mat)
+    tagged[MAT_APPLY_MODE] = 'cpu'
+    applyMaterialGraphCpu(mat, graph, t)
+  }
+}
+
+/** apply evaluated channels onto an actor's material (CPU or GPU per-pixel path) */
+export function applyMaterialGraph(
+  actor: Actor,
+  t: number,
+  graph?: MaterialGraph,
+  mode?: MaterialGraphMode,
+) {
+  const g = graph ?? actor.materialGraph
+  if (!g || !actor.mesh) return
+  const mat = actor.mesh.material as THREE.MeshStandardMaterial
+  const tagged = mat as THREE.MeshStandardMaterial & { [MAT_APPLY_MODE]?: MaterialGraphMode }
+  const m = getMaterialGraphMode(g, mode ?? actor.materialGraphMode)
+  if (m === 'gpu') {
+    if (tagged[MAT_APPLY_MODE] !== 'gpu') tagged[MAT_APPLY_MODE] = 'gpu'
+    applyMaterialGraphGpu(mat, g, t)
+  } else {
+    if (tagged[MAT_APPLY_MODE] === 'gpu') {
+      clearMaterialShader(mat)
+    }
+    tagged[MAT_APPLY_MODE] = 'cpu'
+    applyMaterialGraphCpu(mat, g, t)
   }
 }

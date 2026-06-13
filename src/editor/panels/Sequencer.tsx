@@ -1,8 +1,17 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { world } from '../../engine/World'
-import { keyableProperties, sampleSequence, setKey, type SeqKey, type SeqProperty, type SeqTrack } from '../../engine/sequencer'
+import {
+  ensureBezierTangents,
+  keyableProperties,
+  sampleSequence,
+  setKey,
+  type SeqKey,
+  type SeqProperty,
+  type SeqTrack,
+} from '../../engine/sequencer'
 import { runCommand, PropertyCommand } from '../commands'
 import { useEditor } from '../store'
+import { CurveEditor } from './CurveEditor'
 
 const RULER_STEP = 1 // seconds between ruler marks
 
@@ -22,6 +31,9 @@ export function Sequencer() {
   const touch = useEditor((s) => s.touch)
   const timelineRef = useRef<HTMLDivElement>(null)
   const scrubbing = useRef(false)
+  const [curveTrack, setCurveTrack] = useState<SeqTrack | null>(null)
+  const [curveOpen, setCurveOpen] = useState(false)
+  const [curveChannel, setCurveChannel] = useState(0)
 
   const seq = world.sequence
   const pct = (t: number) => `${(t / seq.duration) * 100}%`
@@ -136,10 +148,24 @@ export function Sequencer() {
   }
   const recording = useEditor((s) => s.takeRecording)
 
-  const cycleInterp = (key: SeqKey) => {
-    key.interp = key.interp === 'smooth' ? 'step' : key.interp === 'step' ? 'linear' : 'smooth'
+  const interpIcon = (interp?: SeqKey['interp']) =>
+    interp === 'smooth' ? '●' : interp === 'step' ? '■' : interp === 'bezier' ? '⌇' : '◆'
+
+  const cycleInterp = (key: SeqKey, track: SeqTrack, keyIndex: number) => {
+    key.interp =
+      key.interp === 'smooth' ? 'step' : key.interp === 'step' ? 'linear' : key.interp === 'linear' ? 'bezier' : 'smooth'
+    if (key.interp === 'bezier') ensureBezierTangents(track.keys, keyIndex)
     touch()
   }
+
+  const selectTrack = (tr: SeqTrack) => {
+    setCurveTrack(tr)
+    setCurveOpen(true)
+    setCurveChannel(0)
+  }
+
+  const isVectorTrack = (tr: SeqTrack) =>
+    tr.property === 'position' || tr.property === 'rotation' || tr.property === 'scale'
 
   const deleteKey = (track: SeqTrack, keyIndex: number) => {
     const before = JSON.stringify(seq.tracks)
@@ -242,6 +268,14 @@ export function Sequencer() {
         >
           {recording ? '⏺ Recording…' : '⏺ Take'}
         </button>
+        <button
+          className={curveOpen && curveTrack ? 'active' : ''}
+          disabled={!curveTrack || curveTrack.keys.length < 1}
+          title="Curve editor for the selected track"
+          onClick={() => setCurveOpen((o) => !o)}
+        >
+          ⌇ Curve
+        </button>
       </div>
       <div className="seq-body">
         <div className="seq-names">
@@ -252,7 +286,12 @@ export function Sequencer() {
                 {world.actors.get(actorId)?.name ?? '(deleted)'}
               </div>
               {tracks.map((tr) => (
-                <div key={tr.property} className="seq-track-name">
+                <div
+                  key={tr.property}
+                  className={`seq-track-name ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                  title="Click to open curve editor"
+                >
                   {tr.property}
                 </div>
               ))}
@@ -315,21 +354,26 @@ export function Sequencer() {
             <div key={actorId}>
               <div className="seq-actor-lane" />
               {tracks.map((tr) => (
-                <div key={tr.property} className="seq-lane">
+                <div
+                  key={tr.property}
+                  className={`seq-lane ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                >
                   {tr.keys.map((k, i) => (
                     <span
                       key={i}
                       className="seq-keyframe"
                       style={{ left: pct(k.t) }}
-                      title={`${tr.property} @ ${k.t.toFixed(2)}s — click jumps · Shift+click cycles interp (◆ linear ● smooth ■ step) · right-click deletes`}
+                      title={`${tr.property} @ ${k.t.toFixed(2)}s — click jumps · Shift+click cycles interp (◆ linear ● smooth ■ step ⌇ bezier) · right-click deletes`}
                       onContextMenu={(e) => {
                         e.preventDefault()
                         deleteKey(tr, i)
                       }}
                       onClick={(e) => {
                         e.stopPropagation()
+                        selectTrack(tr)
                         if (e.shiftKey) {
-                          cycleInterp(k)
+                          cycleInterp(k, tr, i)
                           return
                         }
                         setSeqTime(k.t)
@@ -337,7 +381,7 @@ export function Sequencer() {
                         touch()
                       }}
                     >
-                      {k.interp === 'smooth' ? '●' : k.interp === 'step' ? '■' : '◆'}
+                      {interpIcon(k.interp)}
                     </span>
                   ))}
                 </div>
@@ -347,6 +391,29 @@ export function Sequencer() {
           <div className="seq-playhead" style={{ left: pct(seqTime) }} />
         </div>
       </div>
+      {curveOpen && curveTrack && curveTrack.keys.length > 0 && (
+        <div className="seq-curve-panel">
+          <div className="seq-curve-header">
+            <span>
+              {world.actors.get(curveTrack.actorId)?.name ?? '(deleted)'} · {curveTrack.property}
+            </span>
+            {isVectorTrack(curveTrack) && (
+              <label className="seq-curve-channel">
+                Channel
+                <select
+                  value={curveChannel}
+                  onChange={(e) => setCurveChannel(parseInt(e.target.value, 10))}
+                >
+                  <option value={0}>X</option>
+                  <option value={1}>Y</option>
+                  <option value={2}>Z</option>
+                </select>
+              </label>
+            )}
+          </div>
+          <CurveEditor track={curveTrack} duration={seq.duration} channel={curveChannel} />
+        </div>
+      )}
     </div>
   )
 }

@@ -59,6 +59,30 @@ export function deletePrefab(name: string) {
   useEditor.getState().touch()
 }
 
+export function renamePrefab(oldName: string, newName: string): boolean {
+  const next = newName.trim()
+  if (!next || next === oldName) return false
+  const prefabs = listPrefabs()
+  if (prefabs.some((p) => p.name === next)) return false
+  persist(prefabs.map((p) => (p.name === oldName ? { ...p, name: next } : p)))
+  useEditor.getState().setStatus(`Renamed prefab: ${oldName} → ${next}`)
+  useEditor.getState().touch()
+  return true
+}
+
+export function duplicatePrefab(name: string): Prefab | null {
+  const prefab = getPrefabByName(name)
+  if (!prefab) return null
+  const existing = new Set(listPrefabs().map((p) => p.name))
+  let copyName = `${name}_Copy`
+  while (existing.has(copyName)) copyName += '_Copy'
+  const dup: Prefab = { name: copyName, actors: JSON.parse(JSON.stringify(prefab.actors)) }
+  persist([...listPrefabs(), dup])
+  useEditor.getState().setStatus(`Duplicated prefab: ${copyName}`)
+  useEditor.getState().touch()
+  return dup
+}
+
 /** Walk up the hierarchy to the prefab instance root (has prefabSource). */
 export function getPrefabInstanceRoot(actorId: string): Actor | null {
   let cur = world.actors.get(actorId) ?? null
