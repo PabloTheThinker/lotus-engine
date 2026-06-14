@@ -51,6 +51,8 @@ import {
   resolveBTScriptDiffGutterSelection,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
+  getBTServiceDecoratorHostId,
+  getBTServiceHostNodeId,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
@@ -63,9 +65,12 @@ import {
   getPresetACESEnabled,
   COLOR_GRADING_PRESET_THUMBNAILS,
   getACESPostEnabled,
+  getColorGradingCompareT,
   getColorGradingPreset,
   getColorGradingSettings,
+  blendColorGradingSettings,
 } from './engine/postStackColorGrading'
+import { createIdentityLUTTexture, getGradingLUTStub } from './engine/postColorGradingLut'
 import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
@@ -253,6 +258,10 @@ const lotusBridge = {
       wrapH = 280,
     ) => resolveBTScriptDiffGutterSelection(graph, nodeIds, wrapW, wrapH),
     exportDiffPatch: (graph = emptyBTGraph(), script = '') => exportBTScriptDiffPatch(script, graph),
+    serviceHost: (graph = emptyBTGraph(), serviceNodeId = '') =>
+      getBTServiceHostNodeId(graph, serviceNodeId),
+    serviceDecoratorHost: (graph = emptyBTGraph(), serviceNodeId = '') =>
+      getBTServiceDecoratorHostId(graph, serviceNodeId),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
@@ -289,6 +298,14 @@ const lotusBridge = {
     presetAces: (preset?: import('./engine/postStackColorGrading').ColorGradingPreset) =>
       getPresetACESEnabled(world.environment, preset ?? getColorGradingPreset(world.environment)),
     presetThumbnails: () => COLOR_GRADING_PRESET_THUMBNAILS,
+    compareT: () => getColorGradingCompareT(world.environment),
+    blend: (
+      a: import('./engine/postStackColorGrading').ColorGradingSettings,
+      b: import('./engine/postStackColorGrading').ColorGradingSettings,
+      t: number,
+    ) => blendColorGradingSettings(a, b, t),
+    lutStub: () => getGradingLUTStub(world.environment),
+    identityLut: () => !!createIdentityLUTTexture(),
   },
   projectSettings: {
     load: loadProjectSettings,

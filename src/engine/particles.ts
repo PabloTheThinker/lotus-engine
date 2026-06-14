@@ -372,6 +372,33 @@ export class ParticleSystem {
     return THREE.MathUtils.lerp(this.props.sizeStart, this.props.sizeEnd, t)
   }
 
+  /** Wave 29 — snapshot alive mask before GPU integrate (sub-emitter death detect). */
+  private prevAliveSnapshot: boolean[] = []
+  gpuSubEmitterBursts = 0
+
+  snapshotAliveForGPU() {
+    this.prevAliveSnapshot = this.alive.slice()
+  }
+
+  /** Process sub-emitter bursts after GPU killed particles (onDeath only). */
+  processGPUSubEmitterDeaths(): number {
+    const p = this.props
+    const off = (m: string) => p.modulesOff?.includes(m)
+    const se = p.subEmitter
+    const subOn = se?.enabled && !off('subEmitter') && se.onDeath
+    if (!subOn || !this.prevAliveSnapshot.length) return 0
+    let bursts = 0
+    for (let i = 0; i < this.cap; i++) {
+      if (this.prevAliveSnapshot[i] && !this.alive[i]) {
+        const i3 = i * 3
+        this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
+        bursts++
+      }
+    }
+    this.gpuSubEmitterBursts += bursts
+    return bursts
+  }
+
   /** Spawn a radial burst at a world-local position (sub-emitter). */
   private spawnBurstAt(x: number, y: number, z: number, se: SubEmitterProps) {
     for (let n = 0; n < se.count; n++) {

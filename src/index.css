@@ -1309,6 +1309,8 @@ input[type='checkbox'] {
   flex-wrap: wrap;
   gap: 3px;
   padding: 2px 6px 4px;
+  position: relative;
+  z-index: 3;
 }
 .mat-pin {
   font-size: 9px;
@@ -1318,6 +1320,8 @@ input[type='checkbox'] {
   color: #8fd4a8;
   border: none;
   cursor: pointer;
+  position: relative;
+  z-index: 3;
 }
 .mat-pin.mat-pin-active {
   background: #3a5a8a;
@@ -1428,6 +1432,22 @@ input[type='checkbox'] {
   font-size: 9px;
   color: var(--text-dim, #9aa8b8);
   cursor: pointer;
+}
+.grading-compare-row {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0;
+}
+.grading-compare-row select {
+  flex: 1;
+  font-size: 11px;
+}
+.mat-pin-pinned {
+  box-shadow: 0 0 0 1px #c9a8ff;
+}
+.bt-wire-service.bt-service-bp-active {
+  stroke: #ff8866;
+  stroke-width: 2;
 }
 .mat-legend-chip.pinned {
   box-shadow: 0 0 0 1px #c9a8ff;

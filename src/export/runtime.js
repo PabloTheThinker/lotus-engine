@@ -100,20 +100,42 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const ssgiRow = ssgiTable[ssgiPreset] ?? ssgiTable.off
     const dofOn = env.postDof === true
     const colorGradingOn = env.postColorGrading === true
-    const acesOn = env.postAces === true
     const gradingPreset = env.postColorGradingPreset ?? 'off'
+    const acesOn =
+      gradingPreset !== 'off'
+        ? (env.postPresetAces?.[gradingPreset] ?? env.postAces === true)
+        : env.postAces === true
+    const compareT = Math.max(0, Math.min(1, env.postGradingCompareT ?? 0))
+    const compareA = env.postGradingCompareA ?? gradingPreset
+    const compareB = env.postGradingCompareB ?? 'neutral'
     const presetTable = {
       neutral: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] },
       cinematic: { lift: [0.02, 0.01, 0], gamma: [0.95, 0.98, 1.05], gain: [1.05, 1.02, 0.98] },
       highContrast: { lift: [-0.02, -0.02, -0.02], gamma: [1.1, 1.1, 1.1], gain: [1.2, 1.15, 1.1] },
     }
-    const presetRow = presetTable[gradingPreset]
+    const rowFor = (id) => (id && id !== 'off' ? presetTable[id] : null)
+    const presetRow = rowFor(gradingPreset)
+    const rowA = rowFor(compareA)
+    const rowB = rowFor(compareB)
     const exposure = env.exposure ?? 0.75
     const gainMul = Math.max(0.25, Math.min(2, exposure)) / 0.75
     const liftBias = (Math.max(0.25, Math.min(2, exposure)) - 0.75) * 0.06
-    const baseLift = presetRow?.lift ?? env.postLift ?? [0, 0, 0]
-    const baseGamma = presetRow?.gamma ?? env.postGamma ?? [1, 1, 1]
-    const baseGain = presetRow?.gain ?? env.postGain ?? [1, 1, 1]
+    const lerpRow = (a, b, t) => {
+      if (!a) return b
+      if (!b) return a
+      return {
+        lift: a.lift.map((v, i) => v + (b.lift[i] - v) * t),
+        gamma: a.gamma.map((v, i) => v + (b.gamma[i] - v) * t),
+        gain: a.gain.map((v, i) => v + (b.gain[i] - v) * t),
+      }
+    }
+    const blended =
+      compareT > 0.001 && rowA && rowB && compareA !== compareB
+        ? lerpRow(rowA, rowB, compareT)
+        : null
+    const baseLift = blended?.lift ?? presetRow?.lift ?? env.postLift ?? [0, 0, 0]
+    const baseGamma = blended?.gamma ?? presetRow?.gamma ?? env.postGamma ?? [1, 1, 1]
+    const baseGain = blended?.gain ?? presetRow?.gain ?? env.postGain ?? [1, 1, 1]
     const lift = baseLift.map((v) => v + liftBias)
     const gamma = baseGamma
     const gain = baseGain.map((v) => v * gainMul)

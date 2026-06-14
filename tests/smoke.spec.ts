@@ -1929,6 +1929,127 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 29 color grading LUT stub + compare blend', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        compareT: () => number
+        blend: (
+          a: { enabled: boolean; lift: [number, number, number]; gamma: [number, number, number]; gain: [number, number, number] },
+          b: { enabled: boolean; lift: [number, number, number]; gamma: [number, number, number]; gain: [number, number, number] },
+          t: number,
+        ) => { gain: [number, number, number] }
+        lutStub: () => { size: number }
+        identityLut: () => boolean
+      }
+    }
+    const a = v.colorGrading.settings()
+    v.world.environment.postGradingCompareT = 0.5
+    v.world.environment.postGradingCompareA = 'cinematic'
+    v.world.environment.postGradingCompareB = 'neutral'
+    const blended = v.colorGrading.blend(a, { ...a, gain: [2, 2, 2] }, 0.5)
+    return {
+      compareT: v.colorGrading.compareT(),
+      blendedGain: blended.gain[0],
+      lutSize: v.colorGrading.lutStub().size,
+      identity: v.colorGrading.identityLut(),
+    }
+  })
+
+  expect(result.compareT).toBe(0.5)
+  expect(result.blendedGain).toBeGreaterThan(1)
+  expect(result.lutSize).toBe(16)
+  expect(result.identity).toBe(true)
+})
+
+test('wave 29 GPU sub-emitter death burst surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const ps = v.particles.create('gpu')
+    ps.props.subEmitter = { enabled: true, onDeath: true, onCollision: false, count: 4, speed: 1.2, lifetime: 0.3 }
+    return { hasSnapshot: typeof (ps as { snapshotAliveForGPU?: () => void }).snapshotAliveForGPU === 'function' }
+  })
+
+  expect(result.hasSnapshot).toBe(true)
+})
+
+test('wave 29 export grading preset ACES parity', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    return v.export.buildPlayableHTML()
+  })
+
+  expect(html).toContain('postPresetAces')
+  expect(html).toContain('postGradingCompareT')
+})
+
+test('wave 29 BT service host breakpoint bridges', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        serviceHost: (g: import('../src/engine/btGraph').BTGraph, id: string) => string | null
+        serviceDecoratorHost: (g: import('../src/engine/btGraph').BTGraph, id: string) => string | null
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const sel = { id: 'sel29', type: 'Selector', x: 200, y: 80, props: {} }
+    const svc = { id: 'svc29', type: 'SvcPlayerNear', x: 200, y: 200, props: { radius: 5 } }
+    graph.nodes.push(sel, svc)
+    graph.edges = [
+      { from: root.id, to: sel.id },
+      { from: sel.id, to: svc.id, kind: 'service' },
+    ]
+    return {
+      host: v.bt.serviceHost(graph, 'svc29'),
+      decorator: v.bt.serviceDecoratorHost(graph, 'svc29'),
+    }
+  })
+
+  expect(result.host).toBe('sel29')
+  expect(result.decorator).toBe('sel29')
+})
+
+test('wave 29 material minimap focus + pin sync', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+      ],
+      edges: [{ from: 'c1', to: 'out:baseColor' }],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  const pin = page.locator('.mat-pin', { hasText: 'baseColor' })
+  await pin.click()
+  await expect(pin).toHaveClass(/mat-pin-active/)
+  await expect(pin).toHaveClass(/mat-pin-pinned/)
+
+  const minimap = page.locator('.mat-minimap')
+  await expect(minimap).toBeVisible()
+  await minimap.click({ position: { x: 20, y: 38 } })
+  await expect(minimap.locator('rect[stroke="#ffe066"]')).toHaveCount(1)
+})
+
 test('wave 28 color grading preset thumbnails + presetAces', async ({ page }) => {
   await bootEditor(page)
 

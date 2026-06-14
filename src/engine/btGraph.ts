@@ -237,6 +237,26 @@ function parseBTServicesFromScript(script: string | undefined): { serviceNodeId:
 }
 
 /** Wave 25 — inline service compile hint for gutter diff marker tooltip. */
+/** Wave 29 — host composite/decorator for a service node (service edge parent). */
+export function getBTServiceHostNodeId(graph: BTGraph, serviceNodeId: string): string | null {
+  const edge = graph.edges.find((e) => e.to === serviceNodeId && e.kind === 'service')
+  return edge?.from ?? null
+}
+
+/** Wave 29 — nearest decorator ancestor hosting a service (for PIE breakpoint polish). */
+export function getBTServiceDecoratorHostId(graph: BTGraph, serviceNodeId: string): string | null {
+  let hostId = getBTServiceHostNodeId(graph, serviceNodeId)
+  const seen = new Set<string>()
+  while (hostId && !seen.has(hostId)) {
+    seen.add(hostId)
+    const host = graph.nodes.find((n) => n.id === hostId)
+    if (host && BT_DECORATOR_TYPES.has(host.type)) return hostId
+    const parentEdge = graph.edges.find((e) => e.to === hostId && (e.kind ?? 'flow') === 'flow')
+    hostId = parentEdge?.from ?? null
+  }
+  return getBTServiceHostNodeId(graph, serviceNodeId)
+}
+
 export function getBTNodeServiceCompileHint(graph: BTGraph, nodeId: string): string | null {
   const compiled = compileBTGraph(graph)
   if (!compiled?.services?.length) return null

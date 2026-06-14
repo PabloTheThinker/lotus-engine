@@ -499,6 +499,12 @@ export interface EnvironmentSettings {
   postColorGradingPreset?: 'off' | 'neutral' | 'cinematic' | 'highContrast'
   /** Wave 28 — per-preset ACES tonemap when a grading preset is active */
   postPresetAces?: Partial<Record<'neutral' | 'cinematic' | 'highContrast', boolean>>
+  /** Wave 29 — LUT upload stub (stores filename; identity LUT applied) */
+  postGradingLutName?: string
+  /** Wave 29 — A/B preset compare blend (0 = A, 1 = B) */
+  postGradingCompareT?: number
+  postGradingCompareA?: 'neutral' | 'cinematic' | 'highContrast'
+  postGradingCompareB?: 'neutral' | 'cinematic' | 'highContrast'
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
   /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */

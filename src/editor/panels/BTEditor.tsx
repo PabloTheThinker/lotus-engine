@@ -23,6 +23,8 @@ import {
   resolveBTScriptDiffGutterSelection,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
+  getBTServiceDecoratorHostId,
+  getBTServiceHostNodeId,
   validateBTGraph,
   type BTGraph,
   type BTGraphNode,
@@ -94,6 +96,35 @@ export function BTEditor() {
     }
     setBreakpointHitNode(breakpointHit.nodeId)
   }, [breakpointHit, actor?.id])
+
+  const breakpointServiceHost = useMemo(() => {
+    if (!breakpointHitNode || !graph) return null
+    return getBTServiceHostNodeId(graph, breakpointHitNode)
+  }, [breakpointHitNode, graph])
+
+  const breakpointDecoratorHost = useMemo(() => {
+    if (!breakpointHitNode || !graph) return null
+    return getBTServiceDecoratorHostId(graph, breakpointHitNode)
+  }, [breakpointHitNode, graph])
+
+  useEffect(() => {
+    if (!breakpointHitNode) return
+    scrollNodeIntoView(breakpointHitNode)
+    if (breakpointServiceHost && breakpointServiceHost !== breakpointHitNode) {
+      const wrap = canvasRef.current
+      const svc = graph?.nodes.find((n) => n.id === breakpointHitNode)
+      const host = graph?.nodes.find((n) => n.id === breakpointServiceHost)
+      if (wrap && svc && host) {
+        const cx = (svc.x + host.x + NODE_W) / 2
+        const cy = (svc.y + host.y + HEADER_H) / 2
+        wrap.scrollTo({
+          left: Math.max(0, cx - wrap.clientWidth / 2),
+          top: Math.max(0, cy - wrap.clientHeight / 2),
+          behavior: 'smooth',
+        })
+      }
+    }
+  }, [breakpointHitNode, breakpointServiceHost, graph])
 
   useEffect(() => {
     if (!actor) return
@@ -569,6 +600,9 @@ export function BTEditor() {
               const serviceActive = liveServices.includes(n.id)
               const selected = selectedNode === n.id
               const isBpHit = breakpointHitNode === n.id
+              const isServiceBpHost =
+                breakpointServiceHost === n.id && breakpointHitNode !== n.id
+              const isDecoratorBpHost = breakpointDecoratorHost === n.id && breakpointHitNode !== n.id
               const showIn = n.type !== 'Root'
               const showOut = def.maxChildren > 0
               return (
@@ -588,8 +622,14 @@ export function BTEditor() {
                     }
                   }}
                 >
-                  {n.breakpoint && (
-                    <circle cx={-8} cy={HEADER_H / 2} r={5} fill={isBpHit ? '#ff4466' : '#e5484d'} />
+                  {(n.breakpoint || BT_SERVICE_TYPES.has(n.type)) && (
+                    <circle
+                      cx={-8}
+                      cy={HEADER_H / 2}
+                      r={5}
+                      fill={isBpHit ? '#ff4466' : BT_SERVICE_TYPES.has(n.type) ? '#66ccaa' : '#e5484d'}
+                      opacity={n.breakpoint || isBpHit ? 1 : BT_SERVICE_TYPES.has(n.type) ? 0.45 : 1}
+                    />
                   )}
                   {diffGutterIds.has(n.id) && (
                     <text
@@ -630,9 +670,23 @@ export function BTEditor() {
                     rx={4}
                     fill={def.color}
                     stroke={
-                      isBpHit ? '#ff4466' : active ? '#ffe066' : serviceActive ? '#66ffcc' : selected ? '#6eb5ff' : '#222'
+                      isBpHit
+                        ? '#ff4466'
+                        : isServiceBpHost
+                          ? '#ff8866'
+                          : isDecoratorBpHost
+                            ? '#c9a878'
+                            : active
+                              ? '#ffe066'
+                              : serviceActive
+                                ? '#66ffcc'
+                                : selected
+                                  ? '#6eb5ff'
+                                  : '#222'
                     }
-                    strokeWidth={isBpHit || active || serviceActive || selected ? 3 : 1}
+                    strokeWidth={
+                      isBpHit || isServiceBpHost || isDecoratorBpHost || active || serviceActive || selected ? 3 : 1
+                    }
                   />
                   <text x={8} y={16} fill="#fff" fontSize={11}>
                     {n.props.collapsed ? `${def.title} (collapsed)` : def.title}

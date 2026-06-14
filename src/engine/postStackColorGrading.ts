@@ -97,9 +97,11 @@ export function getColorGradingPreset(env: EnvironmentSettings): ColorGradingPre
   return (env.postColorGradingPreset as ColorGradingPreset) ?? 'off'
 }
 
-export function getColorGradingSettings(env: EnvironmentSettings): ColorGradingSettings {
+function settingsForPresetId(
+  preset: ColorGradingPreset,
+  env: EnvironmentSettings,
+): ColorGradingSettings {
   const exposure = env.exposure ?? 0.75
-  const preset = getColorGradingPreset(env)
   const manual = {
     lift: env.postLift ?? [0, 0, 0],
     gamma: env.postGamma ?? [1, 1, 1],
@@ -107,13 +109,51 @@ export function getColorGradingSettings(env: EnvironmentSettings): ColorGradingS
   }
   const base =
     preset !== 'off' && preset in COLOR_GRADING_PRESETS
-      ? COLOR_GRADING_PRESETS[preset as Exclude<ColorGradingPreset, 'off'>]
+      ? COLOR_GRADING_PRESETS[preset as ColorGradingPresetId]
       : manual
   const scaled = applyExposureToColorGrading(base, exposure)
   return {
     enabled: env.postColorGrading === true || preset !== 'off',
     ...scaled,
   }
+}
+
+/** Wave 29 — lerp lift/gamma/gain between two grading presets (A/B compare). */
+export function blendColorGradingSettings(
+  a: ColorGradingSettings,
+  b: ColorGradingSettings,
+  t: number,
+): ColorGradingSettings {
+  const u = Math.max(0, Math.min(1, t))
+  const lerp3 = (x: [number, number, number], y: [number, number, number]): [number, number, number] => [
+    x[0] + (y[0] - x[0]) * u,
+    x[1] + (y[1] - x[1]) * u,
+    x[2] + (y[2] - x[2]) * u,
+  ]
+  return {
+    enabled: a.enabled || b.enabled,
+    lift: lerp3(a.lift, b.lift),
+    gamma: lerp3(a.gamma, b.gamma),
+    gain: lerp3(a.gain, b.gain),
+  }
+}
+
+export function getColorGradingCompareT(env: EnvironmentSettings): number {
+  return Math.max(0, Math.min(1, env.postGradingCompareT ?? 0))
+}
+
+export function getColorGradingSettings(env: EnvironmentSettings): ColorGradingSettings {
+  const compareT = getColorGradingCompareT(env)
+  const compareA = (env.postGradingCompareA as ColorGradingPreset | undefined) ?? getColorGradingPreset(env)
+  const compareB = (env.postGradingCompareB as ColorGradingPreset | undefined) ?? 'neutral'
+  if (compareT > 0.001 && compareA !== 'off' && compareB !== 'off' && compareA !== compareB) {
+    return blendColorGradingSettings(
+      settingsForPresetId(compareA, env),
+      settingsForPresetId(compareB, env),
+      compareT,
+    )
+  }
+  return settingsForPresetId(getColorGradingPreset(env), env)
 }
 
 /** Wave 27 — ACES exposure uses scene exposure with mild highlight rolloff bias. */

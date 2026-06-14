@@ -134,6 +134,7 @@ export class GPUParticleSystem extends ParticleSystem {
       }
 
       this.syncAliveMask()
+      this.snapshotAliveForGPU()
 
       if (isParticleGpuKernelReady()) {
         const c0 = new THREE.Color(p.colorStart)
@@ -172,6 +173,7 @@ export class GPUParticleSystem extends ParticleSystem {
         if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style, modules)) {
           this.computeIntegratedFrames++
           this.syncGPUAliveFromBuffers()
+          this.processGPUSubEmitterDeaths()
           const geo = this.points.geometry
           geo.attributes.position.needsUpdate = true
           geo.attributes.aColor.needsUpdate = true

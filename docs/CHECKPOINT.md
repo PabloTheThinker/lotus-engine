@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.83 (wave 28).** v0.33–v1.83 shipped; **build clean**, **`npm run test` — 85 passed**.
+- **Last clean commit: v1.88 (wave 29).** v0.33–v1.88 shipped; **build clean**, **`npm run test` — 90 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -328,13 +328,23 @@
 | v1.82 | BT diff gutter multi-select + `exportBTScriptDiffPatch` clipboard export |
 | v1.83 | Material legend Shift+pin minimap + solo upstream graph flash — 85 tests passed |
 
-## Next up (v1.84+, Wave 29)
+## Shipped (v1.84–v1.88, Wave 29)
 
-1. **TSL post** — LUT upload stub + preset A/B compare slider
-2. **GPU particles** — sub-emitter spawn on GPU path
-3. **Export** — color grading preset parity + per-preset ACES in runtime
-4. **BT** — service decorator PIE breakpoint polish
-5. **Material TSL** — minimap click-to-focus node + wire channel pin sync
+| Ver | What |
+|---|---|
+| v1.84 | TSL post LUT upload stub + preset A/B compare slider — `postColorGradingLut.ts`, `blendColorGradingSettings`, World Settings compare row |
+| v1.85 | GPU particle sub-emitter spawn on death — `snapshotAliveForGPU`, `processGPUSubEmitterDeaths` on integrate path |
+| v1.86 | Export color grading preset parity + per-preset ACES — `postPresetAces`, `postGradingCompareT` blend in runtime |
+| v1.87 | BT service decorator PIE breakpoint polish — `getBTServiceHostNodeId`, gutter host highlight + auto-scroll |
+| v1.88 | Material minimap click-to-focus + wire channel pin sync — `syncChannelPin`, focused node stroke, pin z-index — 90 tests passed |
+
+## Next up (v1.89+, Wave 30)
+
+1. **TSL post** — apply uploaded LUT texture in grading pass (beyond stub registration)
+2. **GPU particles** — sub-emitter burst rate/count uniforms on GPU path
+3. **Export** — grading preset thumbnails + A/B compare blend in runtime
+4. **BT** — service decorator step-over + conditional breakpoint polish
+5. **Material TSL** — legend↔pin bidirectional sync + focused-node pan easing
 
 ## Remaining gap-list queue (post–wave 7)
 

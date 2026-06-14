@@ -30,6 +30,7 @@ import {
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { sanitizeLevelKey, world } from '../../engine/World'
 import { COLOR_GRADING_PRESET_IDS, COLOR_GRADING_PRESET_THUMBNAILS } from '../../engine/postStackColorGrading'
+import { registerGradingLUTUpload } from '../../engine/postColorGradingLut'
 import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
@@ -1168,6 +1169,59 @@ export function WorldSettings() {
           <span>ACES tonemap global (manual / off preset)</span>
           <input type="checkbox" checked={!!env.postAces} onChange={(e) => set('postAces', e.target.checked)} />
         </label>
+        <label className="field">
+          <span>Grading LUT (stub upload)</span>
+          <input
+            type="file"
+            accept=".png,.jpg,.cube,.3dl"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) set('postGradingLutName', registerGradingLUTUpload(f.name))
+            }}
+          />
+          {env.postGradingLutName && <em>{env.postGradingLutName}</em>}
+        </label>
+        <div className="field grading-compare-field">
+          <span>Preset A/B compare</span>
+          <div className="grading-compare-row">
+            <select
+              value={env.postGradingCompareA ?? env.postColorGradingPreset ?? 'cinematic'}
+              onChange={(e) =>
+                set('postGradingCompareA', e.target.value as 'neutral' | 'cinematic' | 'highContrast')
+              }
+            >
+              {COLOR_GRADING_PRESET_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {COLOR_GRADING_PRESET_THUMBNAILS[id].label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={env.postGradingCompareB ?? 'neutral'}
+              onChange={(e) =>
+                set('postGradingCompareB', e.target.value as 'neutral' | 'cinematic' | 'highContrast')
+              }
+            >
+              {COLOR_GRADING_PRESET_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {COLOR_GRADING_PRESET_THUMBNAILS[id].label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <label className="field">
+            <span>Blend A → B</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={env.postGradingCompareT ?? 0}
+              onChange={(e) => set('postGradingCompareT', parseFloat(e.target.value))}
+            />
+            <em>{((env.postGradingCompareT ?? 0) * 100).toFixed(0)}%</em>
+          </label>
+        </div>
         {env.postColorGrading && (
           <>
             <label className="field">

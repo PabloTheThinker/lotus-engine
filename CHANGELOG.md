@@ -4,6 +4,30 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 29: v1.84–v1.88
+
+### Added
+- **v1.84** TSL post LUT upload stub + preset A/B compare — `postColorGradingLut.ts`, `blendColorGradingSettings`, World Settings LUT file input + compare slider
+- **v1.85** GPU sub-emitter death bursts — `snapshotAliveForGPU`, `processGPUSubEmitterDeaths` on GPU integrate path
+- **v1.86** Export grading preset ACES parity — `postPresetAces`, `postGradingCompareT` blend in playable runtime
+- **v1.87** BT service decorator breakpoint polish — `getBTServiceHostNodeId` / `getBTServiceDecoratorHostId`, gutter host highlight + auto-scroll
+- **v1.88** Material minimap click-to-focus + channel pin sync — `syncChannelPin`, focused node minimap stroke, pin z-index fix — 90 tests passed
+
+### Changed
+- `colorGrading.compareT` / `blend` / `lutStub` bridges on `window.lotus`
+- `bt.serviceHost` / `bt.serviceDecoratorHost` bridges
+
+### Fixed
+- Material output channel pins no longer blocked by overlapping `.bp-port` elements (z-index)
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 90 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 28: v1.79–v1.83
 
 ### Added

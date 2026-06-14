@@ -110,6 +110,8 @@ function MaterialGraphMinimap({
   viewportH,
   onPanTo,
   onZoomAt,
+  onFocusNode,
+  focusedNodeId,
 }: {
   graph: MaterialGraph
   isolateChannel: string | null
@@ -120,8 +122,11 @@ function MaterialGraphMinimap({
   viewportH: number
   onPanTo: (gx: number, gy: number) => void
   onZoomAt?: (factor: number, gx: number, gy: number) => void
+  onFocusNode?: (nodeId: string) => void
+  focusedNodeId?: string | null
 }) {
   const dragPan = useRef(false)
+  const panStart = useRef<{ x: number; y: number } | null>(null)
   if (graph.nodes.length < 2) return null
   let minX = Infinity
   let minY = Infinity
@@ -164,6 +169,7 @@ function MaterialGraphMinimap({
       onMouseDown={(e) => {
         e.preventDefault()
         dragPan.current = true
+        panStart.current = { x: e.clientX, y: e.clientY }
         const { gx, gy } = mapMinimapPoint(e)
         onPanTo(gx, gy)
       }}
@@ -172,11 +178,31 @@ function MaterialGraphMinimap({
         const { gx, gy } = mapMinimapPoint(e)
         onPanTo(gx, gy)
       }}
-      onMouseUp={() => {
+      onMouseUp={(e) => {
+        if (panStart.current && onFocusNode) {
+          const moved = Math.hypot(e.clientX - panStart.current.x, e.clientY - panStart.current.y)
+          if (moved < 5) {
+            const { gx, gy } = mapMinimapPoint(e)
+            let hit: string | null = null
+            let best = Infinity
+            for (const n of graph.nodes) {
+              if (gx >= n.x && gx <= n.x + NODE_W && gy >= n.y && gy <= n.y + 72) {
+                const d = Math.hypot(gx - (n.x + NODE_W / 2), gy - (n.y + 36))
+                if (d < best) {
+                  best = d
+                  hit = n.id
+                }
+              }
+            }
+            if (hit) onFocusNode(hit)
+          }
+        }
         dragPan.current = false
+        panStart.current = null
       }}
       onMouseLeave={() => {
         dragPan.current = false
+        panStart.current = null
       }}
       onWheel={(e) => {
         if (!onZoomAt) return
@@ -225,9 +251,11 @@ function MaterialGraphMinimap({
             height={10}
             rx={2}
             fill={pinHit ? '#c9a8ff' : soloHit ? '#9ec8ff' : (def?.color ?? '#444')}
-            opacity={soloHit || pinHit ? 1 : 0.7}
-            stroke={pinHit ? '#c9a8ff' : soloHit ? '#6eb5ff' : undefined}
-            strokeWidth={soloHit || pinHit ? 1 : 0}
+            opacity={soloHit || pinHit || focusedNodeId === n.id ? 1 : 0.7}
+            stroke={
+              focusedNodeId === n.id ? '#ffe066' : pinHit ? '#c9a8ff' : soloHit ? '#6eb5ff' : undefined
+            }
+            strokeWidth={focusedNodeId === n.id ? 2 : soloHit || pinHit ? 1 : 0}
           />
         )
       })}
@@ -427,6 +455,7 @@ export function MaterialEditor() {
   const [previewFlash, setPreviewFlash] = useState<string | null>(null)
   const [isolateChannel, setIsolateChannel] = useState<string | null>(null)
   const [pinnedMinimapChannel, setPinnedMinimapChannel] = useState<string | null>(null)
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
   const [upstreamFlashIds, setUpstreamFlashIds] = useState<Set<string>>(() => new Set())
   const [channelOrder, setChannelOrder] = useState<string[]>([])
   const legendDrag = useRef<string | null>(null)
@@ -581,6 +610,18 @@ export function MaterialEditor() {
     })
   }
 
+  const focusGraphNode = (nodeId: string) => {
+    const n = graph?.nodes.find((x) => x.id === nodeId)
+    if (!n) return
+    setFocusedNodeId(nodeId)
+    panToGraph(n.x + NODE_W / 2, n.y + 36)
+  }
+
+  const syncChannelPin = (ch: string) => {
+    setIsolateChannel(ch)
+    setPinnedMinimapChannel(ch)
+  }
+
   const zoomAtGraph = (factor: number, gx: number, gy: number) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -686,8 +727,10 @@ export function MaterialEditor() {
           zoom={zoom}
           viewportW={viewportSize.w}
           viewportH={viewportSize.h}
+          focusedNodeId={focusedNodeId}
           onPanTo={panToGraph}
           onZoomAt={zoomAtGraph}
+          onFocusNode={focusGraphNode}
         />
         {orderedChannels.length > 0 && (
           <div className="mat-channel-legend" aria-label="Wired material channels">
@@ -702,9 +745,11 @@ export function MaterialEditor() {
                 onClick={(e) => {
                   if (e.shiftKey) {
                     setPinnedMinimapChannel((prev) => (prev === ch ? null : ch))
+                    if (isolateChannel === ch) setIsolateChannel(null)
                     return
                   }
                   setIsolateChannel((prev) => (prev === ch ? null : ch))
+                  if (pinnedMinimapChannel === ch) setPinnedMinimapChannel(null)
                 }}
                 onDragStart={() => {
                   legendDrag.current = ch
@@ -885,11 +930,16 @@ export function MaterialEditor() {
                           <button
                             key={inp}
                             type="button"
-                            className={`mat-pin${isolateChannel === inp ? ' mat-pin-active' : ''}`}
-                            title={`Solo preview ${inp} (click again to clear)`}
+                            className={`mat-pin${isolateChannel === inp ? ' mat-pin-active' : ''}${pinnedMinimapChannel === inp ? ' mat-pin-pinned' : ''}`}
+                            title={`Solo + pin minimap ${inp}`}
                             onClick={(e) => {
                               e.stopPropagation()
-                              setIsolateChannel((prev) => (prev === inp ? null : inp))
+                              if (isolateChannel === inp && pinnedMinimapChannel === inp) {
+                                setIsolateChannel(null)
+                                setPinnedMinimapChannel(null)
+                              } else {
+                                syncChannelPin(inp)
+                              }
                             }}
                           >
                             {inp}
