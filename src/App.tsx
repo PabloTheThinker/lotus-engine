@@ -43,11 +43,13 @@ import {
   inferBlackboardTypes,
   summarizeBTTree,
   summarizeBTServices,
+  diffBTScriptPreview,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
+import { getDOFSettings } from './engine/postStackDOF'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
 import { DEFAULT_PARTICLES } from './engine/particles'
@@ -220,6 +222,7 @@ const lotusBridge = {
     validate: validateBTGraph,
     summarize: summarizeBTTree,
     summarizeServices: summarizeBTServices,
+    diffScript: (graph = emptyBTGraph(), script = '') => diffBTScriptPreview(script, graph),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
     activeServiceNodeIds: getActiveBTServiceNodeIds,
@@ -233,6 +236,9 @@ const lotusBridge = {
   },
   ssr: {
     settings: () => getSSRSettings(world.environment),
+  },
+  dof: {
+    settings: () => getDOFSettings(world.environment),
   },
   projectSettings: {
     load: loadProjectSettings,

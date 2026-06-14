@@ -224,6 +224,33 @@ export function resolveBTEditorHighlightNodeId(graph: BTGraph, runtimeNodeId: st
   return runtimeNodeId
 }
 
+/** Wave 23 — diff actor script vs compile-to-script preview (services-aware). */
+export function diffBTScriptPreview(
+  existingScript: string | undefined,
+  graph: BTGraph,
+): { changed: boolean; lines: string[]; preview: string } {
+  const preview = compileBTGraphToScript(graph) ?? ''
+  const prev = (existingScript ?? '').trim()
+  const next = preview.trim()
+  if (!next) return { changed: false, lines: ['(compile failed)'], preview: '' }
+  if (prev === next) return { changed: false, lines: ['✓ Matches actor script'], preview }
+  const prevLines = prev.split('\n')
+  const nextLines = next.split('\n')
+  const lines: string[] = []
+  const max = Math.max(prevLines.length, nextLines.length)
+  for (let i = 0; i < max; i++) {
+    const a = prevLines[i]
+    const b = nextLines[i]
+    if (a === b) continue
+    if (a !== undefined) lines.push(`- ${a}`)
+    if (b !== undefined) lines.push(`+ ${b}`)
+  }
+  if (!lines.length) lines.push('(script differs — whitespace or length)')
+  const svcLine = nextLines.find((l) => l.includes('__btServices'))
+  if (svcLine) lines.push(`  services: ${svcLine.trim()}`)
+  return { changed: true, lines, preview }
+}
+
 /** Wave 22 — human-readable service compile preview for BT editor panel. */
 export function summarizeBTServices(graph: BTGraph): string {
   const compiled = compileBTGraph(graph)

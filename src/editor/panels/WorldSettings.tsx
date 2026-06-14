@@ -1047,9 +1047,71 @@ export function WorldSettings() {
           <input type="checkbox" checked={!!env.postTaa} onChange={(e) => set('postTaa', e.target.checked)} />
         </label>
         <label className="field check">
-          <span>Post DOF (stub)</span>
+          <span>Post DOF</span>
           <input type="checkbox" checked={!!env.postDof} onChange={(e) => set('postDof', e.target.checked)} />
         </label>
+        {env.postDof && (
+          <>
+            <label className="field">
+              <span>DOF focus distance (TSL)</span>
+              <input
+                type="range"
+                min={1}
+                max={20}
+                step={0.5}
+                value={env.postDofFocusDistance ?? 5}
+                onChange={(e) => set('postDofFocusDistance', parseFloat(e.target.value))}
+              />
+              <em>{(env.postDofFocusDistance ?? 5).toFixed(1)}m</em>
+            </label>
+            <label className="field">
+              <span>DOF focal length (TSL)</span>
+              <input
+                type="range"
+                min={0.5}
+                max={8}
+                step={0.25}
+                value={env.postDofFocalLength ?? 2}
+                onChange={(e) => set('postDofFocalLength', parseFloat(e.target.value))}
+              />
+              <em>{(env.postDofFocalLength ?? 2).toFixed(2)}m</em>
+            </label>
+            <label className="field">
+              <span>DOF bokeh scale</span>
+              <input
+                type="range"
+                min={0.5}
+                max={3}
+                step={0.1}
+                value={env.postDofBokehScale ?? 1.2}
+                onChange={(e) => set('postDofBokehScale', parseFloat(e.target.value))}
+              />
+              <em>{(env.postDofBokehScale ?? 1.2).toFixed(1)}</em>
+            </label>
+            <label className="field">
+              <span>DOF vignette focus (WebGL)</span>
+              <input
+                type="range"
+                min={0.1}
+                max={0.8}
+                step={0.01}
+                value={env.postDofFocus ?? 0.45}
+                onChange={(e) => set('postDofFocus', parseFloat(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span>DOF vignette aperture (WebGL)</span>
+              <input
+                type="range"
+                min={0.01}
+                max={0.15}
+                step={0.005}
+                value={env.postDofAperture ?? 0.035}
+                onChange={(e) => set('postDofAperture', parseFloat(e.target.value))}
+              />
+            </label>
+          </>
+        )}
         <label className="field check">
           <span>Rapier move_and_slide pawn</span>
           <input

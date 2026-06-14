@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import type { EnvironmentSettings } from './types'
 
 /** Wave 21 — honest DOF stub (radial vignette blur, not full bokeh). */
 
@@ -56,6 +57,27 @@ export const DEFAULT_TSL_DOF: TSLDOFSettings = {
   focusDistance: 5,
   focalLength: 2,
   bokehScale: 1.2,
+}
+
+/** Wave 23 — DOF settings from environment (WebGL stub + TSL bokeh parity). */
+export function getDOFSettings(env: EnvironmentSettings): {
+  webgl: DOFStubSettings
+  tsl: TSLDOFSettings
+} {
+  const enabled = env.postDof === true
+  return {
+    webgl: {
+      enabled,
+      focus: env.postDofFocus ?? 0.45,
+      aperture: env.postDofAperture ?? 0.035,
+    },
+    tsl: {
+      enabled,
+      focusDistance: env.postDofFocusDistance ?? 5,
+      focalLength: env.postDofFocalLength ?? 2,
+      bokehScale: env.postDofBokehScale ?? 1.2,
+    },
+  }
 }
 
 export function createDOFStubPass(settings: DOFStubSettings = { enabled: true }): ShaderPass | null {

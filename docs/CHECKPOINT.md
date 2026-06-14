@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.53 (wave 22).** v0.33–v1.53 shipped; **build clean**, **`npm run test` — 55 passed**.
+- **Last clean commit: v1.58 (wave 23).** v0.33–v1.58 shipped; **build clean**, **`npm run test` — 59 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -268,13 +268,23 @@
 | v1.52 | CI perf gate — `npm run perf:gate` headless fps probe |
 | v1.53 | BT service breakpoint + services compile panel; Material solo channel — 55 tests passed |
 
-## Next up (v1.54+, Wave 23)
+## Shipped (v1.54–v1.58, Wave 23)
 
-1. **TSL post** — DOF focus/aperture env sliders + export parity
-2. **GPU particles** — export trail kernel + ribbon render in playable runtime
-3. **Export** — perf gate in CI workflow (GitHub Actions stub)
-4. **BT** — service node compile-to-script preview diff panel
-5. **Material TSL** — solo channel keyboard shortcut + graph minimap
+| Ver | What |
+|---|---|
+| v1.54 | DOF env sliders — focus/focal/bokeh + WebGL vignette; `getDOFSettings` |
+| v1.55 | Export ribbon — trail GPU kernel + ribbon mesh in playable runtime |
+| v1.56 | GitHub Actions CI — test + perf-gate workflow |
+| v1.57 | BT script compile diff panel + `diffBTScriptPreview` |
+| v1.58 | Material minimap + Alt+1–9 solo channel — 59 tests passed |
+
+## Next up (v1.59+, Wave 24)
+
+1. **TSL post** — DOF per-camera override + cinematic focus pull
+2. **GPU particles** — export ribbon E2E boot with trail visual assert
+3. **Export** — perf gate badge in editor status bar
+4. **BT** — service compile diff inline gutter markers
+5. **Material TSL** — minimap pan/zoom sync with canvas viewport
 
 ## Remaining gap-list queue (post–wave 7)
 

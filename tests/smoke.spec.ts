@@ -1404,6 +1404,87 @@ test('wave 22 export WebGPU particle boot', async ({ page }) => {
   expect(overlay).toMatch(/particle/i)
 })
 
+test('wave 23 DOF focus/aperture env settings', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      dof: { settings: () => { webgl: { focus: number }; tsl: { focusDistance: number } } }
+    }
+    v.world.environment.postDof = true
+    v.world.environment.postDofFocusDistance = 8
+    v.world.environment.postDofFocalLength = 3
+    const s = v.dof.settings()
+    return { focusDistance: s.tsl.focusDistance, webglFocus: s.webgl.focus }
+  })
+
+  expect(result.focusDistance).toBe(8)
+  expect(result.webglFocus).toBeGreaterThan(0)
+})
+
+test('wave 23 BT script compile diff bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        diffScript: (g: import('../src/engine/btGraph').BTGraph, script: string) => {
+          changed: boolean
+          lines: string[]
+        }
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const diff = v.bt.diffScript(graph, '// old script')
+    return { changed: diff.changed, hasPlus: diff.lines.some((l) => l.startsWith('+')) }
+  })
+
+  expect(result.changed).toBe(true)
+  expect(result.hasPlus).toBe(true)
+})
+
+test('wave 23 material solo channel bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: {
+        soloChannel: (g: import('../src/engine/materialGraph').MaterialGraph, ch: string) => Record<string, unknown> | null
+      }
+    }
+    const graph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 0, y: 0, props: {} },
+        { id: 'c', type: 'Scalar', x: -200, y: 0, props: { value: 0.8 } },
+      ],
+      edges: [{ from: 'c', to: 'out:metalness' }],
+    }
+    const solo = v.materialTSL.soloChannel(graph, 'metalness')
+    return { keys: solo ? Object.keys(solo) : [], hasMetalness: !!solo?.metalness }
+  })
+
+  expect(result.hasMetalness).toBe(true)
+  expect(result.keys.length).toBeGreaterThan(1)
+})
+
+test('wave 23 export ribbon particle runtime surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+    }
+    const html = v.export.buildPlayableHTML()
+    return {
+      hasTrailShift: html.includes('trailShift') || html.includes('trailLen'),
+      hasRibbon: html.includes('renderMode') || html.includes('buildRibbon'),
+    }
+  })
+
+  expect(result.hasTrailShift || result.hasRibbon).toBe(true)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

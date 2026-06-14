@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { world } from '../../engine/World'
 import {
@@ -61,6 +61,77 @@ function portAt(
     }
   }
   return null
+}
+
+/** Wave 23 — scaled overview of node graph layout. */
+function MaterialGraphMinimap({
+  graph,
+  isolateChannel,
+}: {
+  graph: MaterialGraph
+  isolateChannel: string | null
+}) {
+  if (graph.nodes.length < 2) return null
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const n of graph.nodes) {
+    minX = Math.min(minX, n.x)
+    minY = Math.min(minY, n.y)
+    maxX = Math.max(maxX, n.x + NODE_W)
+    maxY = Math.max(maxY, n.y + 72)
+  }
+  const pad = 16
+  const gw = maxX - minX + pad * 2
+  const gh = maxY - minY + pad * 2
+  const mw = 128
+  const mh = 76
+  const sx = mw / Math.max(gw, 1)
+  const sy = mh / Math.max(gh, 1)
+  const out = graph.nodes.find((n) => n.type === 'Output')
+  return (
+    <svg className="mat-minimap" width={mw} height={mh} aria-label="Material graph minimap">
+      {graph.edges.map((edge, i) => {
+        const a = graph.nodes.find((n) => n.id === edge.from)
+        const [tn, tp] = edge.to.split(':')
+        const b = graph.nodes.find((n) => n.id === tn)
+        if (!a || !b) return null
+        const p1 = portPos(a, null)
+        const p2 = portPos(b, tp)
+        return (
+          <line
+            key={i}
+            x1={(p1.x - minX + pad) * sx}
+            y1={(p1.y - minY + pad) * sy}
+            x2={(p2.x - minX + pad) * sx}
+            y2={(p2.y - minY + pad) * sy}
+            stroke={isolateChannel && tp === isolateChannel ? '#9ec8ff' : '#3a4a5a'}
+            strokeWidth={1}
+          />
+        )
+      })}
+      {graph.nodes.map((n) => {
+        const def = MAT_NODE_DEFS[n.type]
+        const wiredOut =
+          n.type === 'Output' &&
+          isolateChannel &&
+          graph.edges.some((e) => e.to === `${out?.id}:${isolateChannel}`)
+        return (
+          <rect
+            key={n.id}
+            x={(n.x - minX + pad) * sx}
+            y={(n.y - minY + pad) * sy}
+            width={Math.max(8, NODE_W * sx)}
+            height={10}
+            rx={2}
+            fill={def?.color ?? '#444'}
+            opacity={wiredOut ? 1 : 0.7}
+          />
+        )
+      })}
+    </svg>
+  )
 }
 
 /** Live preview sphere — WebGL or WebGPU (TSL) depending on material backend. */
@@ -248,6 +319,31 @@ export function MaterialEditor() {
     if (!actor) lastActor.current = null
   }, [actor])
 
+  const wiredChannels = useMemo(() => {
+    if (!graph) return []
+    const out = graph.nodes.find((n) => n.type === 'Output')
+    if (!out) return []
+    return MAT_NODE_DEFS.Output.inputs.filter((inp) =>
+      graph.edges.some((e) => e.to === `${out.id}:${inp}`),
+    )
+  }, [graph])
+
+  useEffect(() => {
+    if (!graph || world.environment.materialBackend !== 'tsl') return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsolateChannel(null)
+        return
+      }
+      if (e.altKey && e.key >= '1' && e.key <= '9') {
+        const ch = wiredChannels[parseInt(e.key, 10) - 1]
+        if (ch) setIsolateChannel((prev) => (prev === ch ? null : ch))
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [graph, wiredChannels])
+
   if (!actor?.mesh || !actor.materialProps) {
     return (
       <div className="panel-empty">
@@ -371,6 +467,7 @@ export function MaterialEditor() {
         </button>
       </div>
       <div className="mat-editor-body">
+        <MaterialGraphMinimap graph={graph} isolateChannel={isolateChannel} />
         <div
           className="bp-canvas"
           ref={canvasRef}

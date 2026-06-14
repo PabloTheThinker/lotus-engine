@@ -4,6 +4,28 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 23: v1.54–v1.58
+
+### Added
+- **v1.54** DOF env sliders — `postDofFocusDistance` / `postDofFocalLength` / `postDofBokehScale` + WebGL vignette focus/aperture; `getDOFSettings()` bridge
+- **v1.55** Export ribbon particles — trail buffers, GPU `trailShift` kernel, ribbon mesh render in `runtime.js`
+- **v1.56** GitHub Actions CI — `.github/workflows/ci.yml` with `npm run test` + `npm run perf:gate`
+- **v1.57** BT script compile diff panel — `diffBTScriptPreview`, services line in diff output
+- **v1.58** Material graph minimap + Alt+1–9 solo channel shortcut — 59 tests passed
+
+### Changed
+- TSL + export pipelines read DOF params from level environment
+- `window.lotus.dof.settings()` + `bt.diffScript` bridges
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 59 passed
+npm run perf:gate
+```
+
+---
+
 ## 2026-06-13 — Wave 22: v1.49–v1.53
 
 ### Added

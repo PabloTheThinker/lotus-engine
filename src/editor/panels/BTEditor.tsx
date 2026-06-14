@@ -17,6 +17,7 @@ import {
   newBTNodeId,
   summarizeBTTree,
   summarizeBTServices,
+  diffBTScriptPreview,
   validateBTGraph,
   type BTGraph,
   type BTGraphNode,
@@ -293,6 +294,7 @@ export function BTEditor() {
   const compiledPreview = compileBTGraph(graph)
   const treePreview = compiledPreview ? summarizeBTTree(compiledPreview.tree) : ''
   const servicesPreview = summarizeBTServices(graph)
+  const scriptDiff = diffBTScriptPreview(actor.script, graph)
   const validationErrors = validation.filter((v) => v.level === 'error')
   const bbTypes = inferBlackboardTypes(graph)
 
@@ -586,6 +588,12 @@ export function BTEditor() {
           <details className="details-section" open={servicesPreview.includes('←')}>
             <summary>Services compile</summary>
             <pre className="bt-preview bt-services-preview">{servicesPreview}</pre>
+          </details>
+          <details className="details-section" open={scriptDiff.changed}>
+            <summary>Script compile diff</summary>
+            <pre className={`bt-preview bt-script-diff${scriptDiff.changed ? ' changed' : ''}`}>
+              {scriptDiff.lines.join('\n')}
+            </pre>
           </details>
           <details className="details-section" open>
             <summary>Blackboard</summary>

@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
-import { DEFAULT_TSL_DOF } from './postStackDOF'
+import { DEFAULT_TSL_DOF, type TSLDOFSettings } from './postStackDOF'
 import { applySSRToTSLNode, type SSRSettings } from './ssrPreset'
 import { syncTSLSSRGround, type TSLSSRGroundHandle } from './ssrGround'
 
@@ -24,6 +24,7 @@ export interface TSLPipelineStack {
     },
     ssgi?: SSGISettings,
     ssrSettings?: SSRSettings,
+    dofSettings?: TSLDOFSettings,
   ) => void
   dispose: () => void
 }
@@ -111,6 +112,7 @@ export async function createTSLRenderPipeline(
     let ssgiSettings = opts.ssgi
     let ssrSettings = opts.ssrSettings
     let dofOn = false
+    let dofSettings: TSLDOFSettings = { ...DEFAULT_TSL_DOF }
     let activeCam = camera
 
     type TSLNode = unknown
@@ -239,7 +241,6 @@ export async function createTSLRenderPipeline(
 
       if (dofOn && needsMRT) {
         const depth = scenePass.getTextureNode('depth') as TSLNode
-        const dofSettings = DEFAULT_TSL_DOF
         const viewZ = perspectiveDepthToViewZ(depth, float(cam.near), float(cam.far))
         colorNode = dof(
           colorNode as Parameters<typeof dof>[0],
@@ -276,12 +277,13 @@ export async function createTSLRenderPipeline(
         bloomRadius = r
         rebuildOutput()
       },
-      applyPostFx(fx, bloom, ssgi, ssr) {
+      applyPostFx(fx, bloom, ssgi, ssr, dof) {
         ssaoOn = fx.ssao
         fxaaOn = fx.fxaa
         taaOn = fx.taa
         ssrOn = fx.ssr
         dofOn = fx.dof
+        if (dof) dofSettings = dof
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
         ssrSettings = ssr

@@ -1327,6 +1327,19 @@ input[type='checkbox'] {
 .mat-preview-isolate-label {
   color: #c9a8ff;
 }
+.mat-minimap {
+  flex-shrink: 0;
+  margin: 4px 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #12151a;
+}
+.bt-script-diff.changed {
+  color: #f0c080;
+}
+.bt-services-preview {
+  color: #6ec9b8;
+}
 .bp-port.in.wired {
   color: #6eb5ff;
 }

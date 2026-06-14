@@ -453,6 +453,16 @@ export interface EnvironmentSettings {
   postSsao?: boolean
   /** Depth of field (stub — Wave 11 full TSL) */
   postDof?: boolean
+  /** WebGL DOF stub vignette focus (0–1, radial) */
+  postDofFocus?: number
+  /** WebGL DOF stub vignette aperture (0–0.2) */
+  postDofAperture?: number
+  /** TSL DOF focus distance in world units */
+  postDofFocusDistance?: number
+  /** TSL DOF focal length in world units */
+  postDofFocalLength?: number
+  /** TSL DOF bokeh scale (unitless) */
+  postDofBokehScale?: number
   /** Temporal AA — WebGPU tier only */
   postTaa?: boolean
   /** Screen-space reflections (Wave 11, honest Lumen skip) */
@@ -512,6 +522,11 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   postFxaa: true,
   postSsao: false,
   postDof: false,
+  postDofFocus: 0.45,
+  postDofAperture: 0.035,
+  postDofFocusDistance: 5,
+  postDofFocalLength: 2,
+  postDofBokehScale: 1.2,
   postTaa: false,
   postSsr: false,
   postSsrPreset: 'medium',

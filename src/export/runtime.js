@@ -177,7 +177,10 @@ async function createExportTSLPipeline(primary, scene, camera) {
       if (dofOn && needsMRT) {
         const depth = scenePass.getTextureNode('depth')
         const viewZ = perspectiveDepthToViewZ(depth, float(activeCam.near), float(activeCam.far))
-        color = dof(color, viewZ, 5, 2, 1.2)
+        const focusDist = env.postDofFocusDistance ?? 5
+        const focalLen = env.postDofFocalLength ?? 2
+        const bokeh = env.postDofBokehScale ?? 1.2
+        color = dof(color, viewZ, focusDist, focalLen, bokeh)
       }
       if (fxaaOn) color = fxaa(color)
       pipeline.outputNode = color
@@ -446,6 +449,26 @@ async function bindExportParticleCompute() {
           p.z.addAssign(v.z.mul(dtU))
         })
       }).compute(cap)
+      let trailShift = null
+      if (ps.trail && ps.trailLen >= 2) {
+        const slots = cap * ps.trailLen
+        const trailAttr = new StorageBufferAttribute(ps.trail, 3)
+        const trailBuf = storage(trailAttr, 'vec3', slots)
+        const lenF = float(ps.trailLen)
+        trailShift = Fn(() => {
+          const alive = aliveBuf.element(instanceIndex)
+          If(alive.greaterThan(0.5), () => {
+            const base = instanceIndex.mul(lenF)
+            const p = posBuf.element(instanceIndex)
+            for (let s = ps.trailLen - 1; s >= 1; s--) {
+              const dst = trailBuf.element(base.add(float(s)))
+              const src = trailBuf.element(base.add(float(s - 1)))
+              dst.assign(src)
+            }
+            trailBuf.element(base).assign(p)
+          })
+        }).compute(cap)
+      }
       const emit = Fn(() => {
         const alive = aliveBuf.element(instanceIndex)
         If(alive.lessThan(0.5), () => {
@@ -465,7 +488,7 @@ async function bindExportParticleCompute() {
           })
         })
       }).compute(cap)
-      particleGpuKernels.push({ ps, dtU, gravityU, dragU, spawnProbU, speedU, seedU, integrate, emit, seed: 0 })
+      particleGpuKernels.push({ ps, dtU, gravityU, dragU, spawnProbU, speedU, seedU, integrate, emit, trailShift, seed: 0 })
       ps.gpuTier = true
     }
   } catch (e) {
@@ -474,24 +497,92 @@ async function bindExportParticleCompute() {
   }
 }
 
-// minimal particle sim (CPU + optional WebGPU compute tier)
+// minimal particle sim (CPU + optional WebGPU compute tier + ribbon trails)
 function makeParticles(props) {
   const cap = Math.min(props.maxParticles ?? 500, 3000)
   const pos = new Float32Array(cap * 3), col = new Float32Array(cap * 3)
   const vel = new Float32Array(cap * 3), life = new Float32Array(cap), maxLife = new Float32Array(cap)
   const aliveF = new Float32Array(cap)
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1000)
-  const mat = new THREE.PointsMaterial({
-    size: (props.sizeStart + props.sizeEnd) / 2, vertexColors: true, transparent: true, opacity: 0.9,
-    depthWrite: false, blending: props.additive ? THREE.AdditiveBlending : THREE.NormalBlending, sizeAttenuation: true,
-  })
-  const points = new THREE.Points(geo, mat)
-  points.frustumCulled = false
+  const isRibbon = props.renderMode === 'ribbon'
+  const trailLen = isRibbon ? Math.max(2, Math.min(props.ribbonSegments ?? 8, 16)) : 0
+  const trail = isRibbon ? new Float32Array(cap * trailLen * 3) : null
   const c1 = new THREE.Color(props.colorStart), c2 = new THREE.Color(props.colorEnd), tmp = new THREE.Color()
+  let display, geo
+  if (isRibbon) {
+    const maxVerts = cap * trailLen * 2
+    geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxVerts * 3), 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(maxVerts * 3), 3))
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(cap * (trailLen - 1) * 6), 1))
+    const mat = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false,
+      blending: props.additive ? THREE.AdditiveBlending : THREE.NormalBlending, side: THREE.DoubleSide,
+    })
+    display = new THREE.Mesh(geo, mat)
+  } else {
+    geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1000)
+    const mat = new THREE.PointsMaterial({
+      size: (props.sizeStart + props.sizeEnd) / 2, vertexColors: true, transparent: true, opacity: 0.9,
+      depthWrite: false, blending: props.additive ? THREE.AdditiveBlending : THREE.NormalBlending, sizeAttenuation: true,
+    })
+    display = new THREE.Points(geo, mat)
+  }
+  display.frustumCulled = false
   let acc = 0
+  function shiftTrail(i) {
+    const tb = i * trailLen * 3
+    for (let s = trailLen - 1; s > 0; s--) {
+      const dst = tb + s * 3, src = tb + (s - 1) * 3
+      trail[dst] = trail[src]; trail[dst + 1] = trail[src + 1]; trail[dst + 2] = trail[src + 2]
+    }
+    const i3 = i * 3
+    trail[tb] = pos[i3]; trail[tb + 1] = pos[i3 + 1]; trail[tb + 2] = pos[i3 + 2]
+  }
+  function buildRibbon() {
+    const posAttr = geo.attributes.position
+    const colAttr = geo.attributes.color
+    const idxAttr = geo.index
+    const width = Math.max(0.02, props.ribbonWidth ?? 0.08)
+    let v = 0, tri = 0
+    const up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3(), wp = new THREE.Vector3(), wv = new THREE.Vector3()
+    for (let i = 0; i < cap; i++) {
+      if (life[i] <= 0) continue
+      const f = 1 - life[i] / maxLife[i]
+      tmp.copy(c1).lerp(c2, f)
+      const tb = i * trailLen * 3
+      for (let s = 0; s < trailLen; s++) {
+        wp.set(trail[tb + s * 3], trail[tb + s * 3 + 1], trail[tb + s * 3 + 2])
+        if (s < trailLen - 1) {
+          wv.set(trail[tb + (s + 1) * 3] - wp.x, trail[tb + (s + 1) * 3 + 1] - wp.y, trail[tb + (s + 1) * 3 + 2] - wp.z)
+        } else if (s > 0) {
+          wv.set(wp.x - trail[tb + (s - 1) * 3], wp.y - trail[tb + (s - 1) * 3 + 1], wp.z - trail[tb + (s - 1) * 3 + 2])
+        } else wv.set(0, 1, 0)
+        if (wv.lengthSq() < 1e-8) wv.set(0, 1, 0)
+        wv.normalize()
+        side.crossVectors(wv, up)
+        if (side.lengthSq() < 1e-8) side.set(1, 0, 0)
+        side.normalize().multiplyScalar(width * 0.5 * (1 - s / Math.max(1, trailLen - 1) * 0.5))
+        const fade = 1 - s / Math.max(1, trailLen - 1) * 0.85
+        for (const sign of [-1, 1]) {
+          posAttr.setXYZ(v, wp.x + side.x * sign, wp.y + side.y * sign, wp.z + side.z * sign)
+          colAttr.setXYZ(v, tmp.r * fade, tmp.g * fade, tmp.b * fade)
+          v++
+        }
+        if (s < trailLen - 1) {
+          const base = v - 2
+          idxAttr.setX(tri++, base); idxAttr.setX(tri++, base + 1); idxAttr.setX(tri++, base + 2)
+          idxAttr.setX(tri++, base + 1); idxAttr.setX(tri++, base + 3); idxAttr.setX(tri++, base + 2)
+        }
+      }
+    }
+    posAttr.needsUpdate = true
+    colAttr.needsUpdate = true
+    idxAttr.needsUpdate = true
+    geo.setDrawRange(0, tri)
+  }
   function spawn() {
     const i = life.findIndex((l) => l <= 0)
     if (i < 0) return
@@ -505,14 +596,23 @@ function makeParticles(props) {
     vel[i3] = Math.sin(a) * Math.cos(t) * sp
     vel[i3 + 1] = Math.cos(a) * sp
     vel[i3 + 2] = Math.sin(a) * Math.sin(t) * sp
+    if (trail) {
+      const tb = i * trailLen * 3
+      for (let s = 0; s < trailLen; s++) {
+        trail[tb + s * 3] = pos[i3]; trail[tb + s * 3 + 1] = pos[i3 + 1]; trail[tb + s * 3 + 2] = pos[i3 + 2]
+      }
+    }
   }
   return {
-    points,
+    points: display,
+    display,
     cap,
     pos,
     vel,
     life,
     aliveF,
+    trail,
+    trailLen,
     gpuTier: false,
     update(dt) {
       if (this.gpuTier && particleGpuKernels) {
@@ -536,7 +636,9 @@ function makeParticles(props) {
           k.gravityU.value = (props.gravity ?? -1) * dt
           k.dragU.value = props.drag ?? 0.5
           renderer.compute(k.integrate)
-          geo.attributes.position.needsUpdate = true
+          if (trail && k.trailShift) renderer.compute(k.trailShift)
+          else if (trail) { for (let i = 0; i < cap; i++) if (life[i] > 0) shiftTrail(i) }
+          if (!isRibbon) geo.attributes.position.needsUpdate = true
         }
       }
       if (!this.gpuTier) {
@@ -552,14 +654,22 @@ function makeParticles(props) {
           vel[i3 + 1] += (props.gravity ?? -1) * dt
           vel[i3] *= drag; vel[i3 + 1] *= drag; vel[i3 + 2] *= drag
           pos[i3] += vel[i3] * dt; pos[i3 + 1] += vel[i3 + 1] * dt; pos[i3 + 2] += vel[i3 + 2] * dt
+          if (trail) shiftTrail(i)
         }
         const f = 1 - life[i] / maxLife[i]
         tmp.copy(c1).lerp(c2, f)
-        col[i3] = tmp.r; col[i3 + 1] = tmp.g; col[i3 + 2] = tmp.b
-        if (life[i] <= 0) { pos[i3 + 1] = -9999 }
+        if (!isRibbon) {
+          col[i3] = tmp.r; col[i3 + 1] = tmp.g; col[i3 + 2] = tmp.b
+          if (life[i] <= 0) pos[i3 + 1] = -9999
+        } else if (life[i] <= 0) {
+          pos[i3 + 1] = -9999
+        }
       }
-      geo.attributes.position.needsUpdate = true
-      geo.attributes.color.needsUpdate = true
+      if (isRibbon) buildRibbon()
+      else {
+        geo.attributes.position.needsUpdate = true
+        geo.attributes.color.needsUpdate = true
+      }
     },
   }
 }
