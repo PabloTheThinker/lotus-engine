@@ -12,6 +12,7 @@
      lobby_join  { t:'lobby_join', id, ready? }  — lobby peer announce
      lobby_ready { t:'lobby_ready', id, ready }  — ready-up toggle
      lobby_start { t:'lobby_start', id }         — host starts match
+     spectator_join { t:'spectator_join', id }   — observe without pawn/input
      list_rooms  { t:'list_rooms' }              — returns active room registry
      ping    { t:'ping', ts }                    — relay pong echo for RTT
      rooms   { t:'rooms', rooms:[{room,peers}] } — list_rooms / registry snapshot

@@ -34,6 +34,38 @@ function vibrateTouchFire() { return tryTouchVibrate([28]) }
 function vibrateTouchInteract() { return tryTouchVibrate([14]) }
 function vibrateTouchJump() { return tryTouchVibrate([22]) }
 const GAMEPAD_ENABLED = window.__LOTUS_GAMEPAD__ === true || window.__LOTUS_GAMEPAD__ === 'true'
+/** Wave 69 — gamepad haptics (Gamepad Haptic Actuators dual-rumble). */
+function gamepadHapticsEnabled() {
+  const flag = LEVEL.environment?.gamepadHaptics
+  if (flag === false) return false
+  return true
+}
+function pickGamepadActuator(padIndex) {
+  if (!navigator.getGamepads) return null
+  const pads = navigator.getGamepads()
+  if (padIndex !== null && padIndex !== undefined) {
+    const act = pads[padIndex]?.vibrationActuator
+    return act && typeof act.playEffect === 'function' ? act : null
+  }
+  for (let i = 0; i < pads.length; i++) {
+    const act = pads[i]?.vibrationActuator
+    if (pads[i]?.connected && act && typeof act.playEffect === 'function') return act
+  }
+  return null
+}
+function pulseGamepad(padIndex, intensity, duration) {
+  if (!GAMEPAD_ENABLED || !gamepadHapticsEnabled()) return false
+  const act = pickGamepadActuator(padIndex)
+  if (!act) return false
+  const mag = Math.max(0, Math.min(1, intensity))
+  const ms = Math.max(0, duration)
+  try {
+    void act.playEffect('dual-rumble', { startDelay: 0, duration: ms, weakMagnitude: mag, strongMagnitude: mag })
+    return true
+  } catch { return false }
+}
+function pulseGamepadFire() { return pulseGamepad(null, 0.85, 28) }
+function pulseGamepadInteract() { return pulseGamepad(null, 0.45, 14) }
 const INPUT_BINDINGS = window.__LOTUS_INPUT_BINDINGS__ ?? { gamepad: {}, touch: {} }
 const INPUT_PROFILE = window.__LOTUS_INPUT_PROFILE__ ?? 'desktop'
 const DEFAULT_GP_BUTTONS = { Jump: 0, Interact: 2, Fire: 3 }
@@ -52,6 +84,7 @@ const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
 const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
 const SAVES_ENABLED = window.__LOTUS_SAVES__ === true || window.__LOTUS_SAVES__ === 'true'
+const CLOUD_SAVES_ENABLED = window.__LOTUS_CLOUD_SAVES__ === true || window.__LOTUS_CLOUD_SAVES__ === 'true'
 const MAIN_MENU_ITEMS = [
   { label: 'Platformer', key: 'platformer' },
   { label: 'RPG', key: 'rpg' },
@@ -442,8 +475,14 @@ function pollExportGamepad() {
   gamepadInteract = btn(interactBtn)
   gamepadFire = btn(fireBtn) || (fireBtn === DEFAULT_GP_BUTTONS.Fire && btn(GP_FIRE_ALT))
   if (gamepadJump && !gpPrevJump) pressed.add('Space')
-  if (gamepadFire && !gpPrevFire) pressed.add('KeyF')
-  if (gamepadInteract && !gpPrevInteract) pressed.add('KeyE')
+  if (gamepadFire && !gpPrevFire) {
+    pressed.add('KeyF')
+    pulseGamepadFire()
+  }
+  if (gamepadInteract && !gpPrevInteract) {
+    pressed.add('KeyE')
+    pulseGamepadInteract()
+  }
   gpPrevJump = gamepadJump
   gpPrevFire = gamepadFire
   gpPrevInteract = gamepadInteract
@@ -1817,6 +1856,7 @@ function exportSaveCheckpoint(slot, data) {
       data,
     }
     localStorage.setItem(saveStorageKey(slot), JSON.stringify(payload))
+    if (CLOUD_SAVES_ENABLED) void exportBackupToCloud(slot, data).catch(() => {})
     return true
   } catch {
     return false
@@ -1850,6 +1890,97 @@ function exportListSaveSlots() {
     return []
   }
   return out.sort()
+}
+
+// ---- Wave 70 — IndexedDB cloud backup (mirrors cloudSaveStub.ts) ----
+const CLOUD_DB_NAME = 'lotus-engine-cloud-saves-v1'
+const CLOUD_STORE = 'checkpoints'
+const CLOUD_KEY_PREFIX = 'lotus-engine.cloud'
+let cloudDbPromise = null
+
+function cloudSaveKey(slot) {
+  return `${CLOUD_KEY_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.${sanitizeSaveSlot(slot)}`
+}
+
+function cloudLevelPrefix() {
+  return `${CLOUD_KEY_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.`
+}
+
+function openCloudDb() {
+  if (!cloudDbPromise) {
+    cloudDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(CLOUD_DB_NAME, 1)
+      req.onupgradeneeded = () => {
+        const db = req.result
+        if (!db.objectStoreNames.contains(CLOUD_STORE)) db.createObjectStore(CLOUD_STORE)
+      }
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'))
+    })
+  }
+  return cloudDbPromise
+}
+
+async function exportBackupToCloud(slot, data) {
+  if (!CLOUD_SAVES_ENABLED) return false
+  try {
+    const db = await openCloudDb()
+    const payload = {
+      savedAt: Date.now(),
+      level: sanitizeSaveLevelName(saveLevelName),
+      slot: sanitizeSaveSlot(slot),
+      data,
+    }
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(CLOUD_STORE, 'readwrite')
+      tx.objectStore(CLOUD_STORE).put(payload, cloudSaveKey(slot))
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('IDB put failed'))
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function exportRestoreFromCloud(slot) {
+  if (!CLOUD_SAVES_ENABLED) return null
+  try {
+    const db = await openCloudDb()
+    const row = await new Promise((resolve, reject) => {
+      const tx = db.transaction(CLOUD_STORE, 'readonly')
+      const req = tx.objectStore(CLOUD_STORE).get(cloudSaveKey(slot))
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error ?? new Error('IDB get failed'))
+    })
+    return row?.data ?? null
+  } catch {
+    return null
+  }
+}
+
+async function exportListCloudSlots() {
+  if (!CLOUD_SAVES_ENABLED) return []
+  const prefix = cloudLevelPrefix()
+  try {
+    const db = await openCloudDb()
+    const keys = await new Promise((resolve, reject) => {
+      const tx = db.transaction(CLOUD_STORE, 'readonly')
+      const req = tx.objectStore(CLOUD_STORE).getAllKeys()
+      req.onsuccess = () => resolve(req.result ?? [])
+      req.onerror = () => reject(req.error ?? new Error('IDB list failed'))
+    })
+    const out = []
+    for (const key of keys) {
+      const k = String(key)
+      if (!k.startsWith(prefix)) continue
+      const slot = k.slice(prefix.length)
+      if (slot) out.push(slot)
+    }
+    return out.sort()
+  } catch {
+    return []
+  }
 }
 
 // ---- scripts & behaviors ----
@@ -2173,6 +2304,10 @@ async function boot() {
       listSlots: exportListSaveSlots,
       enabled: () => SAVES_ENABLED,
       levelName: () => saveLevelName,
+      cloudBackup: () => CLOUD_SAVES_ENABLED,
+      backupToCloud: exportBackupToCloud,
+      restoreFromCloud: exportRestoreFromCloud,
+      listCloudSlots: exportListCloudSlots,
     }
   }
   const c = new THREE.Clock()

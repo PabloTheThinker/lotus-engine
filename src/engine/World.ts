@@ -216,6 +216,14 @@ export class World {
     return [...this.actors.values()].find((a) => a.type === 'Camera')
   }
 
+  /** Elevated fly spawn for MP spectators (Wave 68). */
+  spectatorStart(): Actor | undefined {
+    return (
+      [...this.actors.values()].find((a) => a.tags.includes('mp_spectator')) ??
+      [...this.actors.values()].find((a) => a.name === 'SpectatorSpawn')
+    )
+  }
+
   playerStart(): Actor | undefined {
     const starts = [...this.actors.values()].filter((a) => a.type === 'PlayerStart')
     if (starts.length <= 1) return starts[0]
@@ -257,6 +265,7 @@ export class World {
     setSaveContext({
       levelName: this.levelName,
       enabled: this.environment.saveSlotsEnabled === true,
+      cloudBackup: this.environment.cloudSaveBackup === true,
     })
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
     const loadCell = (cx: number, cz: number) => this.loadCellDuringPlay(cx, cz)

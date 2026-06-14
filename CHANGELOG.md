@@ -4,6 +4,31 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 66–70: v3.69–v3.93 (indie swarm)
+
+### Wave 66 (v3.69–v3.73) — Tile collision layers
+- `gridCollisionLayers.ts` — per-layer Rapier collision groups on grid tile colliders
+
+### Wave 67 (v3.74–v3.78) — itch.io Butler CLI hint
+- `itchButlerHint.ts` — `/butlerhint`, `butler push` command from pack meta
+
+### Wave 68 (v3.79–v3.83) — MP spectator mode
+- `mpSpectator.ts` — orbit camera, no pawn; `spectator_join` relay; `/mpspectator`
+
+### Wave 69 (v3.84–v3.88) — Gamepad haptics
+- `gamepadHaptics.ts` — `dual-rumble` on Fire/Interact when supported
+
+### Wave 70 (v3.89–v3.93) — Cloud save stub
+- `cloudSaveStub.ts` — IndexedDB backup of checkpoints; `__LOTUS_CLOUD_SAVES__`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 294 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 61–65: v3.44–v3.68 (indie swarm)
 
 ### Wave 61 (v3.44–v3.48) — Custom autotile sheets

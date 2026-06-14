@@ -1,4 +1,5 @@
 import { buildExportPackMeta, serializePackMetaForExport } from './exportPackMeta'
+import { buildButlerPushCommand, storeLastItchZipName } from './itchButlerHint'
 import type { ExportOptions } from './exportPlayable'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
 import {
@@ -199,18 +200,25 @@ export function buildItchZipBlob(mode: MiniGameMode, opts: ExportOptions = {}): 
   return new Blob([copy], { type: 'application/zip' })
 }
 
-function downloadBlob(blob: Blob, filename: string) {
+function downloadBlob(blob: Blob, filename: string, butlerHint?: string) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = filename
   a.click()
   URL.revokeObjectURL(a.href)
-  useEditor.getState().setStatus(`Exported itch.io pack: ${filename}`)
+  const status = butlerHint
+    ? `Exported itch.io pack: ${filename} — ${butlerHint}`
+    : `Exported itch.io pack: ${filename}`
+  useEditor.getState().setStatus(status)
   scheduleExportPerfProbe()
 }
 
 /** Spawn preset, then download `{genre}-lotus-pack.zip` for itch.io upload. */
 export function exportItchUploadPack(mode: MiniGameMode, opts: ExportOptions = {}) {
   spawnMiniGame(mode)
-  downloadBlob(buildItchZipBlob(mode, opts), itchPackZipFilename(mode))
+  const filename = itchPackZipFilename(mode)
+  const meta = buildExportPackMeta(mode)
+  const butlerCmd = buildButlerPushCommand(meta, filename)
+  storeLastItchZipName(filename)
+  downloadBlob(buildItchZipBlob(mode, opts), filename, butlerCmd)
 }

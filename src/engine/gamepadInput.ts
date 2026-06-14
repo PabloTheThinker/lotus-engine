@@ -1,8 +1,10 @@
 /**
  * Gamepad input — standard Gamepad API stick + face buttons for PWA / PIE.
  * Wave 44 (v2.60): axis/button state mirrors touch injection into Input.
+ * Wave 69 (v3.84): dual-rumble on fire / interact just-pressed via gamepadHaptics.
  */
 
+import { pulseFire, pulseInteract } from './gamepadHaptics'
 import { Input } from './Input'
 import {
   DEFAULT_GAMEPAD_BUTTONS,
@@ -61,7 +63,7 @@ export function isGamepadInteractJustPressed(): boolean {
 }
 
 /** Poll the first active gamepad and inject into Input (call once per frame while playing). */
-export function pollGamepadInput(): boolean {
+export function pollGamepadInput(hapticsEnv?: boolean): boolean {
   const pad = pickGamepad()
   connected = !!pad
   if (!pad) {
@@ -104,6 +106,8 @@ export function pollGamepadInput(): boolean {
   jumpJustPressed = jumpDown && !prevJump
   fireJustPressed = fireDown && !prevFire
   interactJustPressed = interactDown && !prevInteract
+  if (fireJustPressed) pulseFire(hapticsEnv)
+  if (interactJustPressed) pulseInteract(hapticsEnv)
   prevJump = jumpDown
   prevFire = fireDown
   prevInteract = interactDown

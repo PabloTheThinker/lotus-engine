@@ -403,6 +403,8 @@ export interface FoliageProps {
   gridAtlasSheetId?: string
   /** Atlas slot index → autotile mask index override (manual tile mapping) */
   gridAtlasTileMap?: Record<number, number>
+  /** Wave 66 — packed Rapier collision groups per grid layer (0–3) */
+  gridLayerCollisionGroups?: number[]
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {
@@ -652,8 +654,12 @@ export interface EnvironmentSettings {
   touchLayoutPreset?: 'compact' | 'wide' | 'fps'
   /** Wave 64 — vibration on Fire / Interact / Jump (PWA Vibration API; default on when unset) */
   touchHaptics?: boolean
+  /** Wave 69 — dual-rumble on Fire / Interact (Gamepad Haptic Actuators; default on when unset) */
+  gamepadHaptics?: boolean
   /** Wave 65 — localStorage save slots + export __LOTUS_SAVES__ */
   saveSlotsEnabled?: boolean
+  /** Wave 70 — IndexedDB cloud backup of checkpoints + export __LOTUS_CLOUD_SAVES__ */
+  cloudSaveBackup?: boolean
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */

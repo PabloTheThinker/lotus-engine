@@ -42,6 +42,7 @@ import {
   type GridLayerCell,
   type GridTileKind,
 } from './gridMap'
+import { rebuildFoliageColliders } from './gridCollisionLayers'
 import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
@@ -372,16 +373,19 @@ export function rebuildFoliage(actor: Actor) {
   if (!props) return
   if (props.snap && props.gridAutotileAtlas && actor.foliageMesh) {
     rebuildFoliageAutotileAtlas(actor)
+    rebuildFoliageColliders(actor)
     return
   }
   if (props.snap && props.gridAutotileRules && actor.foliageMeshes) {
     rebuildFoliageAutotileRules(actor)
+    rebuildFoliageColliders(actor)
     return
   }
   const mesh = actor.foliageMesh
   if (!mesh) return
   if (props.snap && props.gridLayers) syncGridInstancesFromLayers(props)
   setInstanceMatrices(mesh, props.instances)
+  rebuildFoliageColliders(actor)
 }
 
 /** FoliageLayer — UE Foliage mode analog: paintable instanced scatter. */

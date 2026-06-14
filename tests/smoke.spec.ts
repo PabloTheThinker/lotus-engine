@@ -6569,3 +6569,613 @@ test('wave 64 export runtime includes vibrateTouchFire when TOUCH_ENABLED', asyn
   expect(result.jumpVibrate).toBe(true)
   expect(result.hapticsGuard).toBe(true)
 })
+
+test('wave 66 gridMap getLayerCollisionGroup defaults membership 0–3 with full mask', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        getLayerCollisionGroup: (props: import('../src/engine/types').FoliageProps, layer: number) => number
+        membershipFromRapierGroup: (group: number) => number
+        maskFromRapierGroup: (group: number) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    return {
+      ok: true,
+      m0: v.gridMap.membershipFromRapierGroup(v.gridMap.getLayerCollisionGroup(props, 0)),
+      m1: v.gridMap.membershipFromRapierGroup(v.gridMap.getLayerCollisionGroup(props, 1)),
+      m2: v.gridMap.membershipFromRapierGroup(v.gridMap.getLayerCollisionGroup(props, 2)),
+      m3: v.gridMap.membershipFromRapierGroup(v.gridMap.getLayerCollisionGroup(props, 3)),
+      mask: v.gridMap.maskFromRapierGroup(v.gridMap.getLayerCollisionGroup(props, 0)),
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.m0).toBe(0)
+  expect(result.m1).toBe(1)
+  expect(result.m2).toBe(2)
+  expect(result.m3).toBe(3)
+  expect(result.mask).toBe(0xffff)
+})
+
+test('wave 66 gridMap setLayerCollisionGroup + getLayerCollisionGroup round-trip on foliage props', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        setLayerCollisionGroup: (props: import('../src/engine/types').FoliageProps, layer: number, group: number) => void
+        getLayerCollisionGroup: (props: import('../src/engine/types').FoliageProps, layer: number) => number
+        rapierGroupsFromLayerMask: (membership: number, mask: number) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    const custom = v.gridMap.rapierGroupsFromLayerMask(5, 0x00ff)
+    v.gridMap.setLayerCollisionGroup(props, 2, custom)
+    return {
+      ok: true,
+      read: v.gridMap.getLayerCollisionGroup(props, 2),
+      stored: props.gridLayerCollisionGroups?.[2],
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.read).toBe(result.stored)
+  expect(result.read).toBe(((1 << 5) << 16) | 0x00ff)
+})
+
+test('wave 66 gridMap rapierGroupsFromLayerMask packs membership << 16 | mask', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        rapierGroupsFromLayerMask: (membership: number, mask: number) => number
+        membershipFromRapierGroup: (group: number) => number
+        maskFromRapierGroup: (group: number) => number
+      }
+    }
+    const group = v.gridMap.rapierGroupsFromLayerMask(4, 0x000a)
+    return {
+      group,
+      membership: v.gridMap.membershipFromRapierGroup(group),
+      mask: v.gridMap.maskFromRapierGroup(group),
+    }
+  })
+
+  expect(result.group).toBe(((1 << 4) << 16) | 0x000a)
+  expect(result.membership).toBe(4)
+  expect(result.mask).toBe(0x000a)
+})
+
+test('wave 66 gridMap paintLayer rebuilds colliders with layer collision group', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        setLayerCollisionGroup: (props: import('../src/engine/types').FoliageProps, layer: number, group: number) => void
+        rapierGroupsFromLayerMask: (membership: number, mask: number) => number
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        foliageColliderGroups: (actor: import('../src/engine/Actor').Actor) => number[]
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    const layer2Group = v.gridMap.rapierGroupsFromLayerMask(6, 0xffff)
+    v.gridMap.setLayerCollisionGroup(props, 2, layer2Group)
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 2, 1, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    const groups = v.gridMap.foliageColliderGroups(actor)
+    return { ok: true, count: groups.length, layer0: groups[0], layer2: groups[1] }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.count).toBe(2)
+  expect(result.layer0).toBe(((1 << 0) << 16) | 0xffff)
+  expect(result.layer2).toBe(((1 << 6) << 16) | 0xffff)
+})
+
+test('wave 66 gridmap spawn exposes gridLayerCollisionGroups + bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { gridLayerCollisionGroups?: number[] } } | null }
+      gridMap: Record<string, unknown>
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    if (props) v.gridMap.getLayerCollisionGroup(props, 0)
+    return {
+      groupsLen: props?.gridLayerCollisionGroups?.length ?? 0,
+      hasGet: typeof v.gridMap.getLayerCollisionGroup === 'function',
+      hasSet: typeof v.gridMap.setLayerCollisionGroup === 'function',
+      hasPack: typeof v.gridMap.rapierGroupsFromLayerMask === 'function',
+      hasRebuild: typeof v.gridMap.rebuildFoliageColliders === 'function',
+      hasColliderGroups: typeof v.gridMap.foliageColliderGroups === 'function',
+    }
+  })
+
+  expect(result.hasGet).toBe(true)
+  expect(result.hasSet).toBe(true)
+  expect(result.hasPack).toBe(true)
+  expect(result.hasRebuild).toBe(true)
+  expect(result.hasColliderGroups).toBe(true)
+  expect(result.groupsLen).toBe(4)
+})
+
+test('wave 69 gamepadHaptics pulseFire guarded when vibrationActuator missing', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        gamepad: {
+          pulseFire: () => boolean
+          hapticsSupported: () => boolean
+        }
+      }
+    }
+    const orig = navigator.getGamepads
+    // @ts-expect-error test stub
+    navigator.getGamepads = () => []
+    const fired = v.indie.gamepad.pulseFire()
+    navigator.getGamepads = orig
+    return { fired, supported: v.indie.gamepad.hapticsSupported() }
+  })
+
+  expect(result.fired).toBe(false)
+})
+
+test('wave 69 indie.gamepad hapticsEnabled defaults true and setHapticsEnabled writes env', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        gamepad: {
+          hapticsEnabled: () => boolean
+          setHapticsEnabled: (on: boolean) => boolean
+        }
+      }
+      world: { environment: { gamepadHaptics?: boolean } }
+    }
+    delete v.world.environment.gamepadHaptics
+    const defaultOn = v.indie.gamepad.hapticsEnabled()
+    v.indie.gamepad.setHapticsEnabled(false)
+    const off = v.world.environment.gamepadHaptics === false && v.indie.gamepad.hapticsEnabled() === false
+    v.indie.gamepad.setHapticsEnabled(true)
+    const on = v.world.environment.gamepadHaptics === true && v.indie.gamepad.hapticsEnabled() === true
+    return { defaultOn, off, on }
+  })
+
+  expect(result.defaultOn).toBe(true)
+  expect(result.off).toBe(true)
+  expect(result.on).toBe(true)
+})
+
+test('wave 69 indie.gamepad pulseFire and pulseInteract invoke playEffect dual-rumble', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        gamepad: {
+          setHapticsEnabled: (on: boolean) => boolean
+          pulseFire: () => boolean
+          pulseInteract: () => boolean
+        }
+      }
+    }
+    v.indie.gamepad.setHapticsEnabled(true)
+    const effects: Array<{ type: string; params: Record<string, number> }> = []
+    const stubActuator = {
+      playEffect: (type: string, params: Record<string, number>) => {
+        effects.push({ type, params })
+        return Promise.resolve({})
+      },
+    }
+    const stubPad = { connected: true, vibrationActuator: stubActuator }
+    const orig = navigator.getGamepads
+    navigator.getGamepads = () => [stubPad as unknown as Gamepad]
+    const fire = v.indie.gamepad.pulseFire()
+    const interact = v.indie.gamepad.pulseInteract()
+    navigator.getGamepads = orig
+    return {
+      fire,
+      interact,
+      fireType: effects[0]?.type,
+      interactType: effects[1]?.type,
+      fireDuration: effects[0]?.params.duration,
+      interactDuration: effects[1]?.params.duration,
+    }
+  })
+
+  expect(result.fire).toBe(true)
+  expect(result.interact).toBe(true)
+  expect(result.fireType).toBe('dual-rumble')
+  expect(result.interactType).toBe('dual-rumble')
+  expect(result.fireDuration).toBe(28)
+  expect(result.interactDuration).toBe(14)
+})
+
+test('wave 69 World Settings gamepad haptics toggles environment.gamepadHaptics', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { gamepadHaptics?: boolean } }
+    }
+    v.world.environment.gamepadHaptics = true
+    const on = v.world.environment.gamepadHaptics === true
+    v.world.environment.gamepadHaptics = false
+    const off = v.world.environment.gamepadHaptics === false
+    return { on, off }
+  })
+
+  expect(result.on).toBe(true)
+  expect(result.off).toBe(true)
+})
+
+test('wave 69 export runtime includes pulseGamepadFire when GAMEPAD_ENABLED', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { gamepadControls?: boolean; gamepadHaptics?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.gamepadControls = true
+    v.world.environment.gamepadHaptics = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      gamepadFlag: html.includes('__LOTUS_GAMEPAD__ = true'),
+      firePulse: html.includes('pulseGamepadFire'),
+      interactPulse: html.includes('pulseGamepadInteract'),
+      hapticsGuard: html.includes('gamepadHapticsEnabled'),
+      dualRumble: html.includes("'dual-rumble'"),
+    }
+  })
+
+  expect(result.gamepadFlag).toBe(true)
+  expect(result.firePulse).toBe(true)
+  expect(result.interactPulse).toBe(true)
+  expect(result.hapticsGuard).toBe(true)
+  expect(result.dualRumble).toBe(true)
+})
+
+test('wave 70 backupCheckpointToIndexedDB round-trip stores lotus-engine.cloud.{levelName}.{slot}', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      save: {
+        backupToCloud: (slot: string, data: unknown) => Promise<boolean>
+        restoreFromCloud: (slot: string) => Promise<unknown>
+        listCloudSlots: () => Promise<string[]>
+      }
+    }
+    v.world.levelName = 'Wave70Level'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const ok = await v.save.backupToCloud('cloud-a', { hp: 99, gems: 3 })
+    const restored = await v.save.restoreFromCloud('cloud-a')
+    const slots = await v.save.listCloudSlots()
+    return { ok, restored, slots }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.restored).toEqual({ hp: 99, gems: 3 })
+  expect(result.slots).toContain('cloud-a')
+})
+
+test('wave 70 lotus.save bridge exposes cloudBackup, backupToCloud, restoreFromCloud, listCloudSlots', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).save as Record<string, unknown>
+    return {
+      cloudBackup: typeof s.cloudBackup === 'function',
+      backupToCloud: typeof s.backupToCloud === 'function',
+      restoreFromCloud: typeof s.restoreFromCloud === 'function',
+      listCloudSlots: typeof s.listCloudSlots === 'function',
+    }
+  })
+
+  expect(result.cloudBackup).toBe(true)
+  expect(result.backupToCloud).toBe(true)
+  expect(result.restoreFromCloud).toBe(true)
+  expect(result.listCloudSlots).toBe(true)
+})
+
+test('wave 70 saveCheckpoint auto-backups to IndexedDB when cloudSaveBackup enabled', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      save: {
+        checkpoint: (slot: string, data: unknown) => boolean
+        restoreFromCloud: (slot: string) => Promise<unknown>
+      }
+    }
+    v.world.levelName = 'Wave70Auto'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const ok = v.save.checkpoint('auto-slot', { stage: 4 })
+    await new Promise((r) => setTimeout(r, 50))
+    const cloud = await v.save.restoreFromCloud('auto-slot')
+    return { ok, cloud }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.cloud).toEqual({ stage: 4 })
+})
+
+test('wave 70 World Settings cloudSaveBackup toggle persists on world.environment', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: {
+        environment: { cloudSaveBackup?: boolean }
+        serialize: () => { environment: { cloudSaveBackup?: boolean } }
+      }
+    }
+    v.world.environment.cloudSaveBackup = true
+    const serialized = v.world.serialize()
+    return {
+      live: v.world.environment.cloudSaveBackup === true,
+      serialized: serialized.environment.cloudSaveBackup === true,
+    }
+  })
+
+  expect(result.live).toBe(true)
+  expect(result.serialized).toBe(true)
+})
+
+test('wave 70 export embeds __LOTUS_CLOUD_SAVES__ true + runtime cloud backup APIs when enabled', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const htmlOn = v.export.buildPlayableHTML()
+    v.world.environment.cloudSaveBackup = false
+    const htmlOff = v.export.buildPlayableHTML()
+    return {
+      cloudOn: htmlOn.includes('__LOTUS_CLOUD_SAVES__ = true'),
+      cloudOff: htmlOff.includes('__LOTUS_CLOUD_SAVES__ = false'),
+      backupToCloud: htmlOn.includes('exportBackupToCloud'),
+      restoreFromCloud: htmlOn.includes('exportRestoreFromCloud'),
+      listCloudSlots: htmlOn.includes('exportListCloudSlots'),
+      cloudPrefix: htmlOn.includes('lotus-engine.cloud'),
+    }
+  })
+
+  expect(result.cloudOn).toBe(true)
+  expect(result.cloudOff).toBe(true)
+  expect(result.backupToCloud).toBe(true)
+  expect(result.restoreFromCloud).toBe(true)
+  expect(result.listCloudSlots).toBe(true)
+  expect(result.cloudPrefix).toBe(true)
+})
+
+test('wave 67 export.butlerPushCommand returns butler push with html channel', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const exp = (window.lotus! as typeof window.lotus).export as {
+      butlerPushCommand: (m: 'platformer' | 'rpg' | 'fps', u?: string, g?: string) => string
+    }
+    return {
+      platformer: exp.butlerPushCommand('platformer'),
+      rpg: exp.butlerPushCommand('rpg', 'vektra', 'lotus-rpg'),
+      fps: exp.butlerPushCommand('fps'),
+    }
+  })
+
+  expect(result.platformer).toBe('butler push platformer-lotus-pack.zip user/game:html')
+  expect(result.rpg).toBe('butler push rpg-lotus-pack.zip vektra/lotus-rpg:html')
+  expect(result.fps).toBe('butler push fps-lotus-pack.zip user/game:html')
+})
+
+test('wave 67 indie.minigame.butlerHint bridge exposes push command helper', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      butlerHint: (m: 'platformer', u?: string, g?: string) => string
+    }
+    return {
+      hasButlerHint: typeof mg.butlerHint === 'function',
+      cmd: mg.butlerHint('platformer', 'myuser', 'my-game'),
+    }
+  })
+
+  expect(result.hasButlerHint).toBe(true)
+  expect(result.cmd).toBe('butler push platformer-lotus-pack.zip myuser/my-game:html')
+})
+
+test('wave 67 /butlerhint platformer prints butler command and pack meta JSON', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const out = (window.lotus! as typeof window.lotus).terminal.exec('/butlerhint platformer')
+    const lines = out?.output?.split('\n') ?? []
+    const metaRaw = lines.slice(2).join('\n')
+    const meta = metaRaw ? (JSON.parse(metaRaw) as { title: string; kind: string; tags: string[] }) : null
+    return {
+      firstLine: lines[0] ?? '',
+      title: meta?.title ?? '',
+      kind: meta?.kind ?? '',
+      tags: meta?.tags ?? [],
+    }
+  })
+
+  expect(result.firstLine).toBe('butler push platformer-lotus-pack.zip user/game:html')
+  expect(result.title).toBe('Lotus Platformer Pack')
+  expect(result.kind).toBe('html')
+  expect(result.tags).toEqual(expect.arrayContaining(['platformer', 'action']))
+})
+
+test('wave 67 /butlerhint stores last zip name in localStorage', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    localStorage.removeItem('lotus-engine.itch.lastZip')
+    ;(window.lotus! as typeof window.lotus).terminal.exec('/butlerhint rpg')
+    return localStorage.getItem('lotus-engine.itch.lastZip')
+  })
+
+  expect(result).toBe('rpg-lotus-pack.zip')
+})
+
+test('wave 67 itchPack export status includes butler push hint', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { itchPack: (m: 'fps') => void } }
+      useEditor: { getState: () => { statusMessage: string } }
+    }
+    v.indie.minigame.itchPack('fps')
+    return v.useEditor.getState().statusMessage
+  })
+
+  expect(result).toMatch(/Exported itch\.io pack: fps-lotus-pack\.zip/)
+  expect(result).toMatch(/butler push fps-lotus-pack\.zip user\/game:html/)
+})
+
+test('wave 68 indie.mp.spectator bridge exposes enable, isSpectator, spawnSpectator', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          spectator: {
+            tag: string
+            script: string
+            enable: (on: boolean) => boolean
+            isSpectator: () => boolean
+            spawnSpectator: () => void
+          }
+        }
+      }
+      multiplayer: {
+        loadSettings: () => { spectator?: boolean }
+        spectatorMode?: () => boolean
+        spectatorEnable?: (on: boolean) => void
+      }
+    }
+    v.indie.mp.spectator.enable(true)
+    return {
+      tag: v.indie.mp.spectator.tag,
+      scriptHasEnable: v.indie.mp.spectator.script.includes('mpSpectatorEnable'),
+      scriptHasHostPose: v.indie.mp.spectator.script.includes('mpHostPose'),
+      hasEnable: typeof v.indie.mp.spectator.enable === 'function',
+      hasIsSpectator: typeof v.indie.mp.spectator.isSpectator === 'function',
+      hasSpawn: typeof v.indie.mp.spectator.spawnSpectator === 'function',
+      enabled: v.indie.mp.spectator.isSpectator(),
+      settingsSpectator: v.multiplayer.loadSettings().spectator,
+      bridgeMode: v.multiplayer.spectatorMode?.(),
+    }
+  })
+
+  expect(result.tag).toBe('mp_spectator')
+  expect(result.scriptHasEnable).toBe(true)
+  expect(result.scriptHasHostPose).toBe(true)
+  expect(result.hasEnable).toBe(true)
+  expect(result.hasIsSpectator).toBe(true)
+  expect(result.hasSpawn).toBe(true)
+  expect(result.enabled).toBe(true)
+  expect(result.settingsSpectator).toBe(true)
+  expect(result.bridgeMode).toBe(true)
+})
+
+test('wave 68 /mpspectator spawns spectator arena + manager', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus
+    const out = v.terminal.exec('/mpspectator')
+    const spec = [...v.world.actors.values()].find((a) => a.name === 'SpectatorSpawn')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MpSpectatorManager')
+    const board = [...v.world.actors.values()].find((a) => a.name === 'MpScoreboard')
+    return {
+      output: out?.output,
+      spec: !!spec,
+      specTag: spec?.tags.includes('mp_spectator') ?? false,
+      specFly: spec?.pawnMode === 'fly',
+      mgr: !!mgr,
+      board: !!board,
+    }
+  })
+
+  expect(result.output).toMatch(/Indie MP spectator/i)
+  expect(result.spec).toBe(true)
+  expect(result.specTag).toBe(true)
+  expect(result.specFly).toBe(true)
+  expect(result.mgr).toBe(true)
+  expect(result.board).toBe(true)
+})
+
+test('wave 68 spectator mode skips pawn position uplink in mpTick path', async ({ page }) => {
+  await bootEditor(page, {
+    'lotus-engine.multiplayer': JSON.stringify({
+      url: 'ws://localhost:24690',
+      room: 'spec-room',
+      enabled: true,
+      spectator: true,
+    }),
+  })
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      multiplayer: { spectatorMode: () => boolean; spectatorEnable: (on: boolean) => void }
+      world: { pawnPosition: unknown }
+    }
+    v.multiplayer.spectatorEnable(true)
+    return {
+      spectator: v.multiplayer.spectatorMode(),
+      pawnNull: v.world.pawnPosition == null,
+    }
+  })
+
+  expect(result.spectator).toBe(true)
+  expect(result.pawnNull).toBe(true)
+})
+
+test('wave 68 World Settings documents spectator_join + /mpspectator', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.content()
+  expect(html).toContain('Spectator mode')
+  expect(html).toContain('spectator_join')
+  expect(html).toContain('/mpspectator')
+})

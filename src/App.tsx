@@ -17,6 +17,7 @@ import { executeAICommands, extractCommands } from './editor/ai'
 import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable'
 import { captureExportScreenshot } from './editor/captureExportScreenshot'
 import { buildExportPackMeta } from './editor/exportPackMeta'
+import { buildButlerPushCommand } from './editor/itchButlerHint'
 import {
   buildItchZipBlob,
   exportItchUploadPack,
@@ -77,8 +78,11 @@ import {
   getMpPeerScores,
   mirrorMpPeerScores,
   MP_LOBBY_SCRIPT,
+  MP_SPECTATOR_SCRIPT,
+  MP_TAG_SPECTATOR,
   spawnIndieMpDeathmatch,
   spawnIndieMpLobby,
+  spawnIndieMpSpectator,
 } from './editor/indieMpGameplay'
 import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
 import {
@@ -143,7 +147,23 @@ import {
   setGridLayerVisible,
   worldToGridCell,
 } from './engine/gridMap'
+import {
+  foliageColliderGroups,
+  getLayerCollisionGroup,
+  maskFromRapierGroup,
+  membershipFromRapierGroup,
+  rapierGroupsFromLayerMask,
+  rebuildFoliageColliders,
+  setLayerCollisionGroup,
+} from './engine/gridCollisionLayers'
 import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
+import {
+  hapticsEnabled as gamepadHapticsEnabled,
+  isGamepadHapticsSupported,
+  pulseFire as pulseGamepadFire,
+  pulseInteract as pulseGamepadInteract,
+  setGamepadHapticsEnabled,
+} from './engine/gamepadHaptics'
 import { getActionAxis } from './engine/inputActions'
 import {
   getBindings,
@@ -276,6 +296,10 @@ import {
   mpPingMs,
   mpRefreshRooms,
   mpRoomPing,
+  mpSpectatorEnable,
+  mpSpectatorMode,
+  mpIsSpectator,
+  mpSpectatorPeers,
 } from './engine/multiplayer'
 import * as THREE from 'three'
 import {
@@ -315,7 +339,13 @@ import {
   tickStreamProgressCell,
 } from './engine/streamingProgress'
 import {
+  backupCheckpointToIndexedDB,
+  listCloudSlots,
+  restoreFromIndexedDB,
+} from './engine/cloudSaveStub'
+import {
   getSaveLevelName,
+  isCloudBackupEnabled,
   isSaveEnabled,
   loadCheckpoint,
   listSlots,
@@ -400,6 +430,10 @@ const lotusBridge = {
     pingMs: mpPingMs,
     roomPing: mpRoomPing,
     refreshRooms: mpRefreshRooms,
+    spectatorMode: mpSpectatorMode,
+    spectatorEnable: mpSpectatorEnable,
+    isSpectator: mpIsSpectator,
+    spectatorPeers: mpSpectatorPeers,
   },
   /** Rapier kinematic character — E2E + devtools (Wave 10) */
   crowd: {
@@ -733,7 +767,7 @@ const lotusBridge = {
       vibrateJump: () => vibrateJump(world.environment.touchHaptics),
     },
     gamepad: {
-      poll: () => pollGamepadInput(),
+      poll: () => pollGamepadInput(world.environment.gamepadHaptics),
       getMoveAxis: () => getGamepadMoveAxis(),
       controlsEnabled: () => shouldEnableGamepadControls(world.environment.gamepadControls),
       setControlsEnabled: (on: boolean) => {
@@ -741,6 +775,16 @@ const lotusBridge = {
         useEditor.getState().touch()
         return on
       },
+      hapticsSupported: () => isGamepadHapticsSupported(),
+      hapticsEnabled: () => gamepadHapticsEnabled(world.environment.gamepadHaptics),
+      setHapticsEnabled: (on: boolean) => {
+        world.environment.gamepadHaptics = on
+        setGamepadHapticsEnabled(on)
+        useEditor.getState().touch()
+        return on
+      },
+      pulseFire: () => pulseGamepadFire(world.environment.gamepadHaptics),
+      pulseInteract: () => pulseGamepadInteract(world.environment.gamepadHaptics),
       reset: () => {
         resetGamepadInput()
         return true
@@ -804,6 +848,8 @@ const lotusBridge = {
       buildPackHTML: (mode: 'platformer' | 'rpg' | 'fps') => buildMiniGamePackHTML(mode),
       exportPack: (mode: 'platformer' | 'rpg' | 'fps') => exportMiniGamePack(mode),
       itchPack: (mode: 'platformer' | 'rpg' | 'fps') => exportItchUploadPack(mode),
+      butlerHint: (mode: 'platformer' | 'rpg' | 'fps', user?: string, game?: string) =>
+        buildButlerPushCommand(buildExportPackMeta(mode), itchPackZipFilename(mode), user, game),
       packMeta: (mode: 'platformer' | 'rpg' | 'fps') => buildExportPackMeta(mode),
       captureScreenshot: () => captureExportScreenshot(),
     },
@@ -839,6 +885,16 @@ const lotusBridge = {
         pingMs: () => mpPingMs(),
         refreshRooms: () => mpRefreshRooms(),
       },
+      spectator: {
+        tag: MP_TAG_SPECTATOR,
+        script: MP_SPECTATOR_SCRIPT,
+        enable: (on: boolean) => {
+          mpSpectatorEnable(on)
+          return on
+        },
+        isSpectator: () => mpIsSpectator(),
+        spawnSpectator: () => spawnIndieMpSpectator(),
+      },
     },
     spawnCharacterStarter,
     spawnPlatformerStarter,
@@ -847,6 +903,7 @@ const lotusBridge = {
     spawnIndieMpTemplate,
     spawnIndieMpDeathmatch,
     spawnIndieMpLobby,
+    spawnIndieMpSpectator,
     configureIndieMpSettings,
     spawnMiniGame,
     flow: {
@@ -940,6 +997,16 @@ const lotusBridge = {
       setTileMap(props, tileMap),
     getTileMap: (props: import('./engine/types').FoliageProps) => getTileMap(props),
     atlasSlotForMask: (mask: number, tileMap?: Record<number, number>) => atlasSlotForMask(mask, tileMap),
+    /** Wave 66 — per-grid-layer Rapier collision groups for tile colliders */
+    getLayerCollisionGroup: (props: import('./engine/types').FoliageProps, layer: number) =>
+      getLayerCollisionGroup(props, layer),
+    setLayerCollisionGroup: (props: import('./engine/types').FoliageProps, layer: number, group: number) =>
+      setLayerCollisionGroup(props, layer, group),
+    rapierGroupsFromLayerMask: (membership: number, mask: number) => rapierGroupsFromLayerMask(membership, mask),
+    membershipFromRapierGroup: (group: number) => membershipFromRapierGroup(group),
+    maskFromRapierGroup: (group: number) => maskFromRapierGroup(group),
+    rebuildFoliageColliders: (actor: import('./engine/Actor').Actor) => rebuildFoliageColliders(actor),
+    foliageColliderGroups: (actor: import('./engine/Actor').Actor) => foliageColliderGroups(actor),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,
@@ -959,6 +1026,8 @@ const lotusBridge = {
     buildMiniGamePackHTML,
     buildItchZip: (mode: 'platformer' | 'rpg' | 'fps') => buildItchZipBlob(mode),
     itchZipFilename: (mode: 'platformer' | 'rpg' | 'fps') => itchPackZipFilename(mode),
+    butlerPushCommand: (mode: 'platformer' | 'rpg' | 'fps', user?: string, game?: string) =>
+      buildButlerPushCommand(buildExportPackMeta(mode), itchPackZipFilename(mode), user, game),
     listItchZipEntries: async (blob: Blob) => listZipStoreEntryNames(new Uint8Array(await blob.arrayBuffer())),
     readItchZipEntry: async (blob: Blob, name: string) => {
       const body = readZipStoreEntry(new Uint8Array(await blob.arrayBuffer()), name)
@@ -968,12 +1037,13 @@ const lotusBridge = {
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
   },
-  /** Wave 65 — localStorage save slots (PIE + export) */
+  /** Wave 65 — localStorage save slots (PIE + export); Wave 70 — IndexedDB cloud backup */
   save: {
     checkpoint: (slot: string, data: unknown) => {
       setSaveContext({
         levelName: world.levelName,
         enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
       })
       return saveCheckpoint(slot, data)
     },
@@ -981,6 +1051,7 @@ const lotusBridge = {
       setSaveContext({
         levelName: world.levelName,
         enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
       })
       return loadCheckpoint(slot)
     },
@@ -988,12 +1059,39 @@ const lotusBridge = {
       setSaveContext({
         levelName: world.levelName,
         enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
       })
       return listSlots()
     },
     enabled: () => world.environment.saveSlotsEnabled === true,
+    cloudBackup: () => world.environment.cloudSaveBackup === true,
+    backupToCloud: async (slot: string, data: unknown) => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+      })
+      return backupCheckpointToIndexedDB(slot, data)
+    },
+    restoreFromCloud: async (slot: string) => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+      })
+      return restoreFromIndexedDB(slot)
+    },
+    listCloudSlots: async () => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+      })
+      return listCloudSlots()
+    },
     levelName: () => getSaveLevelName(),
     isActive: () => isSaveEnabled(),
+    isCloudBackupActive: () => isCloudBackupEnabled(),
   },
   /** Wave 60 — cell load progress (export UX + devtools) */
   streaming: {

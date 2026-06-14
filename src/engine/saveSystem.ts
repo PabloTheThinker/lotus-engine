@@ -1,9 +1,13 @@
 /** Wave 65 (v3.64–v3.68) — localStorage checkpoints + export save slots. */
+/** Wave 70 — optional IndexedDB cloud backup when cloudBackup is enabled. */
+
+import { backupCheckpointToIndexedDB, setCloudSaveContext } from './cloudSaveStub'
 
 const STORAGE_PREFIX = 'lotus-engine.saves'
 
 let levelName = 'Untitled'
 let enabled = false
+let cloudBackup = false
 
 function sanitizeLevelName(name: string): string {
   const t = String(name ?? '').trim() || 'Untitled'
@@ -21,13 +25,19 @@ function storageKey(slot: string): string {
 }
 
 /** Configure active level + whether save APIs are enabled (PIE + export). */
-export function setSaveContext(opts: { levelName?: string; enabled?: boolean }): void {
+export function setSaveContext(opts: { levelName?: string; enabled?: boolean; cloudBackup?: boolean }): void {
   if (opts.levelName !== undefined) levelName = opts.levelName
   if (opts.enabled !== undefined) enabled = !!opts.enabled
+  if (opts.cloudBackup !== undefined) cloudBackup = !!opts.cloudBackup
+  setCloudSaveContext({ levelName })
 }
 
 export function isSaveEnabled(): boolean {
   return enabled
+}
+
+export function isCloudBackupEnabled(): boolean {
+  return cloudBackup
 }
 
 export function getSaveLevelName(): string {
@@ -45,6 +55,9 @@ export function saveCheckpoint(slot: string, data: unknown): boolean {
       data,
     }
     localStorage.setItem(storageKey(slot), JSON.stringify(payload))
+    if (cloudBackup) {
+      void backupCheckpointToIndexedDB(slot, data).catch(() => {})
+    }
     return true
   } catch {
     return false

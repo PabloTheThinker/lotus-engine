@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v3.68 (waves 61–65).** v0.33–v3.68 shipped; **build clean**, **`npm run test` — 269 passed**.
+- **Last clean commit: v3.93 (waves 66–70).** v0.33–v3.93 shipped; **build clean**, **`npm run test` — 294 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -459,12 +459,22 @@
 | 64 | v3.59–v3.63 | Touch haptics — Vibration API on Fire/Interact/Jump |
 | 65 | v3.64–v3.68 | Save system — localStorage checkpoints + export slots — 269 tests |
 
+## Shipped (v3.69–v3.93, Waves 66–70 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 66 | v3.69–v3.73 | Tile collision layers — per-layer Rapier groups on grid colliders |
+| 67 | v3.74–v3.78 | Butler CLI hint — `/butlerhint` generates `butler push` command |
+| 68 | v3.79–v3.83 | MP spectator — orbit cam, `spectator_join`, `/mpspectator` |
+| 69 | v3.84–v3.88 | Gamepad haptics — `dual-rumble` on Fire/Interact |
+| 70 | v3.89–v3.93 | Cloud save stub — IndexedDB checkpoint backup — 294 tests |
+
 ## Next up (indie roadmap)
 
-1. **Tile collision layers** — physics groups per grid layer
-2. **itch.io Butler CLI hint** — generate butler push command from pack meta
-3. **MP spectator mode** — observe match without spawning pawn
-4. **Gamepad haptics** — Gamepad Haptic Actuators where supported
+1. **Grid navmesh bake** — Recast walkable mask per collision layer
+2. **itch.io version channels** — butler push `:beta` / `:demo` channel hints
+3. **MP replay buffer** — last 30s pose ring for spectator rewind
+4. **Adaptive haptics** — scale rumble by export perf tier / battery saver
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

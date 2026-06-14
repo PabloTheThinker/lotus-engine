@@ -67,6 +67,14 @@ import {
   setGridLayerVisible,
   syncGridInstancesFromLayers,
 } from '../../engine/gridMap'
+import {
+  getLayerCollisionGroup,
+  maskFromRapierGroup,
+  membershipFromRapierGroup,
+  rapierGroupsFromLayerMask,
+  rebuildFoliageColliders,
+  setLayerCollisionGroup,
+} from '../../engine/gridCollisionLayers'
 import { buildLandscapeMesh, syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
@@ -2723,6 +2731,32 @@ function FoliageSection({ actor }: { actor: Actor }) {
                     }}
                   />
                   {i}
+                </label>
+              ))}
+            </div>
+          </label>
+          <label className="field">
+            <span>Collision group</span>
+            <div className="paint-layers">
+              {[0, 1, 2, 3].map((i) => (
+                <label key={i} className="paint-layer" title={`Grid layer ${i} physics membership`}>
+                  <span style={{ fontSize: 9, marginRight: 2 }}>{i}</span>
+                  <select
+                    value={membershipFromRapierGroup(getLayerCollisionGroup(props, i))}
+                    onChange={(e) => {
+                      const membership = parseInt(e.target.value, 10)
+                      const mask = maskFromRapierGroup(getLayerCollisionGroup(props, i))
+                      setLayerCollisionGroup(props, i, rapierGroupsFromLayerMask(membership, mask))
+                      rebuildFoliageColliders(actor)
+                      touch()
+                    }}
+                  >
+                    {[0, 1, 2, 3, 4, 5, 6, 7].map((l) => (
+                      <option key={l} value={l}>
+                        L{l}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               ))}
             </div>

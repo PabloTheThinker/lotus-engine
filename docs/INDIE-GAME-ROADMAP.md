@@ -98,6 +98,16 @@
 | 64 | v3.59–v3.63 | **Touch haptics** — PWA Vibration API on actions |
 | 65 | v3.64–v3.68 | **Save system** — localStorage checkpoints + export slots — **269 tests** |
 
+## Shipped (Waves 66–70, v3.69–v3.93)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 66 | v3.69–v3.73 | **Tile collision layers** — Rapier physics groups per grid layer |
+| 67 | v3.74–v3.78 | **Butler CLI hint** — `/butlerhint` → `butler push` command |
+| 68 | v3.79–v3.83 | **MP spectator** — orbit camera, no pawn spawn |
+| 69 | v3.84–v3.88 | **Gamepad haptics** — dual-rumble on actions |
+| 70 | v3.89–v3.93 | **Cloud save stub** — IndexedDB checkpoint backup — **294 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -106,11 +116,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Tile collision layers** — physics groups per grid layer
-2. **itch.io Butler CLI hint** — generate `butler push` command from pack meta
-3. **MP spectator mode** — observe match without spawning pawn
-4. **Gamepad haptics** — Gamepad Haptic Actuators where supported
-5. **Cloud save stub** — optional IndexedDB backup of checkpoints
+1. **Grid navmesh bake** — Recast walkable mask per collision layer
+2. **itch.io version channels** — butler push `:beta` / `:demo` channel hints
+3. **MP replay buffer** — last 30s pose ring for spectator rewind
+4. **Adaptive haptics** — scale rumble by perf tier / battery saver
+5. **Cross-level persistence** — carry save slots across `changeScene`
 
 ## Non-goals (honest skip)
 
@@ -121,5 +131,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **269** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **294** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

@@ -51,7 +51,8 @@ import {
   mountMiniGameHudForPlay,
   unmountMiniGameHudForPlay,
 } from './miniGameHud'
-import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
+import { mpConnect, mpDisconnect, mpHostPose, mpSpectatorMode, mpTick } from '../engine/multiplayer'
+import { mpSpectatorDefaultSpawn } from '../engine/mpSpectator'
 import { runConstructScript, setScriptLogSink } from '../engine/scripting'
 import { pushSample, latest } from '../engine/profiler'
 import { getNavMesh } from '../engine/nav'
@@ -1667,7 +1668,14 @@ export function Viewport() {
           pawn.useRapierCharacter = world.environment.useRapierCharacter !== false
           pawn.useRaycastVehicle = world.environment.useRaycastVehicle === true
           pawn.setGamepadControls(world.environment)
-          pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
+          if (mpSpectatorMode()) {
+            const spec = world.spectatorStart()
+            const spawn = mpSpectatorDefaultSpawn()
+            if (spec) spec.root.getWorldPosition(spawn)
+            pawn.enterSpectator(spawn, () => mpHostPose())
+          } else {
+            pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
+          }
           s.setPendingSpawn(null)
           s.select(null)
         }
@@ -1828,7 +1836,7 @@ export function Viewport() {
       syncSelectionBoxes(s.selectedIds, !possessed && !pathTraceActive)
 
       // scripts can ask where the player is
-      world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
+      world.pawnPosition = s.playing && !s.simulate && !pawn.spectator ? pawn.position : null
       world.pawnYaw = s.playing && !s.simulate ? pawn.viewYaw : 0
       world.pawnPitch = s.playing && !s.simulate ? pawn.viewPitch : 0
       if (s.playing) mpTick(dt, world.pawnPosition, pawn.viewYaw)

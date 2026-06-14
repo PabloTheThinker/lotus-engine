@@ -3,6 +3,8 @@
  * Peers mirror relay room membership; ready map tracks per-peer ready flags.
  */
 
+import { mpSpectatorPlayingPeerFilter } from './mpSpectator'
+
 let peers: string[] = []
 const ready = new Map<string, boolean>()
 let started = false
@@ -46,10 +48,11 @@ export function mpLobbyIsReady(peerId: string): boolean {
   return ready.get(peerId) === true
 }
 
-/** True when at least two peers are present and every peer is ready. */
+/** True when at least two playing (non-spectator) peers are present and every one is ready. */
 export function allReady(): boolean {
-  if (peers.length < 2) return false
-  for (const id of peers) {
+  const playing = mpSpectatorPlayingPeerFilter(peers)
+  if (playing.length < 2) return false
+  for (const id of playing) {
     if (!ready.get(id)) return false
   }
   return true
@@ -57,7 +60,7 @@ export function allReady(): boolean {
 
 export function mpLobbyPeerReadyCount(): number {
   let n = 0
-  for (const id of peers) {
+  for (const id of mpSpectatorPlayingPeerFilter(peers)) {
     if (ready.get(id)) n++
   }
   return n

@@ -160,6 +160,7 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const packScreenshotB64 = opts.packScreenshotB64 ?? null
   const packScreenshotJSON = packScreenshotB64 ? `'${packScreenshotB64}'` : 'null'
   const savesEnabled = mainLevel.environment?.saveSlotsEnabled === true
+  const cloudSavesEnabled = savesEnabled && mainLevel.environment?.cloudSaveBackup === true
 
   return `<!doctype html>
 <html lang="en">
@@ -199,7 +200,7 @@ ${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON}; window.__LOTUS_SAVES__ = ${savesEnabled ? 'true' : 'false'};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON}; window.__LOTUS_SAVES__ = ${savesEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SAVES__ = ${cloudSavesEnabled ? 'true' : 'false'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

@@ -633,3 +633,76 @@ test('wave 63 multiplayer relay: dedicated host 000000 holds authority over clie
     await context.close()
   }
 })
+
+test('wave 68 multiplayer relay: spectator_join announced without input uplink', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave68-spectator'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    const spectatorInit = ({ url, room }: { url: string; room: string }) => {
+      localStorage.clear()
+      localStorage.setItem(
+        'lotus-engine.multiplayer',
+        JSON.stringify({ url, room, enabled: true, spectator: true }),
+      )
+    }
+    const playerInit = ({ url, room }: { url: string; room: string }) => {
+      localStorage.clear()
+      localStorage.setItem(
+        'lotus-engine.multiplayer',
+        JSON.stringify({ url, room, enabled: true, spectator: false }),
+      )
+    }
+
+    await pageA.addInitScript(spectatorInit, { url: relayUrl, room: MP_ROOM })
+    await pageB.addInitScript(playerInit, { url: relayUrl, room: MP_ROOM })
+    await pageA.goto('/')
+    await pageB.goto('/')
+    await pageA.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+    await pageB.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+
+    const spectator = await pageA.evaluate(() => {
+      const mp = window.lotus!.multiplayer as {
+        spectatorMode: () => boolean
+        isSpectator: (id?: string) => boolean
+        spectatorPeers: () => string[]
+        localId: () => string
+        connected: () => boolean
+      }
+      const localId = mp.localId()
+      return {
+        connected: mp.connected(),
+        spectatorMode: mp.spectatorMode(),
+        localSpectator: mp.isSpectator(),
+        localSpectatorById: mp.isSpectator(localId),
+        peers: mp.spectatorPeers(),
+        pawnNull: window.lotus!.world.pawnPosition == null,
+      }
+    })
+
+    expect(spectator.connected).toBe(true)
+    expect(spectator.spectatorMode).toBe(true)
+    expect(spectator.localSpectator).toBe(true)
+    expect(spectator.localSpectatorById).toBe(true)
+    expect(spectator.peers.length).toBeGreaterThanOrEqual(1)
+    expect(spectator.pawnNull).toBe(true)
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})

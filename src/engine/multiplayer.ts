@@ -34,6 +34,15 @@ import {
   mpMatchmakingSetStatusSink,
   type MpRoomEntry,
 } from './mpMatchmaking'
+import {
+  mpIsSpectator,
+  mpSpectatorIsLocal,
+  mpSpectatorMarkPeer,
+  mpSpectatorPeers,
+  mpSpectatorReset,
+  mpSpectatorSetLocal,
+  mpSpectatorUnmarkPeer,
+} from './mpSpectator'
 
 /**
  * Multiplayer — Godot MultiplayerSynchronizer / MultiplayerSpawner-lite over a
@@ -51,6 +60,7 @@ import {
  *   lobby_join  { t, id, ready? }             — announce lobby peer (+ optional ready state)
  *   lobby_ready { t, id, ready }              — peer toggles ready-up
  *   lobby_start { t, id }                     — host starts match when all peers ready
+ *   spectator_join { t, id }                  — peer observes without pawn/input uplink
  *   list_rooms  { t }                         — query public room registry
  *   rooms       { t, rooms:[{room,peers}] }   — room list snapshot
  *   room_registry { t, rooms }                — broadcast when rooms change
@@ -101,6 +111,8 @@ export interface MPSettings {
   enabled: boolean
   /** Headless authoritative relay client (no local pawn uplink) */
   dedicatedServer?: boolean
+  /** Observe match without spawning pawn (Wave 68) */
+  spectator?: boolean
   lagCompensationMs?: number
   interestRadius?: number
   deltaCompression?: boolean
@@ -117,6 +129,7 @@ export function loadMPSettings(): MPSettings {
       room: raw.room ?? 'default',
       enabled: !!raw.enabled,
       dedicatedServer: !!raw.dedicatedServer,
+      spectator: !!raw.spectator,
       lagCompensationMs: raw.lagCompensationMs ?? DEFAULT_MP_NET.lagCompensationMs,
       interestRadius: raw.interestRadius ?? DEFAULT_MP_NET.interestRadius,
       deltaCompression: raw.deltaCompression !== false,
@@ -127,6 +140,7 @@ export function loadMPSettings(): MPSettings {
       room: 'default',
       enabled: false,
       dedicatedServer: false,
+      spectator: false,
       ...DEFAULT_MP_NET,
     }
   }
@@ -149,6 +163,20 @@ export function mpIsDedicatedServer(): boolean {
 export function mpDedicatedServerMode(): boolean {
   return mpIsDedicatedServer()
 }
+
+/** Whether this client joined as MP spectator (no pawn spawn / input uplink). */
+export function mpSpectatorMode(): boolean {
+  return loadMPSettings().spectator === true || mpSpectatorIsLocal()
+}
+
+export function mpSpectatorEnable(enabled: boolean) {
+  const s = loadMPSettings()
+  saveMPSettings({ ...s, spectator: enabled })
+  mpSpectatorSetLocal(enabled)
+}
+
+export { mpIsSpectator, mpSpectatorPeers }
+
 export function saveMPSettings(s: MPSettings) {
   localStorage.setItem(KEY, JSON.stringify(s))
 }
@@ -441,7 +469,7 @@ export function mpRefreshRooms() {
 
 function formatMpStatusLine(): string {
   const cfg = loadMPSettings()
-  const mode = cfg.dedicatedServer ? ' dedicated' : ''
+  const mode = cfg.dedicatedServer ? ' dedicated' : cfg.spectator ? ' spectator' : ''
   const host = mpConnected() && mpIsHost() ? ' (host)' : ''
   const ping = mpMatchmakingPingMs()
   const pingLabel = ping != null ? ` · ${ping}ms` : ''
@@ -497,7 +525,7 @@ export function mpRequestScoreDelta(delta: number, peerId?: string) {
 
 /** Optional client input uplink (host may consume later). */
 export function mpSendInput(pawnPos: THREE.Vector3 | null, pawnYaw: number, actions?: string[]) {
-  if (!mpConnected() || mpIsHost() || mpIsDedicatedServer()) return
+  if (!mpConnected() || mpIsHost() || mpIsDedicatedServer() || mpSpectatorMode()) return
   send({
     t: 'input',
     id: localId,
@@ -519,6 +547,9 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   mpNetReset()
   mpMatchmakingReset()
   mpLobbyReset(localId)
+  mpSpectatorReset(localId)
+  mpSpectatorSetLocal(!!cfg.spectator)
+  if (cfg.spectator) mpSpectatorMarkPeer(localId)
   mpMatchmakingSetStatusSink(status, formatMpStatusLine)
   try {
     ws = new WebSocket(cfg.url)
@@ -529,7 +560,8 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   }
   ws.onopen = () => {
     send({ t: 'join', room: cfg.room, id: localId })
-    send({ t: 'lobby_join', id: localId, ready: false })
+    if (cfg.spectator) send({ t: 'spectator_join', id: localId })
+    if (!cfg.spectator) send({ t: 'lobby_join', id: localId, ready: false })
     mpRefreshRooms()
     status(formatMpStatusLine())
   }
@@ -560,8 +592,20 @@ export function mpConnect(world: World, status: (msg: string) => void) {
     if (mpMatchmakingHandleMessage(msg)) return
     if (msg.t === 'join' && msg.id !== localId) {
       trackPeer(msg.id)
-      mpLobbyAddPeer(msg.id)
-      send({ t: 'lobby_join', id: localId, ready: mpLobbyIsReady(localId) })
+      if (!mpIsSpectator(msg.id)) {
+        mpLobbyAddPeer(msg.id)
+        if (!mpSpectatorMode()) {
+          send({ t: 'lobby_join', id: localId, ready: mpLobbyIsReady(localId) })
+        }
+      }
+      if (mpSpectatorMode()) send({ t: 'spectator_join', id: localId })
+      lobbyRefreshHandler?.()
+      return
+    }
+    if (msg.t === 'spectator_join' && msg.id !== localId) {
+      trackPeer(msg.id)
+      mpSpectatorMarkPeer(msg.id)
+      if (mpSpectatorMode()) send({ t: 'spectator_join', id: localId })
       lobbyRefreshHandler?.()
       return
     }
@@ -573,6 +617,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       }
       knownPeerIds.delete(msg.id)
       mpLobbyRemovePeer(msg.id)
+      mpSpectatorUnmarkPeer(msg.id)
       lobbyRefreshHandler?.()
       return
     }
@@ -665,6 +710,7 @@ export function mpDisconnect() {
   mpMatchmakingSetStatusSink(null, null)
   pingAcc = 0
   mpLobbyReset()
+  mpSpectatorReset()
   if (worldRef) {
     for (const id of [...netSpawned]) {
       if (worldRef.actors.has(id)) worldRef.removeActor(id)
@@ -674,9 +720,19 @@ export function mpDisconnect() {
   worldRef = null
 }
 
+/** Host peer pose for spectator orbit camera (null when local peer is host or pose unknown). */
+export function mpHostPose(): { position: THREE.Vector3; yaw: number } | null {
+  if (!mpConnected()) return null
+  const hid = hostId()
+  if (hid === localId) return null
+  const peer = peers.get(hid)
+  if (!peer) return null
+  return { position: peer.target.clone(), yaw: peer.ghost.rotation.y }
+}
+
 function peerInterestPositions(pawnPos: THREE.Vector3 | null): THREE.Vector3[] {
   const out: THREE.Vector3[] = []
-  if (pawnPos && !mpIsDedicatedServer()) out.push(pawnPos)
+  if (pawnPos && !mpIsDedicatedServer() && !mpSpectatorMode()) out.push(pawnPos)
   for (const p of peers.values()) out.push(p.target)
   return out
 }
@@ -734,8 +790,8 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
   if (sendAcc < 0.1) return
   sendAcc = 0
 
-  // pawn co-presence @ 10 Hz (dedicated server skips local pawn uplink)
-  if (pawnPos && !mpIsDedicatedServer()) {
+  // pawn co-presence @ 10 Hz (dedicated + spectator skip local pawn uplink)
+  if (pawnPos && !mpIsDedicatedServer() && !mpSpectatorMode()) {
     if (mpIsHost()) {
       send({ t: 'pose', id: localId, p: [pawnPos.x, pawnPos.y, pawnPos.z], ry: pawnYaw, ts: performance.now() })
     } else {

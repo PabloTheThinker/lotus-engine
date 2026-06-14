@@ -88,6 +88,8 @@ export class Actor {
   foliageMesh?: THREE.InstancedMesh
   /** Per-tile-kind instanced meshes when gridAutotileRules is enabled */
   foliageMeshes?: Partial<Record<'box' | 'sphere' | 'plane', THREE.InstancedMesh>>
+  /** Wave 66 — invisible cuboid colliders for grid-painted tiles */
+  foliageColliderGroup?: THREE.Group
   landscapeProps?: LandscapeProps
   probeProps?: { radius: number }
   waterProps?: import('./types').WaterProps

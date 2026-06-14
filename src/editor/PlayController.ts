@@ -16,10 +16,15 @@ import type { EnvironmentSettings } from '../engine/types'
  *  - firstperson:  gravity, ground collision, jump, eye-height camera
  *  - thirdperson:  same character physics + visible body and a camera boom
  */
+export type SpectatorHostPose = () => { position: THREE.Vector3; yaw: number } | null
+
 export class PlayController {
   camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.05, 5000)
   active = false
   mode: PawnMode = 'fly'
+  /** Wave 68 — MP spectator: orbit/fly camera, no pawn body or gameplay input */
+  spectator = false
+  spectatorFollowHost = true
 
   /** supplies the meshes the character can stand on */
   collidables: () => THREE.Object3D[] = () => []
@@ -44,10 +49,15 @@ export class PlayController {
   useRaycastVehicle = false
   /** Wave 44 — poll Gamepad API each frame when enabled. */
   gamepadControls = true
+  /** Wave 69 — dual-rumble env flag (default on when unset). */
+  private gamepadHapticsEnv?: boolean
   private spawnPoint = new THREE.Vector3()
   private readonly eyeHeight = 1.65
   private readonly boomLength = 4.5
   private ray = new THREE.Raycaster()
+  private orbitRadius = 10
+  private orbitTarget = new THREE.Vector3()
+  private hostPose: SpectatorHostPose | null = null
 
   /** visible body for third person */
   body: THREE.Group
@@ -94,7 +104,31 @@ export class PlayController {
     return g
   }
 
+  /** MP spectator — free-fly or orbit around host pose; no pawn spawn. */
+  enterSpectator(spawn: THREE.Vector3, hostPose?: SpectatorHostPose) {
+    this.spectator = true
+    this.active = true
+    this.mode = 'fly'
+    this.hostPose = hostPose ?? null
+    this.body.visible = false
+    this.keys.clear()
+    this.yaw = 0
+    this.pitch = -0.3
+    this.orbitRadius = 10
+    this.orbitTarget.copy(spawn)
+    this.camera.position.copy(spawn)
+    this.syncSpectatorCamera()
+    this.dom.requestPointerLock?.()
+  }
+
+  exitSpectator() {
+    this.spectator = false
+    this.hostPose = null
+  }
+
   possess(start: Actor | undefined, spawnOverride?: [number, number, number]) {
+    this.spectator = false
+    this.hostPose = null
     this.active = true
     this.mode = start?.pawnMode ?? 'fly'
     const pos = new THREE.Vector3()
@@ -131,6 +165,8 @@ export class PlayController {
 
   unpossess() {
     this.active = false
+    this.spectator = false
+    this.hostPose = null
     this.keys.clear()
     this.body.visible = false
     if (document.pointerLockElement === this.dom) document.exitPointerLock()
@@ -215,6 +251,54 @@ export class PlayController {
     return null
   }
 
+  private syncSpectatorCamera() {
+    const host = this.spectatorFollowHost ? this.hostPose?.() : null
+    if (host) {
+      this.orbitTarget.copy(host.position)
+      const offset = new THREE.Vector3(
+        Math.sin(this.yaw) * Math.cos(this.pitch) * this.orbitRadius,
+        Math.sin(this.pitch) * this.orbitRadius + 1.6,
+        Math.cos(this.yaw) * Math.cos(this.pitch) * this.orbitRadius,
+      )
+      this.camera.position.copy(this.orbitTarget).add(offset)
+      this.camera.lookAt(this.orbitTarget)
+      return
+    }
+    this.euler.set(this.pitch, this.yaw, 0)
+    this.camera.quaternion.setFromEuler(this.euler)
+  }
+
+  private updateSpectator(dt: number) {
+    if (this.keys.has('KeyQ')) this.orbitRadius = Math.max(3, this.orbitRadius - 10 * dt)
+    if (this.keys.has('KeyE')) this.orbitRadius = Math.min(40, this.orbitRadius + 10 * dt)
+    if (this.keys.has('KeyF')) this.spectatorFollowHost = !this.spectatorFollowHost
+
+    const host = this.spectatorFollowHost ? this.hostPose?.() : null
+    if (host) {
+      this.syncSpectatorCamera()
+      return
+    }
+
+    const move = new THREE.Vector3()
+    if (this.keys.has('KeyW')) move.z -= 1
+    if (this.keys.has('KeyS')) move.z += 1
+    if (this.keys.has('KeyA')) move.x -= 1
+    if (this.keys.has('KeyD')) move.x += 1
+    if (this.keys.has('Space')) move.y += 1
+    if (this.keys.has('KeyC')) move.y -= 1
+    if (move.lengthSq() > 0) {
+      move.normalize()
+      const speed = this.flySpeed * (this.keys.has('ShiftLeft') ? 3 : 1)
+      const forward = new THREE.Vector3()
+      this.camera.getWorldDirection(forward)
+      const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize()
+      this.camera.position.addScaledVector(forward, -move.z * speed * dt)
+      this.camera.position.addScaledVector(right, move.x * speed * dt)
+      this.camera.position.y += move.y * speed * dt
+    }
+    this.syncSpectatorCamera()
+  }
+
   private syncCamera() {
     this.euler.set(this.pitch, this.yaw, 0)
     if (this.mode === 'vehicle') {
@@ -239,6 +323,7 @@ export class PlayController {
 
   setGamepadControls(env: EnvironmentSettings) {
     this.gamepadControls = shouldEnableGamepadControls(env.gamepadControls)
+    this.gamepadHapticsEnv = env.gamepadHaptics
   }
 
   private mergedMoveAxis() {
@@ -257,7 +342,12 @@ export class PlayController {
       return
     }
 
-    if (this.gamepadControls) pollGamepadInput()
+    if (this.spectator) {
+      this.updateSpectator(dt)
+      return
+    }
+
+    if (this.gamepadControls) pollGamepadInput(this.gamepadHapticsEnv)
 
     const move = new THREE.Vector3()
     if (this.keys.has('KeyW')) move.z -= 1

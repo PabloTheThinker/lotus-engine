@@ -130,6 +130,14 @@ function MultiplayerSection() {
             onChange={(e) => update({ dedicatedServer: e.target.checked })}
           />
         </label>
+        <label className="field check">
+          <span>Spectator mode</span>
+          <input
+            type="checkbox"
+            checked={!!cfg.spectator}
+            onChange={(e) => update({ spectator: e.target.checked })}
+          />
+        </label>
         <label className="field">
           <span>Lag compensation (ms)</span>
           <input
@@ -182,10 +190,14 @@ function MultiplayerSection() {
           may predict movement when <em>Client Predicted</em> is on; host still syncs @ 10 Hz and clients snap on large error.
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>lobby_join</code> · <code>lobby_ready</code> · <code>lobby_start</code> · <code>list_rooms</code> · <code>ping</code>/<code>pong</code> · <code>leave</code>
+          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>lobby_join</code> · <code>lobby_ready</code> · <code>lobby_start</code> · <code>spectator_join</code> · <code>list_rooms</code> · <code>ping</code>/<code>pong</code> · <code>leave</code>
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           <strong>Lobby:</strong> <code>/mplobby</code> spawns a room browser + ready-up HUD; host relays <code>lobby_start</code> when all peers are ready (deathmatch spawns after).
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          <strong>Spectator (Wave 68):</strong> enable <em>Spectator mode</em> + <code>/mpspectator</code> — relays{' '}
+          <code>spectator_join</code>, no pawn spawn or input uplink; orbit host (F) or free fly (WASD).
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           <strong>Matchmaking:</strong> relay broadcasts <code>room_registry</code>; <code>indie.mp.matchmaking.listRooms()</code> · <code>pingMs()</code> · <code>refreshRooms()</code> — lobby HUD shows public rooms + ping.
@@ -1496,6 +1508,14 @@ export function WorldSettings() {
             onChange={(e) => set('gamepadControls', e.target.checked)}
           />
         </label>
+        <label className="field check" title="Dual-rumble on Fire / Interact when the pad supports Gamepad Haptic Actuators">
+          <span>Gamepad haptics</span>
+          <input
+            type="checkbox"
+            checked={env.gamepadHaptics !== false}
+            onChange={(e) => set('gamepadHaptics', e.target.checked)}
+          />
+        </label>
         <label className="field check">
           <span>Export batch static meshes</span>
           <input
@@ -1512,10 +1532,27 @@ export function WorldSettings() {
             onChange={(e) => set('saveSlotsEnabled', e.target.checked)}
           />
         </label>
+        <label
+          className="field check"
+          title="IndexedDB backup when saving checkpoints (__LOTUS_CLOUD_SAVES__)"
+        >
+          <span>Cloud save backup (IndexedDB)</span>
+          <input
+            type="checkbox"
+            checked={!!env.cloudSaveBackup}
+            onChange={(e) => set('cloudSaveBackup', e.target.checked)}
+          />
+        </label>
         {env.saveSlotsEnabled && (
           <div className="panel-empty" style={{ padding: '2px 0' }}>
             Scripts: <code>api.saveGame('slot1', data)</code> · <code>api.loadGame('slot1')</code> ·{' '}
             <code>api.listSaveSlots()</code> — keys <code>lotus-engine.saves.{'{level}'}.{'{slot}'}</code>
+            {env.cloudSaveBackup && (
+              <>
+                {' '}
+                · cloud keys <code>lotus-engine.cloud.{'{level}'}.{'{slot}'}</code>
+              </>
+            )}
           </div>
         )}
       </div>

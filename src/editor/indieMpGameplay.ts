@@ -36,7 +36,9 @@ export {
 } from '../engine/mpGameplay'
 
 export const MP_LOBBY_MANAGER_NAME = 'MpLobbyManager'
+export const MP_SPECTATOR_MANAGER_NAME = 'MpSpectatorManager'
 export const MP_TAG_LOBBY = 'mp_lobby'
+export const MP_TAG_SPECTATOR = 'mp_spectator'
 
 /** Lobby manager — room browser HUD + ready-up; deathmatch spawns on lobby_start. */
 export const MP_LOBBY_SCRIPT = `// mp_lobby — room browser + ready-up + matchmaking (Wave 53/58)
@@ -300,6 +302,110 @@ const MP_SCORE_HUD_WIDGET: HudWidget = {
 
 const MP_LOBBY_UNDO_NAMES = ['MpLobbyFloor', 'MpLobbyHost', 'MpLobbyClient', MP_LOBBY_MANAGER_NAME, 'MpLobbySun']
 
+/** Spectator manager — HUD + enable spectator mode before Play (Wave 68). */
+export const MP_SPECTATOR_SCRIPT = `// mp_spectator — observe deathmatch without pawn spawn
+function refreshHud() {
+  const spec = api.mpIsSpectator()
+  const peers = api.mpSpectatorPeers()
+  const hostPose = api.mpHostPose()
+  const follow = hostPose ? 'orbit host' : 'free fly'
+  api.hud.text('mp_spec_mode', spec ? 'Spectator ON' : 'Spectator OFF', {
+    anchor: 'tc',
+    x: 0,
+    y: 20,
+    size: 18,
+    color: spec ? '#81b29a' : '#9aa4b2',
+  })
+  api.hud.text('mp_spec_hint', 'F toggle follow · Q/E zoom · WASD free fly', {
+    anchor: 'tc',
+    x: 0,
+    y: 44,
+    size: 13,
+    color: '#7c8a9a',
+  })
+  api.hud.text('mp_spec_peers', peers.length ? 'Watching: ' + peers.join('  ') : 'No spectators yet', {
+    anchor: 'tc',
+    x: 0,
+    y: 68,
+    size: 14,
+    color: '#9aa4b2',
+  })
+  const pos = hostPose ? hostPose.position : null
+  const posLabel = pos ? pos.x.toFixed(1) + ',' + pos.y.toFixed(1) + ',' + pos.z.toFixed(1) : '—'
+  api.hud.text('mp_spec_cam', hostPose ? follow + ' @ ' + posLabel : follow, {
+    anchor: 'tc',
+    x: 0,
+    y: 92,
+    size: 13,
+    color: '#6b7c8f',
+  })
+}
+function onBeginPlay() {
+  api.mpSpectatorEnable(true)
+  refreshHud()
+  api.on('mp_lobby_refresh', refreshHud)
+}
+function onTick(_dt) {
+  refreshHud()
+}
+`
+
+const MP_SPECTATOR_HUD_WIDGETS: HudWidget[] = [
+  {
+    id: 'mp_spec_mode',
+    type: 'text',
+    text: 'Spectator —',
+    anchor: 'tc',
+    x: 0,
+    y: 20,
+    size: 18,
+    color: '#e8ecf0',
+  },
+  {
+    id: 'mp_spec_hint',
+    type: 'text',
+    text: 'F follow · Q/E zoom',
+    anchor: 'tc',
+    x: 0,
+    y: 44,
+    size: 13,
+    color: '#7c8a9a',
+  },
+  {
+    id: 'mp_spec_peers',
+    type: 'text',
+    text: 'Spectators…',
+    anchor: 'tc',
+    x: 0,
+    y: 68,
+    size: 14,
+    color: '#9aa4b2',
+  },
+  {
+    id: 'mp_spec_cam',
+    type: 'text',
+    text: 'Camera —',
+    anchor: 'tc',
+    x: 0,
+    y: 92,
+    size: 13,
+    color: '#6b7c8f',
+  },
+]
+
+const MP_SPECTATOR_UNDO_NAMES = [
+  'MpSpecFloor',
+  'HostSpawn',
+  'ClientSpawn',
+  'SpectatorSpawn',
+  MP_SPECTATOR_MANAGER_NAME,
+  'MpTargetA',
+  'MpTargetB',
+  'MpTargetC',
+  MP_SCOREBOARD_NAME,
+  'MpSpecSun',
+]
+
 function buildLobbyManagerActor() {
   const manager = buildSerializedActor({ kind: 'empty' }, [0, 2, 0])
   manager.name = MP_LOBBY_MANAGER_NAME
@@ -442,3 +548,69 @@ mpSetLobbyStartHandler(() => {
   const inLobby = [...world.actors.values()].some((a) => a.name === MP_LOBBY_MANAGER_NAME)
   if (inLobby) transitionLobbyToDeathmatch()
 })
+
+function buildSpectatorManagerActor() {
+  const manager = buildSerializedActor({ kind: 'empty' }, [0, 2, 0])
+  manager.name = MP_SPECTATOR_MANAGER_NAME
+  manager.tags = [MP_TAG_SPECTATOR]
+  manager.script = MP_SPECTATOR_SCRIPT
+  return manager
+}
+
+/**
+ * Indie MP spectator greybox — deathmatch arena + elevated fly spawn.
+ * Enable Multiplayer + Spectator mode, then Play to observe without pawn.
+ */
+export function spawnIndieMpSpectator() {
+  const floor = starterBox('MpSpecFloor', [0, -0.1, 0], [18, 0.2, 18], '#3d4a5c')
+  floor.material!.roughness = 0.9
+
+  const host = buildSerializedActor({ kind: 'playerstart' }, [-5, 0.2, 0])
+  host.name = 'HostSpawn'
+  host.pawnMode = 'thirdperson' as PawnMode
+  host.tags = [MP_TAG_HOST]
+  host.script = MP_SCORE_SCRIPT
+
+  const client = buildSerializedActor({ kind: 'playerstart' }, [5, 0.2, 0])
+  client.name = 'ClientSpawn'
+  client.pawnMode = 'thirdperson' as PawnMode
+  client.script = MP_SCORE_SCRIPT
+
+  const spectator = buildSerializedActor({ kind: 'playerstart' }, [0, 8, 12])
+  spectator.name = 'SpectatorSpawn'
+  spectator.pawnMode = 'fly' as PawnMode
+  spectator.tags = [MP_TAG_SPECTATOR]
+
+  const targetA = buildTarget('MpTargetA', [0, 0.7, -4], '#e07a5f')
+  const targetB = buildTarget('MpTargetB', [-3, 0.7, 2], '#81b29a')
+  const targetC = buildTarget('MpTargetC', [3, 0.7, 2], '#f2cc8f')
+
+  const scoreboard = buildScoreboardActor()
+  const manager = buildSpectatorManagerActor()
+  const sun = buildSerializedActor({ kind: 'light', type: 'DirectionalLight' }, [6, 12, 4])
+  sun.name = 'MpSpecSun'
+
+  runCommand({
+    label: 'Indie MP spectator',
+    execute() {
+      for (const sa of [floor, host, client, spectator, targetA, targetB, targetC, scoreboard, manager, sun]) {
+        new AddActorCommand(sa).execute()
+      }
+      world.environment.useRapierCharacter = true
+      world.applyEnvironment()
+      const existing = new Set(world.hudWidgets.map((w) => w.id))
+      for (const w of MP_SPECTATOR_HUD_WIDGETS) {
+        if (!existing.has(w.id)) world.hudWidgets.push({ ...w })
+      }
+      useEditor.getState().setStatus(
+        `Indie MP spectator — enable Spectator in World Settings, Play to orbit host (F toggle follow)`,
+      )
+      useEditor.getState().touch()
+    },
+    undo() {
+      removeActorsByName(MP_SPECTATOR_UNDO_NAMES)
+      world.hudWidgets = world.hudWidgets.filter((w) => !MP_SPECTATOR_HUD_WIDGETS.some((h) => h.id === w.id))
+      useEditor.getState().touch()
+    },
+  })
+}

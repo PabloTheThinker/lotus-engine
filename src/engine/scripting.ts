@@ -14,7 +14,9 @@ import type { Actor } from './Actor'
 import { addMpScore, getMpPeerScores, getMpScore } from './mpGameplay'
 import {
   mpConnected,
+  mpHostPose,
   mpIsHost,
+  mpIsSpectator,
   mpListRooms,
   mpLobbyAllReady,
   mpLobbyIsReady,
@@ -26,6 +28,8 @@ import {
   mpLocalId,
   mpPingMs,
   mpRefreshRooms,
+  mpSpectatorEnable,
+  mpSpectatorPeers,
 } from './multiplayer'
 import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
 
@@ -187,6 +191,14 @@ export interface ScriptApi {
   mpPingMs: () => number | null
   /** Request fresh room list + ping from relay */
   mpRefreshRooms: () => void
+  /** Wave 68 — local peer joined as MP spectator (no pawn spawn) */
+  mpIsSpectator: () => boolean
+  /** Wave 68 — toggle spectator mode (persisted in World Settings) */
+  mpSpectatorEnable: (enabled: boolean) => void
+  /** Wave 68 — relay peer ids that announced spectator_join */
+  mpSpectatorPeers: () => string[]
+  /** Wave 68 — host pawn pose for spectator orbit camera */
+  mpHostPose: () => { position: THREE.Vector3; yaw: number } | null
   /** Pawn camera yaw (radians) while playing — for hitscan / facing */
   pawnYaw: () => number
   /** Pawn camera pitch (radians) while playing */
@@ -365,6 +377,10 @@ export function makeScriptApi(
     mpListRooms,
     mpPingMs,
     mpRefreshRooms,
+    mpIsSpectator,
+    mpSpectatorEnable,
+    mpSpectatorPeers,
+    mpHostPose,
     pawnYaw,
     pawnPitch,
     getMpScore: (peerId) => getMpScore(actors, peerId),

@@ -47,10 +47,15 @@ interface Fragment {
   body: RAPIER_NS.RigidBody
 }
 
+interface FoliageColliderBinding {
+  body: RAPIER_NS.RigidBody
+}
+
 export class PhysicsSim {
   private world: RAPIER_NS.World | null = null
   private bindings: BodyBinding[] = []
   private fragments: Fragment[] = []
+  private foliageColliders: FoliageColliderBinding[] = []
   private bodyByActor = new Map<string, RAPIER_NS.RigidBody>()
 
   start(actors: Iterable<Actor>, jointDefs: PhysicsJointDef[] = []) {
@@ -90,6 +95,29 @@ export class PhysicsSim {
       this.world.createCollider(collider, body)
       this.bodyByActor.set(actor.id, body)
       if (props.mode === 'dynamic') this.bindings.push({ actor, body })
+    }
+    for (const actor of actors) {
+      if (actor.type !== 'FoliageLayer' || !actor.foliageColliderGroup) continue
+      actor.foliageColliderGroup.updateMatrixWorld(true)
+      actor.foliageColliderGroup.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || !o.userData.isFoliageCollider) return
+        const pos = new THREE.Vector3()
+        const quat = new THREE.Quaternion()
+        const scale = new THREE.Vector3()
+        o.matrixWorld.decompose(pos, quat, scale)
+        const desc = RAPIER!.RigidBodyDesc.fixed()
+          .setTranslation(pos.x, pos.y, pos.z)
+          .setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w })
+        const body = this.world!.createRigidBody(desc)
+        const hx = Math.max(0.25, 0.5 * scale.x)
+        const hy = Math.max(0.25, 0.5 * scale.y)
+        const hz = Math.max(0.25, 0.5 * scale.z)
+        const collider = RAPIER!.ColliderDesc.cuboid(hx, hy, hz)
+        const group = (o.userData.rapierCollisionGroup as number | undefined) ?? 0xffff0001
+        collider.setCollisionGroups(group)
+        this.world!.createCollider(collider, body)
+        this.foliageColliders.push({ body })
+      })
     }
     if (jointDefs.length) createPhysicsJoints(RAPIER, this.world, jointDefs, this.bodyByActor)
   }
@@ -229,6 +257,7 @@ export class PhysicsSim {
       ;(f.mesh.material as THREE.Material).dispose()
     }
     this.fragments = []
+    this.foliageColliders = []
     this.world?.free()
     this.world = null
     this.bindings = []
