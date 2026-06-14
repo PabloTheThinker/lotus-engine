@@ -70,7 +70,8 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const { ssr } = await import('three/addons/tsl/display/SSRNode.js')
     const { traa } = await import('three/addons/tsl/display/TRAANode.js')
     const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js')
-    const { pass, add, mul, mrt, output, normalView, velocity, metalness, roughness, vec3, vec4, float } = tsl
+    const { dof } = await import('three/addons/tsl/display/DepthOfFieldNode.js')
+    const { pass, add, mul, mrt, output, normalView, velocity, metalness, roughness, vec3, vec4, float, reflector, perspectiveDepthToViewZ } = tsl
     const env = LEVEL.environment ?? {}
     const bloomOn = env.bloomEnabled !== false
     const strength = env.bloomStrength ?? 0.35
@@ -97,11 +98,26 @@ async function createExportTSLPipeline(primary, scene, camera) {
       high: { intensity: 0.75, radius: 0.9, samples: 12, slices: 3 },
     }
     const ssgiRow = ssgiTable[ssgiPreset] ?? ssgiTable.off
+    const dofOn = env.postDof === true
+    const groundReflect = env.postSsrGround === true && ssrOn
+    let tslGround = null
+    if (groundReflect) {
+      const groundReflector = reflector()
+      const geo = new THREE.PlaneGeometry(120, 120)
+      const mat = new webgpu.MeshBasicNodeMaterial()
+      mat.colorNode = groundReflector
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.rotation.x = -Math.PI / 2
+      mesh.userData.isSSRGround = true
+      mesh.add(groundReflector.target)
+      scene.add(mesh)
+      tslGround = { mesh, dispose: () => { geo.dispose(); mat.dispose() } }
+    }
     let activeCam = camera
     const pipeline = new webgpu.RenderPipeline(primary)
     const rebuild = () => {
       const scenePass = pass(scene, activeCam)
-      const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn
+      const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn || dofOn
       const needsVelocity = taaOn || ssgiOn || ssrOn
       if (needsMRT) {
         const mrtOut = { output, normal: normalView }
@@ -158,6 +174,11 @@ async function createExportTSLPipeline(primary, scene, camera) {
         const bp = bloom(color, strength, radius, threshold)
         color = add(color, bp)
       }
+      if (dofOn && needsMRT) {
+        const depth = scenePass.getTextureNode('depth')
+        const viewZ = perspectiveDepthToViewZ(depth, float(activeCam.near), float(activeCam.far))
+        color = dof(color, viewZ, 5, 2, 1.2)
+      }
       if (fxaaOn) color = fxaa(color)
       pipeline.outputNode = color
       pipeline.needsUpdate = true
@@ -169,6 +190,13 @@ async function createExportTSLPipeline(primary, scene, camera) {
         if (activeCam === cam) return
         activeCam = cam
         rebuild()
+      },
+      dispose() {
+        if (tslGround) {
+          scene.remove(tslGround.mesh)
+          tslGround.dispose()
+        }
+        pipeline.dispose()
       },
     }
   } catch {

@@ -68,10 +68,12 @@ function MaterialPreview({
   graph,
   mode,
   flashChannel,
+  isolateChannel,
 }: {
   graph: MaterialGraph
   mode: MaterialGraphMode
   flashChannel?: string | null
+  isolateChannel?: string | null
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const graphSnapshot = JSON.stringify(graph)
@@ -111,7 +113,7 @@ function MaterialPreview({
           dispose: () => void
         }
         renderer = new WebGPURenderer({ antialias: true })
-        const tslMat = compileMaterialGraphTSL(graph, 0)
+        const tslMat = compileMaterialGraphTSL(graph, 0, undefined, isolateChannel)
         mesh = new THREE.Mesh(geo, tslMat ?? new THREE.MeshStandardMaterial({ color: '#5b8def' }))
       } else {
         renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
@@ -148,7 +150,7 @@ function MaterialPreview({
         mesh.rotation.y = t * 0.35
         mesh.rotation.x = 0.15
         if (useTSL) {
-          const next = compileMaterialGraphTSL(graph, t)
+          const next = compileMaterialGraphTSL(graph, t, undefined, isolateChannel)
           if (next) {
             const prev = mesh.material
             mesh.material = next
@@ -186,7 +188,7 @@ function MaterialPreview({
       disposed = true
       cleanup()
     }
-  }, [graphSnapshot, mode, tslBackend])
+  }, [graphSnapshot, mode, tslBackend, isolateChannel])
 
   const nodeChannels =
     tslBackend && graph.nodes.length ? materialGraphTSLPreviewChannels(graph) : []
@@ -205,6 +207,7 @@ function MaterialPreview({
         >
           TSL nodes · {nodeChannels.join(', ')}
           {flashChannel && <span className="mat-preview-flash-label"> · wired {flashChannel}</span>}
+          {isolateChannel && <span className="mat-preview-isolate-label"> · solo {isolateChannel}</span>}
         </div>
       )}
     </div>
@@ -225,6 +228,7 @@ export function MaterialEditor() {
   const [mouse, setMouse] = useState({ x: 0, y: 0 })
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
   const [previewFlash, setPreviewFlash] = useState<string | null>(null)
+  const [isolateChannel, setIsolateChannel] = useState<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActor = useRef<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -492,9 +496,18 @@ export function MaterialEditor() {
                       {MAT_NODE_DEFS.Output.inputs
                         .filter((inp) => graph.edges.some((ed) => ed.to === `${node.id}:${inp}`))
                         .map((inp) => (
-                          <span key={inp} className="mat-pin">
+                          <button
+                            key={inp}
+                            type="button"
+                            className={`mat-pin${isolateChannel === inp ? ' mat-pin-active' : ''}`}
+                            title={`Solo preview ${inp} (click again to clear)`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setIsolateChannel((prev) => (prev === inp ? null : inp))
+                            }}
+                          >
                             {inp}
-                          </span>
+                          </button>
                         ))}
                     </div>
                   )}
@@ -662,7 +675,12 @@ export function MaterialEditor() {
           <div className="mat-preview-label">
             Preview · {mode === 'gpu' ? 'GPU (WPO displaces vertices)' : 'CPU'}
           </div>
-          <MaterialPreview graph={graph} mode={mode} flashChannel={previewFlash} />
+          <MaterialPreview
+            graph={graph}
+            mode={mode}
+            flashChannel={previewFlash}
+            isolateChannel={isolateChannel}
+          />
         </aside>
       </div>
     </div>

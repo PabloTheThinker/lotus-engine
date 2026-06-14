@@ -181,6 +181,31 @@ export function materialGraphTSLPreviewChannels(graph: MaterialGraph): string[] 
   return nodes ? Object.keys(nodes) : []
 }
 
+/** Wave 22 — compile only one Output channel; others fall back to neutral defaults. */
+export function compileMaterialGraphTSLSoloChannel(
+  graph: MaterialGraph,
+  channel: string,
+): Record<string, TSLVal> | null {
+  const tsl = cachedTsl
+  if (!tsl) return null
+  const full = compileMaterialGraphTSLNodes(graph)
+  if (!full || full[channel] === undefined) return full
+  const float = tsl.float as (n: number) => TSLVal
+  const neutral: Record<string, TSLVal> = {
+    baseColor: float(0.45),
+    emissive: float(0),
+    emissiveInt: float(0),
+    roughness: float(0.5),
+    metalness: float(0),
+    opacity: float(1),
+    clearCoat: float(0),
+    clearCoatRoughness: float(0),
+    sheen: float(0),
+    sheenRoughness: float(0.5),
+  }
+  return { ...neutral, [channel]: full[channel] }
+}
+
 /** Wave 21 — preview channel label when wiring into an Output (or other) input port. */
 export function previewChannelForPort(
   graph: MaterialGraph,
@@ -263,12 +288,15 @@ export function compileMaterialGraphTSL(
   graph: MaterialGraph,
   _t: number,
   instanceOverrides?: { color?: string; roughness?: number; metalness?: number; emissive?: string },
+  isolateChannel?: string | null,
 ): THREE.Material | null {
   const NodeMaterial = cachedNodeMat
   if (!NodeMaterial) return null
   try {
     const mat = new NodeMaterial()
-    const channels = compileMaterialGraphTSLNodes(graph)
+    const channels = isolateChannel
+      ? compileMaterialGraphTSLSoloChannel(graph, isolateChannel)
+      : compileMaterialGraphTSLNodes(graph)
     if (channels) {
       if (channels.baseColor !== undefined) mat.colorNode = channels.baseColor
       if (channels.emissive !== undefined) mat.emissiveNode = channels.emissive

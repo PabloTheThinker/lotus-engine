@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.48 (wave 21).** v0.33–v1.48 shipped; **build clean**, **`npm run test` — 51 passed**.
+- **Last clean commit: v1.53 (wave 22).** v0.33–v1.53 shipped; **build clean**, **`npm run test` — 55 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -258,13 +258,23 @@
 | v1.47 | BT services compile + PIE — `serviceNodeId`, `getActiveBTServiceNodeIds` |
 | v1.48 | Material wire preview flash + export `perfMinFps: 20` — 51 tests passed |
 
-## Next up (v1.49+, Wave 22)
+## Shipped (v1.49–v1.53, Wave 22)
 
-1. **TSL post** — full DOF bokeh + SSR ground on WebGPU TSL path
-2. **GPU particles** — export playable WebGPU particle E2E boot test
-3. **Export** — CI perf regression gate script (headless playable fps probe)
-4. **BT** — service breakpoint + service compile preview panel
-5. **Material TSL** — per-node channel isolate preview (solo wire channel)
+| Ver | What |
+|---|---|
+| v1.49 | TSL DOF bokeh — `DepthOfFieldNode` editor + export TSL pipelines |
+| v1.50 | TSL SSR ground — `syncTSLSSRGround`; WebGL ground live env sync |
+| v1.51 | Export WebGPU particle E2E boot test |
+| v1.52 | CI perf gate — `npm run perf:gate` headless fps probe |
+| v1.53 | BT service breakpoint + services compile panel; Material solo channel — 55 tests passed |
+
+## Next up (v1.54+, Wave 23)
+
+1. **TSL post** — DOF focus/aperture env sliders + export parity
+2. **GPU particles** — export trail kernel + ribbon render in playable runtime
+3. **Export** — perf gate in CI workflow (GitHub Actions stub)
+4. **BT** — service node compile-to-script preview diff panel
+5. **Material TSL** — solo channel keyboard shortcut + graph minimap
 
 ## Remaining gap-list queue (post–wave 7)
 

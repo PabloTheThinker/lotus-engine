@@ -1316,6 +1316,16 @@ input[type='checkbox'] {
   border-radius: 3px;
   background: #2a4a3a;
   color: #8fd4a8;
+  border: none;
+  cursor: pointer;
+}
+.mat-pin.mat-pin-active {
+  background: #3a5a8a;
+  color: #9ec8ff;
+  outline: 1px solid #6eb5ff;
+}
+.mat-preview-isolate-label {
+  color: #c9a8ff;
 }
 .bp-port.in.wired {
   color: #6eb5ff;

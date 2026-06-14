@@ -278,6 +278,10 @@ function tickServicesForPath(
   }
   for (const s of services) {
     if (activePath === s.hostPath || activePath.startsWith(`${s.hostPath}/`)) {
+      if (s.serviceNodeId) {
+        const g = globalThis as { __btBreakpoint?: (actorId: string, nodeId: string) => boolean }
+        g.__btBreakpoint?.(ctx.actor.id, s.serviceNodeId)
+      }
       tickService(s.service, ctx)
       if (s.serviceNodeId) activeSet.add(s.serviceNodeId)
     }

@@ -16,6 +16,7 @@ import {
   inferBlackboardTypes,
   newBTNodeId,
   summarizeBTTree,
+  summarizeBTServices,
   validateBTGraph,
   type BTGraph,
   type BTGraphNode,
@@ -291,6 +292,7 @@ export function BTEditor() {
   const validation = validateBTGraph(graph)
   const compiledPreview = compileBTGraph(graph)
   const treePreview = compiledPreview ? summarizeBTTree(compiledPreview.tree) : ''
+  const servicesPreview = summarizeBTServices(graph)
   const validationErrors = validation.filter((v) => v.level === 'error')
   const bbTypes = inferBlackboardTypes(graph)
 
@@ -580,6 +582,10 @@ export function BTEditor() {
           <details className="details-section" open={!!treePreview}>
             <summary>Compile preview</summary>
             <pre className="bt-preview">{treePreview || 'Wire nodes from Root to preview tree'}</pre>
+          </details>
+          <details className="details-section" open={servicesPreview.includes('←')}>
+            <summary>Services compile</summary>
+            <pre className="bt-preview bt-services-preview">{servicesPreview}</pre>
           </details>
           <details className="details-section" open>
             <summary>Blackboard</summary>

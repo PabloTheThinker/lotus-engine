@@ -1309,6 +1309,101 @@ test('wave 21 material TSL preview channel on wire port', async ({ page }) => {
   expect(result).toBe('baseColor')
 })
 
+test('wave 22 TSL DOF + SSR ground settings', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    v.world.environment.postDof = true
+    v.world.environment.postSsr = true
+    v.world.environment.postSsrGround = true
+    const ssr = v.ssr.settings()
+    return { dof: v.world.environment.postDof, groundReflect: ssr.groundReflect }
+  })
+
+  expect(result.dof).toBe(true)
+  expect(result.groundReflect).toBe(true)
+})
+
+test('wave 22 BT services compile preview bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        summarizeServices: (g: import('../src/engine/btGraph').BTGraph) => string
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const selector = graph.nodes.find((n) => n.type === 'Selector')!
+    const svc = { id: 'svc22', type: 'SvcPlayerNear', x: 300, y: 180, props: { key: 'near', distance: 5 } }
+    graph.nodes.push(svc)
+    graph.edges.push({ from: selector.id, to: svc.id, kind: 'service' })
+    const preview = v.bt.summarizeServices(graph)
+    return { hasArrow: preview.includes('←'), hasPlayerNear: preview.includes('playerNear') }
+  })
+
+  expect(result.hasArrow).toBe(true)
+  expect(result.hasPlayerNear).toBe(true)
+})
+
+test('wave 22 material TSL solo channel compile', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: {
+        soloChannel: (
+          g: import('../src/engine/materialGraph').MaterialGraph,
+          ch: string,
+        ) => Record<string, unknown> | null
+      }
+    }
+    const graph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 0, y: 0, props: {} },
+        { id: 'c', type: 'Scalar', x: -200, y: 0, props: { value: 0.2 } },
+      ],
+      edges: [{ from: 'c', to: 'out:roughness' }],
+    }
+    const solo = v.materialTSL.soloChannel(graph, 'roughness')
+    const keys = solo ? Object.keys(solo) : []
+    return { hasRoughness: keys.includes('roughness'), channelCount: keys.length }
+  })
+
+  expect(result.hasRoughness).toBe(true)
+  expect(result.channelCount).toBeGreaterThan(1)
+})
+
+test('wave 22 export WebGPU particle boot', async ({ page }) => {
+  test.setTimeout(120_000)
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+      world: { environment: Record<string, unknown> }
+    }
+    v.world.environment.renderBackend = 'webgpu'
+    v.world.environment.particleBackend = 'gpu'
+    return v.export.buildPlayableHTML()
+  })
+
+  const exportPath = path.join(root, 'dist', 'e2e-wave22-gpu-particles.play.html')
+  fs.writeFileSync(exportPath, html, 'utf8')
+
+  await page.goto('/e2e-wave22-gpu-particles.play.html', { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.waitForSelector('canvas', { timeout: 90_000 })
+  await page.waitForFunction(
+    () => document.getElementById('overlay')?.textContent?.includes('Click to play') ?? false,
+    { timeout: 90_000 },
+  )
+
+  const overlay = await page.locator('#overlay').textContent()
+  expect(overlay).toMatch(/particle/i)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

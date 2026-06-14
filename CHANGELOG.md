@@ -4,6 +4,28 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 22: v1.49–v1.53
+
+### Added
+- **v1.49** TSL DOF bokeh — `DepthOfFieldNode` in editor + export TSL pipelines (replaces vignette stub on WebGPU)
+- **v1.50** TSL SSR ground — `createTSLSSRGroundMesh` / `syncTSLSSRGround`; live WebGL ground sync on env toggle
+- **v1.51** Export WebGPU particle E2E — playable boot test with `renderBackend: webgpu` + `particleBackend: gpu`
+- **v1.52** CI perf gate — `npm run perf:gate` (`scripts/export-perf-gate.mjs`) headless `__LOTUS_EXPORT_PERF__` probe
+- **v1.53** BT service breakpoint + compile preview; Material TSL solo channel isolate — 55 tests passed
+
+### Changed
+- `window.lotus.bt.summarizeServices` + `materialTSL.soloChannel` bridges
+- Service nodes fire `__btBreakpoint` during PIE tick; BT Editor “Services compile” panel
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 55 passed
+npm run perf:gate               # headless export fps probe
+```
+
+---
+
 ## 2026-06-13 — Wave 21: v1.44–v1.48
 
 ### Added

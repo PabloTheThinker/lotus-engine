@@ -43,6 +43,21 @@ export interface DOFStubSettings {
   aperture?: number
 }
 
+/** Wave 22 — TSL DepthOfFieldNode params (world units). */
+export interface TSLDOFSettings {
+  enabled: boolean
+  focusDistance?: number
+  focalLength?: number
+  bokehScale?: number
+}
+
+export const DEFAULT_TSL_DOF: TSLDOFSettings = {
+  enabled: true,
+  focusDistance: 5,
+  focalLength: 2,
+  bokehScale: 1.2,
+}
+
 export function createDOFStubPass(settings: DOFStubSettings = { enabled: true }): ShaderPass | null {
   if (!settings.enabled) return null
   const pass = new ShaderPass(DOFStubShader)

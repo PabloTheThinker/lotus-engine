@@ -42,6 +42,7 @@ import {
   resolveBTEditorHighlightNodeId,
   inferBlackboardTypes,
   summarizeBTTree,
+  summarizeBTServices,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
@@ -68,6 +69,7 @@ import { MP_REPLICATION_TIER_PRIORITY, mpReplicationTierForKey } from './engine/
 import { applyEffect, getActorEffectStacks, getEffect, initActorGAS, saveEffect } from './engine/gameplayAbilities'
 import {
   compileMaterialGraphTSLNodes,
+  compileMaterialGraphTSLSoloChannel,
   isTSLPreviewAvailableAsync,
   materialGraphTSLPreviewChannels,
   previewChannelForPort,
@@ -178,6 +180,8 @@ const lotusBridge = {
       toNodeId: string,
       toPort: string,
     ) => previewChannelForPort(graph, toNodeId, toPort),
+    soloChannel: (graph = emptyMaterialGraph(), channel: string) =>
+      compileMaterialGraphTSLSoloChannel(graph, channel),
   },
   bakeGIProbes: async () => {
     const gfx = (window as unknown as { lotusGfx?: { renderer?: THREE.WebGLRenderer } }).lotusGfx
@@ -215,6 +219,7 @@ const lotusBridge = {
     resolveHighlight: resolveBTEditorHighlightNodeId,
     validate: validateBTGraph,
     summarize: summarizeBTTree,
+    summarizeServices: summarizeBTServices,
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
     activeServiceNodeIds: getActiveBTServiceNodeIds,

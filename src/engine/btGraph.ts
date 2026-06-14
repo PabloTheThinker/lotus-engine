@@ -224,6 +224,19 @@ export function resolveBTEditorHighlightNodeId(graph: BTGraph, runtimeNodeId: st
   return runtimeNodeId
 }
 
+/** Wave 22 — human-readable service compile preview for BT editor panel. */
+export function summarizeBTServices(graph: BTGraph): string {
+  const compiled = compileBTGraph(graph)
+  if (!compiled?.services?.length) return 'No service nodes attached to composites'
+  return compiled.services
+    .map((s) => {
+      const host = graph.nodes.find((n) => n.id === s.serviceNodeId)
+      const title = host ? (BT_NODE_DEFS[host.type]?.title ?? host.type) : s.serviceNodeId
+      return `${s.hostPath} ← ${title} (${s.service.service})`
+    })
+    .join('\n')
+}
+
 export function compileBTGraph(graph: BTGraph): CompiledBTGraph | null {
   const merged = graphForBTCompile(graph)
   const root = merged.nodes.find((n) => n.type === 'Root')

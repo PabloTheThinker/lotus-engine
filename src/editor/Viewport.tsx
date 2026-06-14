@@ -13,6 +13,7 @@ import {
 import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } from '../engine/lotusRenderer'
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getSSRSettings, ssrStatusLabel } from '../engine/ssrPreset'
+import { syncSSRGroundReflector } from '../engine/ssrGround'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { createTSLRenderPipeline, type TSLPipelineStack } from '../engine/postStackTSLPipeline'
 import { bindWorldGPUParticles } from '../engine/particlesGPU'
@@ -493,7 +494,17 @@ export function Viewport() {
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
-      postStack.applySSR(getSSRSettings(world.environment))
+      const ssr = getSSRSettings(world.environment)
+      postStack.applySSR(ssr)
+      if (postStack.ssrPass) {
+        postStack.ssrGround = syncSSRGroundReflector(
+          world.scene,
+          ssr.enabled && ssr.groundReflect === true,
+          postStack.ssrGround,
+        )
+        postStack.ssrPass.groundReflector = postStack.ssrGround?.reflector ?? null
+        postStack.ssrPass.bouncing = !!postStack.ssrGround
+      }
       postStack.applyDOF({ enabled: world.environment.postDof === true })
       tslPipeline?.applyPostFx(
         getPostFxSettings(world.environment),

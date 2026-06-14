@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
+import { DEFAULT_TSL_DOF } from './postStackDOF'
 import { applySSRToTSLNode, type SSRSettings } from './ssrPreset'
+import { syncTSLSSRGround, type TSLSSRGroundHandle } from './ssrGround'
 
 /** Wave 14–18 — TSL RenderPipeline (GTAO, SSGI+TRAA/denoise, SSR+denoise, bloom, FXAA). */
 
@@ -64,6 +66,7 @@ export async function createTSLRenderPipeline(
     const { ssr } = await import('three/addons/tsl/display/SSRNode.js')
     const { traa } = await import('three/addons/tsl/display/TRAANode.js')
     const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js')
+    const { dof } = await import('three/addons/tsl/display/DepthOfFieldNode.js')
 
     const RenderPipeline = (webgpu as {
       RenderPipeline: new (r: LotusPrimaryRenderer) => {
@@ -89,8 +92,13 @@ export async function createTSLRenderPipeline(
     const mul = (tsl as { mul: (a: unknown, b: unknown) => unknown }).mul
     const add = (tsl as { add: (a: unknown, b: unknown) => unknown }).add
     const float = (tsl as { float: (n: number) => unknown }).float
+    const perspectiveDepthToViewZ = (tsl as {
+      perspectiveDepthToViewZ: (d: unknown, n: unknown, f: unknown) => unknown
+    }).perspectiveDepthToViewZ
 
     const pipeline = new RenderPipeline(primary)
+    let tslGround: TSLSSRGroundHandle | null = null
+    let groundReflect = !!(opts.ssrSettings?.groundReflect && opts.ssr)
     let bloomOn = opts.bloomEnabled !== false
     let bloomStrength = opts.bloomStrength ?? 0.35
     let bloomThreshold = opts.bloomThreshold ?? 0.9
@@ -106,9 +114,13 @@ export async function createTSLRenderPipeline(
     let activeCam = camera
 
     type TSLNode = unknown
+    const syncGround = async () => {
+      tslGround = await syncTSLSSRGround(scene, groundReflect && ssrOn, tslGround)
+    }
+
     const rebuildOutput = () => {
       const scenePass = pass(scene, activeCam)
-      const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn
+      const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn || dofOn
       const needsVelocity = taaOn || ssgiOn || ssrOn
       if (needsMRT) {
         const mrtOut: Record<string, unknown> = { output, normal: normalView }
@@ -225,8 +237,17 @@ export async function createTSLRenderPipeline(
         colorNode = fxaa(colorNode as Parameters<typeof fxaa>[0])
       }
 
-      if (dofOn) {
-        colorNode = mul(colorNode, float(0.92))
+      if (dofOn && needsMRT) {
+        const depth = scenePass.getTextureNode('depth') as TSLNode
+        const dofSettings = DEFAULT_TSL_DOF
+        const viewZ = perspectiveDepthToViewZ(depth, float(cam.near), float(cam.far))
+        colorNode = dof(
+          colorNode as Parameters<typeof dof>[0],
+          viewZ as Parameters<typeof dof>[1],
+          dofSettings.focusDistance ?? 5,
+          dofSettings.focalLength ?? 2,
+          dofSettings.bokehScale ?? 1.2,
+        )
       }
 
       pipeline.outputNode = colorNode as typeof pipeline.outputNode
@@ -234,6 +255,7 @@ export async function createTSLRenderPipeline(
     }
 
     rebuildOutput()
+    void syncGround()
     primary.setSize(width, height, false)
 
     return {
@@ -263,13 +285,22 @@ export async function createTSLRenderPipeline(
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
         ssrSettings = ssr
+        groundReflect = !!(ssr?.groundReflect && ssrOn)
+        void syncGround()
         bloomOn = bloom.bloomEnabled
         bloomStrength = bloom.bloomStrength
         bloomThreshold = bloom.bloomThreshold
         bloomRadius = bloom.bloomRadius
         rebuildOutput()
       },
-      dispose: () => pipeline.dispose(),
+      dispose: () => {
+        if (tslGround) {
+          scene.remove(tslGround.mesh)
+          tslGround.dispose()
+          tslGround = null
+        }
+        pipeline.dispose()
+      },
     }
   } catch {
     return null
