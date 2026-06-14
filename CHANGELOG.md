@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 21: v1.44–v1.48
+
+### Added
+- **v1.44** SSR ground reflector — `postSsrGround` + `ReflectorForSSRPass` in WebGL post stack; `groundReflect` on SSR settings
+- **v1.45** DOF stub — `postStackDOF.ts` vignette pass; WebGL + TSL `dofOn` wiring; World Settings toggle
+- **v1.46** GPU ribbon trail shift kernel — `bindParticleTrailKernel` / `runParticleGPUTrailShift`; `kernel.trail` QA check
+- **v1.47** BT service PIE highlight + compile — `serviceNodeId` in compiled `__btServices`; `getActiveBTServiceNodeIds` bridge
+- **v1.48** Material TSL live preview on wire connect — `previewChannelForPort`, flash badge; export `perfMinFps: 20`; Playwright wave 21 tests (51 passed)
+
+### Changed
+- `window.lotus.bt.activeServiceNodeIds` + `materialTSL.previewChannelForPort` bridges
+- Export `__LOTUS_EXPORT__` embeds `perfMinFps` for runtime perf regression gate
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 51 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 20: v1.39–v1.43
 
 ### Added

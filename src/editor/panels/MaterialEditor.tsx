@@ -14,6 +14,7 @@ import {
   compileMaterialGraphTSL,
   isTSLPreviewAvailableAsync,
   materialGraphTSLPreviewChannels,
+  previewChannelForPort,
 } from '../../engine/materialGraphTSL'
 import { PropertyCommand, runCommand } from '../commands'
 import { useEditor } from '../store'
@@ -63,7 +64,15 @@ function portAt(
 }
 
 /** Live preview sphere — WebGL or WebGPU (TSL) depending on material backend. */
-function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: MaterialGraphMode }) {
+function MaterialPreview({
+  graph,
+  mode,
+  flashChannel,
+}: {
+  graph: MaterialGraph
+  mode: MaterialGraphMode
+  flashChannel?: string | null
+}) {
   const hostRef = useRef<HTMLDivElement>(null)
   const graphSnapshot = JSON.stringify(graph)
   const tslBackend = world.environment.materialBackend === 'tsl'
@@ -190,8 +199,12 @@ function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: Material
         title={tslBackend ? 'Live TSL node-graph preview (WebGPU)' : 'Live material preview'}
       />
       {nodeChannels.length > 0 && (
-        <div className="mat-preview-badge" title="TSL node graph channels">
+        <div
+          className={`mat-preview-badge${flashChannel ? ' mat-preview-flash' : ''}`}
+          title="TSL node graph channels"
+        >
           TSL nodes · {nodeChannels.join(', ')}
+          {flashChannel && <span className="mat-preview-flash-label"> · wired {flashChannel}</span>}
         </div>
       )}
     </div>
@@ -211,6 +224,8 @@ export function MaterialEditor() {
   const [pendingFrom, setPendingFrom] = useState<string | null>(null)
   const [mouse, setMouse] = useState({ x: 0, y: 0 })
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
+  const [previewFlash, setPreviewFlash] = useState<string | null>(null)
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActor = useRef<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
@@ -286,6 +301,14 @@ export function MaterialEditor() {
     mutate((g) => {
       g.edges = g.edges.filter((e) => e.to !== `${toNodeId}:${toPort}`)
       g.edges.push({ from: fromId, to: `${toNodeId}:${toPort}` })
+      if (world.environment.materialBackend === 'tsl') {
+        const ch = previewChannelForPort(g, toNodeId, toPort)
+        if (ch) {
+          if (flashTimer.current) clearTimeout(flashTimer.current)
+          setPreviewFlash(ch)
+          flashTimer.current = setTimeout(() => setPreviewFlash(null), 900)
+        }
+      }
     })
     setPendingFrom(null)
   }
@@ -639,7 +662,7 @@ export function MaterialEditor() {
           <div className="mat-preview-label">
             Preview · {mode === 'gpu' ? 'GPU (WPO displaces vertices)' : 'CPU'}
           </div>
-          <MaterialPreview graph={graph} mode={mode} />
+          <MaterialPreview graph={graph} mode={mode} flashChannel={previewFlash} />
         </aside>
       </div>
     </div>

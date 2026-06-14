@@ -459,6 +459,8 @@ export interface EnvironmentSettings {
   postSsr?: boolean
   /** SSR quality preset — Wave 20 parity across WebGL + TSL tiers */
   postSsrPreset?: 'off' | 'low' | 'medium' | 'high'
+  /** Wave 21 — ground plane reflector for SSR (WebGL SSRPass) */
+  postSsrGround?: boolean
   /** LightProbeGrid interior GI approx (Wave 11) */
   lightProbeGrid?: boolean
   /** Screen-space global illumination approx (Wave 12, WebGPU opt-in) */
@@ -513,6 +515,7 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   postTaa: false,
   postSsr: false,
   postSsrPreset: 'medium',
+  postSsrGround: false,
   lightProbeGrid: false,
   postSsgi: false,
   postSsgiPreset: 'off',

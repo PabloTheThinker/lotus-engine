@@ -1014,6 +1014,12 @@ export function WorldSettings() {
             </select>
           </label>
         )}
+        {env.postSsr && (
+          <label className="field check">
+            <span>SSR ground reflector</span>
+            <input type="checkbox" checked={!!env.postSsrGround} onChange={(e) => set('postSsrGround', e.target.checked)} />
+          </label>
+        )}
         <label className="field check">
           <span>Post SSGI (WebGPU opt-in)</span>
           <input type="checkbox" checked={!!env.postSsgi} onChange={(e) => set('postSsgi', e.target.checked)} />

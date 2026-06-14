@@ -4,12 +4,14 @@ import type { ParticleProps } from './particles'
 import { ParticleSystem } from './particles'
 import {
   bindParticleIntegrateKernel,
+  bindParticleTrailKernel,
   initParticleCompute,
   integrateParticleBuffers,
   isParticleGpuEmitReady,
   isParticleGpuKernelReady,
   runParticleGPUEmit,
   runParticleGPUIntegrate,
+  runParticleGPUTrailShift,
 } from './particlesCompute'
 
 /**
@@ -86,6 +88,17 @@ export class GPUParticleSystem extends ParticleSystem {
     )
     this.gpuKernelActive = ok
     this.gpuEmitActive = ok && isParticleGpuEmitReady()
+    const buf = this.simBuffers()
+    if ((this.props.renderMode ?? 'points') === 'ribbon' && buf.trail) {
+      await bindParticleTrailKernel(
+        renderer,
+        buf.trail,
+        buf.positions,
+        buf.aliveF,
+        buf.alive.length,
+        buf.trailLen ?? this.props.ribbonSegments,
+      )
+    }
   }
 
   update(
@@ -141,7 +154,9 @@ export class GPUParticleSystem extends ParticleSystem {
             skipSpawn: true,
             skipLifeColor: true,
           })
-          if ((p.renderMode ?? 'points') === 'ribbon') this.shiftAllRibbonTrails()
+          if ((p.renderMode ?? 'points') === 'ribbon') {
+            if (!runParticleGPUTrailShift(this.computeRenderer)) this.shiftAllRibbonTrails()
+          }
           return
         }
       }

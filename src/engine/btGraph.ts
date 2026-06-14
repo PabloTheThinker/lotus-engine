@@ -31,7 +31,7 @@ export interface CompiledBTGraph {
   /** runtime path (e.g. root/0/1) → editor node id */
   pathIndex: Record<string, string>
   /** Wave 19 — services tick while host composite path is active */
-  services?: { hostPath: string; service: import('./behaviorTree').BTServiceNode }[]
+  services?: { hostPath: string; serviceNodeId: string; service: import('./behaviorTree').BTServiceNode }[]
 }
 
 let nodeSeq = 0
@@ -237,7 +237,7 @@ export function compileBTGraph(graph: BTGraph): CompiledBTGraph | null {
     const hostPath = pathByNode[n.id]
     if (!hostPath) continue
     for (const sid of servicesOf(merged, n.id)) {
-      services.push({ hostPath, service: compileServiceNode(merged, sid) })
+      services.push({ hostPath, serviceNodeId: sid, service: compileServiceNode(merged, sid) })
     }
   }
   return { tree, pathIndex, services: services.length ? services : undefined }

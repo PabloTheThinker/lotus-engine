@@ -100,6 +100,7 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
       quality,
       pixelRatio: quality === 'mobile' ? 1 : undefined,
       renderBackend: mainLevel.environment.renderBackend ?? 'webgl',
+      perfMinFps: 20,
     }),
   )
   const title = s.levelName || 'Lotus Level'

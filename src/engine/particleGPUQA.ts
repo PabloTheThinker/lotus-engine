@@ -1,7 +1,12 @@
 /** Wave 18 — particle GPU tier QA matrix for editor + export probes. */
 
 import { isGPUParticlesAvailable } from './particlesGPU'
-import { isParticleComputeReady, isParticleGpuEmitReady, isParticleGpuKernelReady } from './particlesCompute'
+import {
+  isParticleComputeReady,
+  isParticleGpuEmitReady,
+  isParticleGpuKernelReady,
+  isParticleGpuTrailReady,
+} from './particlesCompute'
 
 export interface ParticleGPUQACheck {
   id: string
@@ -49,6 +54,12 @@ export function runParticleGPUQAMatrix(): ParticleGPUQAResult {
     label: 'Ribbon trail buffers',
     pass: true,
     detail: 'simBuffers exposes trail + shiftAllRibbonTrails on GPU tier',
+  })
+  checks.push({
+    id: 'kernel.trail',
+    label: 'GPU trail shift kernel',
+    pass: isParticleGpuTrailReady(),
+    detail: isParticleGpuTrailReady() ? 'Ribbon trail compute bound' : 'Trail kernel not bound',
   })
   const ok = hasGpu
   return {

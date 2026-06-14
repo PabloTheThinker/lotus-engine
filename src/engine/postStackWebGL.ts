@@ -12,6 +12,8 @@ import { createSSGIPass, updateSSGIPass } from './postStackSSGI'
 import type { SSGISettings } from './ssgiPreset'
 import { applySSRToWebGLPass, getSSRSettings, type SSRSettings } from './ssrPreset'
 import type { EnvironmentSettings } from './types'
+import { createDOFStubPass, updateDOFStubPass, type DOFStubSettings } from './postStackDOF'
+import { createSSRGroundReflector, type SSRGroundHandle } from './ssrGround'
 
 export interface WebGLPostStack {
   composer: EffectComposer
@@ -21,9 +23,12 @@ export interface WebGLPostStack {
   ssrPass: SSRPass | null
   fxaaPass: ShaderPass | null
   ssgiPass: ShaderPass | null
+  dofPass: ShaderPass | null
+  ssrGround: SSRGroundHandle | null
   setSize: (w: number, h: number) => void
   applySSGI: (settings: SSGISettings) => void
   applySSR: (settings: SSRSettings) => void
+  applyDOF: (settings: DOFStubSettings) => void
   applySettings: (post: {
     bloomEnabled: boolean
     bloomStrength: number
@@ -61,8 +66,14 @@ export function createWebGLPostStack(
     composer.addPass(ssaoPass)
   }
 
+  let ssrGround: SSRGroundHandle | null = null
   let ssrPass: SSRPass | null = null
   if (fx.ssr) {
+    const ssrSettings = env ? getSSRSettings(env) : null
+    if (ssrSettings?.groundReflect) {
+      ssrGround = createSSRGroundReflector()
+      scene.add(ssrGround.reflector)
+    }
     ssrPass = new SSRPass({
       renderer,
       scene,
@@ -70,12 +81,15 @@ export function createWebGLPostStack(
       width,
       height,
       selects: null,
-      isBouncing: false,
-      groundReflector: null,
+      isBouncing: !!ssrGround,
+      groundReflector: ssrGround?.reflector ?? null,
     })
     composer.addPass(ssrPass)
-    if (env) applySSRToWebGLPass(ssrPass, getSSRSettings(env))
+    if (ssrSettings) applySSRToWebGLPass(ssrPass, ssrSettings)
   }
+
+  const dofPass = createDOFStubPass({ enabled: fx.dof })
+  if (dofPass) composer.addPass(dofPass)
 
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.6, 0.9)
   composer.addPass(bloomPass)
@@ -99,11 +113,16 @@ export function createWebGLPostStack(
     ssrPass,
     fxaaPass,
     ssgiPass,
+    dofPass,
+    ssrGround,
     applySSGI(settings) {
       updateSSGIPass(ssgiPass, settings)
     },
     applySSR(settings) {
       if (ssrPass) applySSRToWebGLPass(ssrPass, settings)
+    },
+    applyDOF(settings) {
+      updateDOFStubPass(dofPass, settings)
     },
     setSize(w, h) {
       composer.setSize(w, h)
@@ -124,6 +143,10 @@ export function createWebGLPostStack(
       renderer.toneMappingExposure = post.exposure
     },
     dispose() {
+      if (ssrGround) {
+        scene.remove(ssrGround.reflector)
+        ssrGround.dispose()
+      }
       composerTarget.dispose()
       composer.dispose()
     },

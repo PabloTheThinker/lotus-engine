@@ -44,7 +44,7 @@ import {
   summarizeBTTree,
   validateBTGraph,
 } from './engine/btGraph'
-import { getActiveBTPaths } from './engine/behaviorTree'
+import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
 import { getSSRSettings } from './engine/ssrPreset'
@@ -70,6 +70,7 @@ import {
   compileMaterialGraphTSLNodes,
   isTSLPreviewAvailableAsync,
   materialGraphTSLPreviewChannels,
+  previewChannelForPort,
   serializeMaterialGraphTSL,
 } from './engine/materialGraphTSL'
 import { emptyMaterialGraph } from './engine/materialGraph'
@@ -172,6 +173,11 @@ const lotusBridge = {
     previewAvailable: () => isTSLPreviewAvailableAsync(),
     compileNodes: (graph = emptyMaterialGraph()) => compileMaterialGraphTSLNodes(graph),
     previewChannels: (graph = emptyMaterialGraph()) => materialGraphTSLPreviewChannels(graph),
+    previewChannelForPort: (
+      graph = emptyMaterialGraph(),
+      toNodeId: string,
+      toPort: string,
+    ) => previewChannelForPort(graph, toNodeId, toPort),
   },
   bakeGIProbes: async () => {
     const gfx = (window as unknown as { lotusGfx?: { renderer?: THREE.WebGLRenderer } }).lotusGfx
@@ -211,6 +217,7 @@ const lotusBridge = {
     summarize: summarizeBTTree,
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
+    activeServiceNodeIds: getActiveBTServiceNodeIds,
   },
   curve: {
     evaluate: evaluateCurve,

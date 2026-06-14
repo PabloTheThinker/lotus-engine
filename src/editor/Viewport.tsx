@@ -494,6 +494,7 @@ export function Viewport() {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
       postStack.applySSR(getSSRSettings(world.environment))
+      postStack.applyDOF({ enabled: world.environment.postDof === true })
       tslPipeline?.applyPostFx(
         getPostFxSettings(world.environment),
         {

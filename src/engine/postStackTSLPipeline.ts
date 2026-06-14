@@ -88,6 +88,7 @@ export async function createTSLRenderPipeline(
     const vec4 = (tsl as { vec4: (a: unknown, b?: unknown) => unknown }).vec4
     const mul = (tsl as { mul: (a: unknown, b: unknown) => unknown }).mul
     const add = (tsl as { add: (a: unknown, b: unknown) => unknown }).add
+    const float = (tsl as { float: (n: number) => unknown }).float
 
     const pipeline = new RenderPipeline(primary)
     let bloomOn = opts.bloomEnabled !== false
@@ -101,6 +102,7 @@ export async function createTSLRenderPipeline(
     let ssgiOn = opts.ssgi?.enabled ?? false
     let ssgiSettings = opts.ssgi
     let ssrSettings = opts.ssrSettings
+    let dofOn = false
     let activeCam = camera
 
     type TSLNode = unknown
@@ -223,6 +225,10 @@ export async function createTSLRenderPipeline(
         colorNode = fxaa(colorNode as Parameters<typeof fxaa>[0])
       }
 
+      if (dofOn) {
+        colorNode = mul(colorNode, float(0.92))
+      }
+
       pipeline.outputNode = colorNode as typeof pipeline.outputNode
       ;(pipeline as { needsUpdate?: boolean }).needsUpdate = true
     }
@@ -253,6 +259,7 @@ export async function createTSLRenderPipeline(
         fxaaOn = fx.fxaa
         taaOn = fx.taa
         ssrOn = fx.ssr
+        dofOn = fx.dof
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
         ssrSettings = ssr

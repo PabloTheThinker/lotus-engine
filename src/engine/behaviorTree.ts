@@ -260,17 +260,29 @@ function tickService(service: BTServiceNode, ctx: BTContext) {
   }
 }
 
+const activeServiceNodes = new Map<string, Set<string>>()
+
+export function getActiveBTServiceNodeIds(actorId: string): string[] {
+  return [...(activeServiceNodes.get(actorId) ?? [])]
+}
+
 function tickServicesForPath(
-  services: { hostPath: string; service: BTServiceNode }[] | undefined,
+  services: { hostPath: string; serviceNodeId?: string; service: BTServiceNode }[] | undefined,
   activePath: string | undefined,
   ctx: BTContext,
 ) {
-  if (!services?.length || !activePath) return
+  const activeSet = new Set<string>()
+  if (!services?.length || !activePath) {
+    activeServiceNodes.set(ctx.actor.id, activeSet)
+    return
+  }
   for (const s of services) {
     if (activePath === s.hostPath || activePath.startsWith(`${s.hostPath}/`)) {
       tickService(s.service, ctx)
+      if (s.serviceNodeId) activeSet.add(s.serviceNodeId)
     }
   }
+  activeServiceNodes.set(ctx.actor.id, activeSet)
 }
 
 // ---- per-play-session BT registry ----
@@ -279,13 +291,14 @@ interface ActiveBT {
   tree: BTNode
   bb: Record<string, unknown>
   pathIndex?: Record<string, string>
-  services?: { hostPath: string; service: BTServiceNode }[]
+  services?: { hostPath: string; serviceNodeId?: string; service: BTServiceNode }[]
 }
 let active: ActiveBT[] = []
 
 export function resetBTs() {
   active = []
   activePaths.clear()
+  activeServiceNodes.clear()
 }
 
 export function runBT(

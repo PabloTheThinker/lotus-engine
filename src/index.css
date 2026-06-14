@@ -1296,6 +1296,14 @@ input[type='checkbox'] {
   border-top: 1px solid var(--border);
   line-height: 1.35;
 }
+.mat-preview-badge.mat-preview-flash {
+  color: #8fd4a8;
+  background: rgba(80, 180, 120, 0.12);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.mat-preview-flash-label {
+  color: #6eb5ff;
+}
 .mat-channel-pins {
   display: flex;
   flex-wrap: wrap;

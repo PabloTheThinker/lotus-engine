@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.32 (wave 18).** v0.33–v1.32 shipped; **build clean**, **`npm run test` — 38 passed**.
+- **Last clean commit: v1.48 (wave 21).** v0.33–v1.48 shipped; **build clean**, **`npm run test` — 51 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -248,13 +248,23 @@
 | v1.42 | BT collapsed script compile + stashed-node breakpoints |
 | v1.43 | Material Editor wire drag + channel pins — 46 tests passed |
 
-## Next up (v1.44+, Wave 21)
+## Shipped (v1.44–v1.48, Wave 21)
 
-1. **TSL post** — SSR ground reflector + compositor DOF stub wiring
-2. **GPU particles** — full GPU compute trail shift kernel (ribbon)
-3. **Export** — playable WebGPU particle E2E with perf regression CI gate
-4. **BT** — service nodes in compile-to-script + PIE service highlight
-5. **Material TSL** — per-node live preview on wire connect
+| Ver | What |
+|---|---|
+| v1.44 | SSR ground reflector — `postSsrGround`, `ReflectorForSSRPass`, `ssrGround.ts` |
+| v1.45 | DOF stub — `postStackDOF.ts`, WebGL + TSL dof wiring, World Settings |
+| v1.46 | GPU trail shift kernel — `bindParticleTrailKernel`, `kernel.trail` QA |
+| v1.47 | BT services compile + PIE — `serviceNodeId`, `getActiveBTServiceNodeIds` |
+| v1.48 | Material wire preview flash + export `perfMinFps: 20` — 51 tests passed |
+
+## Next up (v1.49+, Wave 22)
+
+1. **TSL post** — full DOF bokeh + SSR ground on WebGPU TSL path
+2. **GPU particles** — export playable WebGPU particle E2E boot test
+3. **Export** — CI perf regression gate script (headless playable fps probe)
+4. **BT** — service breakpoint + service compile preview panel
+5. **Material TSL** — per-node channel isolate preview (solo wire channel)
 
 ## Remaining gap-list queue (post–wave 7)
 

@@ -181,6 +181,20 @@ export function materialGraphTSLPreviewChannels(graph: MaterialGraph): string[] 
   return nodes ? Object.keys(nodes) : []
 }
 
+/** Wave 21 — preview channel label when wiring into an Output (or other) input port. */
+export function previewChannelForPort(
+  graph: MaterialGraph,
+  toNodeId: string,
+  toPort: string,
+): string | null {
+  const node = graph.nodes.find((n) => n.id === toNodeId)
+  if (!node) return null
+  if (node.type === 'Output') return toPort
+  const def = MAT_NODE_DEFS[node.type]
+  if (def?.inputs.includes(toPort)) return `${node.type}.${toPort}`
+  return toPort
+}
+
 export function serializeMaterialGraphTSL(graph: MaterialGraph, t: number): object {
   const nodes = compileMaterialGraphTSLNodes(graph)
   const out = evaluateMaterialGraph(graph, t)

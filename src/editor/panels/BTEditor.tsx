@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { world } from '../../engine/World'
-import { getActiveBTGraphNodeId } from '../../engine/behaviorTree'
+import { getActiveBTGraphNodeId, getActiveBTServiceNodeIds } from '../../engine/behaviorTree'
 import {
   BT_COMPOSITE_TYPES,
   BT_DECORATOR_TYPES,
@@ -64,6 +64,7 @@ export function BTEditor() {
   const actor = selectedId ? world.actors.get(selectedId) : null
   const [graph, setGraph] = useState<BTGraph | null>(null)
   const [liveNode, setLiveNode] = useState<string | null>(null)
+  const [liveServices, setLiveServices] = useState<string[]>([])
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
   const [pendingWire, setPendingWire] = useState<{ from: string; x: number; y: number } | null>(null)
@@ -139,6 +140,7 @@ export function BTEditor() {
   useEffect(() => {
     if (!playing || !actor?.id) {
       setLiveNode(null)
+      setLiveServices([])
       return
     }
     let raf = 0
@@ -147,6 +149,7 @@ export function BTEditor() {
       const compiled = actor.btGraph ? compileBTGraph(actor.btGraph) : null
       const runtimeId = getActiveBTGraphNodeId(actor.id, compiled?.pathIndex)
       setLiveNode(g ? resolveBTEditorHighlightNodeId(g, runtimeId) : runtimeId)
+      setLiveServices(getActiveBTServiceNodeIds(actor.id))
       raf = requestAnimationFrame(tick)
     }
     tick()
@@ -477,6 +480,7 @@ export function BTEditor() {
               .map((n) => {
               const def = BT_NODE_DEFS[n.type] ?? { title: n.type, color: '#555', maxChildren: 0 }
               const active = liveNode === n.id
+              const serviceActive = liveServices.includes(n.id)
               const selected = selectedNode === n.id
               const isBpHit = breakpointHitNode === n.id
               const showIn = n.type !== 'Root'
@@ -506,8 +510,10 @@ export function BTEditor() {
                     height={HEADER_H + 18}
                     rx={4}
                     fill={def.color}
-                    stroke={isBpHit ? '#ff4466' : active ? '#ffe066' : selected ? '#6eb5ff' : '#222'}
-                    strokeWidth={isBpHit || active || selected ? 3 : 1}
+                    stroke={
+                      isBpHit ? '#ff4466' : active ? '#ffe066' : serviceActive ? '#66ffcc' : selected ? '#6eb5ff' : '#222'
+                    }
+                    strokeWidth={isBpHit || active || serviceActive || selected ? 3 : 1}
                   />
                   <text x={8} y={16} fill="#fff" fontSize={11}>
                     {n.props.collapsed ? `${def.title} (collapsed)` : def.title}

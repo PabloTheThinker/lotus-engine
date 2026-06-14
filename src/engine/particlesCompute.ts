@@ -44,8 +44,14 @@ interface EmitKernel {
   defaultLifeU: UniformSlot
 }
 
+interface TrailKernel {
+  computeNode: unknown
+  trailLen: number
+}
+
 let kernel: IntegrateKernel | null = null
 let emitKernel: EmitKernel | null = null
+let trailKernel: TrailKernel | null = null
 let kernelCap = 0
 
 /** Probe + mark compute path available when WebGPU renderer is active. */
@@ -247,8 +253,8 @@ interface ScalarEl {
   mul: (v: unknown) => ScalarEl
   sub: (v: unknown) => ScalarEl
   add: (v: unknown) => ScalarEl
-  div: (v: unknown) => ScalarEl
   addAssign: (v: unknown) => void
+  div: (v: unknown) => ScalarEl
   subAssign: (v: unknown) => void
   mulAssign: (v: unknown) => void
   assign: (v: unknown) => void
@@ -351,6 +357,78 @@ export function isParticleGpuKernelReady(): boolean {
 
 export function isParticleGpuEmitReady(): boolean {
   return gpuEmitReady
+}
+
+export function isParticleGpuTrailReady(): boolean {
+  return !!trailKernel
+}
+
+/** Wave 21 — GPU ribbon trail shift kernel (per-particle history buffer). */
+export async function bindParticleTrailKernel(
+  renderer: unknown,
+  trail: Float32Array,
+  positions: Float32Array,
+  aliveF: Float32Array,
+  cap: number,
+  trailLen: number,
+): Promise<boolean> {
+  const r = renderer as { compute?: (n: unknown) => void }
+  if (!r?.compute || !computeReady || trailLen < 2) return false
+  if (trailKernel && trailKernel.trailLen === trailLen && kernelCap === cap) return true
+  try {
+    const webgpu = await import('three/webgpu')
+    const tsl = await import('three/tsl')
+    const StorageBufferAttribute = (webgpu as {
+      StorageBufferAttribute: new (a: Float32Array, s: number) => object
+    }).StorageBufferAttribute
+    const t = tsl as unknown as {
+      Fn: (fn: () => void) => { compute: (n: number) => unknown }
+      float: (n: number) => ScalarEl
+      instanceIndex: ScalarEl
+      storage: (a: object, ty: string, c: number) => StorageEl
+      If: (cond: unknown, fn: () => void) => void
+    }
+    const slots = cap * trailLen
+    const trailAttr = new StorageBufferAttribute(trail, 3)
+    const posAttr = new StorageBufferAttribute(positions, 3)
+    const aliveAttr = new StorageBufferAttribute(aliveF, 1)
+    const trailBuf = t.storage(trailAttr, 'vec3', slots)
+    const posBuf = t.storage(posAttr, 'vec3', cap)
+    const aliveBuf = t.storage(aliveAttr, 'float', cap)
+    const lenF = t.float(trailLen)
+
+    const computeNode = t.Fn(() => {
+      const alive = aliveBuf.element(t.instanceIndex)
+      t.If(alive.greaterThan(0.5), () => {
+        const base = t.instanceIndex.mul(lenF)
+        const p = posBuf.element(t.instanceIndex)
+        for (let s = trailLen - 1; s >= 1; s--) {
+          const dst = trailBuf.element(base.add(t.float(s)))
+          const src = trailBuf.element(base.add(t.float(s - 1)))
+          dst.assign(src)
+        }
+        trailBuf.element(base).assign(p)
+      })
+    }).compute(cap)
+
+    trailKernel = { computeNode, trailLen }
+    return true
+  } catch {
+    trailKernel = null
+    return false
+  }
+}
+
+export function runParticleGPUTrailShift(renderer: unknown): boolean {
+  if (!trailKernel) return false
+  const r = renderer as { compute?: (n: unknown) => void }
+  if (!r?.compute) return false
+  try {
+    r.compute(trailKernel.computeNode)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function particleComputeNote(): string {

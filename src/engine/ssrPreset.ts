@@ -10,6 +10,8 @@ export interface SSRSettings {
   maxDistance: number
   opacity: number
   thickness: number
+  /** Wave 21 — enable ground bounce / reflector assist */
+  groundReflect?: boolean
 }
 
 const SSR_TABLE: Record<SSRPreset, Omit<SSRSettings, 'enabled' | 'preset'>> = {
@@ -23,7 +25,7 @@ export function getSSRSettings(env: EnvironmentSettings): SSRSettings {
   const preset = (env.postSsrPreset ?? 'medium') as SSRPreset
   const enabled = env.postSsr === true
   const row = SSR_TABLE[preset] ?? SSR_TABLE.medium
-  return { enabled, preset, ...row }
+  return { enabled, preset, ...row, groundReflect: env.postSsrGround === true }
 }
 
 export function ssrStatusLabel(env: EnvironmentSettings): string {
@@ -43,6 +45,8 @@ export function applySSRToTSLNode(ssrPass: unknown, settings: SSRSettings): void
   if (p.maxDistance) p.maxDistance.value = settings.maxDistance
   if (p.opacity) p.opacity.value = settings.opacity
   if (p.thickness) p.thickness.value = settings.thickness
+  const bounce = p as { isBouncing?: boolean }
+  if (settings.groundReflect && 'isBouncing' in bounce) bounce.isBouncing = true
 }
 
 /** Apply SSR quality to WebGL SSRPass. */

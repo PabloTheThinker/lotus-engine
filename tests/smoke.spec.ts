@@ -1186,6 +1186,129 @@ test('wave 20 export perf gate surface', async ({ page }) => {
   expect(result.hasExportPerf).toBe(true)
 })
 
+test('wave 21 SSR ground + DOF settings bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    v.world.environment.postSsr = true
+    v.world.environment.postSsrGround = true
+    v.world.environment.postDof = true
+    const ssr = v.ssr.settings()
+    return {
+      groundReflect: ssr.groundReflect,
+      dof: v.world.environment.postDof,
+    }
+  })
+
+  expect(result.groundReflect).toBe(true)
+  expect(result.dof).toBe(true)
+})
+
+test('wave 21 GPU trail shift kernel QA check', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: {
+        create: (b: 'gpu') => {
+          props: { renderMode: string; ribbonSegments: number }
+          shiftAllRibbonTrails: () => void
+        }
+        qaMatrix: () => { checks: { id: string; pass: boolean }[] }
+      }
+    }
+    const ps = v.particles.create('gpu')
+    ps.shiftAllRibbonTrails()
+    const qa = v.particles.qaMatrix()
+    const trailCheck = qa.checks.find((c) => c.id === 'kernel.trail')
+    return { hasTrailCheck: !!trailCheck, trailPass: trailCheck?.pass ?? false }
+  })
+
+  expect(result.hasTrailCheck).toBe(true)
+})
+
+test('wave 21 BT services compile with serviceNodeId', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        compileScript: (g: import('../src/engine/btGraph').BTGraph) => string | null
+        compile: (g: import('../src/engine/btGraph').BTGraph) => {
+          services?: { hostPath: string; serviceNodeId: string; service: { service: string } }[]
+        } | null
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const selector = graph.nodes.find((n) => n.type === 'Selector')!
+    const wait = { id: 'w21', type: 'Wait', x: 400, y: 80, props: { seconds: 0.1 } }
+    const svc = { id: 's21', type: 'SvcSetBB', x: 300, y: 180, props: { key: 'flag', value: true } }
+    graph.nodes.push(wait, svc)
+    graph.edges = [
+      { from: root.id, to: selector.id },
+      { from: selector.id, to: wait.id },
+      { from: selector.id, to: svc.id, kind: 'service' },
+    ]
+    const compiled = v.bt.compile(graph)
+    const script = v.bt.compileScript(graph)
+    return {
+      serviceNodeId: compiled?.services?.[0]?.serviceNodeId,
+      scriptHasServices: script?.includes('__btServices') ?? false,
+      scriptHasNodeId: script?.includes('s21') ?? false,
+    }
+  })
+
+  expect(result.serviceNodeId).toBe('s21')
+  expect(result.scriptHasServices).toBe(true)
+  expect(result.scriptHasNodeId).toBe(true)
+})
+
+test('wave 21 export perfMinFps in export JSON', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+    }
+    const html = v.export.buildPlayableHTML()
+    const match = html.match(/window\.__LOTUS_EXPORT__\s*=\s*(\{[^;]+\})/)
+    const json = match ? JSON.parse(match[1]) : {}
+    return { perfMinFps: json.perfMinFps }
+  })
+
+  expect(result.perfMinFps).toBe(20)
+})
+
+test('wave 21 material TSL preview channel on wire port', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: {
+        previewChannelForPort: (
+          g: import('../src/engine/materialGraph').MaterialGraph,
+          nodeId: string,
+          port: string,
+        ) => string | null
+      }
+    }
+    const graph = v.world.actors.values().next().value?.materialGraph ?? {
+      nodes: [
+        { id: 'out1', type: 'Output', x: 0, y: 0, props: {} },
+        { id: 'c1', type: 'Constant', x: -200, y: 0, props: { value: '#ff0000' } },
+      ],
+      edges: [],
+    }
+    const out = graph.nodes.find((n: { type: string }) => n.type === 'Output')
+    return v.materialTSL.previewChannelForPort(graph, out?.id ?? 'out1', 'baseColor')
+  })
+
+  expect(result).toBe('baseColor')
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 
