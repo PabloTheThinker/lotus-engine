@@ -15,6 +15,7 @@ import { addMpScore, getMpPeerScores, getMpScore } from './mpGameplay'
 import {
   mpConnected,
   mpIsHost,
+  mpListRooms,
   mpLobbyAllReady,
   mpLobbyIsReady,
   mpLobbyPeerReadyCount,
@@ -23,6 +24,8 @@ import {
   mpLobbySetReady,
   mpLobbyTryStart,
   mpLocalId,
+  mpPingMs,
+  mpRefreshRooms,
 } from './multiplayer'
 
 /**
@@ -177,6 +180,12 @@ export interface ScriptApi {
   mpLobbyPeerReadyCount: () => number
   /** Host starts match when all peers ready */
   mpLobbyTryStart: () => boolean
+  /** Public room list from relay registry (Wave 58) */
+  mpListRooms: () => { room: string; peers: number }[]
+  /** Relay round-trip latency in ms */
+  mpPingMs: () => number | null
+  /** Request fresh room list + ping from relay */
+  mpRefreshRooms: () => void
   /** Pawn camera yaw (radians) while playing — for hitscan / facing */
   pawnYaw: () => number
   /** Pawn camera pitch (radians) while playing */
@@ -346,6 +355,9 @@ export function makeScriptApi(
     mpLobbyAllReady,
     mpLobbyPeerReadyCount,
     mpLobbyTryStart,
+    mpListRooms,
+    mpPingMs,
+    mpRefreshRooms,
     pawnYaw,
     pawnPitch,
     getMpScore: (peerId) => getMpScore(actors, peerId),

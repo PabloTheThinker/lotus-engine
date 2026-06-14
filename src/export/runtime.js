@@ -15,10 +15,13 @@ const LEVELS =
 const MAIN_KEY = window.__LOTUS_MAIN__ ?? window.__VEKTRA_MAIN__ ?? 'main'
 const EXPORT = window.__LOTUS_EXPORT__ ?? window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
 const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
+const STREAMING_ENABLED = window.__LOTUS_STREAMING__ === true || window.__LOTUS_STREAMING__ === 'true'
+const STREAM_PROGRESS_ID = 'lotus-stream-progress'
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
 const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
 const GAMEPAD_ENABLED = window.__LOTUS_GAMEPAD__ === true || window.__LOTUS_GAMEPAD__ === 'true'
 const INPUT_BINDINGS = window.__LOTUS_INPUT_BINDINGS__ ?? { gamepad: {}, touch: {} }
+const INPUT_PROFILE = window.__LOTUS_INPUT_PROFILE__ ?? 'desktop'
 const DEFAULT_GP_BUTTONS = { Jump: 0, Interact: 2, Fire: 3 }
 const DEFAULT_TOUCH_SLOTS = { jump: 'jump-btn', fire: 'fire-btn', interact: 'interact-btn' }
 const GP_FIRE_ALT = 7
@@ -731,6 +734,78 @@ function findExportFocusPullCamera() {
 let loadingLevel = false
 const loadedCells = new Set()
 const cellActorIds = new Map()
+
+/** Wave 60 — cell load progress (mirrors streamingProgress.ts). */
+let streamProgress = { cellsLoaded: 0, cellsTotal: 0, percent: 0, active: false }
+
+function resetStreamProgress() {
+  streamProgress = { cellsLoaded: 0, cellsTotal: 0, percent: 0, active: false }
+}
+
+function beginStreamProgress(total) {
+  const cellsTotal = Math.max(0, total)
+  streamProgress = {
+    cellsLoaded: 0,
+    cellsTotal,
+    percent: cellsTotal <= 0 ? 100 : 0,
+    active: cellsTotal > 0,
+  }
+}
+
+function noteStreamCellLoaded() {
+  if (streamProgress.cellsTotal <= 0) {
+    streamProgress.percent = 100
+    streamProgress.active = false
+    return
+  }
+  streamProgress.cellsLoaded = Math.min(streamProgress.cellsTotal, streamProgress.cellsLoaded + 1)
+  streamProgress.percent = Math.round((streamProgress.cellsLoaded / streamProgress.cellsTotal) * 100)
+  if (streamProgress.cellsLoaded >= streamProgress.cellsTotal) {
+    streamProgress.active = false
+    streamProgress.percent = 100
+  }
+}
+
+function ensureStreamProgressBar() {
+  let el = document.getElementById(STREAM_PROGRESS_ID)
+  if (!el) {
+    el = document.createElement('div')
+    el.id = STREAM_PROGRESS_ID
+    el.setAttribute('aria-hidden', 'true')
+    el.style.cssText =
+      'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:min(320px,80vw);height:6px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden;z-index:25;pointer-events:none;opacity:0;transition:opacity .2s ease'
+    const fill = document.createElement('div')
+    fill.className = 'lotus-stream-progress-fill'
+    fill.style.cssText =
+      'height:100%;width:0%;background:linear-gradient(90deg,#2f80ed,#46a758);border-radius:4px;transition:width .15s ease'
+    el.appendChild(fill)
+    document.body.appendChild(el)
+  }
+  return el
+}
+
+function updateStreamProgressBar() {
+  if (!STREAMING_ENABLED) return
+  const el = ensureStreamProgressBar()
+  const fill = el.querySelector('.lotus-stream-progress-fill')
+  if (!fill) return
+  fill.style.width = `${streamProgress.percent}%`
+  el.style.opacity = streamProgress.active || streamProgress.percent < 100 ? '1' : '0'
+}
+
+function hideStreamProgressBar() {
+  const el = document.getElementById(STREAM_PROGRESS_ID)
+  if (el) el.style.opacity = '0'
+  streamProgress.active = false
+}
+
+function tickStreamProgressCell() {
+  noteStreamCellLoaded()
+  updateStreamProgressBar()
+  if (!streamProgress.active && streamProgress.percent >= 100) {
+    setTimeout(() => hideStreamProgressBar(), 320)
+  }
+}
 
 function streamSettings() {
   const s = LEVEL.streaming ?? {}
@@ -1454,9 +1529,23 @@ function syncCellsAround(camPos) {
       want.add(cellKey(camCell[0] + dx, camCell[1] + dz))
     }
   }
+  let pending = 0
+  if (STREAMING_ENABLED) {
+    for (const key of want) {
+      if (!loadedCells.has(key)) pending++
+    }
+    if (pending > 0) {
+      beginStreamProgress(pending)
+      updateStreamProgressBar()
+    } else {
+      hideStreamProgressBar()
+    }
+  }
   for (const key of want) {
     const p = key.split(',')
+    const wasLoaded = loadedCells.has(key)
     loadCellActors(parseInt(p[0], 10), parseInt(p[1], 10))
+    if (STREAMING_ENABLED && !wasLoaded) tickStreamProgressCell()
   }
   for (const key of [...loadedCells]) {
     if (!want.has(key)) {
@@ -1963,6 +2052,14 @@ async function boot() {
     perfMinFps,
     perfPass: null,
     fps: 0,
+  }
+  if (STREAMING_ENABLED) {
+    window.__LOTUS_STREAM_PROGRESS__ = {
+      getProgress: () => streamProgress.percent,
+      cellsLoaded: () => streamProgress.cellsLoaded,
+      cellsTotal: () => streamProgress.cellsTotal,
+      reset: resetStreamProgress,
+    }
   }
   const c = new THREE.Clock()
   renderer.setAnimationLoop(() => {

@@ -474,3 +474,92 @@ test('wave 53 multiplayer relay: both tabs ready then host starts deathmatch', a
     await contextB.close()
   }
 })
+
+test('wave 58 multiplayer relay: public room list + ping', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const ROOM_A = 'e2e-wave58-room-a'
+  const ROOM_B = 'e2e-wave58-room-b'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    await bootEditor(pageA, relayUrl, ROOM_A)
+    await bootEditor(pageB, relayUrl, ROOM_B)
+
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+
+    await pageA.waitForFunction(
+      ([roomA, roomB]) => {
+        const mp = window.lotus?.multiplayer as {
+          listRooms?: () => { room: string; peers: number }[]
+          refreshRooms?: () => void
+        }
+        mp?.refreshRooms?.()
+        const rooms = mp?.listRooms?.() ?? []
+        const names = rooms.map((r) => r.room).sort()
+        return names.includes(roomA) && names.includes(roomB)
+      },
+      [ROOM_A, ROOM_B],
+      { timeout: 15_000 },
+    )
+
+    const snapshot = await pageA.evaluate(() => {
+      const mp = window.lotus!.multiplayer as {
+        listRooms: () => { room: string; peers: number }[]
+        pingMs: () => number | null
+        refreshRooms: () => void
+      }
+      mp.refreshRooms()
+      const rooms = mp.listRooms()
+      const status = document.querySelector('.status-message')?.textContent ?? ''
+      return {
+        rooms: rooms.map((r) => r.room).sort(),
+        peerCounts: Object.fromEntries(rooms.map((r) => [r.room, r.peers])),
+        ping: mp.pingMs(),
+        status,
+      }
+    })
+
+    expect(snapshot.rooms).toContain(ROOM_A)
+    expect(snapshot.rooms).toContain(ROOM_B)
+    expect(snapshot.peerCounts[ROOM_A]).toBeGreaterThanOrEqual(1)
+    expect(snapshot.peerCounts[ROOM_B]).toBeGreaterThanOrEqual(1)
+
+    await pageA.waitForFunction(
+      () => {
+        const ping = (
+          window.lotus?.multiplayer as { pingMs?: () => number | null; refreshRooms?: () => void }
+        )?.pingMs?.()
+        if (ping == null) {
+          ;(
+            window.lotus?.multiplayer as { refreshRooms?: () => void }
+          )?.refreshRooms?.()
+          return false
+        }
+        return ping >= 0
+      },
+      { timeout: 15_000 },
+    )
+
+    const withPing = await pageA.evaluate(() => {
+      const mp = window.lotus!.multiplayer as { pingMs: () => number | null }
+      const status = document.querySelector('.status-message')?.textContent ?? ''
+      return { ping: mp.pingMs(), status }
+    })
+    expect(withPing.ping).not.toBeNull()
+    expect(withPing.status).toMatch(/\d+ms/)
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})

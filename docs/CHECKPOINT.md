@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v3.18 (waves 51–55).** v0.33–v3.18 shipped; **build clean**, **`npm run test` — 219 passed**.
+- **Last clean commit: v3.43 (waves 56–60).** v0.33–v3.43 shipped; **build clean**, **`npm run test` — 244 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -439,12 +439,22 @@
 | 54 | v3.09–v3.13 | Input rebinding — gamepad + touch slot overrides |
 | 55 | v3.14–v3.18 | Scene transitions — fade/slide on level select — 219 tests |
 
+## Shipped (v3.19–v3.43, Waves 56–60 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 56 | v3.19–v3.23 | Autotile atlas UV — 16-tile sprite sheet per corner variant |
+| 57 | v3.24–v3.28 | Export pack polish — itch.io meta, screenshot capture |
+| 58 | v3.29–v3.33 | MP matchmaking — room list + relay ping in lobby HUD |
+| 59 | v3.34–v3.38 | Input profiles — desktop/mobile presets, save/load custom |
+| 60 | v3.39–v3.43 | Streaming UX — cell load progress bar in export — 244 tests |
+
 ## Next up (indie roadmap)
 
-1. **Autotile art** — sprite sheet UV mapping per corner variant
-2. **Export pack polish** — itch.io metadata + screenshot capture
-3. **MP matchmaking** — public room list + ping display
-4. **Input profiles** — save/load binding presets (desktop vs mobile)
+1. **Custom autotile sheets** — import PNG atlas + manual tile mapping UI
+2. **itch.io upload helper** — zip pack + meta.json one-click export
+3. **MP dedicated server** — headless relay host mode for LAN parties
+4. **Touch haptics** — vibration on Fire/Interact (PWA Vibration API)
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

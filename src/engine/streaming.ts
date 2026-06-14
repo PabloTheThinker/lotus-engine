@@ -70,7 +70,7 @@ export function assignStreamCellOnSave(
   gridSize: number,
   enabled: boolean,
 ): SerializedActor {
-  if (!enabled || gridSize <= 0 || actorAlwaysLoaded(sa.type, sa.streamCell)) return sa
+  if (!enabled || gridSize <= 0 || ALWAYS_LOADED_TYPES.has(sa.type)) return sa
   const [cx, cz] = worldToCell(sa.transform.position[0], sa.transform.position[2], gridSize)
   return { ...sa, streamCell: [cx, cz] }
 }

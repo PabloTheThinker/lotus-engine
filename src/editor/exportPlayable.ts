@@ -10,9 +10,11 @@ import { mainMenuBootEnabled } from './mainMenuFlow'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
 import { TOUCH_OVERLAY_CSS } from './touchOverlay'
 import { bindingsForExport } from '../engine/inputBindings'
+import { profileNameForExport } from '../engine/inputProfiles'
 import { shouldShowTouchControls } from '../engine/touchInput'
 import { MINIGAME_OVERLAY_CSS } from './miniGameHud'
 import { MINIGAME_MANAGER_NAME, spawnMiniGame, type MiniGameMode } from './starterMiniGames'
+import { buildExportPackMeta, type ExportPackMeta } from './exportPackMeta'
 
 export interface ExportOptions {
   /** add PWA manifest + service worker stub for offline single-file play */
@@ -27,6 +29,10 @@ export interface ExportOptions {
   minigamePack?: MiniGameMode
   /** optional PWA manifest icons (mini-game pack supplies stub icons) */
   pwaIcons?: { src: string; sizes: string; type: string; purpose?: string }[]
+  /** v3.24 — itch.io sidecar metadata (__LOTUS_PACK_META__) */
+  packMeta?: ExportPackMeta | null
+  /** v3.25 — optional pack screenshot PNG base64 (__LOTUS_PACK_SCREENSHOT__) */
+  packScreenshotB64?: string | null
 }
 
 function levelHasMiniGameManager(level: SerializedLevel): boolean {
@@ -114,10 +120,12 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   world.levelName = s.levelName
   let mainLevel = applyQualityToLevel(world.serialize(), quality)
   let cellsJSON = 'null'
+  let streamingExport = false
   if (mainLevel.streaming?.exportByCell) {
     const split = splitLevelByCells(mainLevel)
     mainLevel = { ...mainLevel, actors: split.globalActors }
     cellsJSON = escapeJsonForScript(JSON.stringify(split.cells))
+    streamingExport = Object.keys(split.cells).length > 0
   }
   const { levels, main } = buildLevelsManifest(mainLevel)
   const levelsJSON = escapeJsonForScript(JSON.stringify(levels))
@@ -146,6 +154,11 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const mainMenuBoot = mainMenuBootEnabled()
   const pwaIcons = opts.pwaIcons
   const bindingsJSON = escapeJsonForScript(JSON.stringify(bindingsForExport()))
+  const inputProfileName = profileNameForExport()
+  const packMeta = opts.packMeta ?? (minigamePack ? buildExportPackMeta(minigamePack) : null)
+  const packMetaJSON = packMeta ? escapeJsonForScript(JSON.stringify(packMeta)) : 'null'
+  const packScreenshotB64 = opts.packScreenshotB64 ?? null
+  const packScreenshotJSON = packScreenshotB64 ? `'${packScreenshotB64}'` : 'null'
 
   return `<!doctype html>
 <html lang="en">
@@ -168,6 +181,7 @@ ${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
   }
   ${touchEnabled ? TOUCH_OVERLAY_CSS : ''}
   ${minigameHud ? MINIGAME_OVERLAY_CSS : ''}
+  ${streamingExport ? `#${'lotus-stream-progress'} { pointer-events: none; }` : ''}
 </style>
 <script type="importmap">
 {
@@ -184,7 +198,7 @@ ${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

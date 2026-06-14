@@ -48,6 +48,13 @@ import {
 } from '../prefabs'
 import { buildFoliageMesh } from '../../engine/factory'
 import {
+  ATLAS_PALETTE,
+  AUTOTILE_ATLAS_SIZE,
+  DEFAULT_ATLAS_COLS,
+  DEFAULT_ATLAS_ROWS,
+  atlasUvRect,
+} from '../../engine/autotileAtlas'
+import {
   activeGridLayerIndex,
   getLayerCellCount,
   isGridLayerVisible,
@@ -2586,6 +2593,56 @@ function FoliageSection({ actor }: { actor: Actor }) {
               }}
             />
           </label>
+          <label className="field check">
+            <span>Autotile atlas UV</span>
+            <input
+              type="checkbox"
+              checked={!!props.gridAutotileAtlas}
+              onChange={(e) => {
+                props.gridAutotileAtlas = e.target.checked
+                buildFoliageMesh(actor)
+                touch()
+              }}
+            />
+          </label>
+          {props.gridAutotileAtlas && (
+            <div className="panel-empty" style={{ padding: '4px 0' }}>
+              <div style={{ fontSize: 11, marginBottom: 4 }}>
+                Atlas {props.gridAtlasCols ?? DEFAULT_ATLAS_COLS}×{props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS} ·{' '}
+                {AUTOTILE_ATLAS_SIZE} tiles
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${props.gridAtlasCols ?? DEFAULT_ATLAS_COLS}, 1fr)`,
+                  gap: 2,
+                  maxWidth: 160,
+                }}
+              >
+                {Array.from({ length: AUTOTILE_ATLAS_SIZE }, (_, i) => {
+                  const rect = atlasUvRect(i, props.gridAtlasCols ?? DEFAULT_ATLAS_COLS, props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS)
+                  return (
+                    <span
+                      key={i}
+                      title={`#${i} u=${rect.u.toFixed(2)} v=${rect.v.toFixed(2)}`}
+                      style={{
+                        background: ATLAS_PALETTE[i % ATLAS_PALETTE.length],
+                        border: '1px solid #1a1d24',
+                        borderRadius: 2,
+                        color: '#e8eaed',
+                        fontSize: 9,
+                        fontWeight: 600,
+                        lineHeight: '18px',
+                        textAlign: 'center',
+                      }}
+                    >
+                      {i}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
           <label className="field">
             <span>Layer visibility</span>
             <div className="paint-layers">

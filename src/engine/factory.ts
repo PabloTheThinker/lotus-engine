@@ -17,6 +17,15 @@ import {
 } from './types'
 import { DEFAULT_PATH3D, rebuildPath3DVisual } from './path3d'
 import {
+  atlasIndexForRule,
+  atlasUvRect,
+  createAutotileAtlasTexture,
+  DEFAULT_ATLAS_COLS,
+  DEFAULT_ATLAS_ROWS,
+  patchMaterialForAtlasUv,
+  type AtlasUvRect,
+} from './autotileAtlas'
+import {
   autotileRuleForMask,
   ensureGridLayerVisibility,
   GRID_TILE_KINDS,
@@ -25,6 +34,7 @@ import {
   previewAutotileExtendedMask,
   previewAutotileMask,
   syncGridInstancesFromLayers,
+  type GridLayerCell,
   type GridTileKind,
 } from './gridMap'
 import type { FoliageProps } from './types'
@@ -247,6 +257,74 @@ function setInstanceMatrices(mesh: THREE.InstancedMesh, rows: number[][]) {
   mesh.computeBoundingSphere()
 }
 
+function setInstanceMatricesWithAtlas(
+  mesh: THREE.InstancedMesh,
+  rows: number[][],
+  rects: AtlasUvRect[],
+) {
+  const count = Math.min(rows.length, FOLIAGE_CAP)
+  const uvData = new Float32Array(Math.max(count, 1) * 4)
+  for (let i = 0; i < count; i++) {
+    const [x, y, z, sc, rotY] = rows[i]
+    _fp.set(x, y, z)
+    _fe.set(0, rotY, 0)
+    _fq.setFromEuler(_fe)
+    _fs.setScalar(sc)
+    _fm.compose(_fp, _fq, _fs)
+    mesh.setMatrixAt(i, _fm)
+    const r = rects[i] ?? atlasUvRect(0)
+    uvData[i * 4] = r.u
+    uvData[i * 4 + 1] = r.v
+    uvData[i * 4 + 2] = r.w
+    uvData[i * 4 + 3] = r.h
+  }
+  mesh.count = count
+  mesh.instanceMatrix.needsUpdate = true
+  let attr = mesh.geometry.getAttribute('instanceUvRect') as THREE.InstancedBufferAttribute | undefined
+  if (!attr || attr.count < count) {
+    attr = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(count, 1) * 4), 4)
+    mesh.geometry.setAttribute('instanceUvRect', attr)
+  }
+  attr.array.set(uvData.subarray(0, count * 4))
+  attr.needsUpdate = true
+  mesh.computeBoundingSphere()
+}
+
+function rebuildFoliageAutotileAtlas(actor: Actor) {
+  const props = actor.foliageProps
+  const mesh = actor.foliageMesh
+  if (!props || !mesh) return
+  const cols = props.gridAtlasCols ?? DEFAULT_ATLAS_COLS
+  const rows = props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS
+  const vis = ensureGridLayerVisibility(props)
+  const fallback = (props.geometry as GridTileKind) ?? 'box'
+  const instances: number[][] = []
+  const rects: AtlasUvRect[] = []
+
+  for (let layer = 0; layer <= 3; layer++) {
+    if (vis[layer] === false) continue
+    const bucket = props.gridLayers?.[layer]
+    if (!bucket) continue
+    for (const raw of bucket) {
+      const cell = raw as GridLayerCell
+      const [x, y, z, sc, rotY] = cell
+      const cx = x
+      const cy = Math.round(y - 0.5)
+      const cz = z
+      const baseKind = gridCellKind(cell, fallback)
+      const mask = previewAutotileMask(props, layer, cx, cy, cz)
+      const extended = previewAutotileExtendedMask(props, layer, cx, cy, cz)
+      const neighborKinds = gridNeighborKinds(bucket, cx, cy, cz, fallback)
+      const rule = autotileRuleForMask(mask, baseKind, extended, neighborKinds)
+      const idx = atlasIndexForRule(rule)
+      instances.push([x, y + layer * 0.05, z, sc, rotY + rule.rotY])
+      rects.push(atlasUvRect(idx, cols, rows))
+    }
+  }
+
+  setInstanceMatricesWithAtlas(mesh, instances, rects)
+}
+
 function rebuildFoliageAutotileRules(actor: Actor) {
   const props = actor.foliageProps
   const meshes = actor.foliageMeshes
@@ -286,6 +364,10 @@ function rebuildFoliageAutotileRules(actor: Actor) {
 export function rebuildFoliage(actor: Actor) {
   const props = actor.foliageProps
   if (!props) return
+  if (props.snap && props.gridAutotileAtlas && actor.foliageMesh) {
+    rebuildFoliageAutotileAtlas(actor)
+    return
+  }
   if (props.snap && props.gridAutotileRules && actor.foliageMeshes) {
     rebuildFoliageAutotileRules(actor)
     return
@@ -308,6 +390,27 @@ export function createFoliageLayerActor(name: string, id = nextActorId()): Actor
 export function buildFoliageMesh(actor: Actor) {
   const props = actor.foliageProps as FoliageProps
   disposeFoliageMeshes(actor)
+
+  if (props.snap && props.gridAutotileAtlas) {
+    const cols = props.gridAtlasCols ?? DEFAULT_ATLAS_COLS
+    const rows = props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS
+    const geo = buildGeometry('plane')
+    geo.rotateX(-Math.PI / 2)
+    const texture = createAutotileAtlasTexture(cols, rows)
+    const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85 })
+    patchMaterialForAtlasUv(mat)
+    const mesh = new THREE.InstancedMesh(geo, mat, FOLIAGE_CAP)
+    mesh.castShadow = true
+    mesh.receiveShadow = true
+    mesh.userData.actorId = actor.id
+    mesh.userData.isFoliage = true
+    mesh.userData.gridAutotileAtlas = true
+    mesh.count = 0
+    actor.foliageMesh = mesh
+    actor.root.add(mesh)
+    rebuildFoliage(actor)
+    return
+  }
 
   if (props.snap && props.gridAutotileRules) {
     const meshes: Partial<Record<GridTileKind, THREE.InstancedMesh>> = {}

@@ -48,6 +48,13 @@ import {
   TOUCH_SLOT_IDS,
   type TouchAction,
 } from '../../engine/inputBindings'
+import {
+  applyInputProfile,
+  getActiveInputProfile,
+  listInputProfiles,
+  saveInputProfile,
+} from '../../engine/inputProfiles'
+import { applyTouchLayoutPreset } from '../../engine/touchLayoutPresets'
 import { setBusVolume, setSoundAttenuationDefaults } from '../../engine/audio'
 import { AttenuationFields } from './AttenuationFields'
 import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
@@ -168,10 +175,13 @@ function MultiplayerSection() {
           may predict movement when <em>Client Predicted</em> is on; host still syncs @ 10 Hz and clients snap on large error.
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>lobby_join</code> · <code>lobby_ready</code> · <code>lobby_start</code> · <code>leave</code>
+          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>lobby_join</code> · <code>lobby_ready</code> · <code>lobby_start</code> · <code>list_rooms</code> · <code>ping</code>/<code>pong</code> · <code>leave</code>
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           <strong>Lobby:</strong> <code>/mplobby</code> spawns a room browser + ready-up HUD; host relays <code>lobby_start</code> when all peers are ready (deathmatch spawns after).
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          <strong>Matchmaking:</strong> relay broadcasts <code>room_registry</code>; <code>indie.mp.matchmaking.listRooms()</code> · <code>pingMs()</code> · <code>refreshRooms()</code> — lobby HUD shows public rooms + ping.
         </div>
       </div>
     </details>
@@ -293,13 +303,54 @@ function DataAssetsSection() {
 }
 
 function InputBindingsSection() {
+  const touch = useEditor((s) => s.touch)
   const [, bump] = useState(0)
   const refresh = () => bump((n) => n + 1)
   const bindings = getBindings()
+  const profiles = listInputProfiles()
+  const activeProfile = getActiveInputProfile()
+  const applyProfile = (name: string) => {
+    const applied = applyInputProfile(name)
+    if (!applied) return
+    const hud = document.getElementById('lotus-touch-hud')
+    if (hud) applyTouchLayoutPreset(hud, applied.touchLayoutPreset)
+    refresh()
+    touch()
+  }
   return (
     <details className="details-section">
       <summary>Input Bindings (Gamepad + Touch)</summary>
       <div className="details-grid">
+        <label className="field">
+          <span>Input profile</span>
+          <select value={activeProfile} onChange={(e) => applyProfile(e.target.value)}>
+            {profiles.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="hud-widget-row" style={{ gridColumn: '1 / -1' }}>
+          <button
+            type="button"
+            onClick={() => {
+              const name = prompt('Save profile as…', 'my-profile')
+              if (!name?.trim()) return
+              if (saveInputProfile(name.trim())) {
+                refresh()
+                touch()
+              } else {
+                useEditor.getState().setStatus('Cannot save bundled profile names — pick a custom name')
+              }
+            }}
+          >
+            Save Profile
+          </button>
+          <button type="button" onClick={() => applyProfile(activeProfile)}>
+            Load Profile
+          </button>
+        </div>
         <strong style={{ fontSize: 11, gridColumn: '1 / -1' }}>Gamepad face buttons</strong>
         {GAMEPAD_ACTIONS.map((action) => (
           <label className="field" key={action}>
@@ -348,8 +399,9 @@ function InputBindingsSection() {
           Reset bindings to defaults
         </button>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Overrides persist in <code>lotus-engine.inputBindings</code>. Bridge:{' '}
-          <code>indie.input.getBindings()</code> · <code>setGamepadButton</code> · <code>setTouchSlot</code>
+          Profiles in <code>lotus-engine.inputProfiles</code> bundle bindings + touch layout preset.
+          Bridge: <code>indie.input.applyProfile</code> · <code>saveProfile</code> · <code>loadProfile</code> ·{' '}
+          <code>activeProfile</code>
         </div>
       </div>
     </details>

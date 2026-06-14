@@ -3095,6 +3095,117 @@ test('wave 55 export runtime embeds scene transition overlay', async ({ page }) 
   expect(result.bootFadeIn).toBe(true)
 })
 
+test('wave 56 gridMap atlasUvRect index 0 is top-left tile', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: { atlasUvRect: (i: number) => { u: number; v: number; w: number; h: number }; AUTOTILE_ATLAS_SIZE: number }
+    }
+    const r = v.gridMap.atlasUvRect(0)
+    return { u: r.u, v: r.v, w: r.w, h: r.h, size: v.gridMap.AUTOTILE_ATLAS_SIZE }
+  })
+
+  expect(result.size).toBe(16)
+  expect(result.u).toBe(0)
+  expect(result.v).toBe(0.75)
+  expect(result.w).toBe(0.25)
+  expect(result.h).toBe(0.25)
+})
+
+test('wave 56 gridMap atlasUvRect index 15 is bottom-right tile', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: { atlasUvRect: (i: number) => { u: number; v: number; w: number; h: number } }
+    }
+    const r = v.gridMap.atlasUvRect(15)
+    return { u: r.u, v: r.v }
+  })
+
+  expect(result.u).toBe(0.75)
+  expect(result.v).toBe(0)
+})
+
+test('wave 56 gridMap atlasIndexForMask clamps to 0–15', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: { atlasIndexForMask: (m: number) => number }
+    }
+    return {
+      isolated: v.gridMap.atlasIndexForMask(0),
+      full: v.gridMap.atlasIndexForMask(15),
+      clamped: v.gridMap.atlasIndexForMask(99),
+    }
+  })
+
+  expect(result.isolated).toBe(0)
+  expect(result.full).toBe(15)
+  expect(result.clamped).toBe(15)
+})
+
+test('wave 56 gridMap atlasIndexForRule inner-ne corner slot', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        autotileRuleForMask: (mask: number, kind: string, ext?: number) => { corner: string; mask: number }
+        atlasIndexForRule: (rule: { corner: string; mask: number }) => number
+        atlasIndexForCorner: (corner: string) => number | null
+      }
+    }
+    const rule = v.gridMap.autotileRuleForMask(3, 'box', 3)
+    return {
+      corner: rule.corner,
+      idx: v.gridMap.atlasIndexForRule(rule),
+      cornerIdx: v.gridMap.atlasIndexForCorner('inner-ne'),
+    }
+  })
+
+  expect(result.corner).toBe('inner-ne')
+  expect(result.cornerIdx).toBe(5)
+  expect(result.idx).toBe(5)
+})
+
+test('wave 56 gridmap spawn exposes gridAutotileAtlas + bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { gridAutotileAtlas?: boolean } } | null }
+      gridMap: {
+        AUTOTILE_ATLAS_SIZE: number
+        atlasIndexForRule: unknown
+        atlasUvRect: unknown
+        atlasIndexForMask: unknown
+        atlasIndexForCorner: unknown
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    props!.gridAutotileAtlas = true
+    return {
+      atlas: props?.gridAutotileAtlas,
+      size: v.gridMap.AUTOTILE_ATLAS_SIZE,
+      hasRule: typeof v.gridMap.atlasIndexForRule === 'function',
+      hasRect: typeof v.gridMap.atlasUvRect === 'function',
+      hasMask: typeof v.gridMap.atlasIndexForMask === 'function',
+      hasCorner: typeof v.gridMap.atlasIndexForCorner === 'function',
+    }
+  })
+
+  expect(result.atlas).toBe(true)
+  expect(result.size).toBe(16)
+  expect(result.hasRule).toBe(true)
+  expect(result.hasRect).toBe(true)
+  expect(result.hasMask).toBe(true)
+  expect(result.hasCorner).toBe(true)
+})
+
 test('wave 52 indie.minigame packModes + exportPack bridge', async ({ page }) => {
   await bootEditor(page)
 
@@ -5399,4 +5510,482 @@ test('wave 53 indie.mp.lobby bridge APIs', async ({ page }) => {
   expect(result.hasIsReady).toBe(true)
   expect(result.hasAllReady).toBe(true)
   expect(result.hasPeerReadyCount).toBe(true)
+})
+
+test('wave 58 indie MP lobby matchmaking HUD widgets', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnIndieMpLobby: () => void; mp: { lobbyScript: string } }
+    }
+    v.indie.spawnIndieMpLobby()
+    const manager = [...v.world.actors.values()].find((a) => a.name === 'MpLobbyManager')
+    const roomsHud = v.world.hudWidgets.find((w) => w.id === 'mp_lobby_rooms')
+    return {
+      roomsHud: !!roomsHud,
+      scriptListRooms: v.indie.mp.lobbyScript.includes('mpListRooms'),
+      scriptPing: v.indie.mp.lobbyScript.includes('mpPingMs'),
+      scriptRefresh: v.indie.mp.lobbyScript.includes('mpRefreshRooms'),
+      managerScript: manager?.script?.includes('mpListRooms'),
+    }
+  })
+
+  expect(result.roomsHud).toBe(true)
+  expect(result.scriptListRooms).toBe(true)
+  expect(result.scriptPing).toBe(true)
+  expect(result.scriptRefresh).toBe(true)
+  expect(result.managerScript).toBe(true)
+})
+
+test('wave 58 indie.mp.matchmaking bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { mp: { matchmaking: { listRooms: () => unknown; pingMs: () => unknown; refreshRooms: () => void } } }
+      multiplayer: {
+        listRooms?: () => unknown
+        pingMs?: () => unknown
+        roomPing?: () => unknown
+        refreshRooms?: () => void
+      }
+    }
+    return {
+      listRooms: typeof v.indie.mp.matchmaking.listRooms === 'function',
+      pingMs: typeof v.indie.mp.matchmaking.pingMs === 'function',
+      refreshRooms: typeof v.indie.mp.matchmaking.refreshRooms === 'function',
+      mpListRooms: typeof v.multiplayer.listRooms === 'function',
+      mpPingMs: typeof v.multiplayer.pingMs === 'function',
+      mpRoomPing: typeof v.multiplayer.roomPing === 'function',
+      mpRefreshRooms: typeof v.multiplayer.refreshRooms === 'function',
+    }
+  })
+
+  expect(result.listRooms).toBe(true)
+  expect(result.pingMs).toBe(true)
+  expect(result.refreshRooms).toBe(true)
+  expect(result.mpListRooms).toBe(true)
+  expect(result.mpPingMs).toBe(true)
+  expect(result.mpRoomPing).toBe(true)
+  expect(result.mpRefreshRooms).toBe(true)
+})
+
+test('wave 58 mpListRooms + mpPingMs script API surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const api = window.lotus!.indie.scriptApi() as {
+      mpListRooms?: () => unknown
+      mpPingMs?: () => unknown
+      mpRefreshRooms?: () => void
+    }
+    return {
+      mpListRooms: typeof api.mpListRooms === 'function',
+      mpPingMs: typeof api.mpPingMs === 'function',
+      mpRefreshRooms: typeof api.mpRefreshRooms === 'function',
+      rooms: Array.isArray(api.mpListRooms?.()),
+      ping: api.mpPingMs?.(),
+    }
+  })
+
+  expect(result.mpListRooms).toBe(true)
+  expect(result.mpPingMs).toBe(true)
+  expect(result.mpRefreshRooms).toBe(true)
+  expect(result.rooms).toBe(true)
+  expect(result.ping).toBeNull()
+})
+
+test('wave 58 World Settings documents matchmaking protocol', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.content()
+  expect(html).toContain('list_rooms')
+  expect(html).toContain('room_registry')
+  expect(html).toContain('matchmaking')
+})
+
+test('wave 59 indie.input.profiles lists bundled desktop and mobile presets', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { profiles: () => string[] } }
+    }
+    return v.indie.input.profiles()
+  })
+  expect(result).toContain('desktop')
+  expect(result).toContain('mobile')
+  expect(result.indexOf('desktop')).toBeLessThan(result.indexOf('mobile'))
+})
+
+test('wave 59 indie.input.applyProfile mobile sets compact touch layout preset', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { applyProfile: (n: string) => { touchLayoutPreset: string } | null } }
+      world: { environment: { touchLayoutPreset?: string } }
+    }
+    const applied = v.indie.input.applyProfile('mobile')
+    return {
+      preset: v.world.environment.touchLayoutPreset,
+      applied: applied?.touchLayoutPreset,
+      active: localStorage.getItem('lotus-engine.inputProfiles'),
+    }
+  })
+  expect(result.preset).toBe('compact')
+  expect(result.applied).toBe('compact')
+  expect(result.active).toContain('"active":"mobile"')
+})
+
+test('wave 59 indie.input.applyProfile desktop sets wide touch layout preset', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { applyProfile: (n: string) => { touchLayoutPreset: string } | null } }
+      world: { environment: { touchLayoutPreset?: string } }
+    }
+    v.indie.input.applyProfile('mobile')
+    const applied = v.indie.input.applyProfile('desktop')
+    return { preset: v.world.environment.touchLayoutPreset, applied: applied?.touchLayoutPreset }
+  })
+  expect(result.preset).toBe('wide')
+  expect(result.applied).toBe('wide')
+})
+
+test('wave 59 indie.input saveProfile + loadProfile round-trip custom preset', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        input: {
+          setGamepadButton: (a: 'Fire', b: number) => boolean
+          applyProfile: (n: string) => unknown
+          saveProfile: (n: string) => boolean
+          loadProfile: (n: string) => { touchLayoutPreset: string } | null
+          getBindings: () => { gamepad: { Fire: number } }
+          activeProfile: () => string
+        }
+        touch: { setLayoutPreset: (p: 'fps') => string }
+      }
+      world: { environment: { touchLayoutPreset?: string } }
+    }
+    v.indie.input.setGamepadButton('Fire', 1)
+    v.indie.touch.setLayoutPreset('fps')
+    const saved = v.indie.input.saveProfile('wave59-custom')
+    v.indie.input.applyProfile('desktop')
+    const loaded = v.indie.input.loadProfile('wave59-custom')
+    const store = JSON.parse(localStorage.getItem('lotus-engine.inputProfiles') ?? '{}') as {
+      saved?: { 'wave59-custom'?: { touchLayoutPreset?: string; bindings?: { gamepad?: { Fire?: number } } } }
+    }
+    return {
+      saved,
+      fire: v.indie.input.getBindings().gamepad.Fire,
+      preset: v.world.environment.touchLayoutPreset,
+      loadedPreset: loaded?.touchLayoutPreset,
+      active: v.indie.input.activeProfile(),
+      storedFire: store.saved?.['wave59-custom']?.bindings?.gamepad?.Fire,
+      storedPreset: store.saved?.['wave59-custom']?.touchLayoutPreset,
+    }
+  })
+  expect(result.saved).toBe(true)
+  expect(result.fire).toBe(1)
+  expect(result.preset).toBe('fps')
+  expect(result.loadedPreset).toBe('fps')
+  expect(result.active).toBe('wave59-custom')
+  expect(result.storedFire).toBe(1)
+  expect(result.storedPreset).toBe('fps')
+})
+
+test('wave 59 export HTML embeds __LOTUS_INPUT_PROFILE__ with active profile name', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { applyProfile: (n: string) => unknown } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.indie.input.applyProfile('mobile')
+    const html = v.export.buildPlayableHTML()
+    const match = html.match(/window\.__LOTUS_INPUT_PROFILE__ = '([^']+)'/)
+    return { hasTag: html.includes('__LOTUS_INPUT_PROFILE__'), profile: match?.[1] }
+  })
+  expect(result.hasTag).toBe(true)
+  expect(result.profile).toBe('mobile')
+})
+
+test('wave 60 streamingProgress begin + noteCellLoaded tracks percent', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus & {
+      streaming: {
+        reset: () => { cellsLoaded: number; cellsTotal: number; percent: number }
+        begin: (n: number) => { cellsLoaded: number; cellsTotal: number; percent: number }
+        noteCellLoaded: () => { cellsLoaded: number; cellsTotal: number; percent: number }
+        getProgress: () => number
+        cellsLoaded: () => number
+        cellsTotal: () => number
+      }
+    }).streaming
+    s.reset()
+    const start = s.begin(3)
+    s.noteCellLoaded()
+    s.noteCellLoaded()
+    const done = s.noteCellLoaded()
+    return {
+      startPercent: start.percent,
+      startTotal: start.cellsTotal,
+      donePercent: done.percent,
+      progress: s.getProgress(),
+      loaded: s.cellsLoaded(),
+      total: s.cellsTotal(),
+    }
+  })
+
+  expect(result.startPercent).toBe(0)
+  expect(result.startTotal).toBe(3)
+  expect(result.donePercent).toBe(100)
+  expect(result.progress).toBe(100)
+  expect(result.loaded).toBe(3)
+  expect(result.total).toBe(3)
+})
+
+test('wave 60 lotus.streaming bridge exposes progress APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).streaming as Record<string, unknown>
+    return {
+      getProgress: typeof s.getProgress === 'function',
+      cellsLoaded: typeof s.cellsLoaded === 'function',
+      cellsTotal: typeof s.cellsTotal === 'function',
+      getState: typeof s.getState === 'function',
+      begin: typeof s.begin === 'function',
+      noteCellLoaded: typeof s.noteCellLoaded === 'function',
+    }
+  })
+
+  expect(result.getProgress).toBe(true)
+  expect(result.cellsLoaded).toBe(true)
+  expect(result.cellsTotal).toBe(true)
+  expect(result.getState).toBe(true)
+  expect(result.begin).toBe(true)
+  expect(result.noteCellLoaded).toBe(true)
+})
+
+test('wave 60 export embeds __LOTUS_STREAMING__ when exportByCell has cells', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: {
+        streaming: { exportByCell: boolean; enabled: boolean; gridSize: number; loadRadius: number }
+      }
+      indie: { spawn: (p: { kind: 'mesh'; geometry: 'box' }, pos: [number, number, number]) => unknown }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.streaming.exportByCell = true
+    v.world.streaming.enabled = true
+    v.world.streaming.gridSize = 64
+    v.indie.spawn({ kind: 'mesh', geometry: 'box' }, [128, 0.5, 128])
+    const level = v.world.serialize() as {
+      streaming?: { exportByCell?: boolean; enabled?: boolean }
+      actors: { type: string; streamCell?: [number, number] }[]
+    }
+    const html = v.export.buildPlayableHTML()
+    const streamLine = html.match(/__LOTUS_STREAMING__ = (true|false)/)?.[1]
+    return {
+      streamingOn: streamLine === 'true',
+      exportByCell: level.streaming?.exportByCell === true,
+      streamCells: level.actors.filter((a) => a.streamCell).length,
+      cellsManifest: html.includes('__LOTUS_CELLS__') && !html.includes('__LOTUS_CELLS__ = null'),
+      progressCss: html.includes('lotus-stream-progress'),
+    }
+  })
+
+  expect(result.exportByCell).toBe(true)
+  expect(result.streamCells).toBeGreaterThan(0)
+  expect(result.streamingOn).toBe(true)
+  expect(result.cellsManifest).toBe(true)
+  expect(result.progressCss).toBe(true)
+})
+
+test('wave 60 export embeds __LOTUS_STREAMING__ false without exportByCell', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { streaming: { exportByCell: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.streaming.exportByCell = false
+    const html = v.export.buildPlayableHTML()
+    return {
+      streamingOff: html.includes('__LOTUS_STREAMING__ = false'),
+      cellsNull: html.includes('__LOTUS_CELLS__ = null'),
+    }
+  })
+
+  expect(result.streamingOff).toBe(true)
+  expect(result.cellsNull).toBe(true)
+})
+
+test('wave 60 export runtime includes stream progress bar hooks', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { streaming: { exportByCell: boolean; enabled: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.streaming.exportByCell = true
+    v.world.streaming.enabled = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      progressId: html.includes("STREAM_PROGRESS_ID = 'lotus-stream-progress'"),
+      syncHooks: html.includes('tickStreamProgressCell'),
+      streamFlag: html.includes('__LOTUS_STREAMING__'),
+      exportProgress: html.includes('__LOTUS_STREAM_PROGRESS__'),
+    }
+  })
+
+  expect(result.progressId).toBe(true)
+  expect(result.syncHooks).toBe(true)
+  expect(result.streamFlag).toBe(true)
+  expect(result.exportProgress).toBe(true)
+})
+
+test('wave 57 indie.minigame.packMeta returns itch.io sidecar fields', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      packMeta: (m: 'platformer' | 'rpg' | 'fps') => {
+        title: string
+        description: string
+        tags: string[]
+        kind: string
+        version: string
+      }
+    }
+    const platformer = mg.packMeta('platformer')
+    const rpg = mg.packMeta('rpg')
+    return {
+      title: platformer.title,
+      description: platformer.description,
+      tags: platformer.tags,
+      kind: platformer.kind,
+      version: platformer.version,
+      rpgTags: rpg.tags,
+    }
+  })
+
+  expect(result.title).toBe('Lotus Platformer Pack')
+  expect(result.description).toMatch(/platformer/i)
+  expect(result.tags).toEqual(expect.arrayContaining(['platformer', 'action']))
+  expect(result.kind).toBe('html')
+  expect(result.version).toBe('1.0')
+  expect(result.rpgTags).toEqual(expect.arrayContaining(['rpg', 'top-down']))
+})
+
+test('wave 57 buildPackHTML embeds __LOTUS_PACK_META__ and __LOTUS_PACK_SCREENSHOT__', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'platformer') => void; buildPackHTML: (m: 'platformer') => string } }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const metaMatch = html.match(/window\.__LOTUS_PACK_META__ = (\{[^;]+\})/)
+    const screenshotMatch = html.match(/window\.__LOTUS_PACK_SCREENSHOT__ = '([^']+)'/)
+    const meta = metaMatch ? (JSON.parse(metaMatch[1]) as { title: string; tags: string[] }) : null
+    return {
+      hasMetaTag: html.includes('__LOTUS_PACK_META__'),
+      hasScreenshotTag: html.includes('__LOTUS_PACK_SCREENSHOT__'),
+      metaTitle: meta?.title ?? '',
+      metaTags: meta?.tags ?? [],
+      screenshotLen: screenshotMatch?.[1]?.length ?? 0,
+    }
+  })
+
+  expect(result.hasMetaTag).toBe(true)
+  expect(result.hasScreenshotTag).toBe(true)
+  expect(result.metaTitle).toBe('Lotus Platformer Pack')
+  expect(result.metaTags).toEqual(expect.arrayContaining(['platformer']))
+  expect(result.screenshotLen).toBeGreaterThan(10)
+})
+
+test('wave 57 /exportpackmeta platformer terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const out = window.lotus!.terminal.exec('/exportpackmeta platformer')
+    let parsed: { title?: string; description?: string; tags?: string[]; kind?: string } | null = null
+    try {
+      parsed = JSON.parse(out?.output ?? '{}')
+    } catch {
+      parsed = null
+    }
+    return {
+      output: out?.output ?? '',
+      title: parsed?.title ?? '',
+      description: parsed?.description ?? '',
+      tags: parsed?.tags ?? [],
+      kind: parsed?.kind ?? '',
+    }
+  })
+
+  expect(result.output).toMatch(/Lotus Platformer Pack/)
+  expect(result.title).toBe('Lotus Platformer Pack')
+  expect(result.description).toMatch(/platformer/i)
+  expect(result.tags).toEqual(expect.arrayContaining(['platformer', 'action', 'arcade']))
+  expect(result.kind).toBe('html')
+})
+
+test('wave 57 indie.minigame.captureScreenshot returns PNG base64 stub', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      captureScreenshot: () => { base64: string; stub: boolean }
+    }
+    const shot = mg.captureScreenshot()
+    return {
+      hasBase64: typeof shot.base64 === 'string' && shot.base64.length > 10,
+      stub: shot.stub,
+      prefix: shot.base64.slice(0, 8),
+    }
+  })
+
+  expect(result.hasBase64).toBe(true)
+  expect(result.stub).toBe(true)
+  expect(result.prefix).toBe('iVBORw0K')
+})
+
+test('wave 57 /exportpack platformer includes pack meta in HTML', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'platformer') => void; buildPackHTML: (m: 'platformer') => string } }
+    }
+    const out = v.terminal.exec('/exportpack platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const metaMatch = html.match(/window\.__LOTUS_PACK_META__ = (\{[^;]+\})/)
+    const meta = metaMatch ? (JSON.parse(metaMatch[1]) as { title: string; kind: string; tags: string[] }) : null
+    return {
+      output: out?.output,
+      pack: html.includes("__LOTUS_MINIGAME_PACK__ = 'platformer'"),
+      metaTitle: meta?.title ?? '',
+      metaKind: meta?.kind ?? '',
+      metaTags: meta?.tags ?? [],
+    }
+  })
+
+  expect(result.output).toMatch(/Exported mini-game pack: platformer/i)
+  expect(result.output).toMatch(/itch\.io meta/i)
+  expect(result.pack).toBe(true)
+  expect(result.metaTitle).toBe('Lotus Platformer Pack')
+  expect(result.metaKind).toBe('html')
+  expect(result.metaTags.length).toBeGreaterThanOrEqual(3)
 })

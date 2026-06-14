@@ -393,6 +393,12 @@ export interface FoliageProps {
   gridLayerVisibility?: boolean[]
   /** Viewport hover preview of 4-neighbor autotile bitmask on active layer */
   gridAutotilePreview?: boolean
+  /** Sprite-sheet UV per cell from autotile rule (snap mode) */
+  gridAutotileAtlas?: boolean
+  /** Atlas grid columns (default 4) */
+  gridAtlasCols?: number
+  /** Atlas grid rows (default 4) */
+  gridAtlasRows?: number
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {

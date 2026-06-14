@@ -78,6 +78,16 @@
 | 54 | v3.09–v3.13 | **Input rebinding** — gamepad buttons + touch slot overrides |
 | 55 | v3.14–v3.18 | **Scene transitions** — fade/slide on menu → level — **219 tests** |
 
+## Shipped (Waves 56–60, v3.19–v3.43)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 56 | v3.19–v3.23 | **Autotile atlas UV** — 16-tile sprite sheet, per-instance UV rects |
+| 57 | v3.24–v3.28 | **Export pack polish** — itch.io meta, screenshot capture |
+| 58 | v3.29–v3.33 | **MP matchmaking** — public room list + ping display |
+| 59 | v3.34–v3.38 | **Input profiles** — desktop/mobile binding presets |
+| 60 | v3.39–v3.43 | **Streaming UX** — cell load progress bar in export — **244 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -86,11 +96,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Autotile art** — sprite sheet UV mapping per corner variant
-2. **Export pack polish** — itch.io metadata + screenshot capture
-3. **MP matchmaking** — public room list + ping display
-4. **Input profiles** — save/load binding presets (desktop vs mobile)
-5. **Level streaming UX** — cell load progress bar in export
+1. **Custom autotile sheets** — import PNG atlas + manual tile mapping UI
+2. **itch.io upload helper** — zip pack + meta.json one-click export
+3. **MP dedicated server** — headless relay host mode for LAN parties
+4. **Touch haptics** — vibration on Fire/Interact (PWA Vibration API)
+5. **Save system** — localStorage checkpoints + export save slots
 
 ## Non-goals (honest skip)
 
@@ -101,5 +111,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **219** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **244** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

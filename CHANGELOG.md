@@ -4,6 +4,33 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 56–60: v3.19–v3.43 (indie swarm)
+
+### Wave 56 (v3.19–v3.23) — Autotile art
+- `autotileAtlas.ts` — 16-tile UV atlas, per-instance shader UV rects
+- `gridAutotileAtlas` toggle; Details atlas preview legend
+
+### Wave 57 (v3.24–v3.28) — Export pack polish
+- `exportPackMeta.ts` — itch.io sidecar (`__LOTUS_PACK_META__`)
+- `captureExportScreenshot.ts`; `/exportpackmeta`
+
+### Wave 58 (v3.29–v3.33) — MP matchmaking
+- `mpMatchmaking.ts` — relay room list + ping; lobby HUD room browser
+
+### Wave 59 (v3.34–v3.38) — Input profiles
+- `inputProfiles.ts` — desktop/mobile presets; save/load custom profiles
+
+### Wave 60 (v3.39–v3.43) — Level streaming UX
+- `streamingProgress.ts` — export cell-load progress bar (`__LOTUS_STREAMING__`)
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 244 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 51–55: v2.94–v3.18 (indie swarm)
 
 ### Wave 51 (v2.94–v2.98) — TileMap autotile rules

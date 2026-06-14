@@ -24,6 +24,16 @@ import {
   mpSampleHistory,
   type MPNetSettings,
 } from './mpNet'
+import {
+  mpMatchmakingHandleMessage,
+  mpMatchmakingListRooms,
+  mpMatchmakingPing,
+  mpMatchmakingPingMs,
+  mpMatchmakingRequestRooms,
+  mpMatchmakingReset,
+  mpMatchmakingSetStatusSink,
+  type MpRoomEntry,
+} from './mpMatchmaking'
 
 /**
  * Multiplayer — Godot MultiplayerSynchronizer / MultiplayerSpawner-lite over a
@@ -41,6 +51,11 @@ import {
  *   lobby_join  { t, id, ready? }             — announce lobby peer (+ optional ready state)
  *   lobby_ready { t, id, ready }              — peer toggles ready-up
  *   lobby_start { t, id }                     — host starts match when all peers ready
+ *   list_rooms  { t }                         — query public room registry
+ *   rooms       { t, rooms:[{room,peers}] }   — room list snapshot
+ *   room_registry { t, rooms }                — broadcast when rooms change
+ *   ping        { t, ts }                     — relay RTT probe (Date.now roundtrip)
+ *   pong        { t, ts }                     — ping echo
  *
  * Host = lexicographically smallest peer id in the room.
  */
@@ -69,7 +84,9 @@ let localId = ''
 const PREDICT_POS_THRESHOLD = 0.5
 const PREDICT_ROT_THRESHOLD = 0.35
 let sendAcc = 0
+let pingAcc = 0
 let worldRef: World | null = null
+
 let scoreDeltaHandler: ((peerId: string, delta: number) => void) | null = null
 let peerScoresMirrorHandler: ((scores: Record<string, number>) => void) | null = null
 let gameWonRelayHandler: ((peerId: string, score: number) => void) | null = null
@@ -385,6 +402,38 @@ export function mpLobbyRoom(): string {
   return loadMPSettings().room
 }
 
+/** Active public rooms from relay registry (Wave 58). */
+export function mpListRooms(): MpRoomEntry[] {
+  return mpMatchmakingListRooms()
+}
+
+/** Relay round-trip latency in ms (null until first pong). */
+export function mpPingMs(): number | null {
+  return mpMatchmakingPingMs()
+}
+
+/** Alias for mpPingMs — shown in MP status line. */
+export function mpRoomPing(): number | null {
+  return mpMatchmakingPingMs()
+}
+
+/** Request a fresh room list + ping sample from the relay. */
+export function mpRefreshRooms() {
+  if (!ws || ws.readyState !== 1) return
+  mpMatchmakingRequestRooms(send)
+  mpMatchmakingPing(send)
+}
+
+function formatMpStatusLine(): string {
+  const cfg = loadMPSettings()
+  const mode = cfg.dedicatedServer ? ' dedicated' : ''
+  const host = mpConnected() && mpIsHost() ? ' (host)' : ''
+  const ping = mpMatchmakingPingMs()
+  const pingLabel = ping != null ? ` · ${ping}ms` : ''
+  if (!mpConnected()) return `MP: ${cfg.room}${pingLabel}`
+  return `MP connected: ${cfg.room} as ${localId}${host}${mode}${pingLabel}`
+}
+
 export { allReady as mpLobbyAllReady, mpLobbyIsReady, mpLobbyPeerReadyCount, mpLobbyPeers }
 
 /** Local peer toggles ready — relays lobby_ready to room. */
@@ -453,18 +502,21 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   remoteSync.clear()
   netSpawned.clear()
   mpNetReset()
+  mpMatchmakingReset()
   mpLobbyReset(localId)
+  mpMatchmakingSetStatusSink(status, formatMpStatusLine)
   try {
     ws = new WebSocket(cfg.url)
   } catch (err) {
     status(`MP connect failed: ${(err as Error).message}`)
+    mpMatchmakingSetStatusSink(null, null)
     return
   }
   ws.onopen = () => {
     send({ t: 'join', room: cfg.room, id: localId })
     send({ t: 'lobby_join', id: localId, ready: false })
-    const mode = cfg.dedicatedServer ? ' dedicated' : ''
-    status(`MP connected: ${cfg.room} as ${localId}${mpIsHost() ? ' (host)' : ''}${mode}`)
+    mpRefreshRooms()
+    status(formatMpStatusLine())
   }
   ws.onerror = () => status('MP: relay unreachable')
   ws.onmessage = (ev) => {
@@ -490,6 +542,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
     } catch {
       return
     }
+    if (mpMatchmakingHandleMessage(msg)) return
     if (msg.t === 'join' && msg.id !== localId) {
       trackPeer(msg.id)
       mpLobbyAddPeer(msg.id)
@@ -593,6 +646,9 @@ export function mpDisconnect() {
   knownPeerIds.clear()
   remoteSync.clear()
   mpNetReset()
+  mpMatchmakingReset()
+  mpMatchmakingSetStatusSink(null, null)
+  pingAcc = 0
   mpLobbyReset()
   if (worldRef) {
     for (const id of [...netSpawned]) {
@@ -624,6 +680,12 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
   if (!ws || ws.readyState !== 1 || !worldRef) return
   const net = mpNetSettings()
   const interestPeers = peerInterestPositions(pawnPos)
+
+  pingAcc += dt
+  if (pingAcc >= 3) {
+    pingAcc = 0
+    mpMatchmakingPing(send)
+  }
 
   // smooth peer ghosts toward their network targets
   for (const p of peers.values()) {

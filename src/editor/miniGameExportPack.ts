@@ -1,4 +1,6 @@
+import { captureExportScreenshot } from './captureExportScreenshot'
 import { buildPlayableHTML, type ExportOptions } from './exportPlayable'
+import { buildExportPackMeta } from './exportPackMeta'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
 import { spawnMiniGame, type MiniGameMode } from './starterMiniGames'
 import { useEditor } from './store'
@@ -31,12 +33,15 @@ export function miniGamePackIconStub() {
 
 /** Build offline-capable PWA HTML for a genre preset (does not mutate the editor scene). */
 export function buildMiniGamePackHTML(mode: MiniGameMode, opts: ExportOptions = {}): string {
+  const screenshot = opts.packScreenshotB64 ?? captureExportScreenshot().base64
   return buildPlayableHTML({
     ...opts,
     pwa: true,
     minigameHud: true,
     minigamePreset: mode,
     minigamePack: mode,
+    packMeta: opts.packMeta ?? buildExportPackMeta(mode),
+    packScreenshotB64: screenshot,
     pwaIcons: opts.pwaIcons ?? miniGamePackIconStub(),
     quality: opts.quality ?? 'mobile',
   })

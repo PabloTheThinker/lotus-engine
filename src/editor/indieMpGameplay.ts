@@ -39,7 +39,7 @@ export const MP_LOBBY_MANAGER_NAME = 'MpLobbyManager'
 export const MP_TAG_LOBBY = 'mp_lobby'
 
 /** Lobby manager — room browser HUD + ready-up; deathmatch spawns on lobby_start. */
-export const MP_LOBBY_SCRIPT = `// mp_lobby — room browser + ready-up (Wave 53)
+export const MP_LOBBY_SCRIPT = `// mp_lobby — room browser + ready-up + matchmaking (Wave 53/58)
 function refreshHud() {
   const room = api.mpLobbyRoom()
   const peers = api.mpLobbyPeers()
@@ -47,23 +47,37 @@ function refreshHud() {
     .map((id) => id.slice(0, 4) + (api.mpLobbyIsReady(id) ? '✓' : '…'))
     .join('  ')
   const count = api.mpLobbyPeerReadyCount()
-  api.hud.text('mp_lobby_room', 'Room ' + room, { anchor: 'tc', x: 0, y: 24, size: 18, color: '#e8ecf0' })
+  const ping = api.mpPingMs()
+  const pingLabel = ping != null ? ping + 'ms' : '…'
+  const publicRooms = api.mpListRooms()
+  const roomLines = publicRooms
+    .map((r) => r.room + (r.room === room ? '●' : '') + '(' + r.peers + ')')
+    .join('  ')
+  api.hud.text('mp_lobby_room', 'Room ' + room + ' · ' + pingLabel, { anchor: 'tc', x: 0, y: 24, size: 18, color: '#e8ecf0' })
+  api.hud.text('mp_lobby_rooms', publicRooms.length ? roomLines : 'No public rooms…', {
+    anchor: 'tc',
+    x: 0,
+    y: 48,
+    size: 13,
+    color: '#7c8a9a',
+  })
   api.hud.text('mp_lobby_peers', peers.length ? lines : 'Waiting for peers…', {
     anchor: 'tc',
     x: 0,
-    y: 52,
+    y: 72,
     size: 15,
     color: '#9aa4b2',
   })
   api.hud.text('mp_lobby_ready', count + '/' + peers.length + ' ready', {
     anchor: 'tc',
     x: 0,
-    y: 78,
+    y: 98,
     size: 14,
     color: '#81b29a',
   })
 }
 function onBeginPlay() {
+  api.mpRefreshRooms()
   refreshHud()
   api.on('mp_lobby_refresh', refreshHud)
   const localId = api.mpLocalId()
@@ -113,12 +127,22 @@ const MP_LOBBY_HUD_WIDGETS: HudWidget[] = [
     color: '#e8ecf0',
   },
   {
+    id: 'mp_lobby_rooms',
+    type: 'text',
+    text: 'Rooms…',
+    anchor: 'tc',
+    x: 0,
+    y: 48,
+    size: 13,
+    color: '#7c8a9a',
+  },
+  {
     id: 'mp_lobby_peers',
     type: 'text',
     text: 'Waiting…',
     anchor: 'tc',
     x: 0,
-    y: 52,
+    y: 72,
     size: 15,
     color: '#9aa4b2',
   },
@@ -128,7 +152,7 @@ const MP_LOBBY_HUD_WIDGETS: HudWidget[] = [
     text: '0/0 ready',
     anchor: 'tc',
     x: 0,
-    y: 78,
+    y: 98,
     size: 14,
     color: '#81b29a',
   },

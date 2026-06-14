@@ -152,6 +152,30 @@ export function resetBindings(): void {
   notify()
 }
 
+/** Replace all overrides with a full profile snapshot (Wave 59). */
+export function applyBindings(bindings: InputBindings): InputBindings {
+  const gamepad: Partial<Record<GamepadAction, number>> = {}
+  const touch: Partial<Record<TouchAction, TouchSlotId>> = {}
+  for (const action of GAMEPAD_ACTIONS) {
+    const v = bindings.gamepad?.[action]
+    if (v !== undefined) {
+      const n = normalizeGamepadButton(v)
+      if (n !== null) gamepad[action] = n
+    }
+  }
+  for (const action of TOUCH_ACTIONS) {
+    const v = bindings.touch?.[action]
+    if (v !== undefined) {
+      const s = normalizeTouchSlot(v)
+      if (s !== null) touch[action] = s
+    }
+  }
+  cached = { gamepad, touch }
+  persist(cached)
+  notify()
+  return loadInputBindings()
+}
+
 export function bindingsForExport(): InputBindings {
   return loadInputBindings()
 }

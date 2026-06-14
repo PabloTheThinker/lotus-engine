@@ -15,6 +15,8 @@ import { world } from './engine/World'
 import { getLiveSnapshot } from './engine/liveSnapshot'
 import { executeAICommands, extractCommands } from './editor/ai'
 import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable'
+import { captureExportScreenshot } from './editor/captureExportScreenshot'
+import { buildExportPackMeta } from './editor/exportPackMeta'
 import {
   buildMiniGamePackHTML,
   exportMiniGamePack,
@@ -99,6 +101,13 @@ import { sceneTransition, type SceneTransitionKind, type SceneTransitionPhase } 
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
 import { resolveAnimParams } from './engine/animStateMachine'
 import {
+  atlasIndexForCorner,
+  atlasIndexForMask,
+  atlasIndexForRule,
+  atlasUvRect,
+  AUTOTILE_ATLAS_SIZE,
+} from './engine/autotileAtlas'
+import {
   activeGridLayerIndex,
   autotileExtendedMask,
   autotileNeighbors,
@@ -131,6 +140,14 @@ import {
   type TouchAction,
   type TouchSlotId,
 } from './engine/inputBindings'
+import {
+  activeProfile,
+  applyInputProfile,
+  listInputProfiles,
+  loadInputProfile,
+  profiles,
+  saveInputProfile,
+} from './engine/inputProfiles'
 import { createResource, getResource, listResources, saveResource } from './engine/resources'
 import { listScriptVarPresets, loadScriptVarPreset, saveScriptVarPreset } from './engine/scriptVarPresets'
 import { applyScriptVarPreset, keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
@@ -230,9 +247,13 @@ import {
   mpLobbyIsReady,
   mpLobbyPeerReadyCount,
   mpLobbyPeers,
+  mpListRooms,
   mpLobbySetReady,
   mpLobbyTryStart,
   mpLocalId,
+  mpPingMs,
+  mpRefreshRooms,
+  mpRoomPing,
 } from './engine/multiplayer'
 import * as THREE from 'three'
 import {
@@ -254,6 +275,16 @@ import {
 } from './engine/materialGraphTSL'
 import { emptyMaterialGraph } from './engine/materialGraph'
 import { bakeLightProbeGrid } from './engine/ssrProbeGI'
+import {
+  beginStreamingProgress,
+  getCellsLoaded,
+  getCellsTotal,
+  getProgress,
+  getStreamingProgress,
+  noteStreamingCellLoaded,
+  resetStreamingProgress,
+  tickStreamProgressCell,
+} from './engine/streamingProgress'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 const lotusBridge = {
@@ -326,6 +357,10 @@ const lotusBridge = {
     isHost: mpIsHost,
     localId: mpLocalId,
     peerCount: () => mpKnownPeerIds().length,
+    listRooms: mpListRooms,
+    pingMs: mpPingMs,
+    roomPing: mpRoomPing,
+    refreshRooms: mpRefreshRooms,
   },
   /** Rapier kinematic character — E2E + devtools (Wave 10) */
   crowd: {
@@ -657,6 +692,28 @@ const lotusBridge = {
         resetBindings()
         return getBindings()
       },
+      profiles: () => profiles(),
+      listProfiles: () => listInputProfiles(),
+      activeProfile: () => activeProfile(),
+      applyProfile: (name: string) => {
+        const applied = applyInputProfile(name)
+        if (applied) {
+          const hud = document.getElementById('lotus-touch-hud')
+          if (hud) applyTouchLayoutPreset(hud, applied.touchLayoutPreset)
+          useEditor.getState().touch()
+        }
+        return applied
+      },
+      saveProfile: (name: string) => saveInputProfile(name),
+      loadProfile: (name: string) => {
+        const applied = loadInputProfile(name)
+        if (applied) {
+          const hud = document.getElementById('lotus-touch-hud')
+          if (hud) applyTouchLayoutPreset(hud, applied.touchLayoutPreset)
+          useEditor.getState().touch()
+        }
+        return applied
+      },
     },
     minigame: {
       managerName: MINIGAME_MANAGER_NAME,
@@ -684,6 +741,8 @@ const lotusBridge = {
       packIconStub: () => miniGamePackIconStub(),
       buildPackHTML: (mode: 'platformer' | 'rpg' | 'fps') => buildMiniGamePackHTML(mode),
       exportPack: (mode: 'platformer' | 'rpg' | 'fps') => exportMiniGamePack(mode),
+      packMeta: (mode: 'platformer' | 'rpg' | 'fps') => buildExportPackMeta(mode),
+      captureScreenshot: () => captureExportScreenshot(),
     },
     mp: {
       tagHost: MP_TAG_HOST,
@@ -711,6 +770,11 @@ const lotusBridge = {
         peerReadyCount: () => mpLobbyPeerReadyCount(),
         peers: () => mpLobbyPeers(),
         tryStart: () => mpLobbyTryStart(),
+      },
+      matchmaking: {
+        listRooms: () => mpListRooms(),
+        pingMs: () => mpPingMs(),
+        refreshRooms: () => mpRefreshRooms(),
       },
     },
     spawnCharacterStarter,
@@ -801,6 +865,11 @@ const lotusBridge = {
       cy: number,
       cz: number,
     ) => previewAutotileCorner(props, layer, cx, cy, cz),
+    AUTOTILE_ATLAS_SIZE,
+    atlasIndexForMask: (mask: number) => atlasIndexForMask(mask),
+    atlasIndexForCorner: (corner: import('./engine/gridMap').AutotileCorner) => atlasIndexForCorner(corner),
+    atlasIndexForRule: (rule: import('./engine/gridMap').AutotileRule) => atlasIndexForRule(rule),
+    atlasUvRect: (index: number, cols?: number, rows?: number) => atlasUvRect(index, cols, rows),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,
@@ -818,8 +887,29 @@ const lotusBridge = {
   export: {
     buildPlayableHTML,
     buildMiniGamePackHTML,
+    captureScreenshot: () => captureExportScreenshot(),
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
+  },
+  /** Wave 60 — cell load progress (export UX + devtools) */
+  streaming: {
+    getProgress: () => getProgress(),
+    cellsLoaded: () => getCellsLoaded(),
+    cellsTotal: () => getCellsTotal(),
+    getState: () => getStreamingProgress(),
+    reset: () => {
+      resetStreamingProgress()
+      return getStreamingProgress()
+    },
+    begin: (total: number) => {
+      beginStreamingProgress(total)
+      return getStreamingProgress()
+    },
+    noteCellLoaded: () => {
+      noteStreamingCellLoaded()
+      return getStreamingProgress()
+    },
+    tickCell: () => tickStreamProgressCell(),
   },
 }
 const win = window as unknown as Record<string, unknown>
