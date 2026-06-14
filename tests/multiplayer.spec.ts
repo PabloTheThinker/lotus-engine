@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test'
+import WebSocket from 'ws'
 import { test } from './relay-fixture'
 
 const MP_ROOM = 'e2e-2tab-relay'
@@ -561,5 +562,74 @@ test('wave 58 multiplayer relay: public room list + ping', async ({
   } finally {
     await contextA.close()
     await contextB.close()
+  }
+})
+
+test('wave 63 multiplayer relay: dedicated host 000000 holds authority over clients', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave63-dedicated'
+  const DEDICATED_HOST_ID = '000000'
+
+  const hostWs = new WebSocket(relayUrl)
+  await new Promise<void>((resolve, reject) => {
+    hostWs.once('open', () => resolve())
+    hostWs.once('error', reject)
+  })
+  hostWs.send(JSON.stringify({ t: 'join', room: MP_ROOM, id: DEDICATED_HOST_ID }))
+
+  const context = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const page = await context.newPage()
+
+  try {
+    await page.addInitScript(
+      ({ url, room }) => {
+        localStorage.clear()
+        localStorage.setItem(
+          'lotus-engine.multiplayer',
+          JSON.stringify({ url, room, enabled: true, dedicatedServer: false }),
+        )
+      },
+      { url: relayUrl, room: MP_ROOM },
+    )
+    await page.goto('/')
+    await page.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    await page.keyboard.press('Alt+KeyP')
+    await page.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, {
+      timeout: 15_000,
+    })
+
+    await page.waitForFunction(
+      () => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1,
+      { timeout: 15_000 },
+    )
+
+    const client = await page.evaluate(() => {
+      const mp = window.lotus!.multiplayer as {
+        isHost: () => boolean
+        localId: () => string
+        connected: () => boolean
+        peerCount: () => number
+      }
+      return {
+        connected: mp.connected(),
+        isHost: mp.isHost(),
+        localId: mp.localId(),
+        peers: mp.peerCount(),
+      }
+    })
+
+    expect(client.connected).toBe(true)
+    expect(client.isHost).toBe(false)
+    expect(client.localId).not.toBe(DEDICATED_HOST_ID)
+    expect(client.peers).toBeGreaterThanOrEqual(1)
+  } finally {
+    hostWs.close()
+    await context.close()
   }
 })

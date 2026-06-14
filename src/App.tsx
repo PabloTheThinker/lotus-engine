@@ -18,6 +18,13 @@ import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable
 import { captureExportScreenshot } from './editor/captureExportScreenshot'
 import { buildExportPackMeta } from './editor/exportPackMeta'
 import {
+  buildItchZipBlob,
+  exportItchUploadPack,
+  itchPackZipFilename,
+  listZipStoreEntryNames,
+  readZipStoreEntry,
+} from './editor/itchUploadPack'
+import {
   buildMiniGamePackHTML,
   exportMiniGamePack,
   MINIGAME_PACK_MODES,
@@ -108,6 +115,13 @@ import {
   AUTOTILE_ATLAS_SIZE,
 } from './engine/autotileAtlas'
 import {
+  atlasSlotForMask,
+  getTileMap,
+  importAtlasSheet,
+  listAtlasSheets,
+  setTileMap,
+} from './engine/autotileSheetImport'
+import {
   activeGridLayerIndex,
   autotileExtendedMask,
   autotileNeighbors,
@@ -168,6 +182,14 @@ import {
   syncTouchInputState,
   VirtualJoystick,
 } from './engine/touchInput'
+import {
+  hapticsEnabled,
+  isVibrationSupported,
+  setTouchHapticsEnabled,
+  vibrateFire,
+  vibrateInteract,
+  vibrateJump,
+} from './engine/touchHaptics'
 import { DEFAULT_RAY_CAST, DEFAULT_TIMER } from './engine/types'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import {
@@ -262,7 +284,14 @@ import {
   moveAndSlide as characterMoveAndSlide,
 } from './engine/characterController'
 import { crowdAddAgent, crowdAgentCount, crowdGetPosition, initCrowd } from './engine/navCrowd'
-import { mpIsDedicatedServer, mpLagCompensatedTransform, mpNetSettings } from './engine/multiplayer'
+import {
+  mpActorUsesClientPrediction,
+  mpDedicatedServerMode,
+  MP_DEDICATED_HOST_ID,
+  mpIsDedicatedServer,
+  mpLagCompensatedTransform,
+  mpNetSettings,
+} from './engine/multiplayer'
 import { MP_REPLICATION_TIER_PRIORITY, mpReplicationTierForKey } from './engine/mpNet'
 import { applyEffect, getActorEffectStacks, getEffect, initActorGAS, saveEffect } from './engine/gameplayAbilities'
 import {
@@ -285,6 +314,14 @@ import {
   resetStreamingProgress,
   tickStreamProgressCell,
 } from './engine/streamingProgress'
+import {
+  getSaveLevelName,
+  isSaveEnabled,
+  loadCheckpoint,
+  listSlots,
+  saveCheckpoint,
+  setSaveContext,
+} from './engine/saveSystem'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 const lotusBridge = {
@@ -355,6 +392,8 @@ const lotusBridge = {
     enabled: mpEnabled,
     connected: mpConnected,
     isHost: mpIsHost,
+    isDedicatedServer: mpIsDedicatedServer,
+    dedicatedServerMode: mpDedicatedServerMode,
     localId: mpLocalId,
     peerCount: () => mpKnownPeerIds().length,
     listRooms: mpListRooms,
@@ -373,6 +412,9 @@ const lotusBridge = {
   mpNet: {
     settings: mpNetSettings,
     isDedicatedServer: mpIsDedicatedServer,
+    dedicatedServerMode: mpDedicatedServerMode,
+    dedicatedHostId: MP_DEDICATED_HOST_ID,
+    actorUsesClientPrediction: mpActorUsesClientPrediction,
     lagCompensatedTransform: mpLagCompensatedTransform,
     replicationTier: mpReplicationTierForKey,
     tierPriority: MP_REPLICATION_TIER_PRIORITY,
@@ -661,14 +703,34 @@ const lotusBridge = {
       createJoystick: (parent: HTMLElement, radius = 48) => new VirtualJoystick(parent, { radius }),
       fireJustPressed: () => isTouchFireJustPressed(),
       interactJustPressed: () => isTouchInteractJustPressed(),
-      simulate: (opts: { fireJust?: boolean; interactJust?: boolean }) => {
-        syncTouchInputState({ x: 0, y: 0 }, false, false, false, !!opts.fireJust, false, !!opts.interactJust)
+      simulate: (opts: { fireJust?: boolean; interactJust?: boolean; jumpJust?: boolean }) => {
+        syncTouchInputState(
+          { x: 0, y: 0 },
+          false,
+          !!opts.jumpJust,
+          false,
+          !!opts.fireJust,
+          false,
+          !!opts.interactJust,
+          world.environment.touchHaptics,
+        )
         return true
       },
       endFrame: () => {
         endTouchInputFrame()
         return true
       },
+      hapticsSupported: () => isVibrationSupported(),
+      hapticsEnabled: () => hapticsEnabled(world.environment.touchHaptics),
+      setHapticsEnabled: (on: boolean) => {
+        world.environment.touchHaptics = on
+        setTouchHapticsEnabled(on)
+        useEditor.getState().touch()
+        return on
+      },
+      vibrateFire: () => vibrateFire(world.environment.touchHaptics),
+      vibrateInteract: () => vibrateInteract(world.environment.touchHaptics),
+      vibrateJump: () => vibrateJump(world.environment.touchHaptics),
     },
     gamepad: {
       poll: () => pollGamepadInput(),
@@ -741,6 +803,7 @@ const lotusBridge = {
       packIconStub: () => miniGamePackIconStub(),
       buildPackHTML: (mode: 'platformer' | 'rpg' | 'fps') => buildMiniGamePackHTML(mode),
       exportPack: (mode: 'platformer' | 'rpg' | 'fps') => exportMiniGamePack(mode),
+      itchPack: (mode: 'platformer' | 'rpg' | 'fps') => exportItchUploadPack(mode),
       packMeta: (mode: 'platformer' | 'rpg' | 'fps') => buildExportPackMeta(mode),
       captureScreenshot: () => captureExportScreenshot(),
     },
@@ -870,6 +933,13 @@ const lotusBridge = {
     atlasIndexForCorner: (corner: import('./engine/gridMap').AutotileCorner) => atlasIndexForCorner(corner),
     atlasIndexForRule: (rule: import('./engine/gridMap').AutotileRule) => atlasIndexForRule(rule),
     atlasUvRect: (index: number, cols?: number, rows?: number) => atlasUvRect(index, cols, rows),
+    /** Wave 61 — custom autotile sheet import + manual tile mapping */
+    importAtlasSheet: (dataUrl: string, name?: string) => importAtlasSheet(dataUrl, name),
+    listAtlasSheets: () => listAtlasSheets(),
+    setTileMap: (props: import('./engine/types').FoliageProps, tileMap: Record<number, number>) =>
+      setTileMap(props, tileMap),
+    getTileMap: (props: import('./engine/types').FoliageProps) => getTileMap(props),
+    atlasSlotForMask: (mask: number, tileMap?: Record<number, number>) => atlasSlotForMask(mask, tileMap),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,
@@ -887,9 +957,43 @@ const lotusBridge = {
   export: {
     buildPlayableHTML,
     buildMiniGamePackHTML,
+    buildItchZip: (mode: 'platformer' | 'rpg' | 'fps') => buildItchZipBlob(mode),
+    itchZipFilename: (mode: 'platformer' | 'rpg' | 'fps') => itchPackZipFilename(mode),
+    listItchZipEntries: async (blob: Blob) => listZipStoreEntryNames(new Uint8Array(await blob.arrayBuffer())),
+    readItchZipEntry: async (blob: Blob, name: string) => {
+      const body = readZipStoreEntry(new Uint8Array(await blob.arrayBuffer()), name)
+      return body ? new TextDecoder().decode(body) : null
+    },
     captureScreenshot: () => captureExportScreenshot(),
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
+  },
+  /** Wave 65 — localStorage save slots (PIE + export) */
+  save: {
+    checkpoint: (slot: string, data: unknown) => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+      })
+      return saveCheckpoint(slot, data)
+    },
+    load: (slot: string) => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+      })
+      return loadCheckpoint(slot)
+    },
+    listSlots: () => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+      })
+      return listSlots()
+    },
+    enabled: () => world.environment.saveSlotsEnabled === true,
+    levelName: () => getSaveLevelName(),
+    isActive: () => isSaveEnabled(),
   },
   /** Wave 60 — cell load progress (export UX + devtools) */
   streaming: {

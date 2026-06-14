@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "playwright test",
     "perf:gate": "node scripts/export-perf-gate.mjs",
-    "lotus": "node scripts/lotus-cli.mjs"
+    "lotus": "node scripts/lotus-cli.mjs",
+    "dedicated": "node scripts/dedicated-server.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

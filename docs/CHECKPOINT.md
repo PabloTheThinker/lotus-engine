@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v3.43 (waves 56–60).** v0.33–v3.43 shipped; **build clean**, **`npm run test` — 244 passed**.
+- **Last clean commit: v3.68 (waves 61–65).** v0.33–v3.68 shipped; **build clean**, **`npm run test` — 269 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -449,12 +449,22 @@
 | 59 | v3.34–v3.38 | Input profiles — desktop/mobile presets, save/load custom |
 | 60 | v3.39–v3.43 | Streaming UX — cell load progress bar in export — 244 tests |
 
+## Shipped (v3.44–v3.68, Waves 61–65 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 61 | v3.44–v3.48 | Custom autotile sheets — PNG import + 4×4 tile mapping |
+| 62 | v3.49–v3.53 | itch.io upload helper — `/itchpack` zip export |
+| 63 | v3.54–v3.58 | MP dedicated server — `npm run dedicated`, host `000000` |
+| 64 | v3.59–v3.63 | Touch haptics — Vibration API on Fire/Interact/Jump |
+| 65 | v3.64–v3.68 | Save system — localStorage checkpoints + export slots — 269 tests |
+
 ## Next up (indie roadmap)
 
-1. **Custom autotile sheets** — import PNG atlas + manual tile mapping UI
-2. **itch.io upload helper** — zip pack + meta.json one-click export
-3. **MP dedicated server** — headless relay host mode for LAN parties
-4. **Touch haptics** — vibration on Fire/Interact (PWA Vibration API)
+1. **Tile collision layers** — physics groups per grid layer
+2. **itch.io Butler CLI hint** — generate butler push command from pack meta
+3. **MP spectator mode** — observe match without spawning pawn
+4. **Gamepad haptics** — Gamepad Haptic Actuators where supported
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

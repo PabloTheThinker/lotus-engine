@@ -88,6 +88,16 @@
 | 59 | v3.34–v3.38 | **Input profiles** — desktop/mobile binding presets |
 | 60 | v3.39–v3.43 | **Streaming UX** — cell load progress bar in export — **244 tests** |
 
+## Shipped (Waves 61–65, v3.44–v3.68)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 61 | v3.44–v3.48 | **Custom autotile sheets** — PNG atlas import + tile mapping UI |
+| 62 | v3.49–v3.53 | **itch.io upload helper** — `/itchpack` zip with meta.json |
+| 63 | v3.54–v3.58 | **MP dedicated server** — headless LAN host (`npm run dedicated`) |
+| 64 | v3.59–v3.63 | **Touch haptics** — PWA Vibration API on actions |
+| 65 | v3.64–v3.68 | **Save system** — localStorage checkpoints + export slots — **269 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -96,11 +106,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Custom autotile sheets** — import PNG atlas + manual tile mapping UI
-2. **itch.io upload helper** — zip pack + meta.json one-click export
-3. **MP dedicated server** — headless relay host mode for LAN parties
-4. **Touch haptics** — vibration on Fire/Interact (PWA Vibration API)
-5. **Save system** — localStorage checkpoints + export save slots
+1. **Tile collision layers** — physics groups per grid layer
+2. **itch.io Butler CLI hint** — generate `butler push` command from pack meta
+3. **MP spectator mode** — observe match without spawning pawn
+4. **Gamepad haptics** — Gamepad Haptic Actuators where supported
+5. **Cloud save stub** — optional IndexedDB backup of checkpoints
 
 ## Non-goals (honest skip)
 
@@ -111,5 +121,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **244** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **269** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

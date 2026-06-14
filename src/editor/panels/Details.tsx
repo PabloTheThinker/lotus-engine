@@ -55,6 +55,12 @@ import {
   atlasUvRect,
 } from '../../engine/autotileAtlas'
 import {
+  getTileMap,
+  importAtlasSheet,
+  listAtlasSheets,
+  setTileMapSlot,
+} from '../../engine/autotileSheetImport'
+import {
   activeGridLayerIndex,
   getLayerCellCount,
   isGridLayerVisible,
@@ -2611,33 +2617,93 @@ function FoliageSection({ actor }: { actor: Actor }) {
                 Atlas {props.gridAtlasCols ?? DEFAULT_ATLAS_COLS}×{props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS} ·{' '}
                 {AUTOTILE_ATLAS_SIZE} tiles
               </div>
+              <label className="field">
+                <span>Custom sheet</span>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    type="file"
+                    accept="image/png"
+                    style={{ maxWidth: '100%' }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (!f) return
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const dataUrl = String(reader.result ?? '')
+                        if (!dataUrl.startsWith('data:image')) return
+                        const sheet = importAtlasSheet(dataUrl, f.name.replace(/\.png$/i, ''))
+                        props.gridAtlasSheetId = sheet.id
+                        buildFoliageMesh(actor)
+                        touch()
+                        useEditor.getState().setStatus(`Autotile sheet: ${sheet.name}`)
+                      }
+                      reader.readAsDataURL(f)
+                      e.target.value = ''
+                    }}
+                  />
+                  <select
+                    value={props.gridAtlasSheetId ?? ''}
+                    onChange={(e) => {
+                      props.gridAtlasSheetId = e.target.value || undefined
+                      buildFoliageMesh(actor)
+                      touch()
+                    }}
+                  >
+                    <option value="">Debug palette</option>
+                    {listAtlasSheets().map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+              <div style={{ fontSize: 10, margin: '6px 0 4px', color: '#8a9bb5' }}>
+                Tile map — assign mask index per atlas slot (click cycles 0–15)
+              </div>
               <div
                 style={{
                   display: 'grid',
                   gridTemplateColumns: `repeat(${props.gridAtlasCols ?? DEFAULT_ATLAS_COLS}, 1fr)`,
                   gap: 2,
-                  maxWidth: 160,
+                  maxWidth: 200,
                 }}
               >
-                {Array.from({ length: AUTOTILE_ATLAS_SIZE }, (_, i) => {
-                  const rect = atlasUvRect(i, props.gridAtlasCols ?? DEFAULT_ATLAS_COLS, props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS)
+                {Array.from({ length: AUTOTILE_ATLAS_SIZE }, (_, slot) => {
+                  const tileMap = getTileMap(props)
+                  const mask = tileMap[slot] ?? slot
+                  const sheet = props.gridAtlasSheetId
+                    ? listAtlasSheets().find((s) => s.id === props.gridAtlasSheetId)
+                    : undefined
+                  const rect = atlasUvRect(slot, props.gridAtlasCols ?? DEFAULT_ATLAS_COLS, props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS)
                   return (
-                    <span
-                      key={i}
-                      title={`#${i} u=${rect.u.toFixed(2)} v=${rect.v.toFixed(2)}`}
+                    <button
+                      key={slot}
+                      type="button"
+                      title={`Slot ${slot} → mask ${mask} · u=${rect.u.toFixed(2)} v=${rect.v.toFixed(2)}`}
+                      onClick={() => {
+                        const next = (mask + 1) % AUTOTILE_ATLAS_SIZE
+                        setTileMapSlot(props, slot, next)
+                        rebuild()
+                      }}
                       style={{
-                        background: ATLAS_PALETTE[i % ATLAS_PALETTE.length],
+                        background: sheet
+                          ? `url(${sheet.dataUrl}) ${-rect.u * 100}% ${-(1 - rect.v - rect.h) * 100}% / ${(props.gridAtlasCols ?? DEFAULT_ATLAS_COLS) * 100}% ${(props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS) * 100}% no-repeat`
+                          : ATLAS_PALETTE[slot % ATLAS_PALETTE.length],
                         border: '1px solid #1a1d24',
                         borderRadius: 2,
                         color: '#e8eaed',
-                        fontSize: 9,
+                        fontSize: 8,
                         fontWeight: 600,
-                        lineHeight: '18px',
+                        lineHeight: '22px',
                         textAlign: 'center',
+                        padding: 0,
+                        cursor: 'pointer',
+                        textShadow: '0 0 2px #000',
                       }}
                     >
-                      {i}
-                    </span>
+                      {slot}→{mask}
+                    </button>
                   )
                 })}
               </div>

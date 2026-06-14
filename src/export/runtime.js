@@ -19,6 +19,20 @@ const STREAMING_ENABLED = window.__LOTUS_STREAMING__ === true || window.__LOTUS_
 const STREAM_PROGRESS_ID = 'lotus-stream-progress'
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
 const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
+/** Wave 64 — touch haptics (PWA Vibration API). */
+function touchHapticsEnabled() {
+  const flag = LEVEL.environment?.touchHaptics
+  if (flag === false) return false
+  return true
+}
+function tryTouchVibrate(pattern) {
+  if (!touchHapticsEnabled()) return false
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return false
+  try { return navigator.vibrate(pattern) } catch { return false }
+}
+function vibrateTouchFire() { return tryTouchVibrate([28]) }
+function vibrateTouchInteract() { return tryTouchVibrate([14]) }
+function vibrateTouchJump() { return tryTouchVibrate([22]) }
 const GAMEPAD_ENABLED = window.__LOTUS_GAMEPAD__ === true || window.__LOTUS_GAMEPAD__ === 'true'
 const INPUT_BINDINGS = window.__LOTUS_INPUT_BINDINGS__ ?? { gamepad: {}, touch: {} }
 const INPUT_PROFILE = window.__LOTUS_INPUT_PROFILE__ ?? 'desktop'
@@ -37,6 +51,7 @@ const MINIGAME_ENABLED = window.__LOTUS_MINIGAME__ === true || window.__LOTUS_MI
 const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
 const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
+const SAVES_ENABLED = window.__LOTUS_SAVES__ === true || window.__LOTUS_SAVES__ === 'true'
 const MAIN_MENU_ITEMS = [
   { label: 'Platformer', key: 'platformer' },
   { label: 'RPG', key: 'rpg' },
@@ -598,9 +613,18 @@ function initExportTouchHud() {
     touchJump = slotDown[touchSlotFor('jump')]
     touchFire = slotDown[touchSlotFor('fire')]
     touchInteract = slotDown[touchSlotFor('interact')]
-    if (slotPressed[touchSlotFor('jump')]) pressed.add('Space')
-    if (slotPressed[touchSlotFor('fire')]) pressed.add('KeyF')
-    if (slotPressed[touchSlotFor('interact')]) pressed.add('KeyE')
+    if (slotPressed[touchSlotFor('jump')]) {
+      pressed.add('Space')
+      vibrateTouchJump()
+    }
+    if (slotPressed[touchSlotFor('fire')]) {
+      pressed.add('KeyF')
+      vibrateTouchFire()
+    }
+    if (slotPressed[touchSlotFor('interact')]) {
+      pressed.add('KeyE')
+      vibrateTouchInteract()
+    }
     for (const slot of Object.keys(slotPressed)) slotPressed[slot] = false
   }
   window.__lotusSyncTouchBindings = syncTouchActions
@@ -1764,6 +1788,70 @@ function updateSeqAudio(t) {
   seqAudioLastT = t
 }
 
+// ---- Wave 65 — localStorage save slots (mirrors saveSystem.ts) ----
+const SAVE_STORAGE_PREFIX = 'lotus-engine.saves'
+let saveLevelName = LEVEL?.name ?? 'Untitled'
+
+function sanitizeSaveLevelName(name) {
+  const t = String(name ?? '').trim() || 'Untitled'
+  return t.replace(/[^\w.-]+/g, '_').slice(0, 64)
+}
+
+function sanitizeSaveSlot(slot) {
+  const t = String(slot ?? '').trim()
+  if (!t) return 'slot0'
+  return t.replace(/[^\w.-]+/g, '_').slice(0, 32)
+}
+
+function saveStorageKey(slot) {
+  return `${SAVE_STORAGE_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.${sanitizeSaveSlot(slot)}`
+}
+
+function exportSaveCheckpoint(slot, data) {
+  if (!SAVES_ENABLED) return false
+  try {
+    const payload = {
+      savedAt: Date.now(),
+      level: sanitizeSaveLevelName(saveLevelName),
+      slot: sanitizeSaveSlot(slot),
+      data,
+    }
+    localStorage.setItem(saveStorageKey(slot), JSON.stringify(payload))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function exportLoadCheckpoint(slot) {
+  if (!SAVES_ENABLED) return null
+  try {
+    const raw = localStorage.getItem(saveStorageKey(slot))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.data ?? null
+  } catch {
+    return null
+  }
+}
+
+function exportListSaveSlots() {
+  if (!SAVES_ENABLED) return []
+  const prefix = `${SAVE_STORAGE_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.`
+  const out = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key?.startsWith(prefix)) continue
+      const slot = key.slice(prefix.length)
+      if (slot) out.push(slot)
+    }
+  } catch {
+    return []
+  }
+  return out.sort()
+}
+
 // ---- scripts & behaviors ----
 const api = {
   log: (...a) => console.log('[lotus]', ...a),
@@ -1825,6 +1913,19 @@ const api = {
     }
   },
   changeScene: (name) => api.loadLevel(name),
+  saveGame: (slot, data) => {
+    if (!SAVES_ENABLED) return false
+    const payload =
+      data !== undefined
+        ? data
+        : {
+            playTime: clock,
+            pawn: pawnMode === 'fly' ? [pawnCam.position.x, pawnCam.position.y, pawnCam.position.z] : [feet.x, feet.y, feet.z],
+          }
+    return exportSaveCheckpoint(slot, payload)
+  },
+  loadGame: (slot) => exportLoadCheckpoint(slot),
+  listSaveSlots: () => exportListSaveSlots(),
 }
 function compileScripts() {
   ticks = []
@@ -1930,6 +2031,7 @@ async function loadLevelCore(name) {
   try {
     teardownActors()
     LEVEL = resolved
+    saveLevelName = LEVEL?.name ?? saveLevelName
     applyEnvironment()
     await loadAssets(LEVEL)
     await loadSounds(LEVEL)
@@ -2005,7 +2107,10 @@ async function boot() {
     const picked = await showExportMainMenu()
     bootMenuPick = true
     const resolved = LEVELS[picked] ?? LEVELS[MAIN_KEY]
-    if (resolved) LEVEL = resolved
+    if (resolved) {
+      LEVEL = resolved
+      saveLevelName = LEVEL?.name ?? saveLevelName
+    }
   }
   applyEnvironment()
   await loadAssets(LEVEL)
@@ -2059,6 +2164,15 @@ async function boot() {
       cellsLoaded: () => streamProgress.cellsLoaded,
       cellsTotal: () => streamProgress.cellsTotal,
       reset: resetStreamProgress,
+    }
+  }
+  if (SAVES_ENABLED) {
+    window.__LOTUS_SAVE_SLOTS__ = {
+      checkpoint: exportSaveCheckpoint,
+      load: exportLoadCheckpoint,
+      listSlots: exportListSaveSlots,
+      enabled: () => SAVES_ENABLED,
+      levelName: () => saveLevelName,
     }
   }
   const c = new THREE.Clock()

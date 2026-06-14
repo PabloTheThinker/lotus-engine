@@ -5854,6 +5854,146 @@ test('wave 60 export runtime includes stream progress bar hooks', async ({ page 
   expect(result.exportProgress).toBe(true)
 })
 
+const WAVE61_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+
+test('wave 61 gridMap importAtlasSheet persists PNG data URL to localStorage autotileSheets', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate((png) => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: { importAtlasSheet: (url: string, name?: string) => { id: string; name: string; dataUrl: string } }
+    }
+    const sheet = v.gridMap.importAtlasSheet(png, 'TestAtlas')
+    const raw = localStorage.getItem('lotus-engine.autotileSheets') ?? '{}'
+    const store = JSON.parse(raw) as Record<string, { id: string; dataUrl: string; name: string }>
+    return {
+      id: sheet.id,
+      name: sheet.name,
+      hasDataUrl: sheet.dataUrl.startsWith('data:image/png'),
+      stored: store[sheet.id]?.dataUrl?.startsWith('data:image/png') ?? false,
+      storedName: store[sheet.id]?.name ?? '',
+    }
+  }, WAVE61_PNG)
+
+  expect(result.hasDataUrl).toBe(true)
+  expect(result.stored).toBe(true)
+  expect(result.name).toBe('TestAtlas')
+  expect(result.storedName).toBe('TestAtlas')
+  expect(result.id).toMatch(/^ats_/)
+})
+
+test('wave 61 gridMap listAtlasSheets returns imported sheet metadata', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate((png) => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        importAtlasSheet: (url: string, name?: string) => { id: string }
+        listAtlasSheets: () => { id: string; name: string; cols: number; rows: number }[]
+      }
+    }
+    const sheet = v.gridMap.importAtlasSheet(png, 'ListedAtlas')
+    const list = v.gridMap.listAtlasSheets()
+    const found = list.find((s) => s.id === sheet.id)
+    return {
+      count: list.length,
+      found: !!found,
+      cols: found?.cols,
+      rows: found?.rows,
+      name: found?.name,
+    }
+  }, WAVE61_PNG)
+
+  expect(result.count).toBeGreaterThanOrEqual(1)
+  expect(result.found).toBe(true)
+  expect(result.cols).toBe(4)
+  expect(result.rows).toBe(4)
+  expect(result.name).toBe('ListedAtlas')
+})
+
+test('wave 61 gridMap setTileMap + getTileMap round-trip on foliage props', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: Record<string, unknown> } | null }
+      gridMap: {
+        setTileMap: (props: Record<string, unknown>, map: Record<number, number>) => void
+        getTileMap: (props: Record<string, unknown>) => Record<number, number>
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps ?? {}
+    v.gridMap.setTileMap(props, { 0: 5, 3: 12 })
+    const map = v.gridMap.getTileMap(props)
+    return { slot0: map[0], slot3: map[3], onProps: (props as { gridAtlasTileMap?: Record<number, number> }).gridAtlasTileMap }
+  })
+
+  expect(result.slot0).toBe(5)
+  expect(result.slot3).toBe(12)
+  expect(result.onProps?.[0]).toBe(5)
+  expect(result.onProps?.[3]).toBe(12)
+})
+
+test('wave 61 gridMap atlasSlotForMask resolves atlas slot from slot→mask tile map', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: { atlasSlotForMask: (mask: number, tileMap?: Record<number, number>) => number }
+    }
+    const tileMap = { 2: 5, 7: 15 }
+    return {
+      mapped: v.gridMap.atlasSlotForMask(5, tileMap),
+      corner: v.gridMap.atlasSlotForMask(15, tileMap),
+      identity: v.gridMap.atlasSlotForMask(3, tileMap),
+      noMap: v.gridMap.atlasSlotForMask(8),
+    }
+  })
+
+  expect(result.mapped).toBe(2)
+  expect(result.corner).toBe(7)
+  expect(result.identity).toBe(3)
+  expect(result.noMap).toBe(8)
+})
+
+test('wave 61 gridmap spawn exposes gridAtlasSheetId + custom sheet bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate((png) => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { gridAtlasSheetId?: string } } | null }
+      gridMap: {
+        importAtlasSheet: (url: string) => { id: string }
+        listAtlasSheets: unknown
+        setTileMap: unknown
+        getTileMap: unknown
+        atlasSlotForMask: unknown
+      }
+    }
+    const sheet = v.gridMap.importAtlasSheet(png)
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    if (props) props.gridAtlasSheetId = sheet.id
+    return {
+      sheetId: props?.gridAtlasSheetId,
+      hasImport: typeof v.gridMap.importAtlasSheet === 'function',
+      hasList: typeof v.gridMap.listAtlasSheets === 'function',
+      hasSet: typeof v.gridMap.setTileMap === 'function',
+      hasGet: typeof v.gridMap.getTileMap === 'function',
+      hasSlot: typeof v.gridMap.atlasSlotForMask === 'function',
+    }
+  }, WAVE61_PNG)
+
+  expect(result.sheetId).toMatch(/^ats_/)
+  expect(result.hasImport).toBe(true)
+  expect(result.hasList).toBe(true)
+  expect(result.hasSet).toBe(true)
+  expect(result.hasGet).toBe(true)
+  expect(result.hasSlot).toBe(true)
+})
+
 test('wave 57 indie.minigame.packMeta returns itch.io sidecar fields', async ({ page }) => {
   await bootEditor(page)
 
@@ -5988,4 +6128,444 @@ test('wave 57 /exportpack platformer includes pack meta in HTML', async ({ page 
   expect(result.metaTitle).toBe('Lotus Platformer Pack')
   expect(result.metaKind).toBe('html')
   expect(result.metaTags.length).toBeGreaterThanOrEqual(3)
+})
+
+test('wave 65 saveCheckpoint round-trip stores lotus-engine.saves.{levelName}.{slot}', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean } }
+      save: {
+        checkpoint: (slot: string, data: unknown) => boolean
+        load: (slot: string) => unknown
+        listSlots: () => string[]
+      }
+    }
+    v.world.levelName = 'Wave65Level'
+    v.world.environment.saveSlotsEnabled = true
+    const ok = v.save.checkpoint('slot-a', { hp: 42, coins: 7 })
+    const key = 'lotus-engine.saves.Wave65Level.slot-a'
+    const raw = localStorage.getItem(key)
+    const loaded = v.save.load('slot-a')
+    const slots = v.save.listSlots()
+    return { ok, key, hasRaw: !!raw, loaded, slots }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.hasRaw).toBe(true)
+  expect(result.loaded).toEqual({ hp: 42, coins: 7 })
+  expect(result.slots).toContain('slot-a')
+})
+
+test('wave 65 lotus.save bridge exposes checkpoint, load, listSlots, enabled', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).save as Record<string, unknown>
+    return {
+      checkpoint: typeof s.checkpoint === 'function',
+      load: typeof s.load === 'function',
+      listSlots: typeof s.listSlots === 'function',
+      enabled: typeof s.enabled === 'function',
+    }
+  })
+
+  expect(result.checkpoint).toBe(true)
+  expect(result.load).toBe(true)
+  expect(result.listSlots).toBe(true)
+  expect(result.enabled).toBe(true)
+})
+
+test('wave 65 World Settings saveSlotsEnabled toggle persists on world.environment', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean }; serialize: () => { environment: { saveSlotsEnabled?: boolean } } }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    const serialized = v.world.serialize()
+    return {
+      live: v.world.environment.saveSlotsEnabled === true,
+      serialized: serialized.environment.saveSlotsEnabled === true,
+    }
+  })
+
+  expect(result.live).toBe(true)
+  expect(result.serialized).toBe(true)
+})
+
+test('wave 65 export embeds __LOTUS_SAVES__ true when save slots enabled', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    const htmlOn = v.export.buildPlayableHTML()
+    v.world.environment.saveSlotsEnabled = false
+    const htmlOff = v.export.buildPlayableHTML()
+    return {
+      enabled: htmlOn.includes('__LOTUS_SAVES__ = true'),
+      disabled: htmlOff.includes('__LOTUS_SAVES__ = false'),
+    }
+  })
+
+  expect(result.enabled).toBe(true)
+  expect(result.disabled).toBe(true)
+})
+
+test('wave 65 export runtime includes saveGame, loadGame, listSaveSlots when __LOTUS_SAVES__', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      savesFlag: html.includes('__LOTUS_SAVES__ = true'),
+      saveGame: html.includes('saveGame:'),
+      loadGame: html.includes('loadGame:'),
+      listSaveSlots: html.includes('listSaveSlots:'),
+      saveBridge: html.includes('__LOTUS_SAVE_SLOTS__'),
+      storagePrefix: html.includes('lotus-engine.saves'),
+    }
+  })
+
+  expect(result.savesFlag).toBe(true)
+  expect(result.saveGame).toBe(true)
+  expect(result.loadGame).toBe(true)
+  expect(result.listSaveSlots).toBe(true)
+  expect(result.saveBridge).toBe(true)
+  expect(result.storagePrefix).toBe(true)
+})
+
+test('wave 62 export.buildItchZip returns PK zip with index.html meta.json icon.png', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: {
+        buildItchZip: (m: 'platformer') => Blob
+        listItchZipEntries: (b: Blob) => Promise<string[]>
+      }
+    }
+    const blob = v.export.buildItchZip('platformer')
+    const buf = new Uint8Array(await blob.arrayBuffer())
+    const entries = await v.export.listItchZipEntries(blob)
+    return {
+      pk: buf[0] === 0x50 && buf[1] === 0x4b,
+      type: blob.type,
+      entries,
+    }
+  })
+
+  expect(result.pk).toBe(true)
+  expect(result.type).toBe('application/zip')
+  expect(result.entries).toEqual(['icon.png', 'index.html', 'meta.json'])
+})
+
+test('wave 62 export.itchZipFilename uses {genre}-lotus-pack.zip pattern', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const exp = (window.lotus! as typeof window.lotus).export as {
+      itchZipFilename: (m: 'platformer' | 'rpg' | 'fps') => string
+    }
+    return {
+      platformer: exp.itchZipFilename('platformer'),
+      rpg: exp.itchZipFilename('rpg'),
+      fps: exp.itchZipFilename('fps'),
+    }
+  })
+
+  expect(result.platformer).toBe('platformer-lotus-pack.zip')
+  expect(result.rpg).toBe('rpg-lotus-pack.zip')
+  expect(result.fps).toBe('fps-lotus-pack.zip')
+})
+
+test('wave 62 indie.minigame.itchPack bridge exposes one-click zip export', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      itchPack: (m: string) => void
+    }
+    return { hasItchPack: typeof mg.itchPack === 'function' }
+  })
+
+  expect(result.hasItchPack).toBe(true)
+})
+
+test('wave 62 buildItchZip meta.json embeds pack title tags and kind html', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: {
+        buildItchZip: (m: 'rpg') => Blob
+        readItchZipEntry: (b: Blob, n: string) => Promise<string | null>
+      }
+    }
+    const blob = v.export.buildItchZip('rpg')
+    const metaRaw = await v.export.readItchZipEntry(blob, 'meta.json')
+    const htmlRaw = await v.export.readItchZipEntry(blob, 'index.html')
+    const meta = metaRaw ? (JSON.parse(metaRaw) as { title: string; tags: string[]; kind: string }) : null
+    return {
+      title: meta?.title ?? '',
+      tags: meta?.tags ?? [],
+      kind: meta?.kind ?? '',
+      htmlPack: htmlRaw?.includes("__LOTUS_MINIGAME_PACK__ = 'rpg'") ?? false,
+      htmlMeta: htmlRaw?.includes('__LOTUS_PACK_META__') ?? false,
+    }
+  })
+
+  expect(result.title).toBe('Lotus RPG Pack')
+  expect(result.tags).toEqual(expect.arrayContaining(['rpg', 'top-down', 'adventure']))
+  expect(result.kind).toBe('html')
+  expect(result.htmlPack).toBe(true)
+  expect(result.htmlMeta).toBe(true)
+})
+
+test('wave 62 /itchpack platformer terminal command downloads zip and spawns preset', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/itchpack platformer')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MiniGameManager')
+    const goal = [...v.world.actors.values()].find((a) => a.name === 'GoalZone')
+    return { output: out?.output, mgr: !!mgr, goal: !!goal }
+  })
+
+  expect(result.output).toMatch(/Exported itch\.io zip: platformer-lotus-pack\.zip/i)
+  expect(result.mgr).toBe(true)
+  expect(result.goal).toBe(true)
+})
+
+test('wave 63 mpNet + multiplayer bridge expose dedicatedServerMode', async ({ page }) => {
+  await bootEditor(page, {
+    'lotus-engine.multiplayer': JSON.stringify({
+      url: 'ws://localhost:24690',
+      room: 'lan-party',
+      enabled: true,
+      dedicatedServer: true,
+    }),
+  })
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      mpNet: { isDedicatedServer: () => boolean; dedicatedServerMode: () => boolean }
+      multiplayer: {
+        loadSettings: () => { dedicatedServer?: boolean }
+        isDedicatedServer?: () => boolean
+        dedicatedServerMode?: () => boolean
+      }
+    }
+    return {
+      mpNetDedicated: v.mpNet.isDedicatedServer(),
+      mpNetMode: v.mpNet.dedicatedServerMode(),
+      settingsDedicated: v.multiplayer.loadSettings().dedicatedServer,
+      bridgeDedicated: v.multiplayer.isDedicatedServer?.(),
+      bridgeMode: v.multiplayer.dedicatedServerMode?.(),
+    }
+  })
+
+  expect(result.mpNetDedicated).toBe(true)
+  expect(result.mpNetMode).toBe(true)
+  expect(result.settingsDedicated).toBe(true)
+  expect(result.bridgeDedicated).toBe(true)
+  expect(result.bridgeMode).toBe(true)
+})
+
+test('wave 63 dedicated mode disables client prediction on predicted actors', async ({ page }) => {
+  await bootEditor(page, {
+    'lotus-engine.multiplayer': JSON.stringify({
+      url: 'ws://localhost:24690',
+      room: 'default',
+      enabled: true,
+      dedicatedServer: true,
+    }),
+  })
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      mpNet: {
+        isDedicatedServer: () => boolean
+        actorUsesClientPrediction: (actor: { clientPredicted?: boolean }) => boolean
+      }
+      world: { actors: { values: () => IterableIterator<{ clientPredicted?: boolean }> } }
+    }
+    const actor = [...v.world.actors.values()][0]
+    actor.clientPredicted = true
+    return {
+      dedicated: v.mpNet.isDedicatedServer(),
+      predicts: v.mpNet.actorUsesClientPrediction(actor),
+    }
+  })
+
+  expect(result.dedicated).toBe(true)
+  expect(result.predicts).toBe(false)
+})
+
+test('wave 63 dedicated host id constant is lexicographically smallest', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      mpNet: { dedicatedHostId: string }
+    }
+    const samplePeers = ['abc123', 'zzzzzz', 'host01', v.mpNet.dedicatedHostId]
+    samplePeers.sort()
+    return {
+      hostId: v.mpNet.dedicatedHostId,
+      smallest: samplePeers[0],
+    }
+  })
+
+  expect(result.hostId).toBe('000000')
+  expect(result.smallest).toBe('000000')
+})
+
+test('wave 63 World Settings documents dedicated server URL + npm run dedicated', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.content()
+  expect(html).toContain('npm run dedicated')
+  expect(html).toContain('Dedicated server URL')
+  expect(html).toContain('ws://&lt;host-ip&gt;:24690')
+  expect(html).toContain('000000')
+})
+
+test('wave 64 touchHaptics vibrateFire guarded when navigator.vibrate missing', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        touch: {
+          vibrateFire: () => boolean
+          hapticsSupported: () => boolean
+        }
+      }
+    }
+    const orig = navigator.vibrate
+    // @ts-expect-error test stub
+    navigator.vibrate = undefined
+    const fired = v.indie.touch.vibrateFire()
+    navigator.vibrate = orig
+    return { fired, supported: v.indie.touch.hapticsSupported() }
+  })
+
+  expect(result.fired).toBe(false)
+})
+
+test('wave 64 indie.touch hapticsEnabled defaults true and setHapticsEnabled writes env', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        touch: {
+          hapticsEnabled: () => boolean
+          setHapticsEnabled: (on: boolean) => boolean
+        }
+      }
+      world: { environment: { touchHaptics?: boolean } }
+    }
+    delete v.world.environment.touchHaptics
+    const defaultOn = v.indie.touch.hapticsEnabled()
+    v.indie.touch.setHapticsEnabled(false)
+    const off = v.world.environment.touchHaptics === false && v.indie.touch.hapticsEnabled() === false
+    v.indie.touch.setHapticsEnabled(true)
+    const on = v.world.environment.touchHaptics === true && v.indie.touch.hapticsEnabled() === true
+    return { defaultOn, off, on }
+  })
+
+  expect(result.defaultOn).toBe(true)
+  expect(result.off).toBe(true)
+  expect(result.on).toBe(true)
+})
+
+test('wave 64 indie.touch vibrateFire and vibrateInteract return boolean from bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        touch: {
+          setHapticsEnabled: (on: boolean) => boolean
+          vibrateFire: () => boolean
+          vibrateInteract: () => boolean
+        }
+      }
+    }
+    v.indie.touch.setHapticsEnabled(true)
+    let calls: number[] = []
+    const orig = navigator.vibrate
+    navigator.vibrate = (pattern: number | number[]) => {
+      calls.push(Array.isArray(pattern) ? pattern[0] : pattern)
+      return true
+    }
+    const fire = v.indie.touch.vibrateFire()
+    const interact = v.indie.touch.vibrateInteract()
+    navigator.vibrate = orig
+    return { fire, interact, firePattern: calls[0], interactPattern: calls[1] }
+  })
+
+  expect(result.fire).toBe(true)
+  expect(result.interact).toBe(true)
+  expect(result.firePattern).toBe(28)
+  expect(result.interactPattern).toBe(14)
+})
+
+test('wave 64 World Settings touch haptics toggles environment.touchHaptics', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { touchHaptics?: boolean } }
+    }
+    v.world.environment.touchHaptics = true
+    const on = v.world.environment.touchHaptics === true
+    v.world.environment.touchHaptics = false
+    const off = v.world.environment.touchHaptics === false
+    return { on, off }
+  })
+
+  expect(result.on).toBe(true)
+  expect(result.off).toBe(true)
+})
+
+test('wave 64 export runtime includes vibrateTouchFire when TOUCH_ENABLED', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { touchControls?: boolean; touchHaptics?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.touchControls = true
+    v.world.environment.touchHaptics = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      touchFlag: html.includes('__LOTUS_TOUCH__ = true'),
+      fireVibrate: html.includes('vibrateTouchFire'),
+      interactVibrate: html.includes('vibrateTouchInteract'),
+      jumpVibrate: html.includes('vibrateTouchJump'),
+      hapticsGuard: html.includes('touchHapticsEnabled'),
+    }
+  })
+
+  expect(result.touchFlag).toBe(true)
+  expect(result.fireVibrate).toBe(true)
+  expect(result.interactVibrate).toBe(true)
+  expect(result.jumpVibrate).toBe(true)
+  expect(result.hapticsGuard).toBe(true)
 })

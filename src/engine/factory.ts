@@ -26,6 +26,11 @@ import {
   type AtlasUvRect,
 } from './autotileAtlas'
 import {
+  atlasSlotForMask,
+  createAutotileSheetTexture,
+  getAtlasSheet,
+} from './autotileSheetImport'
+import {
   autotileRuleForMask,
   ensureGridLayerVisibility,
   GRID_TILE_KINDS,
@@ -317,8 +322,9 @@ function rebuildFoliageAutotileAtlas(actor: Actor) {
       const neighborKinds = gridNeighborKinds(bucket, cx, cy, cz, fallback)
       const rule = autotileRuleForMask(mask, baseKind, extended, neighborKinds)
       const idx = atlasIndexForRule(rule)
+      const slot = atlasSlotForMask(idx, props.gridAtlasTileMap)
       instances.push([x, y + layer * 0.05, z, sc, rotY + rule.rotY])
-      rects.push(atlasUvRect(idx, cols, rows))
+      rects.push(atlasUvRect(slot, cols, rows))
     }
   }
 
@@ -396,7 +402,10 @@ export function buildFoliageMesh(actor: Actor) {
     const rows = props.gridAtlasRows ?? DEFAULT_ATLAS_ROWS
     const geo = buildGeometry('plane')
     geo.rotateX(-Math.PI / 2)
-    const texture = createAutotileAtlasTexture(cols, rows)
+    const sheet = props.gridAtlasSheetId ? getAtlasSheet(props.gridAtlasSheetId) : undefined
+    const texture = sheet
+      ? createAutotileSheetTexture(sheet.dataUrl)
+      : createAutotileAtlasTexture(cols, rows)
     const mat = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.85 })
     patchMaterialForAtlasUv(mat)
     const mesh = new THREE.InstancedMesh(geo, mat, FOLIAGE_CAP)

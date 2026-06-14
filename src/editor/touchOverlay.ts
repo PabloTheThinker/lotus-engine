@@ -2,6 +2,7 @@ import { Input } from '../engine/Input'
 import { getEffectiveTouchSlot, type TouchSlotId } from '../engine/inputBindings'
 import { applyTouchLayoutPreset, type TouchLayoutPreset } from '../engine/touchLayoutPresets'
 import type { EnvironmentSettings } from '../engine/types'
+import { world } from '../engine/World'
 import {
   endTouchInputFrame,
   resetTouchInput,
@@ -147,7 +148,7 @@ export class TouchOverlay {
     const fireJust = fireBtn.justPressed()
     const interactDown = interactBtn.isDown()
     const interactJust = interactBtn.justPressed()
-    syncTouchInputState(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust)
+    syncTouchInputState(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust, world.environment.touchHaptics)
     Input.syncTouchInput(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust)
     jumpBtn.endFrame()
     fireBtn.endFrame()

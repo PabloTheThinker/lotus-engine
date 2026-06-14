@@ -4,6 +4,32 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 61–65: v3.44–v3.68 (indie swarm)
+
+### Wave 61 (v3.44–v3.48) — Custom autotile sheets
+- `autotileSheetImport.ts` — PNG atlas import, 4×4 tile mapping UI in Details
+
+### Wave 62 (v3.49–v3.53) — itch.io upload helper
+- `itchUploadPack.ts` — client-side PK zip: `index.html` + `meta.json` + `icon.png`
+- `/itchpack platformer|rpg|fps`
+
+### Wave 63 (v3.54–v3.58) — MP dedicated server
+- `scripts/dedicated-server.mjs`, `npm run dedicated` — headless host `000000`
+
+### Wave 64 (v3.59–v3.63) — Touch haptics
+- `touchHaptics.ts` — Vibration API on Fire/Interact/Jump; export + PIE
+
+### Wave 65 (v3.64–v3.68) — Save system
+- `saveSystem.ts` — localStorage checkpoints; `api.saveGame` / `__LOTUS_SAVES__`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 269 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 56–60: v3.19–v3.43 (indie swarm)
 
 ### Wave 56 (v3.19–v3.23) — Autotile art

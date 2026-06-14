@@ -27,6 +27,7 @@ import {
   mpPingMs,
   mpRefreshRooms,
 } from './multiplayer'
+import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
 
 /**
  * Scripting — per-actor JavaScript, the Blueprint/GDScript analog.
@@ -196,6 +197,12 @@ export interface ScriptApi {
   getMpPeerScores: () => Record<string, number>
   /** Add MP score delta — host authoritative, clients request via relay */
   addMpScore: (delta: number, peerId?: string) => boolean
+  /** Wave 65 — save checkpoint JSON to a named slot (localStorage) */
+  saveGame: (slot: string, data?: unknown) => boolean
+  /** Wave 65 — load checkpoint data from a slot */
+  loadGame: (slot: string) => unknown | null
+  /** Wave 65 — list slots with saved data for this level */
+  listSaveSlots: () => string[]
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -374,6 +381,19 @@ export function makeScriptApi(
       }
       return addMpScore(actors, delta, peerId, emit)
     },
+    saveGame: (slot, data) => {
+      if (!isSaveEnabled()) return false
+      const payload =
+        data !== undefined
+          ? data
+          : {
+              playTime: clock(),
+              pawn: pawnPosition() ? [pawnPosition()!.x, pawnPosition()!.y, pawnPosition()!.z] : null,
+            }
+      return saveCheckpoint(slot, payload)
+    },
+    loadGame: (slot) => loadCheckpoint(slot),
+    listSaveSlots: () => listSlots(),
   }
   return api
 }

@@ -15,6 +15,7 @@ import { spawnIndieMpDeathmatch, spawnIndieMpLobby } from './indieMpGameplay'
 import { spawnIndieMpTemplate } from './indieMpTemplate'
 import { exportMiniGamePreset } from './exportPlayable'
 import { buildExportPackMeta } from './exportPackMeta'
+import { exportItchUploadPack } from './itchUploadPack'
 import { exportMiniGamePack } from './miniGameExportPack'
 import { spawnMainMenu } from './mainMenuFlow'
 import { spawnMiniGame } from './starterMiniGames'
@@ -54,6 +55,7 @@ SLASH COMMANDS
   /minigameexport <mode>  Export playable HTML for platformer|rpg|fps preset
   /exportpack <mode>      Export PWA mini-game pack (platformer|rpg|fps) with manifest + icons + meta
   /exportpackmeta <mode>  Show itch.io pack metadata JSON (platformer|rpg|fps)
+  /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png)
   /mpstarter         Greybox indie multiplayer scene (host + client spawns, sync crates)
   /mpdeathmatch      Indie MP deathmatch (targets, scoreboard, first to 3 wins)
   /mplobby           Indie MP lobby (room browser + ready-up before deathmatch)
@@ -326,6 +328,14 @@ function runSlash(parts: string[]): TerminalResult {
       const meta = buildExportPackMeta(mode as 'platformer' | 'rpg' | 'fps')
       return { output: JSON.stringify(meta, null, 2), error: null, level: 'log' }
     }
+    case '/itchpack': {
+      const mode = (args[0] ?? '').toLowerCase()
+      if (!['platformer', 'rpg', 'fps'].includes(mode)) {
+        return { output: null, error: 'Usage: /itchpack platformer|rpg|fps', level: 'error' }
+      }
+      exportItchUploadPack(mode as 'platformer' | 'rpg' | 'fps')
+      return { output: `Exported itch.io zip: ${mode}-lotus-pack.zip`, error: null, level: 'log' }
+    }
     case '/mpstarter': {
       if (args.length) {
         return { output: null, error: 'Usage: /mpstarter', level: 'error' }
@@ -474,7 +484,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mainmenu', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mainmenu', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

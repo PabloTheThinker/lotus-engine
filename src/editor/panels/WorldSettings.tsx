@@ -171,6 +171,13 @@ function MultiplayerSection() {
           Enable Network on actors (Details) for property sync @ 10 Hz and spawner replication.
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
+          <strong>Dedicated server (LAN):</strong> on the host machine run <code>npm run dedicated</code>{' '}
+          (optional <code>-- --port 24690 --room lan-party</code>). Clients set Relay URL to{' '}
+          <code>ws://&lt;host-ip&gt;:24690</code> (Dedicated server URL), same room, leave{' '}
+          <em>Dedicated server mode</em> off. Headless host id <code>000000</code> holds authority — no pawn uplink,
+          client prediction disabled.
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
           <strong>Ownership:</strong> empty owner = host authority. Assign a peer id (or Local) so that client
           may predict movement when <em>Client Predicted</em> is on; host still syncs @ 10 Hz and clients snap on large error.
         </div>
@@ -1458,6 +1465,14 @@ export function WorldSettings() {
             onChange={(e) => set('touchControls', e.target.checked)}
           />
         </label>
+        <label className="field check" title="Short vibration on Fire / Interact / Jump (PWA Vibration API on supported devices)">
+          <span>Touch haptics</span>
+          <input
+            type="checkbox"
+            checked={env.touchHaptics !== false}
+            onChange={(e) => set('touchHaptics', e.target.checked)}
+          />
+        </label>
         {env.touchControls !== false && (
           <label className="field" title="Joystick + action button positions for touch HUD (editor PIE + export)">
             <span>Touch layout preset</span>
@@ -1489,6 +1504,20 @@ export function WorldSettings() {
             onChange={(e) => set('exportBatchStatic', e.target.checked)}
           />
         </label>
+        <label className="field check" title="localStorage checkpoints in PIE + playable export (__LOTUS_SAVES__)">
+          <span>Save slots (localStorage)</span>
+          <input
+            type="checkbox"
+            checked={!!env.saveSlotsEnabled}
+            onChange={(e) => set('saveSlotsEnabled', e.target.checked)}
+          />
+        </label>
+        {env.saveSlotsEnabled && (
+          <div className="panel-empty" style={{ padding: '2px 0' }}>
+            Scripts: <code>api.saveGame('slot1', data)</code> · <code>api.loadGame('slot1')</code> ·{' '}
+            <code>api.listSaveSlots()</code> — keys <code>lotus-engine.saves.{'{level}'}.{'{slot}'}</code>
+          </div>
+        )}
       </div>
       <LinkedLevelsSection />
       <StreamingSection />

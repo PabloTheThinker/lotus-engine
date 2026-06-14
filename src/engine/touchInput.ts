@@ -2,7 +2,10 @@
  * Touch input — virtual joystick + action buttons for mobile PWA / editor PIE preview.
  * Wave 39 (v2.34): axis state, VirtualJoystick, device detection.
  * Wave 44 (v2.59): Fire + Interact buttons, isTouchFireJustPressed / isTouchInteractJustPressed.
+ * Wave 64 (v3.59): haptics on just-pressed fire / interact / jump via touchHaptics.
  */
+
+import { vibrateFire, vibrateInteract, vibrateJump } from './touchHaptics'
 
 export interface TouchAxis {
   /** MoveRight: negative = left (KeyA), positive = right (KeyD) */
@@ -67,14 +70,24 @@ export function syncTouchInputState(
   fireJust = false,
   interact = false,
   interactJust = false,
+  hapticsEnv?: boolean,
 ) {
   moveAxis = { x: clamp(axis.x), y: clamp(axis.y) }
   jumpDown = jump
   fireDown = fire
   interactDown = interact
-  if (jumpJust) jumpJustPressed = true
-  if (fireJust) fireJustPressed = true
-  if (interactJust) interactJustPressed = true
+  if (jumpJust) {
+    jumpJustPressed = true
+    vibrateJump(hapticsEnv)
+  }
+  if (fireJust) {
+    fireJustPressed = true
+    vibrateFire(hapticsEnv)
+  }
+  if (interactJust) {
+    interactJustPressed = true
+    vibrateInteract(hapticsEnv)
+  }
 }
 
 export function endTouchInputFrame() {

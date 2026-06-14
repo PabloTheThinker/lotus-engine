@@ -399,6 +399,10 @@ export interface FoliageProps {
   gridAtlasCols?: number
   /** Atlas grid rows (default 4) */
   gridAtlasRows?: number
+  /** Custom autotile sheet asset id (localStorage `autotileSheets`) */
+  gridAtlasSheetId?: string
+  /** Atlas slot index → autotile mask index override (manual tile mapping) */
+  gridAtlasTileMap?: Record<number, number>
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {
@@ -646,6 +650,10 @@ export interface EnvironmentSettings {
   gamepadControls?: boolean
   /** Wave 49 — touch HUD joystick + action button layout preset */
   touchLayoutPreset?: 'compact' | 'wide' | 'fps'
+  /** Wave 64 — vibration on Fire / Interact / Jump (PWA Vibration API; default on when unset) */
+  touchHaptics?: boolean
+  /** Wave 65 — localStorage save slots + export __LOTUS_SAVES__ */
+  saveSlotsEnabled?: boolean
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */

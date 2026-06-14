@@ -107,6 +107,8 @@ export interface MPSettings {
 }
 
 const KEY = 'lotus-engine.multiplayer'
+/** Fixed peer id for headless dedicated host — lexicographically smallest → always authority. */
+export const MP_DEDICATED_HOST_ID = '000000'
 export function loadMPSettings(): MPSettings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}')
@@ -142,6 +144,11 @@ export function mpNetSettings(): MPNetSettings {
 export function mpIsDedicatedServer(): boolean {
   return loadMPSettings().dedicatedServer === true
 }
+
+/** Alias for script/bridge consumers (Wave 63). */
+export function mpDedicatedServerMode(): boolean {
+  return mpIsDedicatedServer()
+}
 export function saveMPSettings(s: MPSettings) {
   localStorage.setItem(KEY, JSON.stringify(s))
 }
@@ -170,22 +177,30 @@ function actorOwnerId(actor: import('./Actor').Actor): string {
 /** Whether this client may drive the actor locally (prediction / input). */
 export function mpIsLocallyOwned(actor: import('./Actor').Actor): boolean {
   if (!mpConnected()) return true
+  if (mpIsDedicatedServer()) return true
   const owner = actorOwnerId(actor)
   if (mpIsHost()) return owner === '' || owner === localId
   return owner === localId
 }
 
 function shouldPredict(actor: import('./Actor').Actor): boolean {
+  if (mpIsDedicatedServer()) return false
   return !!actor.clientPredicted && mpIsLocallyOwned(actor) && !mpIsHost()
+}
+
+/** Whether an actor uses client-side prediction this session (Wave 63 dedicated disables). */
+export function mpActorUsesClientPrediction(actor: import('./Actor').Actor): boolean {
+  return shouldPredict(actor)
 }
 
 function allPeerIds(): string[] {
   return [localId, ...knownPeerIds]
 }
 
-/** Lexicographically smallest peer id is the authoritative host. */
+/** Lexicographically smallest peer id is the authoritative host (dedicated mode is always authority). */
 export function mpIsHost(): boolean {
   if (!mpConnected()) return false
+  if (mpIsDedicatedServer()) return true
   return localId === allPeerIds().sort()[0]
 }
 
@@ -497,7 +512,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   const cfg = loadMPSettings()
   if (!cfg.enabled || ws) return
   worldRef = world
-  localId = Math.random().toString(36).slice(2, 8)
+  localId = cfg.dedicatedServer ? MP_DEDICATED_HOST_ID : Math.random().toString(36).slice(2, 8)
   knownPeerIds.clear()
   remoteSync.clear()
   netSpawned.clear()
