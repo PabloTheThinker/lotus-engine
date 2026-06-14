@@ -5,6 +5,7 @@ import { isCharacterControllerReady, moveAndSlide } from '../engine/characterCon
 import { getRapier, physicsReady } from '../engine/physics'
 import { world } from '../engine/World'
 import { ensurePlayVehicle, isRaycastVehicleReady, updateRaycastVehicle } from '../engine/physicsVehicle'
+import { getTouchMoveAxis, isTouchJumpDown } from '../engine/touchInput'
 
 /**
  * PlayController — the pawn possessed during Play-In-Editor.
@@ -234,6 +235,12 @@ export class PlayController {
     if (this.keys.has('KeyS')) move.z += 1
     if (this.keys.has('KeyA')) move.x -= 1
     if (this.keys.has('KeyD')) move.x += 1
+    const touch = getTouchMoveAxis()
+    const td = 0.28
+    if (touch.y < -td) move.z -= 1
+    if (touch.y > td) move.z += 1
+    if (touch.x < -td) move.x -= 1
+    if (touch.x > td) move.x += 1
 
     if (this.mode === 'vehicle') {
       if (this.useRaycastVehicle && physicsReady()) {
@@ -307,7 +314,7 @@ export class PlayController {
     }
 
     if (this.useRapierCharacter && physicsReady() && isCharacterControllerReady()) {
-      if (this.grounded && this.keys.has('Space')) this.vy = 8.5
+      if (this.grounded && (this.keys.has('Space') || isTouchJumpDown())) this.vy = 8.5
       this.vy -= 22 * dt
       const res = moveAndSlide({
         position: this.feet,
@@ -331,7 +338,7 @@ export class PlayController {
         this.body.rotation.y = Math.atan2(-dx, -dz)
       }
       this.vy -= 22 * dt
-      if (this.grounded && this.keys.has('Space')) {
+      if (this.grounded && (this.keys.has('Space') || isTouchJumpDown())) {
         this.vy = 8.5
         this.grounded = false
       }

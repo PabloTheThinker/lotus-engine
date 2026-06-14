@@ -11,7 +11,8 @@ import type { Actor } from '../engine/Actor'
 import { DEFAULT_MATERIAL, type MaterialProps } from '../engine/types'
 import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
-import { spawnCharacterStarter, spawnPlatformerStarter } from './starterTemplates'
+import { spawnIndieMpTemplate } from './indieMpTemplate'
+import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './starterTemplates'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -41,6 +42,9 @@ SLASH COMMANDS
   /tag <name> <tag>  Add tag to actor
   /starter [mode]    Greybox CharacterBody scene (thirdperson|firstperson|fly)
   /platformer [mode] Greybox platformer scene (side|wide)
+  /rpg [mode]        Greybox top-down RPG scene (small|large)
+  /fps               Greybox FPS corridor scene
+  /mpstarter         Greybox indie multiplayer scene (host + client spawns, sync crates)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -262,6 +266,28 @@ function runSlash(parts: string[]): TerminalResult {
       spawnPlatformerStarter(mode as 'side' | 'wide')
       return { output: `Platformer starter: ${mode}`, error: null, level: 'log' }
     }
+    case '/rpg': {
+      const mode = (args[0] ?? 'small').toLowerCase()
+      if (!['small', 'large'].includes(mode)) {
+        return { output: null, error: 'Usage: /rpg small|large', level: 'error' }
+      }
+      spawnTopDownRpgStarter(mode as 'small' | 'large')
+      return { output: `Top-down RPG starter: ${mode}`, error: null, level: 'log' }
+    }
+    case '/fps': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /fps', level: 'error' }
+      }
+      spawnFpsStarter()
+      return { output: 'FPS starter', error: null, level: 'log' }
+    }
+    case '/mpstarter': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /mpstarter', level: 'error' }
+      }
+      spawnIndieMpTemplate()
+      return { output: 'Indie MP starter — enable Multiplayer in World Settings, then Play', error: null, level: 'log' }
+    }
     case '/undo':
       undo()
       return { output: 'Undo', error: null, level: 'log' }
@@ -382,7 +408,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/mpstarter', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

@@ -71,6 +71,25 @@ function onTick(dt) {
   actor.root.rotation.y = Math.atan2(d.x, d.z)
 }
 `,
+  'MP host': `// mp_host — indie MP template host spawn
+function onBeginPlay() {
+  api.log(api.mpIsHost() ? 'MP host ready' : 'MP client — host sync pending')
+}
+function onTick(_dt) {
+  if (!api.mpIsHost()) return
+  if (api.actionJustPressed('Jump')) {
+    const n = api.getActorsByTag('mp_sync').length
+    api.log('Host sync crates: ' + n)
+  }
+}
+`,
+  'MP sync crate': `// mp_sync — sync-spawn demo (host authority)
+// @export spinSpeed = 1.2
+function onTick(dt) {
+  if (!api.mpIsHost()) return
+  actor.root.rotation.y += dt * vars.spinSpeed
+}
+`,
   'Input mover': `// Drive this actor with the arrow keys during Play
 const SPEED = 4
 function onTick(dt) {

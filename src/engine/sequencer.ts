@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { getSoundBuffer, playSound, stopScrubAudio } from './audio'
 import { applyHudCssProperty } from './gameplay'
+import { loadScriptVarPreset, scriptVarPresetData, seqKeysFromPreset } from './scriptVarPresets'
 import { clampExportRange, parseExports, type ExportVar } from './scripting'
 import type { HudWidget, SeqHudProperty } from './types'
 import type { World } from './World'
@@ -127,6 +128,30 @@ export function findTrack(
   trackType: 'actor' | 'hud' | 'audio' | 'scriptVar' = 'actor',
 ): SeqTrack | undefined {
   return seq.tracks.find((tr) => (tr.trackType ?? 'actor') === trackType && tr.actorId === id && tr.property === property)
+}
+
+/** Wave 40 (v2.40) — replace script-var track keys from a curve preset resource. */
+export function applyScriptVarPreset(
+  seq: Sequence,
+  actorId: string,
+  varName: string,
+  presetId: string,
+): boolean {
+  const preset = loadScriptVarPreset(presetId)
+  if (!preset) return false
+  const data = scriptVarPresetData(preset)
+  if (!data?.keys.length) return false
+
+  let track = findTrack(seq, actorId, varName, 'scriptVar')
+  if (!track) {
+    track = { trackType: 'scriptVar', actorId, property: varName, keys: [] }
+    seq.tracks.push(track)
+  }
+  track.keys = seqKeysFromPreset(data)
+  const maxT = data.keys[data.keys.length - 1]?.t ?? 0
+  const hint = data.duration ?? maxT
+  if (hint > seq.duration) seq.duration = hint
+  return true
 }
 
 /** insert or replace a key (keys stay sorted by t) */

@@ -111,6 +111,8 @@ export class Actor {
   animStateMachine?: import('./animStateMachine').AnimStateMachine
   blendSpace1D?: import('./animStateMachine').BlendSpace1D
   blendSpace2D?: import('./animStateMachine').BlendSpace2D
+  /** Wave 40 — 1D blend param driven by this @export script var at runtime */
+  blendScriptVarLink?: string
   animParams?: Record<string, number>
   /** prefab instance root: source prefab asset name */
   prefabSource?: string
@@ -343,6 +345,7 @@ export class Actor {
         : undefined,
       blendSpace1D: this.blendSpace1D ? JSON.parse(JSON.stringify(this.blendSpace1D)) : undefined,
       blendSpace2D: this.blendSpace2D ? JSON.parse(JSON.stringify(this.blendSpace2D)) : undefined,
+      blendScriptVarLink: this.blendScriptVarLink || undefined,
       animParams:
         this.animParams && Object.keys(this.animParams).length
           ? { ...this.animParams }

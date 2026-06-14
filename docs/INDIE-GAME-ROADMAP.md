@@ -38,6 +38,16 @@
 | v2.17 | **Platformer starter** — `/platformer side|wide` greybox (floor + stepping platforms) |
 | v2.18 | Docs, smoke tests, CHECKPOINT — 120 tests passed |
 
+## Shipped (Waves 36–40, v2.19–v2.43)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 36 | v2.19–v2.23 | **GridMap UX** — `gridMap.ts`, tile palette, brush, overlay, `window.lotus.gridMap` |
+| 37 | v2.24–v2.28 | **Starter packs** — `/rpg small\|large`, `/fps` top-down RPG + FPS greybox |
+| 38 | v2.29–v2.33 | **MP indie template** — `/mpstarter`, `mp_host`/`mp_sync` tags, relay smoke |
+| 39 | v2.34–v2.38 | **Touch input PWA** — virtual joystick, `touchControls`, `__LOTUS_TOUCH__` export |
+| 40 | v2.39–v2.43 | **Anim polish** — script var curve presets, blend ↔ @export link, Apply Preset UI — **144 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -46,11 +56,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **TileMap / GridMap UX** — grid paint improvements (GridMap foliage exists)
-2. **Starter game templates** — top-down RPG, FPS greybox packs
-3. **Multiplayer indie template** — host + 2 clients relay smoke game
-4. **Mobile touch input map** — on-screen sticks for exported PWA
-5. **AnimationPlayer polish** — blend trees + script var curve presets
+1. **TileMap layers** — multi-layer grid paint + autotile rules
+2. **Starter polish** — playable mini-games from each template (scripts + win condition)
+3. **MP gameplay** — score sync + simple deathmatch rules on indie template
+4. **Touch polish** — action buttons (Fire/Interact) + gamepad API fallback
+5. **Animation blend trees** — 2D blend space ↔ @export param links
 
 ## Non-goals (honest skip)
 

@@ -16,6 +16,7 @@ const MAIN_KEY = window.__LOTUS_MAIN__ ?? window.__VEKTRA_MAIN__ ?? 'main'
 const EXPORT = window.__LOTUS_EXPORT__ ?? window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
 const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
+const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
 
 /** Wave 32 — decode embedded LUT atlas bytes from export payload. */
 function decodeExportLUTTexture(payload) {
@@ -320,6 +321,108 @@ const keys = new Set()
 const pressed = new Set()
 addEventListener('keydown', (e) => { if (!keys.has(e.code)) pressed.add(e.code); keys.add(e.code) })
 addEventListener('keyup', (e) => keys.delete(e.code))
+
+/** Wave 39 — virtual stick state for mobile PWA export */
+let touchMove = { x: 0, y: 0 }
+let touchJump = false
+const TOUCH_DEAD = 0.28
+function touchKeyDown(code) {
+  if (keys.has(code)) return true
+  switch (code) {
+    case 'KeyW': return touchMove.y < -TOUCH_DEAD
+    case 'KeyS': return touchMove.y > TOUCH_DEAD
+    case 'KeyA': return touchMove.x < -TOUCH_DEAD
+    case 'KeyD': return touchMove.x > TOUCH_DEAD
+    case 'Space': return touchJump
+    default: return false
+  }
+}
+function initExportTouchHud() {
+  if (!TOUCH_ENABLED) return
+  const hud = document.createElement('div')
+  hud.className = 'lotus-touch-hud'
+  hud.id = 'lotus-touch-hud'
+  const stickZone = document.createElement('div')
+  stickZone.className = 'lotus-touch-stick-zone'
+  hud.appendChild(stickZone)
+  document.body.appendChild(hud)
+  const radius = 56
+  const dead = 0.12
+  const base = document.createElement('div')
+  base.className = 'lotus-touch-joystick'
+  base.style.width = `${radius * 2}px`
+  base.style.height = `${radius * 2}px`
+  const knob = document.createElement('div')
+  knob.className = 'lotus-touch-joystick-knob'
+  base.appendChild(knob)
+  stickZone.appendChild(base)
+  const jumpBtn = document.createElement('button')
+  jumpBtn.type = 'button'
+  jumpBtn.className = 'lotus-touch-jump'
+  jumpBtn.textContent = 'Jump'
+  hud.appendChild(jumpBtn)
+  let stickId = null
+  const setStick = (t) => {
+    const rect = base.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    let dx = t.clientX - cx
+    let dy = t.clientY - cy
+    const len = Math.hypot(dx, dy)
+    if (len > radius) { dx = (dx / len) * radius; dy = (dy / len) * radius }
+    const nx = dx / radius
+    const ny = dy / radius
+    const mag = Math.hypot(nx, ny)
+    if (mag < dead) touchMove = { x: 0, y: 0 }
+    else {
+      const scale = (mag - dead) / (1 - dead)
+      touchMove = { x: (nx / mag) * scale, y: (ny / mag) * scale }
+    }
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`
+  }
+  const pick = (e) => {
+    const rect = base.getBoundingClientRect()
+    for (const t of e.changedTouches) {
+      if (t.clientX >= rect.left && t.clientX <= rect.right && t.clientY >= rect.top && t.clientY <= rect.bottom) return t
+    }
+    return e.changedTouches[0] ?? null
+  }
+  const find = (e, id) => {
+    for (const t of e.touches) if (t.identifier === id) return t
+    for (const t of e.changedTouches) if (t.identifier === id) return t
+    return null
+  }
+  base.addEventListener('touchstart', (e) => {
+    if (stickId !== null) return
+    const t = pick(e)
+    if (!t) return
+    e.preventDefault()
+    stickId = t.identifier
+    setStick(t)
+  }, { passive: false })
+  base.addEventListener('touchmove', (e) => {
+    if (stickId === null) return
+    const t = find(e, stickId)
+    if (!t) return
+    e.preventDefault()
+    setStick(t)
+  }, { passive: false })
+  const endStick = (e) => {
+    if (stickId === null) return
+    if (!find(e, stickId) && e.type !== 'touchcancel') return
+    e.preventDefault()
+    stickId = null
+    touchMove = { x: 0, y: 0 }
+    knob.style.transform = 'translate(-50%, -50%)'
+  }
+  base.addEventListener('touchend', endStick, { passive: false })
+  base.addEventListener('touchcancel', endStick, { passive: false })
+  const pressJump = (e) => { e.preventDefault(); if (!touchJump) pressed.add('Space'); touchJump = true }
+  const releaseJump = (e) => { e.preventDefault(); touchJump = false }
+  jumpBtn.addEventListener('touchstart', pressJump, { passive: false })
+  jumpBtn.addEventListener('touchend', releaseJump, { passive: false })
+  jumpBtn.addEventListener('touchcancel', releaseJump, { passive: false })
+}
 
 let skyObj = null
 let particleSystems = []
@@ -1113,13 +1216,13 @@ function resetPawnFromStart() {
 
 function updatePawn(dt) {
   const move = new THREE.Vector3()
-  if (keys.has('KeyW')) move.z -= 1
-  if (keys.has('KeyS')) move.z += 1
-  if (keys.has('KeyA')) move.x -= 1
-  if (keys.has('KeyD')) move.x += 1
+  if (touchKeyDown('KeyW')) move.z -= 1
+  if (touchKeyDown('KeyS')) move.z += 1
+  if (touchKeyDown('KeyA')) move.x -= 1
+  if (touchKeyDown('KeyD')) move.x += 1
   euler.set(pitch, yaw, 0)
   if (pawnMode === 'fly') {
-    if (keys.has('Space')) move.y += 1
+    if (touchKeyDown('Space')) move.y += 1
     if (keys.has('KeyC')) move.y -= 1
     pawnCam.quaternion.setFromEuler(euler)
     if (move.lengthSq()) {
@@ -1133,7 +1236,7 @@ function updatePawn(dt) {
     }
     return
   }
-  const sp = (keys.has('ShiftLeft') ? 9.5 : 5)
+  const sp = (touchKeyDown('ShiftLeft') || keys.has('ShiftLeft') ? 9.5 : 5)
   if (move.lengthSq()) {
     move.normalize()
     const sin = Math.sin(yaw), cos = Math.cos(yaw)
@@ -1141,7 +1244,7 @@ function updatePawn(dt) {
     feet.z += (-move.x * sin + move.z * cos) * sp * dt
   }
   vy -= 22 * dt
-  if (grounded && keys.has('Space')) { vy = 8.5; grounded = false }
+  if (grounded && touchKeyDown('Space')) { vy = 8.5; grounded = false }
   feet.y += vy * dt
   const g = groundAt(feet)
   if (g !== null && feet.y <= g + 0.02 && vy <= 0) { feet.y = g; vy = 0; grounded = true } else grounded = false
@@ -1286,7 +1389,7 @@ function updateSeqAudio(t) {
 // ---- scripts & behaviors ----
 const api = {
   log: (...a) => console.log('[lotus]', ...a),
-  isKeyDown: (c) => keys.has(c),
+  isKeyDown: (c) => touchKeyDown(c),
   keyJustPressed: (c) => pressed.has(c),
   getActor: (n) => [...actors.values()].find((a) => a.name === n),
   time: () => clock,
@@ -1359,6 +1462,7 @@ async function boot() {
   renderer = created.renderer
   playRenderTier = created.tier
   bindPawnInput()
+  initExportTouchHud()
   applyEnvironment()
   await loadAssets(LEVEL)
   await loadSounds(LEVEL)
@@ -1382,7 +1486,9 @@ async function boot() {
       : 'CPU particles'
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
-    `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`
+    (TOUCH_ENABLED
+      ? `${particleTier} · Touch stick + Jump · tap canvas for mouse look`
+      : `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`)
   const perfMinFps = EXPORT.perfMinFps ?? 24
   window.__LOTUS_EXPORT_PERF__ = {
     tier: playRenderTier,

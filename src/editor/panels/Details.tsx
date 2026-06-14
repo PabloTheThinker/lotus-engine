@@ -2495,14 +2495,15 @@ function FoliageSection({ actor }: { actor: Actor }) {
   const foliagePaint = useEditor((s) => s.foliagePaint)
   const setFoliagePaint = useEditor((s) => s.setFoliagePaint)
   const props = actor.foliageProps!
+  const gridMode = !!props.snap
   const rebuild = () => {
     buildFoliageMesh(actor)
     touch()
   }
   return (
-    <Section title="Foliage">
+    <Section title={gridMode ? 'GridMap' : 'Foliage'}>
       <label className="field">
-        <span>Mesh</span>
+        <span>{gridMode ? 'Tile' : 'Mesh'}</span>
         <select
           value={props.geometry}
           onChange={(e) => {
@@ -2510,16 +2511,34 @@ function FoliageSection({ actor }: { actor: Actor }) {
             rebuild()
           }}
         >
-          {['cone', 'sphere', 'cylinder', 'box', 'icosahedron', 'capsule'].map((g) => (
+          {(gridMode ? ['box', 'sphere', 'plane'] : ['cone', 'sphere', 'cylinder', 'box', 'icosahedron', 'capsule']).map((g) => (
             <option key={g} value={g}>{g}</option>
           ))}
         </select>
       </label>
       <ColorField label="Color" value={props.color} onLive={(v) => { props.color = v; rebuild() }} onCommit={() => {}} />
-      <Num label="Density" value={props.density} step={1} min={1} max={40} onLive={(v) => { props.density = v; touch() }} onCommit={() => {}} />
-      <Num label="Brush Size" value={props.brushRadius} step={0.25} min={0.25} onLive={(v) => { props.brushRadius = v; touch() }} onCommit={() => {}} />
-      <Num label="Scale Min" value={props.scaleMin} step={0.1} min={0.05} onLive={(v) => { props.scaleMin = v; touch() }} onCommit={() => {}} />
-      <Num label="Scale Max" value={props.scaleMax} step={0.1} min={0.05} onLive={(v) => { props.scaleMax = v; touch() }} onCommit={() => {}} />
+      {!gridMode && (
+        <>
+          <Num label="Density" value={props.density} step={1} min={1} max={40} onLive={(v) => { props.density = v; touch() }} onCommit={() => {}} />
+          <Num label="Brush Size" value={props.brushRadius} step={0.25} min={0.25} onLive={(v) => { props.brushRadius = v; touch() }} onCommit={() => {}} />
+          <Num label="Scale Min" value={props.scaleMin} step={0.1} min={0.05} onLive={(v) => { props.scaleMin = v; touch() }} onCommit={() => {}} />
+          <Num label="Scale Max" value={props.scaleMax} step={0.1} min={0.05} onLive={(v) => { props.scaleMax = v; touch() }} onCommit={() => {}} />
+        </>
+      )}
+      {gridMode && (
+        <Num
+          label="Grid Brush"
+          value={props.gridBrushSize ?? 0}
+          step={1}
+          min={0}
+          max={8}
+          onLive={(v) => {
+            props.gridBrushSize = Math.max(0, Math.floor(v))
+            touch()
+          }}
+          onCommit={() => {}}
+        />
+      )}
       <label className="field check">
         <span>Paint Mode</span>
         <input type="checkbox" checked={foliagePaint} onChange={(e) => setFoliagePaint(e.target.checked)} />
@@ -2530,9 +2549,13 @@ function FoliageSection({ actor }: { actor: Actor }) {
           rebuild()
         }}
       >
-        Clear ({props.instances.length} instances)
+        Clear ({props.instances.length} {gridMode ? 'tiles' : 'instances'})
       </button>
-      <div className="panel-empty" style={{ padding: '2px 0' }}>Click-drag paints onto surfaces · Shift erases.</div>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        {gridMode
+          ? 'Click-drag paints grid cells · Shift erases · hover shows cell coords in status.'
+          : 'Click-drag paints onto surfaces · Shift erases.'}
+      </div>
     </Section>
   )
 }

@@ -72,6 +72,33 @@ export function emptyBlendSpace2D(paramX = 'speed', paramY = 'direction'): Blend
   return { paramX, paramY, samples: [] }
 }
 
+/** Coerce an @export script var value into a 1D blend param. */
+export function scriptVarAsAnimParam(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'boolean') return v ? 1 : 0
+  return undefined
+}
+
+/**
+ * Wave 40 (v2.41) — merge animParams with optional blendScriptVarLink override.
+ * When set, blendSpace1D.param reads from actor.scriptVars[blendScriptVarLink].
+ */
+export function resolveAnimParams(actor: {
+  animParams?: Record<string, number>
+  blendScriptVarLink?: string
+  blendSpace1D?: BlendSpace1D
+  scriptVars?: Record<string, unknown>
+}): Record<string, number> {
+  const params = { ...(actor.animParams ?? {}) }
+  const link = actor.blendScriptVarLink?.trim()
+  const param = actor.blendSpace1D?.param
+  if (link && param) {
+    const n = scriptVarAsAnimParam(actor.scriptVars?.[link])
+    if (n !== undefined) params[param] = n
+  }
+  return params
+}
+
 /** Collect param names referenced by the FSM and blend spaces. */
 export function collectAnimParams(actor: {
   animStateMachine?: AnimStateMachine

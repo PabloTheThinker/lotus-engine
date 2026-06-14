@@ -7,6 +7,8 @@ import { loadPrefs, type ExportQuality } from './Preferences'
 import { loadProjectSettings } from './projectSettings'
 import { useEditor } from './store'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
+import { TOUCH_OVERLAY_CSS } from './touchOverlay'
+import { shouldShowTouchControls } from '../engine/touchInput'
 
 export interface ExportOptions {
   /** add PWA manifest + service worker stub for offline single-file play */
@@ -119,6 +121,8 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const badgeHtml = branding
     ? `<div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>`
     : ''
+  const touchEnabled =
+    shouldShowTouchControls(mainLevel.environment?.touchControls) || pwa || quality === 'mobile'
 
   return `<!doctype html>
 <html lang="en">
@@ -139,6 +143,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
     position: fixed; bottom: 10px; right: 12px; font: 11px system-ui, sans-serif;
     color: #79828f; z-index: 5; pointer-events: none;
   }
+  ${touchEnabled ? TOUCH_OVERLAY_CSS : ''}
 </style>
 <script type="importmap">
 {
@@ -155,7 +160,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

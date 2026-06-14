@@ -250,6 +250,8 @@ export interface SerializedActor {
   blendSpace2D?: import('./animStateMachine').BlendSpace2D
   /** runtime animation parameters (speed, direction, etc.) */
   animParams?: Record<string, number>
+  /** Wave 40 — 1D blend param driven by this @export script var */
+  blendScriptVarLink?: string
   /** material node graph */
   materialGraph?: import('./materialGraph').MaterialGraph
   /** cpu = fast per-object; gpu = per-pixel shader graph */
@@ -373,6 +375,8 @@ export interface FoliageProps {
   instances: number[][]
   /** GridMap mode: snap painting to integer cells, one instance per cell */
   snap?: boolean
+  /** GridMap brush radius in cells (0 = single cell) */
+  gridBrushSize?: number
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {
@@ -614,6 +618,8 @@ export interface EnvironmentSettings {
   useRaycastVehicle?: boolean
   /** Merge static meshes at export via BatchedMesh payloads */
   exportBatchStatic?: boolean
+  /** Wave 39 — on-screen touch stick + jump (auto on touch devices when unset) */
+  touchControls?: boolean
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */

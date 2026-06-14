@@ -25,6 +25,13 @@ import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage, updateLabel3DBillboards } from '../engine/factory'
+import {
+  eraseGridBrush,
+  getGridCellCount,
+  gridOverlaySize,
+  paintGridBrush,
+  worldToGridCell,
+} from '../engine/gridMap'
 import { Widget3DLayer } from './Widget3DLayer'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
 import { hasAudioTracks, hasHudTracks, sampleSequence, setKey } from '../engine/sequencer'
@@ -40,6 +47,7 @@ import { consoleState } from './consoleCommands'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
+import { touchControlsActive, TouchOverlay } from './touchOverlay'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
 import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
@@ -369,6 +377,7 @@ export function Viewport() {
       }
     }
     const pawn = new PlayController(domElement)
+    const touchOverlay = new TouchOverlay()
     world.scene.add(pawn.body)
     pawn.collidables = () => {
       const out: THREE.Object3D[] = []
@@ -1029,6 +1038,7 @@ export function Viewport() {
     let painting = false
     let strokeBefore: number[][] | null = null
     let lastStamp: THREE.Vector3 | null = null
+    let gridPaintHelper: THREE.GridHelper | null = null
 
     function paintSurfaceHit(e: MouseEvent): THREE.Intersection | null {
       const s = useEditor.getState()
@@ -1057,16 +1067,9 @@ export function Viewport() {
       lastStamp = hit.point.clone()
       const props = layer.foliageProps
       if (props.snap) {
-        // GridMap: one instance per integer cell
-        const cx = Math.round(hit.point.x)
-        const cy = Math.round(hit.point.y)
-        const cz = Math.round(hit.point.z)
-        const at = props.instances.findIndex(([x, y, z]) => x === cx && Math.abs(y - (cy + 0.5)) < 0.6 && z === cz)
-        if (e.shiftKey) {
-          if (at >= 0) props.instances.splice(at, 1)
-        } else if (at === -1 && props.instances.length < 4000) {
-          props.instances.push([cx, cy + 0.5, cz, 1, 0])
-        }
+        const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+        if (e.shiftKey) eraseGridBrush(props, cell.x, cell.y, cell.z)
+        else paintGridBrush(props, cell.x, cell.y, cell.z)
         rebuildFoliage(layer)
         s.touch()
         return
@@ -1104,7 +1107,43 @@ export function Viewport() {
       stampFoliage(e)
       e.stopPropagation()
     })
+    function syncGridPaintOverlay(hit: THREE.Intersection | null, brushSize: number) {
+      if (!hit) {
+        if (gridPaintHelper) gridPaintHelper.visible = false
+        return
+      }
+      const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+      const size = gridOverlaySize(brushSize)
+      const divisions = size
+      if (!gridPaintHelper || gridPaintHelper.userData.gridSize !== size) {
+        gridPaintHelper?.removeFromParent()
+        gridPaintHelper?.geometry.dispose()
+        ;(gridPaintHelper?.material as THREE.Material | undefined)?.dispose()
+        gridPaintHelper = new THREE.GridHelper(size, divisions, 0x4a9eff, 0x2a3545)
+        gridPaintHelper.userData.isHelper = true
+        gridPaintHelper.userData.gridSize = size
+        world.scene.add(gridPaintHelper)
+      }
+      gridPaintHelper.position.set(cell.x, hit.point.y + 0.02, cell.z)
+      gridPaintHelper.visible = true
+    }
+
     domElement.addEventListener('mousemove', (e) => {
+      const s = useEditor.getState()
+      const layer = s.selectedId ? world.actors.get(s.selectedId) : null
+      if (s.foliagePaint && !s.playing && layer?.foliageProps?.snap) {
+        const hit = paintSurfaceHit(e)
+        const brush = layer.foliageProps.gridBrushSize ?? 0
+        syncGridPaintOverlay(hit, brush)
+        if (hit) {
+          const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+          s.setStatus(
+            `GridMap · cell (${cell.x}, ${cell.y}, ${cell.z}) · ${getGridCellCount(layer.foliageProps)} tiles`,
+          )
+        }
+      } else if (gridPaintHelper) {
+        gridPaintHelper.visible = false
+      }
       if (painting) stampFoliage(e)
     })
     window.addEventListener('mouseup', () => {
@@ -1472,6 +1511,7 @@ export function Viewport() {
       const possessed = s.playing && !s.simulate && !s.ejected
       if (s.playing && !wasPlaying) {
         mountHud(mount) // before beginPlay so onBeginPlay scripts can draw HUD
+        if (touchControlsActive(world.environment)) touchOverlay.mount(mount)
         world.beginPlay()
         mpConnect(world, (m) => useEditor.getState().setStatus(m))
         if (!s.simulate) {
@@ -1486,6 +1526,7 @@ export function Viewport() {
         world.endPlay()
         void world.restoreEditorAfterPIE()
         pawn.unpossess()
+        touchOverlay.unmount()
         unmountHud()
         mpDisconnect()
         s.touch()
@@ -1515,6 +1556,7 @@ export function Viewport() {
         if (pawn.active && !possessed) pawn.suspend()
         if (!pawn.active && possessed) pawn.resume()
       }
+      if (s.playing && touchOverlay.mounted) touchOverlay.tick()
 
       syncEnvironment()
       const quadMode = !s.playing && s.viewportLayout === 'quad'
@@ -1648,6 +1690,9 @@ export function Viewport() {
       )
 
       if (!s.sculptActive || s.playing) brushRing.visible = false
+      if (!s.foliagePaint || s.playing) {
+        if (gridPaintHelper) gridPaintHelper.visible = false
+      }
 
       // helpers + editor-only visuals — hidden while possessed, Game View (G), or path tracing
       const hideChrome = possessed || s.gameView || pathTraceActive
@@ -2004,6 +2049,7 @@ export function Viewport() {
       frontControls.dispose()
       sideControls.dispose()
       pawn.dispose()
+      touchOverlay.unmount()
       gizmo.dispose()
       pmrem.dispose()
       pathTracer.dispose()
@@ -2018,6 +2064,12 @@ export function Viewport() {
       }
       brushRing.geometry.dispose()
       ;(brushRing.material as THREE.Material).dispose()
+      if (gridPaintHelper) {
+        gridPaintHelper.geometry.dispose()
+        ;(gridPaintHelper.material as THREE.Material).dispose()
+        world.scene.remove(gridPaintHelper)
+        gridPaintHelper = null
+      }
       world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)
       world.pawnPosition = null
       widget3dLayer.dispose()

@@ -1,4 +1,5 @@
 import { Input } from './Input'
+import { getTouchMoveAxis } from './touchInput'
 
 /**
  * Input actions — UE Enhanced Input / Godot Input Map analog.
@@ -14,6 +15,8 @@ export interface InputAction {
 const KEY = 'lotus-engine.inputmap'
 
 export const DEFAULT_ACTIONS: InputAction[] = [
+  { name: 'MoveForward', keys: ['KeyW', 'KeyS'] },
+  { name: 'MoveRight', keys: ['KeyA', 'KeyD'] },
   { name: 'Jump', keys: ['Space'] },
   { name: 'Sprint', keys: ['ShiftLeft'] },
   { name: 'Interact', keys: ['KeyE'] },
@@ -60,4 +63,31 @@ export function actionJustPressed(name: string): boolean {
 /** serializable form embedded in playable exports */
 export function inputMapForExport(): InputAction[] {
   return loadInputMap().map((a) => ({ ...a, keys: [...a.keys] }))
+}
+
+const AXIS_DEAD = 0.28
+
+/**
+ * Wave 39 — signed axis for MoveForward / MoveRight (keyboard + touch stick).
+ * MoveForward: negative = forward (W), positive = back (S).
+ * MoveRight: negative = left (A), positive = right (D).
+ */
+export function getActionAxis(name: string): number {
+  const lower = name.toLowerCase()
+  const touch = getTouchMoveAxis()
+  if (lower === 'moveforward') {
+    let v = 0
+    if (Input.isDown('KeyW')) v -= 1
+    if (Input.isDown('KeyS')) v += 1
+    if (Math.abs(touch.y) > AXIS_DEAD && Math.abs(touch.y) > Math.abs(v)) v = touch.y
+    return Math.max(-1, Math.min(1, v))
+  }
+  if (lower === 'moveright') {
+    let v = 0
+    if (Input.isDown('KeyA')) v -= 1
+    if (Input.isDown('KeyD')) v += 1
+    if (Math.abs(touch.x) > AXIS_DEAD && Math.abs(touch.x) > Math.abs(v)) v = touch.x
+    return Math.max(-1, Math.min(1, v))
+  }
+  return 0
 }

@@ -10,6 +10,7 @@ import {
   type BlendSpace1D,
   type BlendSpace2D,
 } from '../../engine/animStateMachine'
+import { keyableScriptExports } from '../../engine/sequencer'
 import { PropertyCommand, runCommand } from '../commands'
 import { useEditor } from '../store'
 
@@ -198,6 +199,11 @@ export function AnimStateEditor() {
 
   const blendMin = blend.samples.length ? Math.min(...blend.samples.map((s) => s.value), 0) : 0
   const blendMax = blend.samples.length ? Math.max(...blend.samples.map((s) => s.value), 1) : 1
+  const blendLinkExports = keyableScriptExports(actor).filter(
+    (ev) =>
+      ev.kind === 'range' ||
+      (ev.kind === 'plain' && (typeof ev.value === 'number' || typeof ev.value === 'boolean')),
+  )
   const blendSpan = Math.max(0.001, blendMax - blendMin)
 
   const valueToX = (v: number, w: number) => 40 + ((v - blendMin) / blendSpan) * (w - 80)
@@ -552,7 +558,42 @@ export function AnimStateEditor() {
                 onChange={(e) => mutateBlend((b) => (b.param = e.target.value))}
               />
             </label>
-            <div className="panel-empty">Runtime: animParams.{blend.param} drives blend weight during Play.</div>
+            <label className="field">
+              <span>@export link</span>
+              <select
+                value={actor.blendScriptVarLink ?? ''}
+                onChange={(e) => {
+                  const prev = actor.blendScriptVarLink
+                  const next = e.target.value || undefined
+                  runCommand(
+                    new PropertyCommand(
+                      `Blend @export link → ${actor.name}`,
+                      () => {
+                        actor.blendScriptVarLink = next
+                      },
+                      () => {
+                        actor.blendScriptVarLink = prev
+                      },
+                    ),
+                  )
+                  useEditor.getState().touch()
+                }}
+                title="Drive this blend param from an @export script var at runtime"
+              >
+                <option value="">(animParams.{blend.param})</option>
+                {blendLinkExports.map((ev) => (
+                  <option key={ev.name} value={ev.name}>
+                    {ev.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="panel-empty">
+              Runtime:{' '}
+              {actor.blendScriptVarLink
+                ? `scriptVars.${actor.blendScriptVarLink} → blend param "${blend.param}"`
+                : `animParams.${blend.param} drives blend weight during Play.`}
+            </div>
           </div>
           <div className="anim-blend-axis-wrap">
             {(() => {

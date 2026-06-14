@@ -11,6 +11,7 @@ import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, init
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
+import { mpConnected, mpIsHost, mpLocalId } from './multiplayer'
 
 /**
  * Scripting — per-actor JavaScript, the Blueprint/GDScript analog.
@@ -144,6 +145,12 @@ export interface ScriptApi {
   ) => { position: [number, number, number]; onFloor: boolean } | null
   /** true when Rapier character controller is active */
   isOnFloor: () => boolean
+  /** Multiplayer relay connected (PIE with MP enabled) */
+  mpConnected: () => boolean
+  /** Lexicographically smallest peer id is host */
+  mpIsHost: () => boolean
+  /** This client's relay peer id */
+  mpLocalId: () => string
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -291,6 +298,9 @@ export function makeScriptApi(
     setAttribute: (name, value) => (boundActor ? setAttribute(boundActor, name, value) : false),
     applyEffect: (effectId) => (boundActor ? applyEffect(boundActor, effectId) : false),
     removeEffect: (effectId) => (boundActor ? removeEffect(boundActor, effectId) : false),
+    mpConnected,
+    mpIsHost,
+    mpLocalId,
   }
   return api
 }

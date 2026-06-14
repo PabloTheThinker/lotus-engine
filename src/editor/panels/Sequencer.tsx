@@ -3,6 +3,7 @@ import { world } from '../../engine/World'
 import { getHudElement } from '../../engine/gameplay'
 import { getSoundBuffer, stopScrubAudio } from '../../engine/audio'
 import {
+  applyScriptVarPreset,
   ensureBezierTangents,
   isAudioTrack,
   isHudTrack,
@@ -17,6 +18,7 @@ import {
   type SeqProperty,
   type SeqTrack,
 } from '../../engine/sequencer'
+import { listScriptVarPresets } from '../../engine/scriptVarPresets'
 import { runCommand, PropertyCommand } from '../commands'
 import { useEditor } from '../store'
 import { CurveEditor } from './CurveEditor'
@@ -108,7 +110,7 @@ function AudioWaveformLane({
  * actor at the playhead, scrub, play in-editor, auto-play during PIE.
  */
 export function Sequencer() {
-  useEditor((s) => s.sceneVersion)
+  const sceneVersion = useEditor((s) => s.sceneVersion)
   const selectedId = useEditor((s) => s.selectedId)
   const select = useEditor((s) => s.select)
   const seqTime = useEditor((s) => s.seqTime)
@@ -423,6 +425,7 @@ export function Sequencer() {
   const byActor = new Map<string, SeqTrack[]>()
   const byWidget = new Map<string, SeqTrack[]>()
   const byAudio = new Map<string, SeqTrack[]>()
+  const scriptVarPresets = useMemo(() => listScriptVarPresets(), [sceneVersion])
   const byScriptVar = new Map<string, SeqTrack[]>()
   for (const tr of seq.tracks) {
     if (isAudioTrack(tr)) {
@@ -947,6 +950,31 @@ export function Sequencer() {
                   <option value={0}>X</option>
                   <option value={1}>Y</option>
                   <option value={2}>Z</option>
+                </select>
+              </label>
+            )}
+            {isScriptVarTrack(curveTrack) && scriptVarPresets.length > 0 && (
+              <label className="seq-curve-preset">
+                Apply Preset
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const presetId = e.target.value
+                    if (!presetId) return
+                    applyScriptVarPreset(seq, curveTrack.actorId, curveTrack.property, presetId)
+                    touch()
+                    applyAtTime(seqTime, true)
+                    e.target.value = ''
+                  }}
+                  title="Replace track keys from a saved @export curve preset"
+                >
+                  <option value="">—</option>
+                  {scriptVarPresets.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.data.varName ? ` (${p.data.varName})` : ''}
+                    </option>
+                  ))}
                 </select>
               </label>
             )}

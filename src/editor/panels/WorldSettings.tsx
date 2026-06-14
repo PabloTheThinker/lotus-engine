@@ -1320,6 +1320,14 @@ export function WorldSettings() {
             onChange={(e) => set('useRaycastVehicle', e.target.checked)}
           />
         </label>
+        <label className="field check" title="On-screen left stick + jump during Play and mobile export (auto on touch devices)">
+          <span>Touch controls</span>
+          <input
+            type="checkbox"
+            checked={env.touchControls !== false}
+            onChange={(e) => set('touchControls', e.target.checked)}
+          />
+        </label>
         <label className="field check">
           <span>Export batch static meshes</span>
           <input

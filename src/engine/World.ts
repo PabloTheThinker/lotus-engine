@@ -28,6 +28,7 @@ import { resetBTs, runBTGraph, tickBTs } from './behaviorTree'
 import { compileBTGraph } from './btGraph'
 import { resetCrowd, tickCrowd } from './navCrowd'
 import { playMetaSound, registerSound, setReverbZone, setSoundAttenuationDefaults, stopAllSounds, type ReverbPreset } from './audio'
+import { mpConnected, mpIsHost } from './multiplayer'
 import {
   createTriggerVolumeActor,
   createSoundEmitterActor,
@@ -61,7 +62,7 @@ import { buildBatchedExportMeshes, serializeBatchedMeshes } from './batchExport'
 import { restoreGradingLUTFromEnvironment } from './postColorGradingLut'
 import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
-import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
+import { resolveAnimParams, tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
 import { applyActorIK, hasActorSkeleton } from './ik'
 import { clearActorTicks, recordActorTick } from './profiler'
 
@@ -214,7 +215,20 @@ export class World {
   }
 
   playerStart(): Actor | undefined {
-    return [...this.actors.values()].find((a) => a.type === 'PlayerStart')
+    const starts = [...this.actors.values()].filter((a) => a.type === 'PlayerStart')
+    if (starts.length <= 1) return starts[0]
+    if (mpConnected()) {
+      if (mpIsHost()) {
+        return starts.find((a) => a.tags.includes('mp_host') || a.name === 'HostSpawn') ?? starts[0]
+      }
+      return (
+        starts.find((a) => a.name === 'ClientSpawn') ??
+        starts.find((a) => !a.tags.includes('mp_host')) ??
+        starts[1] ??
+        starts[0]
+      )
+    }
+    return starts[0]
   }
 
   beginPlay() {
@@ -539,7 +553,7 @@ export class World {
     for (const a of this.actors.values()) {
       const t0 = performance.now()
       a.tick(dt)
-      const params = a.animParams ?? {}
+      const params = resolveAnimParams(a)
       if (a.blendSpace2D?.samples.length) {
         tickBlendSpace2D(a, params[a.blendSpace2D.paramX] ?? 0, params[a.blendSpace2D.paramY] ?? 0)
       } else if (a.blendSpace1D?.samples.length) {
@@ -1028,6 +1042,7 @@ export class World {
     if (sa.blendSpace1D) actor.blendSpace1D = JSON.parse(JSON.stringify(sa.blendSpace1D))
     if (sa.blendSpace2D) actor.blendSpace2D = JSON.parse(JSON.stringify(sa.blendSpace2D))
     if (sa.animParams) actor.animParams = { ...sa.animParams }
+    if (sa.blendScriptVarLink) actor.blendScriptVarLink = sa.blendScriptVarLink
     if (sa.materialGraph && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
       actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
     }

@@ -6,6 +6,10 @@ class InputSystem {
   private keys = new Set<string>()
   private pressedThisFrame = new Set<string>()
   private downAt = new Map<string, number>()
+  /** Wave 39 — virtual stick axes injected as MoveForward / MoveRight key equivalents */
+  private touchMove = { x: 0, y: 0 }
+  private touchJump = false
+  private readonly touchDead = 0.28
 
   constructor() {
     window.addEventListener('keydown', (e) => {
@@ -31,9 +35,39 @@ class InputSystem {
     return at === undefined ? 0 : (performance.now() - at) / 1000
   }
 
+  /** Inject virtual-stick state so isDown maps MoveForward/MoveRight to WASD codes. */
+  syncTouchInput(move: { x: number; y: number }, jumpDown: boolean, jumpJustPressed: boolean) {
+    this.touchMove = move
+    this.touchJump = jumpDown
+    if (jumpJustPressed) this.pressedThisFrame.add('Space')
+  }
+
+  clearTouchInput() {
+    this.touchMove = { x: 0, y: 0 }
+    this.touchJump = false
+  }
+
+  private touchDown(code: string): boolean {
+    const d = this.touchDead
+    switch (code) {
+      case 'KeyW':
+        return this.touchMove.y < -d
+      case 'KeyS':
+        return this.touchMove.y > d
+      case 'KeyA':
+        return this.touchMove.x < -d
+      case 'KeyD':
+        return this.touchMove.x > d
+      case 'Space':
+        return this.touchJump
+      default:
+        return false
+    }
+  }
+
   /** true while the key is held */
   isDown(code: string): boolean {
-    return this.keys.has(code)
+    return this.keys.has(code) || this.touchDown(code)
   }
 
   /** true only on the frame the key went down */

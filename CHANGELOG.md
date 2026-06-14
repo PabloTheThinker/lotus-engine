@@ -4,6 +4,39 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 36–40: v2.19–v2.43 (indie swarm)
+
+### Wave 36 (v2.19–v2.23) — GridMap UX
+- `gridMap.ts` — cell paint/erase/brush helpers
+- Details tile palette + grid brush; Viewport grid overlay + hover coords
+- `window.lotus.gridMap` bridge
+
+### Wave 37 (v2.24–v2.28) — Starter packs
+- `spawnTopDownRpgStarter(small|large)`, `spawnFpsStarter()`
+- `/rpg`, `/fps` terminal commands
+
+### Wave 38 (v2.29–v2.33) — MP indie template
+- `indieMpTemplate.ts` — HostSpawn, ClientSpawn, sync crates
+- `configureIndieMpSettings`, `/mpstarter`, `api.mpIsHost` etc.
+- 2-tab relay smoke test
+
+### Wave 39 (v2.34–v2.38) — Touch input PWA
+- `touchInput.ts`, `touchOverlay.ts`, MoveForward/MoveRight actions
+- World Settings touch toggle; export `__LOTUS_TOUCH__`
+- `window.lotus.indie.touch` bridge
+
+### Wave 40 (v2.39–v2.43) — Animation polish
+- `scriptVarPresets.ts` — curve presets as .tres resources
+- `applyScriptVarPreset`, blend ↔ `@export` link, Sequencer Apply Preset UI
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 144 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 35: v2.14–v2.18 (indie / Godot focus)
 
 ### Added

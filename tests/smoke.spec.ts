@@ -1929,6 +1929,567 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 36 gridMap worldToGridCell + gridCellKey', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        worldToGridCell: (x: number, y: number, z: number) => { x: number; y: number; z: number }
+        gridCellKey: (cx: number, cy: number, cz: number) => string
+      }
+    }
+    const cell = v.gridMap.worldToGridCell(1.4, 0.2, -2.6)
+    const key = v.gridMap.gridCellKey(cell.x, cell.y, cell.z)
+    return { cell, key }
+  })
+
+  expect(result.cell).toEqual({ x: 1, y: 0, z: -3 })
+  expect(result.key).toBe('1,0,-3')
+})
+
+test('wave 36 gridMap paintCell + getCellCount', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        paintCell: (props: import('../src/engine/types').FoliageProps, cx: number, cy: number, cz: number) => boolean
+        getCellCount: (props: import('../src/engine/types').FoliageProps) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    const painted = v.gridMap.paintCell(props, 2, 0, 3)
+    const dup = v.gridMap.paintCell(props, 2, 0, 3)
+    return { ok: true, painted, dup, count: v.gridMap.getCellCount(props) }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.painted).toBe(true)
+  expect(result.dup).toBe(false)
+  expect(result.count).toBe(1)
+})
+
+test('wave 36 gridMap eraseCell', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        paintCell: (props: import('../src/engine/types').FoliageProps, cx: number, cy: number, cz: number) => boolean
+        eraseCell: (props: import('../src/engine/types').FoliageProps, cx: number, cy: number, cz: number) => boolean
+        getCellCount: (props: import('../src/engine/types').FoliageProps) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    v.gridMap.paintCell(props, 0, 0, 0)
+    v.gridMap.paintCell(props, 1, 0, 0)
+    const erased = v.gridMap.eraseCell(props, 0, 0, 0)
+    const miss = v.gridMap.eraseCell(props, 0, 0, 0)
+    return { ok: true, erased, miss, count: v.gridMap.getCellCount(props) }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.erased).toBe(true)
+  expect(result.miss).toBe(false)
+  expect(result.count).toBe(1)
+})
+
+test('wave 36 gridMap brush cellsInBrush', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        cellsInBrush: (cx: number, cy: number, cz: number, brushSize: number) => { x: number; y: number; z: number }[]
+      }
+    }
+    const cells = v.gridMap.cellsInBrush(0, 0, 0, 1)
+    const keys = new Set(cells.map((c) => `${c.x},${c.z}`))
+    return { len: cells.length, hasCenter: keys.has('0,0'), hasCorner: keys.has('-1,-1') }
+  })
+
+  expect(result.len).toBe(9)
+  expect(result.hasCenter).toBe(true)
+  expect(result.hasCorner).toBe(true)
+})
+
+test('wave 36 gridmap spawn snap + tile palette kinds', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { snap?: boolean; geometry?: string; gridBrushSize?: number } } | null }
+      gridMap: { tileKinds: readonly string[] }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    return {
+      ok: !!props?.snap,
+      geometry: props?.geometry,
+      brush: props?.gridBrushSize,
+      kinds: [...v.gridMap.tileKinds],
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.geometry).toBe('box')
+  expect(result.brush).toBe(0)
+  expect(result.kinds).toEqual(['box', 'sphere', 'plane'])
+})
+test('wave 37 top-down RPG starter template (small)', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnTopDownRpgStarter: (mode: 'small') => void }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnTopDownRpgStarter('small')
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'RpgFloor')
+    const npc = [...v.world.actors.values()].find((a) => a.name === 'RpgNpcA')
+    const quest = [...v.world.actors.values()].find((a) => a.name === 'RpgQuestZone')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'RpgPlayerStart')
+    return {
+      added: v.world.actors.size > before,
+      floor: !!floor,
+      npcTag: npc?.tags.includes('NPC'),
+      quest: quest?.type === 'TriggerVolume',
+      startPawn: start?.pawnMode,
+      rapier: v.world.environment.useRapierCharacter,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.floor).toBe(true)
+  expect(result.npcTag).toBe(true)
+  expect(result.quest).toBe(true)
+  expect(result.startPawn).toBe('thirdperson')
+  expect(result.rapier).toBe(true)
+})
+
+test('wave 37 top-down RPG starter template (large)', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnTopDownRpgStarter: (mode: 'large') => void }
+    }
+    v.indie.spawnTopDownRpgStarter('large')
+    const npcCount = [...v.world.actors.values()].filter((a) => a.tags.includes('NPC')).length
+    const wall = [...v.world.actors.values()].find((a) => a.name === 'RpgWallN')
+    return { npcCount, wall: !!wall }
+  })
+
+  expect(result.npcCount).toBeGreaterThanOrEqual(4)
+  expect(result.wall).toBe(true)
+})
+
+test('wave 37 FPS starter template', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnFpsStarter: () => void }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnFpsStarter()
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'FpsFloor')
+    const wall = [...v.world.actors.values()].find((a) => a.name === 'FpsWallL1')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'FpsPlayerStart')
+    const lights = [...v.world.actors.values()].filter((a) => a.type === 'PointLight' && a.name.startsWith('FpsLight'))
+    return {
+      added: v.world.actors.size > before,
+      floor: !!floor,
+      wall: !!wall,
+      startPawn: start?.pawnMode,
+      lightCount: lights.length,
+      rapier: v.world.environment.useRapierCharacter,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.floor).toBe(true)
+  expect(result.wall).toBe(true)
+  expect(result.startPawn).toBe('firstperson')
+  expect(result.lightCount).toBeGreaterThanOrEqual(3)
+  expect(result.rapier).toBe(true)
+})
+
+test('wave 37 /rpg terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/rpg small')
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'RpgFloor')
+    return { output: out?.output, floor: !!floor }
+  })
+
+  expect(result.output).toContain('Top-down RPG starter')
+  expect(result.floor).toBe(true)
+})
+
+test('wave 37 /fps terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/fps')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'FpsPlayerStart')
+    return { output: out?.output, startPawn: start?.pawnMode }
+  })
+
+  expect(result.output).toContain('FPS starter')
+  expect(result.startPawn).toBe('firstperson')
+})
+test('wave 38 indie MP starter template', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnIndieMpTemplate: () => void }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnIndieMpTemplate()
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'MpFloor')
+    const host = [...v.world.actors.values()].find((a) => a.name === 'HostSpawn')
+    const client = [...v.world.actors.values()].find((a) => a.name === 'ClientSpawn')
+    const crates = [...v.world.actors.values()].filter((a) => a.name.startsWith('MpCrate'))
+    return {
+      added: v.world.actors.size > before,
+      floor: !!floor,
+      hostTag: host?.tags.includes('mp_host'),
+      client: !!client,
+      crateCount: crates.length,
+      syncSpawn: crates.every((c) => c.syncSpawn),
+      syncProps: crates.every((c) => (c.syncProperties?.length ?? 0) > 0),
+      rapier: v.world.environment.useRapierCharacter,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.floor).toBe(true)
+  expect(result.hostTag).toBe(true)
+  expect(result.client).toBe(true)
+  expect(result.crateCount).toBe(2)
+  expect(result.syncSpawn).toBe(true)
+  expect(result.syncProps).toBe(true)
+  expect(result.rapier).toBe(true)
+})
+
+test('wave 38 configureIndieMpSettings enables room', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { configureIndieMpSettings: (room?: string) => void }
+    }
+    v.indie.configureIndieMpSettings('wave38-mp-room')
+    const settings = v.multiplayer.loadSettings()
+    return { enabled: settings.enabled, room: settings.room }
+  })
+
+  expect(result.enabled).toBe(true)
+  expect(result.room).toBe('wave38-mp-room')
+})
+
+test('wave 38 mp_host mp_sync script snippets', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: { tagHost: string; tagSync: string; hostScript: string; syncScript: string }
+      }
+    }
+    return {
+      hostTag: v.indie.mp.tagHost,
+      syncTag: v.indie.mp.tagSync,
+      hostHasTag: v.indie.mp.hostScript.includes('mp_host'),
+      syncHasTag: v.indie.mp.syncScript.includes('mp_sync'),
+      hostUsesApi: v.indie.mp.hostScript.includes('api.mpIsHost'),
+      syncUsesApi: v.indie.mp.syncScript.includes('api.mpIsHost'),
+    }
+  })
+
+  expect(result.hostTag).toBe('mp_host')
+  expect(result.syncTag).toBe('mp_sync')
+  expect(result.hostHasTag).toBe(true)
+  expect(result.syncHasTag).toBe(true)
+  expect(result.hostUsesApi).toBe(true)
+  expect(result.syncUsesApi).toBe(true)
+})
+
+test('wave 38 /mpstarter terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/mpstarter')
+    const host = [...v.world.actors.values()].find((a) => a.name === 'HostSpawn')
+    const crate = [...v.world.actors.values()].find((a) => a.name === 'MpCrateA')
+    return {
+      output: out?.output,
+      host: !!host,
+      syncTag: crate?.tags.includes('mp_sync'),
+    }
+  })
+
+  expect(result.output).toMatch(/Indie MP starter/i)
+  expect(result.host).toBe(true)
+  expect(result.syncTag).toBe(true)
+})
+
+test('wave 39 touch isTouchDevice boolean', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { indie: { touch: { isTouchDevice: () => boolean } } }
+    const t = v.indie.touch.isTouchDevice()
+    return { ok: typeof t === 'boolean', touch: t }
+  })
+  expect(result.ok).toBe(true)
+})
+
+test('wave 39 VirtualJoystick axis after synthetic touch', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { touch: { createJoystick: (el: HTMLElement, r?: number) => { root: HTMLElement; getAxis: () => { x: number; y: number }; dispose: () => void } } }
+    }
+    const host = document.createElement('div')
+    host.style.cssText = 'position:fixed;left:0;top:0;width:120px;height:120px'
+    document.body.appendChild(host)
+    const joy = v.indie.touch.createJoystick(host, 48)
+    const rect = joy.root.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    joy.root.dispatchEvent(new TouchEvent('touchstart', {
+      bubbles: true, cancelable: true,
+      changedTouches: [new Touch({ identifier: 1, target: joy.root, clientX: cx + 30, clientY: cy })],
+    }))
+    const axis = joy.getAxis()
+    host.remove()
+    joy.dispose()
+    return { ok: axis.x > 0.4, x: axis.x }
+  })
+  expect(result.ok).toBe(true)
+})
+
+test('wave 39 getMoveAxis zero after reset', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { indie: { touch: { reset: () => boolean; getMoveAxis: () => { x: number; y: number } } } }
+    v.indie.touch.reset()
+    const axis = v.indie.touch.getMoveAxis()
+    return { ok: axis.x === 0 && axis.y === 0, axis }
+  })
+  expect(result.ok).toBe(true)
+})
+
+test('wave 39 setControlsEnabled toggles env flag', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { indie: { touch: { setControlsEnabled: (on: boolean) => boolean } }; world: { environment: { touchControls?: boolean } } }
+    v.indie.touch.setControlsEnabled(true)
+    const on = v.world.environment.touchControls === true
+    v.indie.touch.setControlsEnabled(false)
+    const off = v.world.environment.touchControls === false
+    v.indie.touch.setControlsEnabled(true)
+    return { ok: on && off, on, off }
+  })
+  expect(result.ok).toBe(true)
+})
+
+test('wave 39 getActionAxis MoveForward MoveRight keyboard', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { indie: { touch: { reset: () => boolean; getActionAxis: (n: string) => number } } }
+    v.indie.touch.reset()
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }))
+    const fwd = v.indie.touch.getActionAxis('MoveForward')
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', bubbles: true }))
+    const right = v.indie.touch.getActionAxis('MoveRight')
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', bubbles: true }))
+    return { ok: fwd < -0.5 && right > 0.5, fwd, right }
+  })
+  expect(result.ok).toBe(true)
+})
+test('wave 40 scriptVarPresets save + list curve resource', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        resources: {
+          scriptVarPresets: {
+            save: (name: string, keys: { t: number; v: number }[], varName?: string) => { id: string; name: string }
+            list: () => { id: string; data: { scriptVarPreset?: boolean; keys: { t: number; v: number }[] } }[]
+            load: (id: string) => { data: { keys: { t: number; v: number }[] } } | undefined
+          }
+        }
+      }
+    }
+    const res = v.indie.resources.scriptVarPresets.save('EaseIn', [{ t: 0, v: 0 }, { t: 2, v: 8 }], 'speed')
+    const loaded = v.indie.resources.scriptVarPresets.load(res.id)
+    const listed = v.indie.resources.scriptVarPresets.list()
+    return {
+      ok: !!loaded && loaded.data.keys.length === 2,
+      id: res.id,
+      name: res.name,
+      count: listed.length,
+      firstKey: loaded?.data.keys[0],
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.name).toBe('EaseIn')
+  expect(result.firstKey).toEqual({ t: 0, v: 0 })
+  expect(result.count).toBeGreaterThan(0)
+})
+
+test('wave 40 applyScriptVarPreset writes scriptVar track keys', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => { id: string } | null
+        resources: {
+          scriptVarPresets: {
+            save: (name: string, keys: { t: number; v: number }[]) => { id: string }
+          }
+        }
+        sequencer: {
+          applyScriptVarPreset: (actorId: string, varName: string, presetId: string) => boolean
+        }
+      }
+      world: { sequence: { tracks: { trackType?: string; actorId: string; property: string; keys: { t: number; v: number }[] }[] } }
+    }
+    const actor = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (!actor) return { ok: false }
+    const preset = v.indie.resources.scriptVarPresets.save('Jump', [
+      { t: 0, v: 0 },
+      { t: 0.5, v: 5 },
+      { t: 1, v: 0 },
+    ])
+    const applied = v.indie.sequencer.applyScriptVarPreset(actor.id, 'speed', preset.id)
+    const track = v.world.sequence.tracks.find(
+      (tr) => tr.trackType === 'scriptVar' && tr.actorId === actor.id && tr.property === 'speed',
+    )
+    return { ok: applied && (track?.keys.length ?? 0) === 3, keys: track?.keys }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.keys?.[1]?.v).toBe(5)
+})
+
+test('wave 40 blendScriptVarLink drives resolveAnimParams', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => {
+          id: string
+          blendSpace1D?: { param: string; samples: { value: number; clipName: string }[] }
+          scriptVars?: Record<string, unknown>
+          animParams?: Record<string, number>
+        } | null
+        anim: {
+          setBlendScriptVarLink: (actorId: string, varName?: string) => boolean
+          resolveParams: (actorId: string) => Record<string, number>
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (!actor) return { ok: false }
+    actor.blendSpace1D = { param: 'speed', samples: [{ value: 0, clipName: 'idle' }] }
+    actor.animParams = { speed: 0.25 }
+    actor.scriptVars = { speed: 7.5 }
+    v.indie.anim.setBlendScriptVarLink(actor.id, 'speed')
+    const params = v.indie.anim.resolveParams(actor.id)
+    return { ok: params.speed === 7.5, speed: params.speed }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.speed).toBe(7.5)
+})
+
+test('wave 40 applyScriptVarPreset samples into scriptVars on scrub', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => { id: string; script?: string } | null
+        resources: {
+          scriptVarPresets: {
+            save: (name: string, keys: { t: number; v: number }[]) => { id: string }
+          }
+        }
+        sequencer: {
+          applyScriptVarPreset: (actorId: string, varName: string, presetId: string) => boolean
+          sampleScriptVar: (actorId: string, varName: string, t: number, keys: { t: number; v: number }[]) => unknown
+        }
+      }
+      world: { sequence: { tracks: { keys: { t: number; v: number }[] }[] } }
+    }
+    const actor = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (!actor) return { ok: false }
+    actor.script = '// @export_range speed 0 10 1 = 0\n'
+    const preset = v.indie.resources.scriptVarPresets.save('Ramp', [
+      { t: 0, v: 0 },
+      { t: 1, v: 10 },
+    ])
+    v.indie.sequencer.applyScriptVarPreset(actor.id, 'speed', preset.id)
+    const track = v.world.sequence.tracks[0]
+    const sampled = v.indie.sequencer.sampleScriptVar(actor.id, 'speed', 0.5, track?.keys ?? [])
+    return { ok: sampled === 5, sampled }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.sampled).toBe(5)
+})
+
+test('wave 40 sequencer UI apply preset dropdown exists for script var track', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => { id: string } | null
+        resources: {
+          scriptVarPresets: {
+            save: (name: string, keys: { t: number; v: number }[]) => { id: string }
+          }
+        }
+        sequencer: {
+          applyScriptVarPreset: (actorId: string, varName: string, presetId: string) => boolean
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (!actor) return
+    actor.script = '// @export speed = 0\n'
+    const preset = v.indie.resources.scriptVarPresets.save('UIPreset', [{ t: 0, v: 1 }])
+    v.indie.sequencer.applyScriptVarPreset(actor.id, 'speed', preset.id)
+    v.useEditor.getState().select(actor.id)
+    v.useEditor.getState().setBottomTab('sequencer')
+  })
+
+  await page.locator('.seq-track-name', { hasText: 'speed' }).click()
+  await expect(page.locator('.seq-curve-preset select')).toBeVisible({ timeout: 8000 })
+  await expect(page.locator('.seq-curve-preset option', { hasText: 'UIPreset' })).toHaveCount(1)
+})
+
 test('wave 35 prefab subtree + override diff', async ({ page }) => {
   await bootEditor(page)
 

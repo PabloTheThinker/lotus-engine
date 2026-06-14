@@ -44,9 +44,28 @@ import {
   savePrefab,
   summarizePrefabOverrides,
 } from './editor/prefabs'
-import { spawnCharacterStarter, spawnPlatformerStarter } from './editor/starterTemplates'
+import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
+import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
+import { resolveAnimParams } from './engine/animStateMachine'
+import {
+  eraseGridCell,
+  getGridCellCount,
+  gridCellKey,
+  gridCellsInBrush,
+  paintGridCell,
+  worldToGridCell,
+} from './engine/gridMap'
+import { getActionAxis } from './engine/inputActions'
 import { createResource, getResource, listResources, saveResource } from './engine/resources'
-import { keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
+import { listScriptVarPresets, loadScriptVarPreset, saveScriptVarPreset } from './engine/scriptVarPresets'
+import { applyScriptVarPreset, keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
+import {
+  getTouchMoveAxis,
+  isTouchDevice,
+  resetTouchInput,
+  shouldShowTouchControls,
+  VirtualJoystick,
+} from './engine/touchInput'
 import { DEFAULT_RAY_CAST, DEFAULT_TIMER } from './engine/types'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import {
@@ -419,6 +438,8 @@ const lotusBridge = {
     },
     sequencer: {
       keyableScriptExports,
+      applyScriptVarPreset: (actorId: string, varName: string, presetId: string) =>
+        applyScriptVarPreset(world.sequence, actorId, varName, presetId),
       sampleScriptVar: (actorId: string, varName: string, t: number, keys: { t: number; v: number }[]) => {
         const seq = { duration: 10, autoPlay: false, tracks: [], cameraCuts: [], events: [] }
         for (const k of keys) setKey(seq, actorId, varName, k.t, k.v, 'scriptVar')
@@ -431,9 +452,68 @@ const lotusBridge = {
       get: getResource,
       list: listResources,
       save: saveResource,
+      scriptVarPresets: {
+        list: listScriptVarPresets,
+        load: loadScriptVarPreset,
+        save: (name: string, keys: { t: number; v: number }[], varName?: string) =>
+          saveScriptVarPreset(name, keys, varName),
+      },
+    },
+    anim: {
+      resolveParams: (actorId: string) => {
+        const actor = world.actors.get(actorId)
+        return actor ? resolveAnimParams(actor) : {}
+      },
+      setBlendScriptVarLink: (actorId: string, varName?: string) => {
+        const actor = world.actors.get(actorId)
+        if (!actor) return false
+        actor.blendScriptVarLink = varName?.trim() || undefined
+        useEditor.getState().touch()
+        return true
+      },
+      getBlendScriptVarLink: (actorId: string) => world.actors.get(actorId)?.blendScriptVarLink,
+    },
+    touch: {
+      isTouchDevice: () => isTouchDevice(),
+      getMoveAxis: () => getTouchMoveAxis(),
+      getActionAxis: (name: string) => getActionAxis(name),
+      controlsEnabled: () => shouldShowTouchControls(world.environment.touchControls),
+      setControlsEnabled: (on: boolean) => {
+        world.environment.touchControls = on
+        useEditor.getState().touch()
+        return on
+      },
+      reset: () => {
+        resetTouchInput()
+        return true
+      },
+      createJoystick: (parent: HTMLElement, radius = 48) => new VirtualJoystick(parent, { radius }),
+    },
+    mp: {
+      tagHost: MP_TAG_HOST,
+      tagSync: MP_TAG_SYNC,
+      hostScript: MP_HOST_SCRIPT,
+      syncScript: MP_SYNC_SCRIPT,
     },
     spawnCharacterStarter,
     spawnPlatformerStarter,
+    spawnTopDownRpgStarter,
+    spawnFpsStarter,
+    spawnIndieMpTemplate,
+    configureIndieMpSettings,
+  },
+  /** Wave 36 — GridMap cell helpers (foliage snap mode) */
+  gridMap: {
+    worldToGridCell: (x: number, y: number, z: number) => worldToGridCell(x, y, z),
+    gridCellKey: (cx: number, cy: number, cz: number) => gridCellKey(cx, cy, cz),
+    paintCell: (props: import('./engine/types').FoliageProps, cx: number, cy: number, cz: number) =>
+      paintGridCell(props, cx, cy, cz),
+    eraseCell: (props: import('./engine/types').FoliageProps, cx: number, cy: number, cz: number) =>
+      eraseGridCell(props, cx, cy, cz),
+    getCellCount: (props: import('./engine/types').FoliageProps) => getGridCellCount(props),
+    cellsInBrush: (cx: number, cy: number, cz: number, brushSize: number) =>
+      gridCellsInBrush(cx, cy, cz, brushSize),
+    tileKinds: ['box', 'sphere', 'plane'] as const,
   },
   renderer: {
     runQA: runWebGPUQAMatrix,

@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.18 (wave 35).** v0.33–v2.18 shipped; **build clean**, **`npm run test` — 120 passed**.
+- **Last clean commit: v2.43 (waves 36–40).** v0.33–v2.43 shipped; **build clean**, **`npm run test` — 144 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -399,11 +399,21 @@
 | v2.17 | Platformer starter — `/platformer side|wide` greybox scene |
 | v2.18 | Docs + smoke tests — 120 tests passed |
 
+## Shipped (v2.19–v2.43, Waves 36–40 — indie focus)
+
+| Wave | Ver | What |
+|---|---|---|
+| 36 | v2.19–v2.23 | GridMap UX — `gridMap.ts`, tile palette, brush, overlay, `lotus.gridMap` bridge |
+| 37 | v2.24–v2.28 | Starter packs — `/rpg`, `/fps` top-down RPG + FPS greybox |
+| 38 | v2.29–v2.33 | MP indie template — `/mpstarter`, sync crates, relay 2-tab smoke |
+| 39 | v2.34–v2.38 | Touch input PWA — virtual joystick, export `__LOTUS_TOUCH__` |
+| 40 | v2.39–v2.43 | Anim polish — script var presets, blend ↔ @export, Sequencer Apply Preset — 144 tests |
+
 ## Next up (indie roadmap)
 
-1. **TileMap / GridMap UX** — grid paint improvements
-2. **Starter game templates** — top-down RPG, FPS greybox packs
-3. **Multiplayer indie template** — host + 2 clients relay smoke game
+1. **TileMap layers** — multi-layer grid + autotile
+2. **Starter mini-games** — win conditions per template
+3. **MP gameplay rules** — score sync on indie template
 4. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward
