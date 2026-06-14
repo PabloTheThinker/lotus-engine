@@ -64,6 +64,7 @@ export interface ScriptApi {
     tree: BTNode,
     pathIndex: Record<string, string>,
     bb?: Record<string, unknown>,
+    services?: { hostPath: string; service: import('./behaviorTree').BTServiceNode }[],
   ) => void
   /** per-actor blackboard (shared with its behavior tree) */
   blackboard: (actor: Actor) => Record<string, unknown>
@@ -222,8 +223,8 @@ export function makeScriptApi(
       runBTGraph(actor, compiled, bb ?? blackboardFor(actor))
       return true
     },
-    runBTWithPaths: (actor, tree, pathIndex, bb) => {
-      runBT(actor, tree, bb ?? blackboardFor(actor), pathIndex)
+    runBTWithPaths: (actor, tree, pathIndex, bb, services) => {
+      runBT(actor, tree, bb ?? blackboardFor(actor), pathIndex, services)
     },
     blackboard: (actor) => blackboardFor(actor),
     evaluateCurve: (name, t) => {

@@ -4,6 +4,30 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 19: v1.33–v1.38 (UE-inspired parity)
+
+### Added
+- **v1.33** BT services + decorators — `TimeLimit`, `BlackboardDecorator`, `SvcPlayerNear`, `SvcSetBB`; service edges on composites; runtime `tickService` while host path active
+- **v1.34** Niagara modules — `wind`, `rotation`, `collision` particle modules (CPU sim + Details toggles)
+- **v1.35** Substrate-lite materials — `ClearCoat` / `Sheen` graph nodes; Output channels `clearCoat`, `clearCoatRoughness`, `sheen`, `sheenRoughness` (CPU + TSL)
+- **v1.36** GAS stacking — `stackPolicy` / `maxStacks` on `GameplayEffect`; `getActorEffectStacks`; per-stack modifier tick
+- **v1.37** MP GAS replication — `replicateGAS` actor flag; `ga:` / `ga` delta sync; `mpReplicationTierForKey` + tier priority in `mpNet`
+- **v1.38** Playwright wave 19 tests — BT services, particle modules, substrate channels, GAS stacks (42 passed)
+
+### Changed
+- `window.lotus.gas` bridge — `getStacks`, `saveEffect`, `initActor`
+- `window.lotus.mpNet` adds `replicationTier`, `tierPriority`
+- BT editor dashed service wires; `compileBTGraphToScript` emits `__btServices`
+- `api.runBTWithPaths` accepts optional services array
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 42 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 18: v1.27–v1.32
 
 ### Added

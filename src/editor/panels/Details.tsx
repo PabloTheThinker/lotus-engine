@@ -979,6 +979,23 @@ function NetworkSection({ actor }: { actor: Actor }) {
           touch()
         }}
       />
+      {actor.attributeSetId && (
+        <Check
+          label="Replicate GAS"
+          value={!!actor.replicateGAS}
+          onToggle={(v) => {
+            const prev = actor.replicateGAS
+            runCommand(
+              new PropertyCommand(
+                v ? 'Enable GAS replication' : 'Disable GAS replication',
+                () => (actor.replicateGAS = v || undefined),
+                () => (actor.replicateGAS = prev),
+              ),
+            )
+            touch()
+          }}
+        />
+      )}
       {options.map((name) => (
         <Check key={name} label={name} value={synced.has(name)} onToggle={(v) => toggleProp(name, v)} />
       ))}
@@ -1936,6 +1953,18 @@ function ParticlesSection({ actor }: { actor: Actor }) {
             }}
           />
         </label>
+      </Module>
+      <Module id="wind" title="Wind Force">
+        <Num label="Wind X" value={props.windX ?? 0.6} step={0.1} onLive={(v) => setNum('windX', v)} onCommit={() => {}} />
+        <Num label="Wind Y" value={props.windY ?? 0} step={0.1} onLive={(v) => setNum('windY', v)} onCommit={() => {}} />
+        <Num label="Wind Z" value={props.windZ ?? 0} step={0.1} onLive={(v) => setNum('windZ', v)} onCommit={() => {}} />
+      </Module>
+      <Module id="rotation" title="Rotation Over Life">
+        <Num label="Spin °/s" value={props.rotationSpeed ?? 45} step={5} onLive={(v) => setNum('rotationSpeed', v)} onCommit={() => {}} />
+      </Module>
+      <Module id="collision" title="Collision (Sphere)">
+        <Num label="Radius" value={props.collisionRadius ?? 0.35} step={0.05} min={0} onLive={(v) => setNum('collisionRadius', v)} onCommit={() => {}} />
+        <Num label="Bounce" value={props.collisionBounce ?? 0.55} step={0.05} min={0} max={1} onLive={(v) => setNum('collisionBounce', v)} onCommit={() => {}} />
       </Module>
       <Module id="subEmitter" title="Sub-Emitter (Events)">
         <Check

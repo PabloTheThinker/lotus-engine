@@ -48,6 +48,15 @@ export interface ParticleProps {
   groundBounce: boolean
   bounceFactor: number
   subEmitter?: SubEmitterProps
+  /** Wave 19 — wind force (Niagara Wind module) */
+  windX?: number
+  windY?: number
+  windZ?: number
+  /** Wave 19 — spin velocity around Y (deg/s) */
+  rotationSpeed?: number
+  /** Wave 19 — sphere collision radius in local space */
+  collisionRadius?: number
+  collisionBounce?: number
   /** Niagara-style module stack: disabled module names */
   modulesOff?: string[]
 }
@@ -80,6 +89,12 @@ export const DEFAULT_PARTICLES: ParticleProps = {
   groundBounce: false,
   bounceFactor: 0.45,
   subEmitter: { enabled: false, onDeath: true, onCollision: false, count: 8, speed: 1.5, lifetime: 0.4 },
+  windX: 0.6,
+  windY: 0,
+  windZ: 0,
+  rotationSpeed: 45,
+  collisionRadius: 0.35,
+  collisionBounce: 0.55,
 }
 
 const VERT = `
@@ -596,12 +611,51 @@ export class ParticleSystem {
       const i3 = i * 3
       if (!opts?.skipForces) {
         this.vel[i3 + 1] += gravity * dt
+        if (!off('wind')) {
+          this.vel[i3] += (p.windX ?? 0) * dt
+          this.vel[i3 + 1] += (p.windY ?? 0) * dt
+          this.vel[i3 + 2] += (p.windZ ?? 0) * dt
+        }
+        if (!off('rotation') && (p.rotationSpeed ?? 0) !== 0) {
+          const rad = THREE.MathUtils.degToRad(p.rotationSpeed!) * dt
+          const vx = this.vel[i3]
+          const vz = this.vel[i3 + 2]
+          const c = Math.cos(rad)
+          const s = Math.sin(rad)
+          this.vel[i3] = vx * c - vz * s
+          this.vel[i3 + 2] = vx * s + vz * c
+        }
         this.vel[i3] *= dragMul
         this.vel[i3 + 1] *= dragMul
         this.vel[i3 + 2] *= dragMul
         this.positions[i3] += this.vel[i3] * dt
         this.positions[i3 + 1] += this.vel[i3 + 1] * dt
         this.positions[i3 + 2] += this.vel[i3 + 2] * dt
+        if (!off('collision') && (p.collisionRadius ?? 0) > 0) {
+          const cr = p.collisionRadius!
+          const px = this.positions[i3]
+          const py = this.positions[i3 + 1]
+          const pz = this.positions[i3 + 2]
+          const dist = Math.sqrt(px * px + py * py + pz * pz)
+          if (dist < cr && dist > 1e-5) {
+            const nx = px / dist
+            const ny = py / dist
+            const nz = pz / dist
+            this.positions[i3] = nx * cr
+            this.positions[i3 + 1] = ny * cr
+            this.positions[i3 + 2] = nz * cr
+            const bounce = p.collisionBounce ?? 0.55
+            const dot = this.vel[i3] * nx + this.vel[i3 + 1] * ny + this.vel[i3 + 2] * nz
+            if (dot < 0) {
+              this.vel[i3] -= (1 + bounce) * dot * nx
+              this.vel[i3 + 1] -= (1 + bounce) * dot * ny
+              this.vel[i3 + 2] -= (1 + bounce) * dot * nz
+            }
+            if (subOn && se!.onCollision) {
+              this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
+            }
+          }
+        }
       }
 
       if (bounceOn) {

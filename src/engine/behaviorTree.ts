@@ -10,12 +10,19 @@ import type { Actor } from './Actor'
 
 export type BTStatus = 'success' | 'failure' | 'running'
 
+export type BTServiceNode =
+  | { service: 'playerNear'; key: string; distance: number }
+  | { service: 'setBB'; key: string; value: unknown }
+  | { service: 'log'; text: string }
+
 export type BTNode =
   | { selector: BTNode[] }
   | { sequence: BTNode[] }
   | { invert: BTNode }
   | { repeat: { count: number; child: BTNode } }
   | { cooldown: { seconds: number; child: BTNode } }
+  | { timeLimit: { seconds: number; child: BTNode } }
+  | { blackboardGate: { key: string; equals?: unknown; greaterThan?: number; child: BTNode } }
   | { condition: 'playerNear'; distance: number }
   | { condition: 'blackboard'; key: string; equals?: unknown; greaterThan?: number }
   | { task: 'moveToPlayer'; speed?: number; stopAt?: number }
@@ -46,6 +53,7 @@ interface BTState {
   elapsed: number
   repeatIndex?: number
   cooldownReady?: boolean
+  timeLimitStarted?: boolean
 }
 
 const states = new WeakMap<object, BTState>()
@@ -153,6 +161,34 @@ export function tickBT(node: BTNode, ctx: BTContext, path = ''): BTStatus {
     }
     return r
   }
+  if ('timeLimit' in node) {
+    const st = stateFor(node)
+    if (!st.timeLimitStarted) {
+      st.timeLimitStarted = true
+      st.elapsed = 0
+    }
+    st.elapsed += ctx.dt
+    if (st.elapsed >= node.timeLimit.seconds) {
+      st.timeLimitStarted = false
+      st.elapsed = 0
+      return 'failure'
+    }
+    const r = tickBT(node.timeLimit.child, ctx, `${path}/tl`)
+    if (r !== 'running') {
+      st.timeLimitStarted = false
+      st.elapsed = 0
+    }
+    return r
+  }
+  if ('blackboardGate' in node) {
+    const v = ctx.bb[node.blackboardGate.key]
+    let ok = false
+    if (node.blackboardGate.greaterThan !== undefined) ok = Number(v) > node.blackboardGate.greaterThan
+    else if (node.blackboardGate.equals !== undefined) ok = v === node.blackboardGate.equals
+    else ok = !!v
+    if (!ok) return 'failure'
+    return tickBT(node.blackboardGate.child, ctx, `${path}/bb`)
+  }
   if ('condition' in node) {
     if (node.condition === 'playerNear') {
       const p = ctx.pawn()
@@ -208,12 +244,42 @@ export function tickBT(node: BTNode, ctx: BTContext, path = ''): BTStatus {
   return 'failure'
 }
 
+function tickService(service: BTServiceNode, ctx: BTContext) {
+  switch (service.service) {
+    case 'playerNear': {
+      const p = ctx.pawn()
+      ctx.bb[service.key] = !!(p && p.distanceTo(ctx.actor.root.position) < service.distance)
+      break
+    }
+    case 'setBB':
+      ctx.bb[service.key] = service.value
+      break
+    case 'log':
+      ctx.log(service.text)
+      break
+  }
+}
+
+function tickServicesForPath(
+  services: { hostPath: string; service: BTServiceNode }[] | undefined,
+  activePath: string | undefined,
+  ctx: BTContext,
+) {
+  if (!services?.length || !activePath) return
+  for (const s of services) {
+    if (activePath === s.hostPath || activePath.startsWith(`${s.hostPath}/`)) {
+      tickService(s.service, ctx)
+    }
+  }
+}
+
 // ---- per-play-session BT registry ----
 interface ActiveBT {
   actor: Actor
   tree: BTNode
   bb: Record<string, unknown>
   pathIndex?: Record<string, string>
+  services?: { hostPath: string; service: BTServiceNode }[]
 }
 let active: ActiveBT[] = []
 
@@ -227,18 +293,19 @@ export function runBT(
   tree: BTNode,
   bb: Record<string, unknown>,
   pathIndex?: Record<string, string>,
+  services?: { hostPath: string; service: BTServiceNode }[],
 ) {
   active = active.filter((a) => a.actor !== actor)
-  active.push({ actor, tree, bb, pathIndex })
+  active.push({ actor, tree, bb, pathIndex, services })
 }
 
 /** Start a compiled behavior tree graph on an actor. */
 export function runBTGraph(
   actor: Actor,
-  compiled: { tree: BTNode; pathIndex: Record<string, string> },
+  compiled: { tree: BTNode; pathIndex: Record<string, string>; services?: { hostPath: string; service: BTServiceNode }[] },
   bb: Record<string, unknown> = {},
 ) {
-  runBT(actor, compiled.tree, bb, compiled.pathIndex)
+  runBT(actor, compiled.tree, bb, compiled.pathIndex, compiled.services)
 }
 
 export function tickBTs(
@@ -250,7 +317,7 @@ export function tickBTs(
 ) {
   for (const a of active) {
     if (!a.actor.root.visible) continue
-    tickBT(a.tree, {
+    const ctx: BTContext = {
       actor: a.actor,
       bb: a.bb,
       pawn,
@@ -260,6 +327,8 @@ export function tickBTs(
       activateAbility: (id) => activateAbility(a.actor, id),
       pathPrefix: a.pathIndex ? 'root' : undefined,
       pathIndex: a.pathIndex,
-    })
+    }
+    tickBT(a.tree, ctx)
+    tickServicesForPath(a.services, getActiveBTPath(a.actor.id) ?? undefined, ctx)
   }
 }

@@ -122,6 +122,8 @@ export class Actor {
   soundEmitterProps?: import('./types').SoundEmitterProps
   /** Godot MultiplayerSynchronizer-lite — replicated property checklist */
   syncProperties?: string[]
+  /** Wave 19 — replicate GAS attributes as ga: deltas when host syncs */
+  replicateGAS?: boolean
   /** Godot MultiplayerSpawner-lite — host replicates instantiation */
   syncSpawn = false
   /** Network owner peer id — empty = host-owned */
@@ -355,6 +357,7 @@ export class Actor {
       label3D: this.label3DProps ? { ...this.label3DProps } : undefined,
       widget3D: this.widget3DProps ? { ...this.widget3DProps } : undefined,
       syncProperties: this.syncProperties?.length ? [...this.syncProperties] : undefined,
+      replicateGAS: this.replicateGAS || undefined,
       syncSpawn: this.syncSpawn || undefined,
       netOwnerId: this.netOwnerId || undefined,
       clientPredicted: this.clientPredicted || undefined,

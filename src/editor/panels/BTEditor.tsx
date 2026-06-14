@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import { getActiveBTGraphNodeId } from '../../engine/behaviorTree'
 import {
+  BT_COMPOSITE_TYPES,
   BT_DECORATOR_TYPES,
   BT_MAX_DECORATOR_DEPTH,
   BT_NODE_DEFS,
+  BT_SERVICE_TYPES,
   collapseBTSubtree,
   compileBTGraph,
   compileBTGraphToScript,
@@ -38,11 +40,15 @@ function wirePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
+function flowChildCount(graph: BTGraph, parentId: string): number {
+  return graph.edges.filter((e) => e.from === parentId && e.kind !== 'service').length
+}
+
 function nearestWireParent(graph: BTGraph, x: number, y: number): string | null {
   let best: { id: string; d: number } | null = null
   for (const n of graph.nodes) {
     const def = BT_NODE_DEFS[n.type] ?? { maxChildren: 0 }
-    const childCount = graph.edges.filter((e) => e.from === n.id).length
+    const childCount = flowChildCount(graph, n.id)
     if (def.maxChildren <= childCount) continue
     const d = Math.hypot(n.x + NODE_W / 2 - x, n.y + HEADER_H / 2 - y)
     if (!best || d < best.d) best = { id: n.id, d }
@@ -171,7 +177,15 @@ export function BTEditor() {
                 ? { count: 3 }
                 : type === 'Cooldown'
                   ? { seconds: 2 }
-                  : {},
+                  : type === 'TimeLimit'
+                    ? { seconds: 5 }
+                    : type === 'BlackboardDecorator'
+                      ? { key: 'flag' }
+                      : type === 'SvcPlayerNear'
+                        ? { key: 'hasLOS', distance: 8 }
+                        : type === 'SvcSetBB'
+                          ? { key: 'flag', value: 1 }
+                          : {},
     }
     const parentId = nearestWireParent(graph, addMenu.x, addMenu.y)
     const edges = [...graph.edges]
@@ -194,8 +208,23 @@ export function BTEditor() {
     const parent = graph.nodes.find((n) => n.id === from)
     const child = graph.nodes.find((n) => n.id === to)
     if (!parent || !child) return
+    const isService = BT_COMPOSITE_TYPES.has(parent.type) && BT_SERVICE_TYPES.has(child.type)
+    if (isService) {
+      const next = { ...graph, edges: [...graph.edges, { from, to, kind: 'service' as const }] }
+      const err = validateBTGraph(next).find((i) => i.level === 'error')
+      if (err) {
+        useEditor.getState().setStatus(err.message)
+        return
+      }
+      commit(next)
+      return
+    }
+    if (BT_SERVICE_TYPES.has(child.type)) {
+      useEditor.getState().setStatus('Attach services from Selector/Sequence out-port')
+      return
+    }
     const def = BT_NODE_DEFS[parent.type] ?? { maxChildren: 0 }
-    const childCount = graph.edges.filter((e) => e.from === from).length
+    const childCount = flowChildCount(graph, from)
     if (def.maxChildren <= childCount) {
       useEditor.getState().setStatus(`${parent.type} already has max children`)
       return
@@ -204,7 +233,7 @@ export function BTEditor() {
       useEditor.getState().setStatus(`Decorator nesting limit: max ${BT_MAX_DECORATOR_DEPTH} deep`)
       return
     }
-    const next = { ...graph, edges: [...graph.edges, { from, to }] }
+    const next = { ...graph, edges: [...graph.edges, { from, to, kind: 'flow' as const }] }
     const err = validateBTGraph(next).find((i) => i.level === 'error')
     if (err) {
       useEditor.getState().setStatus(err.message)
@@ -409,11 +438,17 @@ export function BTEditor() {
               const a = graph.nodes.find((n) => n.id === edge.from)
               const b = graph.nodes.find((n) => n.id === edge.to)
               if (!a || !b) return null
+              const isService = edge.kind === 'service'
+              const x1 = a.x + NODE_W
+              const y1 = a.y + (isService ? HEADER_H + 18 : HEADER_H / 2)
+              const x2 = b.x
+              const y2 = b.y + HEADER_H / 2
               return (
                 <path
-                  key={`${edge.from}-${edge.to}`}
-                  d={wirePath(a.x + NODE_W, a.y + HEADER_H / 2, b.x, b.y + HEADER_H / 2)}
-                  className="bt-wire"
+                  key={`${edge.from}-${edge.to}-${edge.kind ?? 'flow'}`}
+                  d={wirePath(x1, y1, x2, y2)}
+                  className={isService ? 'bt-wire bt-wire-service' : 'bt-wire'}
+                  strokeDasharray={isService ? '5 4' : undefined}
                   onClick={(e) => {
                     e.stopPropagation()
                     deleteEdge(edge.from, edge.to)

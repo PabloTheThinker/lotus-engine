@@ -63,6 +63,8 @@ import {
 } from './engine/characterController'
 import { crowdAddAgent, crowdAgentCount, crowdGetPosition, initCrowd } from './engine/navCrowd'
 import { mpIsDedicatedServer, mpLagCompensatedTransform, mpNetSettings } from './engine/multiplayer'
+import { MP_REPLICATION_TIER_PRIORITY, mpReplicationTierForKey } from './engine/mpNet'
+import { applyEffect, getActorEffectStacks, getEffect, initActorGAS, saveEffect } from './engine/gameplayAbilities'
 import {
   compileMaterialGraphTSLNodes,
   isTSLPreviewAvailableAsync,
@@ -154,6 +156,15 @@ const lotusBridge = {
     settings: mpNetSettings,
     isDedicatedServer: mpIsDedicatedServer,
     lagCompensatedTransform: mpLagCompensatedTransform,
+    replicationTier: mpReplicationTierForKey,
+    tierPriority: MP_REPLICATION_TIER_PRIORITY,
+  },
+  gas: {
+    getStacks: getActorEffectStacks,
+    applyEffect,
+    getEffect,
+    saveEffect,
+    initActor: initActorGAS,
   },
   materialTSL: {
     serialize: (graph = emptyMaterialGraph()) => serializeMaterialGraphTSL(graph, 0),

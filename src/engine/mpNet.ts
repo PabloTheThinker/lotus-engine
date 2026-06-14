@@ -25,10 +25,19 @@ const MAX_SAMPLES = 64
 const transformHistory = new Map<string, TransformSample[]>()
 const lastSentProps = new Map<string, Record<string, unknown>>()
 
+export type MPReplicationTier = 'transform' | 'properties' | 'gas'
+
+export const MP_REPLICATION_TIER_PRIORITY: Record<MPReplicationTier, number> = {
+  transform: 3,
+  gas: 2,
+  properties: 1,
+}
+
 const SHORT_KEYS: Record<string, string> = {
   position: 'p',
   rotation: 'r',
   visible: 'v',
+  ga: 'g',
 }
 
 const LONG_KEYS: Record<string, string> = Object.fromEntries(
@@ -89,6 +98,13 @@ export function mpSampleHistory(
 
 function valuesEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/** Classify sync payload keys for tiered replication priority. */
+export function mpReplicationTierForKey(key: string): MPReplicationTier {
+  if (key === 'position' || key === 'rotation' || key === 'visible') return 'transform'
+  if (key === 'ga' || key.startsWith('ga:')) return 'gas'
+  return 'properties'
 }
 
 /** Delta-compress property sync payloads; returns null when unchanged. */

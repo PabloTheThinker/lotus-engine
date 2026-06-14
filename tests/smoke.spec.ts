@@ -961,6 +961,131 @@ test('wave 18 material TSL preview channels bridge', async ({ page }) => {
   expect(result.channels).toContain('roughness')
 })
 
+test('wave 19 BT services + decorators compile', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        compile: (g: import('../src/engine/btGraph').BTGraph) => {
+          tree: unknown
+          services?: { hostPath: string; service: { service: string } }[]
+        } | null
+        summarize: (tree: unknown) => string
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const selector = graph.nodes.find((n) => n.type === 'Selector')!
+    const tl = { id: 'tl19', type: 'TimeLimit', x: 300, y: 80, props: { seconds: 3 } }
+    const wait = { id: 'w19', type: 'Wait', x: 500, y: 80, props: { seconds: 0.1 } }
+    const svc = { id: 's19', type: 'SvcPlayerNear', x: 300, y: 180, props: { key: 'near', distance: 6 } }
+    graph.nodes.push(tl, wait, svc)
+    graph.edges = [
+      { from: root.id, to: selector.id },
+      { from: selector.id, to: tl.id },
+      { from: tl.id, to: wait.id },
+      { from: selector.id, to: svc.id, kind: 'service' },
+    ]
+    const compiled = v.bt.compile(graph)
+    const summary = compiled ? v.bt.summarize(compiled.tree) : ''
+    return {
+      hasTimeLimit: summary.includes('TimeLimit'),
+      serviceCount: compiled?.services?.length ?? 0,
+      serviceKind: compiled?.services?.[0]?.service.service,
+    }
+  })
+
+  expect(result.hasTimeLimit).toBe(true)
+  expect(result.serviceCount).toBe(1)
+  expect(result.serviceKind).toBe('playerNear')
+})
+
+test('wave 19 particle wind/rotation/collision modules', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: { create: (b: 'cpu') => { props: { windX?: number; rotationSpeed?: number; collisionRadius?: number } } }
+    }
+    const ps = v.particles.create('cpu')
+    return {
+      windX: ps.props.windX,
+      rotationSpeed: ps.props.rotationSpeed,
+      collisionRadius: ps.props.collisionRadius,
+    }
+  })
+
+  expect(result.windX).toBeGreaterThan(0)
+  expect(result.rotationSpeed).toBeGreaterThan(0)
+  expect(result.collisionRadius).toBeGreaterThan(0)
+})
+
+test('wave 19 substrate clearCoat + sheen material channels', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: { previewChannels: (g: import('../src/engine/materialGraph').MaterialGraph) => string[] }
+    }
+    const g = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 0, y: 0, props: {} },
+        { id: 'cc', type: 'Scalar', x: 0, y: 0, props: { value: 0.9 } },
+        { id: 'sh', type: 'Color', x: 0, y: 0, props: { value: '#ffeedd' } },
+      ],
+      edges: [
+        { from: 'cc', to: 'out:clearCoat' },
+        { from: 'sh', to: 'out:sheen' },
+      ],
+    }
+    return { channels: v.materialTSL.previewChannels(g) }
+  })
+
+  expect(result.channels).toContain('clearCoat')
+  expect(result.channels).toContain('sheen')
+})
+
+test('wave 19 GAS stacking + mp replication tier', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gas: {
+        initActor: (a: import('../src/engine/Actor').Actor) => void
+        applyEffect: (a: import('../src/engine/Actor').Actor, id: string) => boolean
+        getStacks: (a: import('../src/engine/Actor').Actor, id: string) => number
+        getEffect: (id: string) => import('../src/engine/gameplayAbilities').GameplayEffect | undefined
+        saveEffect: (e: import('../src/engine/gameplayAbilities').GameplayEffect) => void
+      }
+      mpNet: { replicationTier: (k: string) => string; tierPriority: Record<string, number> }
+    }
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => /box/i.test(a.name))
+    if (!actor) throw new Error('no box')
+    actor.attributeSetId = 'default'
+    v.gas.initActor(actor)
+    const poison = v.gas.getEffect('effect_poison')
+    if (!poison) throw new Error('poison effect missing')
+    v.gas.saveEffect({ ...poison, stackPolicy: 'stack', maxStacks: 3 })
+    v.gas.applyEffect(actor, 'effect_poison')
+    v.gas.applyEffect(actor, 'effect_poison')
+    const stacks = v.gas.getStacks(actor, 'effect_poison')
+    return {
+      stacks,
+      gaTier: v.mpNet.replicationTier('ga:Health'),
+      gasPriority: v.mpNet.tierPriority.gas,
+      transformPriority: v.mpNet.tierPriority.transform,
+    }
+  })
+
+  expect(result.stacks).toBe(2)
+  expect(result.gaTier).toBe('gas')
+  expect(result.transformPriority).toBeGreaterThan(result.gasPriority)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

@@ -62,7 +62,7 @@ export const MAT_NODE_DEFS: Record<string, MatNodeDef> = {
   Output: {
     title: 'Material Output',
     color: '#7a3b3b',
-    inputs: ['baseColor', 'emissive', 'emissiveInt', 'roughness', 'metalness', 'opacity', 'wpo'],
+    inputs: ['baseColor', 'emissive', 'emissiveInt', 'roughness', 'metalness', 'opacity', 'clearCoat', 'clearCoatRoughness', 'sheen', 'sheenRoughness', 'wpo'],
     hasOutput: false,
     props: [],
     evaluate: () => 0,
@@ -194,6 +194,28 @@ export const MAT_NODE_DEFS: Record<string, MatNodeDef> = {
     /** CPU preview placeholder — GPU shader uses modelMatrix origin. */
     evaluate: () => [0, 0, 0] as [number, number, number],
   },
+  ClearCoat: {
+    title: 'Clear Coat',
+    color: '#6a5a8a',
+    inputs: ['amount', 'roughness'],
+    hasOutput: true,
+    props: [
+      { key: 'amount', label: 'Amount', kind: 'number', default: 0.8 },
+      { key: 'roughness', label: 'Roughness', kind: 'number', default: 0.1 },
+    ],
+    evaluate: (i, p) => toNum((i.amount ?? Number(p.amount ?? 0.8)) as MatValue),
+  },
+  Sheen: {
+    title: 'Sheen',
+    color: '#8a6a5a',
+    inputs: ['color', 'roughness'],
+    hasOutput: true,
+    props: [
+      { key: 'color', label: 'Tint', kind: 'color', default: '#ffffff' },
+      { key: 'roughness', label: 'Roughness', kind: 'number', default: 0.5 },
+    ],
+    evaluate: (i, p) => (i.color !== undefined ? toVec(i.color as MatValue) : hex(String(p.color ?? '#ffffff'))),
+  },
 }
 
 /** Compact 3D simplex noise for CPU preview (matches GPU shader qualitatively). */
@@ -321,6 +343,23 @@ function applyMaterialGraphCpu(mat: THREE.MeshStandardMaterial, graph: MaterialG
   if (r.opacity !== undefined) {
     mat.opacity = Math.max(0, Math.min(1, toNum(r.opacity)))
     mat.transparent = mat.opacity < 1
+  }
+  if (r.clearCoat !== undefined && 'clearcoat' in mat) {
+    const phys = mat as THREE.MeshPhysicalMaterial
+    phys.clearcoat = Math.max(0, Math.min(1, toNum(r.clearCoat)))
+  }
+  if (r.clearCoatRoughness !== undefined && 'clearcoatRoughness' in mat) {
+    const phys = mat as THREE.MeshPhysicalMaterial
+    phys.clearcoatRoughness = Math.max(0, Math.min(1, toNum(r.clearCoatRoughness)))
+  }
+  if (r.sheen !== undefined && 'sheenColor' in mat) {
+    const phys = mat as THREE.MeshPhysicalMaterial
+    const [sr, sg, sb] = toVec(r.sheen)
+    phys.sheenColor.setRGB(sr, sg, sb)
+  }
+  if (r.sheenRoughness !== undefined && 'sheenRoughness' in mat) {
+    const phys = mat as THREE.MeshPhysicalMaterial
+    phys.sheenRoughness = Math.max(0, Math.min(1, toNum(r.sheenRoughness)))
   }
 }
 

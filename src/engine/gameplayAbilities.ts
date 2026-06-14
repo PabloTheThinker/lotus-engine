@@ -38,12 +38,17 @@ export interface EffectModifier {
   value: number
 }
 
+export type EffectStackPolicy = 'none' | 'refresh' | 'stack'
+
 export interface GameplayEffect {
   id: string
   name: string
   /** Duration in seconds; 0 = instant one-shot. Re-applies stack duration. */
   duration: number
   modifiers: EffectModifier[]
+  /** Wave 19 — UE GAS stacking: refresh duration, stack instances, or ignore re-apply */
+  stackPolicy?: EffectStackPolicy
+  maxStacks?: number
   /** Tags added while the effect is active. */
   tagsGranted?: string[]
   /** Tags stripped while the effect is active (restored on expiry). */
@@ -207,6 +212,7 @@ export interface ActiveEffectInfo {
 interface ActiveEffectInstance {
   effectId: string
   expiresAt: number
+  stacks: number
 }
 
 interface ActorGASState {
@@ -390,15 +396,21 @@ function applyInstantModifiers(state: ActorGASState, modifiers: EffectModifier[]
   }
 }
 
-function startEffectInstance(actor: Actor, state: ActorGASState, effect: GameplayEffect, expiresAt: number) {
-  applyMultiplyModifiers(state, effect.modifiers)
+function startEffectInstance(
+  actor: Actor,
+  state: ActorGASState,
+  effect: GameplayEffect,
+  expiresAt: number,
+  stacks = 1,
+) {
+  for (let i = 0; i < stacks; i++) applyMultiplyModifiers(state, effect.modifiers)
   if (effect.tagsGranted?.length) addTags(actor, effect.tagsGranted)
   if (effect.tagsRemoved?.length) removeTags(actor, effect.tagsRemoved)
-  state.activeEffects.push({ effectId: effect.id, expiresAt })
+  state.activeEffects.push({ effectId: effect.id, expiresAt, stacks })
 }
 
-function endEffectInstance(actor: Actor, state: ActorGASState, effect: GameplayEffect) {
-  applyMultiplyModifiers(state, effect.modifiers, true)
+function endEffectInstance(actor: Actor, state: ActorGASState, effect: GameplayEffect, stacks = 1) {
+  for (let i = 0; i < stacks; i++) applyMultiplyModifiers(state, effect.modifiers, true)
   if (effect.tagsGranted?.length) removeTags(actor, effect.tagsGranted)
   if (effect.tagsRemoved?.length) addTags(actor, effect.tagsRemoved)
 }
@@ -431,14 +443,35 @@ export function applyEffect(actor: Actor, effectId: string): boolean {
   }
   if (!state) actorStates.set(actor, gas)
 
+  const policy = effect.stackPolicy ?? 'refresh'
+  const maxStacks = Math.max(1, effect.maxStacks ?? 1)
   const existing = gas.activeEffects.find((e) => e.effectId === effect.id)
   if (existing) {
+    if (policy === 'none') return false
+    if (policy === 'refresh') {
+      existing.expiresAt = Math.max(existing.expiresAt, playClock) + effect.duration
+      return true
+    }
+    if (existing.stacks < maxStacks) {
+      existing.stacks += 1
+      existing.expiresAt = Math.max(existing.expiresAt, playClock) + effect.duration
+      applyMultiplyModifiers(gas, effect.modifiers)
+      return true
+    }
     existing.expiresAt = Math.max(existing.expiresAt, playClock) + effect.duration
     return true
   }
 
-  startEffectInstance(actor, gas, effect, playClock + effect.duration)
+  startEffectInstance(actor, gas, effect, playClock + effect.duration, 1)
   return true
+}
+
+export function getActorEffectStacks(actor: Actor, effectId: string): number {
+  const effect = resolveEffect(effectId)
+  if (!effect) return 0
+  const state = actorStates.get(actor)
+  const inst = state?.activeEffects.find((e) => e.effectId === effect.id)
+  return inst?.stacks ?? 0
 }
 
 export function removeEffect(actor: Actor, effectId: string): boolean {
@@ -454,7 +487,7 @@ export function removeEffect(actor: Actor, effectId: string): boolean {
   const before = state.activeEffects.length
   state.activeEffects = state.activeEffects.filter((inst) => {
     if (inst.effectId !== effect.id) return true
-    endEffectInstance(actor, state, effect)
+    endEffectInstance(actor, state, effect, inst.stacks)
     return false
   })
   return state.activeEffects.length < before
@@ -482,7 +515,8 @@ export function tickEffects(actors: Iterable<Actor>, dt: number) {
 
     for (const inst of state.activeEffects) {
       const effect = getEffect(inst.effectId)
-      if (effect?.modifiers.length) applyAddModifiers(state, effect.modifiers, dt)
+      if (!effect?.modifiers.length) continue
+      for (let s = 0; s < inst.stacks; s++) applyAddModifiers(state, effect.modifiers, dt)
     }
 
     const expired = state.activeEffects.filter((inst) => playClock >= inst.expiresAt)
@@ -491,7 +525,7 @@ export function tickEffects(actors: Iterable<Actor>, dt: number) {
     state.activeEffects = state.activeEffects.filter((inst) => playClock < inst.expiresAt)
     for (const inst of expired) {
       const effect = getEffect(inst.effectId)
-      if (effect) endEffectInstance(actor, state, effect)
+      if (effect) endEffectInstance(actor, state, effect, inst.stacks)
     }
   }
 }

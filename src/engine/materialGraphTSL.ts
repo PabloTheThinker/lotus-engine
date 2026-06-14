@@ -152,6 +152,12 @@ export function compileMaterialGraphTSLNodes(graph: MaterialGraph): Record<strin
       case 'ObjectPosition':
         out = vec3n(float(0))
         break
+      case 'ClearCoat':
+        out = float(Number(node.props.amount ?? 0.8))
+        break
+      case 'Sheen':
+        out = hexColor(tsl, String(node.props.color ?? '#ffffff'))
+        break
       default:
         out = float(0)
     }
@@ -189,6 +195,10 @@ export function serializeMaterialGraphTSL(graph: MaterialGraph, t: number): obje
       roughness: out.roughness,
       metalness: out.metalness,
       opacity: out.opacity,
+      clearCoat: out.clearCoat,
+      clearCoatRoughness: out.clearCoatRoughness,
+      sheen: out.sheen,
+      sheenRoughness: out.sheenRoughness,
     },
     nodeCount: graph.nodes.length,
     edgeCount: graph.edges.length,
@@ -255,6 +265,13 @@ export function compileMaterialGraphTSL(
         mat.opacityNode = asFloat(cachedTsl!, channels.opacity)
         mat.transparent = true
       }
+      const substrate = mat as unknown as Record<string, TSLVal>
+      if (channels.clearCoat !== undefined) substrate.clearcoatNode = asFloat(cachedTsl!, channels.clearCoat)
+      if (channels.clearCoatRoughness !== undefined) {
+        substrate.clearcoatRoughnessNode = asFloat(cachedTsl!, channels.clearCoatRoughness)
+      }
+      if (channels.sheen !== undefined) substrate.sheenColorNode = channels.sheen
+      if (channels.sheenRoughness !== undefined) substrate.sheenRoughnessNode = asFloat(cachedTsl!, channels.sheenRoughness)
       mat.userData.lotusMaterialBackend = 'tsl'
       mat.userData.lotusGraphPreview = true
       mat.userData.lotusTSLNodeGraph = true

@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { World } from './World'
 import type { SerializedActor } from './types'
+import { getActorAttributes, setAttribute } from './gameplayAbilities'
 import {
   DEFAULT_MP_NET,
   mpActorInInterest,
@@ -187,7 +188,15 @@ function packSyncProps(actor: import('./Actor').Actor, keys: string[]): Record<s
     if (key === 'position') out.position = actor.transform.position
     else if (key === 'rotation') out.rotation = actor.transform.rotation
     else if (key === 'visible') out.visible = actor.visible
-    else if (actor.scriptVars && key in actor.scriptVars) out[`sv:${key}`] = actor.scriptVars[key]
+    else if (key.startsWith('ga:')) {
+      const attr = key.slice(3)
+      const attrs = getActorAttributes(actor)
+      if (attrs && attr in attrs) out[key] = attrs[attr]
+    } else if (actor.scriptVars && key in actor.scriptVars) out[`sv:${key}`] = actor.scriptVars[key]
+  }
+  if (actor.replicateGAS) {
+    const attrs = getActorAttributes(actor)
+    if (attrs && Object.keys(attrs).length) out.ga = { ...attrs }
   }
   return out
 }
@@ -220,14 +229,24 @@ function applySyncProps(aid: string, props: Record<string, unknown>) {
   const actor = worldRef.actors.get(aid)
   if (!actor) return
 
+  const applyGa = (ga: Record<string, unknown>) => {
+    for (const [name, val] of Object.entries(ga)) {
+      if (typeof val === 'number') setAttribute(actor, name, val)
+    }
+  }
+
   if (shouldPredict(actor)) {
     reconcilePredictedTransform(actor, props)
     if (typeof props.visible === 'boolean') actor.setVisible(props.visible)
     for (const [k, v] of Object.entries(props)) {
-      if (!k.startsWith('sv:')) continue
-      const name = k.slice(3)
-      actor.scriptVars = { ...(actor.scriptVars ?? {}), [name]: v }
+      if (k.startsWith('sv:')) {
+        const name = k.slice(3)
+        actor.scriptVars = { ...(actor.scriptVars ?? {}), [name]: v }
+      } else if (k.startsWith('ga:') && typeof v === 'number') {
+        setAttribute(actor, k.slice(3), v)
+      }
     }
+    if (props.ga && typeof props.ga === 'object') applyGa(props.ga as Record<string, unknown>)
     return
   }
 
@@ -255,11 +274,15 @@ function applySyncProps(aid: string, props: Record<string, unknown>) {
     actor.setVisible(props.visible)
   }
   for (const [k, v] of Object.entries(props)) {
-    if (!k.startsWith('sv:')) continue
-    const name = k.slice(3)
-    state.targetScriptVars[name] = v
-    actor.scriptVars = { ...(actor.scriptVars ?? {}), [name]: v }
+    if (k.startsWith('sv:')) {
+      const name = k.slice(3)
+      state.targetScriptVars[name] = v
+      actor.scriptVars = { ...(actor.scriptVars ?? {}), [name]: v }
+    } else if (k.startsWith('ga:') && typeof v === 'number') {
+      setAttribute(actor, k.slice(3), v)
+    }
   }
+  if (props.ga && typeof props.ga === 'object') applyGa(props.ga as Record<string, unknown>)
 }
 
 function applyOwnership(aid: string, ownerId: string) {

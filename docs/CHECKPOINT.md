@@ -227,7 +227,18 @@
 | v1.31 | Material Editor TSL node-graph preview badge — `previewChannels`, live channel overlay |
 | v1.32 | Playwright wave 18 tests — 38 passed |
 
-## Next up (v1.33+, Wave 19)
+## Shipped (v1.33–v1.38, Wave 19)
+
+| Ver | What |
+|---|---|
+| v1.33 | BT services + decorators — `TimeLimit`, `BlackboardGate`, `SvcPlayerNear`/`SvcSetBB`, service edge compile + runtime tick |
+| v1.34 | Niagara modules — wind / rotation / collision CPU modules + Details module stack |
+| v1.35 | Substrate-lite — `ClearCoat` + `Sheen` material nodes; TSL substrate channel bind |
+| v1.36 | GAS stacking — `stackPolicy`, `maxStacks`, `getActorEffectStacks` |
+| v1.37 | MP GAS replication — `replicateGAS`, `ga:` deltas, replication tier priority |
+| v1.38 | Playwright wave 19 tests — 42 passed |
+
+## Next up (v1.39+, Wave 20)
 
 1. **TSL post** — SSR quality presets + compositor parity with WebGL tier
 2. **GPU particles** — GPU trail buffer shift for ribbon mode

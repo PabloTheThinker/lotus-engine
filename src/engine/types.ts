@@ -250,6 +250,7 @@ export interface SerializedActor {
   widget3D?: Widget3DProps
   /** MultiplayerSynchronizer-lite: property names to replicate (position, rotation, visible, script var names) */
   syncProperties?: string[]
+  replicateGAS?: boolean
   /** MultiplayerSpawner-lite: host replicates spawn/despawn of this actor during Play */
   syncSpawn?: boolean
   /** Network owner peer id — empty/undefined = host-owned */

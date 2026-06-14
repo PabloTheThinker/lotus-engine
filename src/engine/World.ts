@@ -827,6 +827,7 @@ export class World {
       )
     }
     if (sa.syncProperties?.length) actor.syncProperties = [...sa.syncProperties]
+    if (sa.replicateGAS) actor.replicateGAS = true
     if (sa.syncSpawn) actor.syncSpawn = true
     if (sa.netOwnerId) actor.netOwnerId = sa.netOwnerId
     if (sa.clientPredicted) actor.clientPredicted = true

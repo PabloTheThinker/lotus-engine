@@ -15,6 +15,8 @@ export interface BTGraphNode {
 export interface BTGraphEdge {
   from: string
   to: string
+  /** Wave 19 — UE-style service attachment (composite → service node, not flow child) */
+  kind?: 'flow' | 'service'
 }
 
 export interface BTGraph {
@@ -28,6 +30,8 @@ export interface CompiledBTGraph {
   tree: BTNode
   /** runtime path (e.g. root/0/1) → editor node id */
   pathIndex: Record<string, string>
+  /** Wave 19 — services tick while host composite path is active */
+  services?: { hostPath: string; service: import('./behaviorTree').BTServiceNode }[]
 }
 
 let nodeSeq = 0
@@ -75,6 +79,10 @@ export const BT_NODE_DEFS: Record<string, { title: string; color: string; maxChi
   Invert: { title: 'Invert', color: '#8a6a4a', maxChildren: 1 },
   Repeat: { title: 'Repeat (decorator)', color: '#8a5a6a', maxChildren: 1 },
   Cooldown: { title: 'Cooldown (decorator)', color: '#6a5a8a', maxChildren: 1 },
+  TimeLimit: { title: 'Time Limit (decorator)', color: '#8a6a5a', maxChildren: 1 },
+  BlackboardDecorator: { title: 'Blackboard Gate (decorator)', color: '#5a6a8a', maxChildren: 1 },
+  SvcPlayerNear: { title: 'Svc: Player Near', color: '#2a5a7a', maxChildren: 0 },
+  SvcSetBB: { title: 'Svc: Set Blackboard', color: '#2a5a7a', maxChildren: 0 },
   PlayerNear: { title: 'Player Near', color: '#3a6a9a', maxChildren: 0 },
   Blackboard: { title: 'Blackboard', color: '#3a6a9a', maxChildren: 0 },
   MoveToPlayer: { title: 'Move To Player', color: '#9a5a3a', maxChildren: 0 },
@@ -87,7 +95,28 @@ export const BT_NODE_DEFS: Record<string, { title: string; color: string; maxChi
 }
 
 function childrenOf(graph: BTGraph, id: string): string[] {
-  return graph.edges.filter((e) => e.from === id).map((e) => e.to)
+  return graph.edges.filter((e) => e.from === id && e.kind !== 'service').map((e) => e.to)
+}
+
+function servicesOf(graph: BTGraph, hostId: string): string[] {
+  return graph.edges.filter((e) => e.from === hostId && e.kind === 'service').map((e) => e.to)
+}
+
+function compileServiceNode(graph: BTGraph, id: string): import('./behaviorTree').BTServiceNode {
+  const node = graph.nodes.find((n) => n.id === id)
+  if (!node) return { service: 'log', text: 'missing service' }
+  switch (node.type) {
+    case 'SvcPlayerNear':
+      return {
+        service: 'playerNear',
+        key: String(node.props.key ?? 'hasLOS'),
+        distance: Number(node.props.distance ?? 8),
+      }
+    case 'SvcSetBB':
+      return { service: 'setBB', key: String(node.props.key ?? 'flag'), value: node.props.value ?? true }
+    default:
+      return { service: 'log', text: `unknown service ${node.type}` }
+  }
 }
 
 function compileNode(graph: BTGraph, id: string, path: string, pathIndex: Record<string, string>): BTNode {
@@ -113,6 +142,22 @@ function compileNode(graph: BTGraph, id: string, path: string, pathIndex: Record
       const secs = Number(node.props.seconds ?? 2)
       const child = kids[0] ?? { task: 'log', text: 'cooldown empty' }
       return { cooldown: { seconds: secs, child } }
+    }
+    case 'TimeLimit': {
+      const secs = Number(node.props.seconds ?? 5)
+      const child = kids[0] ?? { task: 'log', text: 'timelimit empty' }
+      return { timeLimit: { seconds: secs, child } }
+    }
+    case 'BlackboardDecorator': {
+      const child = kids[0] ?? { task: 'log', text: 'bb gate empty' }
+      return {
+        blackboardGate: {
+          key: String(node.props.key ?? 'flag'),
+          ...(node.props.equals !== undefined ? { equals: node.props.equals } : {}),
+          ...(node.props.greaterThan !== undefined ? { greaterThan: Number(node.props.greaterThan) } : {}),
+          child,
+        },
+      }
     }
     case 'PlayerNear':
       return { condition: 'playerNear', distance: Number(node.props.distance ?? 8) }
@@ -185,11 +230,23 @@ export function compileBTGraph(graph: BTGraph): CompiledBTGraph | null {
   if (!root) return null
   const pathIndex: Record<string, string> = {}
   const tree = compileNode(merged, root.id, 'root', pathIndex)
-  return { tree, pathIndex }
+  const pathByNode = Object.fromEntries(Object.entries(pathIndex).map(([p, id]) => [id, p]))
+  const services: CompiledBTGraph['services'] = []
+  for (const n of merged.nodes) {
+    if (n.type !== 'Selector' && n.type !== 'Sequence') continue
+    const hostPath = pathByNode[n.id]
+    if (!hostPath) continue
+    for (const sid of servicesOf(merged, n.id)) {
+      services.push({ hostPath, service: compileServiceNode(merged, sid) })
+    }
+  }
+  return { tree, pathIndex, services: services.length ? services : undefined }
 }
 
 /** Wave 15 — decorator nodes that wrap a single child */
-export const BT_DECORATOR_TYPES = new Set(['Invert', 'Repeat', 'Cooldown'])
+export const BT_DECORATOR_TYPES = new Set(['Invert', 'Repeat', 'Cooldown', 'TimeLimit', 'BlackboardDecorator'])
+export const BT_SERVICE_TYPES = new Set(['SvcPlayerNear', 'SvcSetBB'])
+export const BT_COMPOSITE_TYPES = new Set(['Selector', 'Sequence'])
 export const BT_MAX_DECORATOR_DEPTH = 4
 
 export interface BTValidationIssue {
@@ -199,7 +256,11 @@ export interface BTValidationIssue {
 }
 
 function parentsOf(graph: BTGraph, childId: string): string[] {
-  return graph.edges.filter((e) => e.to === childId).map((e) => e.from)
+  return graph.edges.filter((e) => e.to === childId && e.kind !== 'service').map((e) => e.from)
+}
+
+function flowChildCount(graph: BTGraph, parentId: string): number {
+  return graph.edges.filter((e) => e.from === parentId && e.kind !== 'service').length
 }
 
 function decoratorDepth(graph: BTGraph, nodeId: string, memo = new Map<string, number>()): number {
@@ -226,6 +287,13 @@ export function validateBTGraph(graph: BTGraph): BTValidationIssue[] {
 
   for (const n of graph.nodes) {
     const parents = parentsOf(graph, n.id)
+    const serviceParents = graph.edges.filter((e) => e.to === n.id && e.kind === 'service').map((e) => e.from)
+    if (BT_SERVICE_TYPES.has(n.type)) {
+      if (!serviceParents.length) {
+        issues.push({ level: 'warn', message: `${n.type} is not attached to a composite`, nodeId: n.id })
+      }
+      continue
+    }
     if (n.type !== 'Root' && parents.length === 0) {
       issues.push({ level: 'warn', message: `${n.type} is not wired to Root`, nodeId: n.id })
     }
@@ -233,7 +301,7 @@ export function validateBTGraph(graph: BTGraph): BTValidationIssue[] {
       issues.push({ level: 'error', message: `${n.type} has multiple parents`, nodeId: n.id })
     }
     const def = BT_NODE_DEFS[n.type] ?? { maxChildren: 0 }
-    const childCount = graph.edges.filter((e) => e.from === n.id).length
+    const childCount = flowChildCount(graph, n.id)
     if (childCount > def.maxChildren) {
       issues.push({
         level: 'error',
@@ -256,7 +324,7 @@ export function validateBTGraph(graph: BTGraph): BTValidationIssue[] {
     if (visiting.has(id)) return true
     if (visited.has(id)) return false
     visiting.add(id)
-    for (const e of graph.edges.filter((x) => x.from === id)) {
+    for (const e of graph.edges.filter((x) => x.from === id && x.kind !== 'service')) {
       if (dfs(e.to)) return true
     }
     visiting.delete(id)
@@ -370,16 +438,18 @@ export function compileBTGraphToScript(graph: BTGraph): string | null {
     .join('\n')
   const treeJson = JSON.stringify(compiled.tree)
   const pathJson = JSON.stringify(compiled.pathIndex)
+  const servicesJson = compiled.services?.length ? JSON.stringify(compiled.services) : 'undefined'
 
   return `// ── compiled from Behavior Tree — edits overwritten on next compile ──
 ${typeLines}
 const __btTree = ${treeJson}
 const __btPaths = ${pathJson}
+const __btServices = ${servicesJson}
 
 function onBeginPlay() {
   const bb = api.blackboard(actor)
   Object.assign(bb, actor.scriptVars ?? {})
-  api.runBTWithPaths(actor, __btTree, __btPaths, bb)
+  api.runBTWithPaths(actor, __btTree, __btPaths, bb, __btServices)
 }
 `
 }
@@ -398,6 +468,12 @@ export function summarizeBTTree(tree: BTNode, depth = 0): string {
   }
   if ('cooldown' in tree && tree.cooldown) {
     return `${pad}Cooldown ${tree.cooldown.seconds}s\n${summarizeBTTree(tree.cooldown.child, depth + 1)}`
+  }
+  if ('timeLimit' in tree && tree.timeLimit) {
+    return `${pad}TimeLimit ${tree.timeLimit.seconds}s\n${summarizeBTTree(tree.timeLimit.child, depth + 1)}`
+  }
+  if ('blackboardGate' in tree && tree.blackboardGate) {
+    return `${pad}BB Gate: ${tree.blackboardGate.key}\n${summarizeBTTree(tree.blackboardGate.child, depth + 1)}`
   }
   if ('condition' in tree && tree.condition) return `${pad}Condition: ${tree.condition}`
   if ('task' in tree && tree.task) return `${pad}Task: ${tree.task}`
