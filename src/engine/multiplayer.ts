@@ -44,6 +44,13 @@ import {
   mpSpectatorUnmarkPeer,
 } from './mpSpectator'
 import {
+  mpKillcamActive,
+  mpKillcamReset,
+  mpKillcamSetLocalIdHook,
+  mpKillcamSetSeekHook,
+  mpKillcamTick,
+} from './mpKillcam'
+import {
   mpReplayBufferLength,
   mpReplayGetSeekOffset,
   mpReplayPackWire,
@@ -77,6 +84,7 @@ import {
  *   spectator_join { t, id }                  — peer observes without pawn/input uplink
  *   replay_sample  { t, id, offsetSec? }      — spectator requests host pose ring sample
  *   replay_sample  { t, id, offsetSec, bufferLength, samples } — host rewind snapshot
+ *   player_killed  { t, id, killerId, victimId }              — deathmatch kill relay (Wave 78)
  *   list_rooms  { t }                         — query public room registry
  *   rooms       { t, rooms:[{room,peers}] }   — room list snapshot
  *   room_registry { t, rooms }                — broadcast when rooms change
@@ -116,6 +124,7 @@ let worldRef: World | null = null
 let scoreDeltaHandler: ((peerId: string, delta: number) => void) | null = null
 let peerScoresMirrorHandler: ((scores: Record<string, number>) => void) | null = null
 let gameWonRelayHandler: ((peerId: string, score: number) => void) | null = null
+let playerKilledRelayHandler: ((killerId: string, victimId: string) => void) | null = null
 let lobbyStartHandler: (() => void) | null = null
 let lobbyRefreshHandler: (() => void) | null = null
 /** ids spawned by the network host (safe to despawn on disconnect) */
@@ -201,10 +210,12 @@ export {
   type MpReplayPose,
 }
 
-/** Clamp spectator rewind offset; remote spectators request host replay_sample. */
+/** Clamp spectator rewind offset; remote clients request host replay_sample when rewinding. */
 export function mpReplaySeek(offsetSec: number): number {
   const clamped = mpReplaySeekBuffer(offsetSec)
-  if (mpSpectatorMode() && mpConnected() && !mpIsHost()) mpReplayRequestSample(clamped)
+  if (mpConnected() && !mpIsHost() && (mpSpectatorMode() || mpKillcamActive())) {
+    mpReplayRequestSample(clamped)
+  }
   return clamped
 }
 
@@ -462,6 +473,30 @@ export function mpSetGameWonRelayHandler(fn: ((peerId: string, score: number) =>
   gameWonRelayHandler = fn
 }
 
+/** Client relay — host player_killed forwarded to local playApi + killcam. */
+export function mpSetPlayerKilledRelayHandler(fn: ((killerId: string, victimId: string) => void) | null) {
+  playerKilledRelayHandler = fn
+}
+
+/** Host broadcasts authoritative player_killed to the room. */
+export function mpBroadcastPlayerKilled(killerId: string, victimId: string) {
+  if (!mpConnected() || !mpIsHost()) return
+  send({ t: 'player_killed', id: localId, killerId, victimId })
+  playerKilledRelayHandler?.(killerId, victimId)
+}
+
+/** Client reports a kill; host rebroadcasts when authoritative. */
+export function mpReportPlayerKill(victimId: string, killerId?: string) {
+  if (!mpConnected() || !victimId) return false
+  const killer = killerId ?? localId
+  if (mpIsHost()) {
+    mpBroadcastPlayerKilled(killer, victimId)
+    return true
+  }
+  send({ t: 'player_killed', id: localId, killerId: killer, victimId })
+  return true
+}
+
 /** Lobby → deathmatch transition (all tabs when host sends lobby_start). */
 export function mpSetLobbyStartHandler(fn: (() => void) | null) {
   lobbyStartHandler = fn
@@ -580,6 +615,9 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   mpLobbyReset(localId)
   mpSpectatorReset(localId)
   mpReplayReset()
+  mpKillcamReset()
+  mpKillcamSetSeekHook(mpReplaySeek)
+  mpKillcamSetLocalIdHook(() => localId)
   mpSpectatorSetLocal(!!cfg.spectator)
   if (cfg.spectator) mpSpectatorMarkPeer(localId)
   mpMatchmakingSetStatusSink(status, formatMpStatusLine)
@@ -614,6 +652,8 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       delta?: number
       peerScores?: Record<string, number>
       gameWon?: [string, number]
+      killerId?: string
+      victimId?: string
       ready?: boolean
       offsetSec?: number
       bufferLength?: number
@@ -718,6 +758,26 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       }
       return
     }
+    if (
+      msg.t === 'player_killed' &&
+      mpIsHost() &&
+      msg.killerId &&
+      msg.victimId &&
+      msg.id !== localId
+    ) {
+      mpBroadcastPlayerKilled(msg.killerId, msg.victimId)
+      return
+    }
+    if (
+      msg.t === 'player_killed' &&
+      !mpIsHost() &&
+      isFromHost(msg.id) &&
+      msg.killerId &&
+      msg.victimId
+    ) {
+      playerKilledRelayHandler?.(msg.killerId, msg.victimId)
+      return
+    }
     if (msg.t === 'input' && msg.p && worldRef && mpIsHost()) {
       // host may mirror remote pawn input as ghost pose (co-presence v1)
       let peer = peers.get(msg.id)
@@ -770,6 +830,7 @@ export function mpDisconnect() {
   mpLobbyReset()
   mpSpectatorReset()
   mpReplayReset()
+  mpKillcamReset()
   if (worldRef) {
     for (const id of [...netSpawned]) {
       if (worldRef.actors.has(id)) worldRef.removeActor(id)
@@ -824,6 +885,7 @@ export function mpLagCompensatedTransform(
 }
 
 export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: number) {
+  mpKillcamTick(dt)
   if (!ws || ws.readyState !== 1 || !worldRef) return
   const net = mpNetSettings()
   const interestPeers = peerInterestPositions(pawnPos)

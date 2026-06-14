@@ -187,6 +187,35 @@ function bakeInWorker(positions: Float32Array, indices: Uint32Array): Promise<Ui
   })
 }
 
+/** Bake Recast navmesh bytes without installing the global navmesh (per-layer agents). */
+export async function bakeNavMeshDataFromMeshes(meshes: THREE.Mesh[]): Promise<Uint8Array | null> {
+  lastBakeError = null
+  if (meshes.length === 0) {
+    lastBakeError = 'No geometry to bake'
+    return null
+  }
+
+  const { positions, indices } = meshesToArrays(meshes)
+  if (positions.length < 9 || indices.length < 3) {
+    lastBakeError = 'Insufficient walkable geometry'
+    return null
+  }
+
+  const ok = await ensureRecastInit()
+  if (!ok) return null
+
+  const posCopy = new Float32Array(positions)
+  const idxCopy = new Uint32Array(indices)
+
+  let data = await bakeInWorker(posCopy, idxCopy)
+  if (!data) {
+    const pos2 = new Float32Array(positions)
+    const idx2 = new Uint32Array(indices)
+    data = bakeOnMainThread(pos2, idx2)
+  }
+  return data
+}
+
 /** Bake a Recast polygon navmesh from an explicit mesh list. */
 export async function bakeNavMeshFromMeshes(meshes: THREE.Mesh[]): Promise<boolean> {
   if (bakePromise) return bakePromise
@@ -195,30 +224,7 @@ export async function bakeNavMeshFromMeshes(meshes: THREE.Mesh[]): Promise<boole
     navMeshBaking = true
     lastBakeError = null
     try {
-      if (meshes.length === 0) {
-        lastBakeError = 'No geometry to bake'
-        return false
-      }
-
-      const { positions, indices } = meshesToArrays(meshes)
-      if (positions.length < 9 || indices.length < 3) {
-        lastBakeError = 'Insufficient walkable geometry'
-        return false
-      }
-
-      const ok = await ensureRecastInit()
-      if (!ok) return false
-
-      // copy arrays — worker may transfer buffers
-      const posCopy = new Float32Array(positions)
-      const idxCopy = new Uint32Array(indices)
-
-      let data = await bakeInWorker(posCopy, idxCopy)
-      if (!data) {
-        const pos2 = new Float32Array(positions)
-        const idx2 = new Uint32Array(indices)
-        data = bakeOnMainThread(pos2, idx2)
-      }
+      const data = await bakeNavMeshDataFromMeshes(meshes)
       if (!data) return false
       return installNavMesh(data)
     } finally {

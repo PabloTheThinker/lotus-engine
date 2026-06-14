@@ -8,12 +8,14 @@ import {
   applyMpScoreDelta,
   mirrorMpPeerScores,
 } from '../engine/mpGameplay'
+import { mpKillcamOnGameWon, mpKillcamOnPlayerKilled } from '../engine/mpKillcam'
 import {
   mpLobbyRoom,
   mpSetGameWonRelayHandler,
   mpSetLobbyRefreshHandler,
   mpSetLobbyStartHandler,
   mpSetPeerScoresMirrorHandler,
+  mpSetPlayerKilledRelayHandler,
   mpSetScoreDeltaHandler,
 } from '../engine/multiplayer'
 import { AddActorCommand, runCommand } from './commands'
@@ -197,6 +199,9 @@ function onTick(_dt) {
   const origin = [pos.x, pos.y + 1.4, pos.z]
   const hit = api.raycast(origin, dir, 80)
   if (!hit || !hit.actor.tags.includes('mp_target')) return
+  const killerId = api.mpLocalId()
+  const victimId = api.mpLobbyPeers().find((id) => id !== killerId)
+  if (victimId) api.mpReportPlayerKill(victimId)
   api.addMpScore(1)
 }
 `
@@ -523,9 +528,14 @@ export function spawnIndieMpDeathmatch() {
   })
 }
 
+function relayPlaySignal(signal: string, ...args: unknown[]) {
+  world.playApi?.emit(signal, ...args)
+  if (signal === 'mp_game_won') mpKillcamOnGameWon(String(args[0]))
+}
+
 /** Host applies score deltas requested by clients over the relay. */
 mpSetScoreDeltaHandler((peerId, delta) => {
-  applyMpScoreDelta(world.actors, peerId, delta, (signal, ...args) => world.playApi?.emit(signal, ...args))
+  applyMpScoreDelta(world.actors, peerId, delta, relayPlaySignal)
 })
 
 /** Clients mirror host peerScores snapshots from the score relay. */
@@ -535,7 +545,13 @@ mpSetPeerScoresMirrorHandler((scores) => {
 
 /** Clients receive mp_game_won when host broadcasts a win on the score relay. */
 mpSetGameWonRelayHandler((peerId, score) => {
-  world.playApi?.emit('mp_game_won', peerId, score)
+  relayPlaySignal('mp_game_won', peerId, score)
+})
+
+/** Relay player_killed — victim client gets killcam overlay. */
+mpSetPlayerKilledRelayHandler((killerId, victimId) => {
+  relayPlaySignal('player_killed', killerId, victimId)
+  mpKillcamOnPlayerKilled(killerId, victimId)
 })
 
 /** Lobby HUD refresh when peers join or toggle ready. */

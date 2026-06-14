@@ -208,6 +208,16 @@ export class PlayController {
     return this.mode === 'fly' ? this.camera.position : this.feet
   }
 
+  /** Wave 80 — restore pawn position from a save checkpoint payload. */
+  restoreCheckpoint(data: { pawn?: number[] | null; playTime?: number }) {
+    if (data.pawn && data.pawn.length >= 3) {
+      const [x, y, z] = data.pawn
+      if (this.mode === 'fly') this.camera.position.set(x, y, z)
+      else this.feet.set(x, y, z)
+      this.syncCamera()
+    }
+  }
+
   /** camera look yaw (radians) — for script hitscan */
   get viewYaw(): number {
     return this.yaw

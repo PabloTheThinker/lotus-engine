@@ -26,6 +26,7 @@ import { hud, raycastActors, resetGameplay, syncAuthoredHud, tickGameplay } from
 import { buildPathCurve } from './path3d'
 import { resetBTs, runBTGraph, tickBTs } from './behaviorTree'
 import { compileBTGraph } from './btGraph'
+import { resetGridNavAgents, tickGridNavAgents } from './gridNavAgents'
 import { resetCrowd, tickCrowd } from './navCrowd'
 import { playMetaSound, registerSound, setReverbZone, setSoundAttenuationDefaults, stopAllSounds, type ReverbPreset } from './audio'
 import { mpConnected, mpIsHost } from './multiplayer'
@@ -251,6 +252,7 @@ export class World {
     resetAbilities()
     resetBTs()
     resetCrowd()
+    resetGridNavAgents()
     this.lastCameraCut = null
     this.lastSeqTime = 0
     setDataStore(this.dataTables)
@@ -461,6 +463,7 @@ export class World {
     resetAbilities()
     resetBTs()
     resetCrowd()
+    resetGridNavAgents()
     this.triggerState.clear()
     this.timerElapsed.clear()
     this.timerActive.clear()
@@ -605,6 +608,7 @@ export class World {
       this.physicsAccumulator -= physDt
     }
     tickCrowd(dt)
+    tickGridNavAgents(dt)
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
       const st = this.playClock % this.sequence.duration

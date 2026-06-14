@@ -6268,7 +6268,7 @@ test('wave 62 export.buildItchZip returns PK zip with index.html meta.json icon.
 
   expect(result.pk).toBe(true)
   expect(result.type).toBe('application/zip')
-  expect(result.entries).toEqual(['icon.png', 'index.html', 'meta.json'])
+  expect(result.entries).toEqual(['RELEASE_NOTES.md', 'icon.png', 'index.html', 'meta.json'])
 })
 
 test('wave 62 export.itchZipFilename uses {genre}-lotus-pack.zip pattern', async ({ page }) => {
@@ -7905,4 +7905,625 @@ test('wave 75 migrateToLevel copies per-level slot to __global__ on changeScene'
   expect(result.levelHas).toBe(true)
   expect(result.globalLoaded).toEqual({ coins: 12 })
   expect(result.activeLoaded).toEqual({ coins: 12 })
+})
+
+test('wave 80 lotus.save bridge exposes showMenu, hideMenu, isPaused for PIE pause menu', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).save as Record<string, unknown>
+    return {
+      showMenu: typeof s.showMenu === 'function',
+      hideMenu: typeof s.hideMenu === 'function',
+      isPaused: typeof s.isPaused === 'function',
+    }
+  })
+
+  expect(result.showMenu).toBe(true)
+  expect(result.hideMenu).toBe(true)
+  expect(result.isPaused).toBe(true)
+})
+
+test('wave 80 export embeds __LOTUS_SAVE_MENU__ true and lotus-save-menu-overlay CSS when save slots enabled', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    const htmlOn = v.export.buildPlayableHTML()
+    v.world.environment.saveSlotsEnabled = false
+    const htmlOff = v.export.buildPlayableHTML()
+    return {
+      menuOn: htmlOn.includes('__LOTUS_SAVE_MENU__ = true'),
+      menuOff: htmlOff.includes('__LOTUS_SAVE_MENU__ = false'),
+      css: htmlOn.includes('lotus-save-menu-overlay'),
+      slots: htmlOn.includes("'slot1'") && htmlOn.includes('SAVE_MENU_SLOTS'),
+    }
+  })
+
+  expect(result.menuOn).toBe(true)
+  expect(result.menuOff).toBe(true)
+  expect(result.css).toBe(true)
+  expect(result.slots).toBe(true)
+})
+
+test('wave 80 export runtime initExportSaveMenu wires Escape toggle and Save Slot 1-3 buttons when __LOTUS_SAVES__', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      init: html.includes('initExportSaveMenu'),
+      escape: html.includes("e.code !== 'Escape'"),
+      slotSave: html.includes('data-slot-save='),
+      slotLoad: html.includes('data-slot-load='),
+      api: html.includes('__LOTUS_SAVE_MENU_API__'),
+    }
+  })
+
+  expect(result.init).toBe(true)
+  expect(result.escape).toBe(true)
+  expect(result.slotSave).toBe(true)
+  expect(result.slotLoad).toBe(true)
+  expect(result.api).toBe(true)
+})
+
+test('wave 80 save menu slot1 checkpoint round-trip via lotus.save.checkpoint and lotus.save.load', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean } }
+      save: {
+        checkpoint: (slot: string, data: unknown) => boolean
+        load: (slot: string) => unknown
+        listSlots: () => string[]
+      }
+    }
+    v.world.levelName = 'Wave80Menu'
+    v.world.environment.saveSlotsEnabled = true
+    const ok = v.save.checkpoint('slot1', { hp: 80, stage: 2 })
+    const loaded = v.save.load('slot1')
+    const slots = v.save.listSlots()
+    const key = 'lotus-engine.saves.Wave80Menu.slot1'
+    return { ok, loaded, slots, hasRaw: !!localStorage.getItem(key) }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.hasRaw).toBe(true)
+  expect(result.loaded).toEqual({ hp: 80, stage: 2 })
+  expect(result.slots).toContain('slot1')
+})
+
+test('wave 80 export runtime freezes simDt (pawn/scripts/physics) when save menu isPaused', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      frozen: html.includes('const frozen = SAVE_MENU_ENABLED && saveMenuPaused'),
+      simDt: html.includes('const simDt = frozen ? 0 : dt'),
+      pawnGate: html.includes('if (simDt > 0) updatePawn(simDt)'),
+      scriptGate: html.includes('tickScriptTimers(simDt)'),
+    }
+  })
+
+  expect(result.frozen).toBe(true)
+  expect(result.simDt).toBe(true)
+  expect(result.pawnGate).toBe(true)
+  expect(result.scriptGate).toBe(true)
+})
+
+test('wave 76 gridMap.navAgents bridge exposes spawn, tick, count, layer', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const navAgents = (window.lotus! as typeof window.lotus).gridMap.navAgents as Record<string, unknown>
+    return {
+      hasSpawn: typeof navAgents.spawn === 'function',
+      hasTick: typeof navAgents.tick === 'function',
+      hasCount: typeof navAgents.count === 'function',
+      hasLayer: typeof navAgents.layer === 'function',
+      hasGetPosition: typeof navAgents.getPosition === 'function',
+      initialCount: (navAgents.count as () => number)(),
+    }
+  })
+
+  expect(result.hasSpawn).toBe(true)
+  expect(result.hasTick).toBe(true)
+  expect(result.hasCount).toBe(true)
+  expect(result.hasLayer).toBe(true)
+  expect(result.hasGetPosition).toBe(true)
+  expect(result.initialCount).toBe(0)
+})
+
+test('wave 76 gridMap.navAgents.clampLayer clamps layer to 0–3', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const navAgents = (window.lotus! as typeof window.lotus).gridMap.navAgents as {
+      clampLayer: (layer: number) => number
+    }
+    return {
+      neg: navAgents.clampLayer(-2),
+      low: navAgents.clampLayer(0),
+      high: navAgents.clampLayer(3),
+      over: navAgents.clampLayer(9),
+    }
+  })
+
+  expect(result.neg).toBe(0)
+  expect(result.low).toBe(0)
+  expect(result.high).toBe(3)
+  expect(result.over).toBe(3)
+})
+
+test('wave 76 /gridnavagent [layer] terminal spawns test agent on grid navmesh layer', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output?: string | null; error?: string | null } }
+    }
+    const out = v.terminal.exec('/gridnavagent 2')
+    return {
+      error: out.error,
+      output: out.output ?? '',
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toMatch(/Grid nav agent spawn started on layer 2/)
+  expect(result.output).toMatch(/grid_nav_agent_L2/)
+})
+
+test('wave 76 Details hint documents navmesh layer bake + /gridnavagent spawn', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      useEditor: { getState: () => { select: (id: string | null) => void } }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor) throw new Error('gridmap spawn failed')
+    v.useEditor.getState().select(actor.id)
+  })
+
+  await expect(page.locator('.details-panel, .editor-root')).toContainText('/gridnavmesh')
+  await expect(page.locator('.details-panel, .editor-root')).toContainText('/gridnavagent')
+  await expect(page.locator('.details-panel, .editor-root')).toContainText('gridMap.navAgents.spawn')
+})
+
+test('wave 76 gridMap.navAgents.spawn bakes layer navmesh and registers agent with layer id', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        navAgents: {
+          spawn: (
+            id: string,
+            layer: number,
+            pos: [number, number, number],
+            target?: [number, number, number],
+          ) => Promise<boolean>
+          count: (layer?: number) => number
+          layer: (id: string) => number | null
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 1, 0, 0, 0)
+    v.gridMap.paintLayer(props, 1, 1, 0, 0)
+    v.gridMap.paintLayer(props, 1, 2, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    const spawned = await v.gridMap.navAgents.spawn('test_agent_L1', 1, [0, 1, 0], [6, 1, 6])
+    return {
+      ok: true,
+      spawned,
+      total: v.gridMap.navAgents.count(),
+      layerCount: v.gridMap.navAgents.count(1),
+      agentLayer: v.gridMap.navAgents.layer('test_agent_L1'),
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.spawned).toBe(true)
+  expect(result.total).toBe(1)
+  expect(result.layerCount).toBe(1)
+  expect(result.agentLayer).toBe(1)
+})
+
+test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHANGELOG waves', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildReleaseNotes: (m: 'platformer') => string }
+    }
+    const notes = v.export.buildReleaseNotes('platformer')
+    return {
+      hasTitle: notes.includes('# Lotus Platformer Pack'),
+      hasBlurb: notes.includes('Jump to the goal'),
+      hasWhatsNew: notes.includes("## What's new"),
+      hasWavesHeader: notes.includes('Waves 76–80'),
+      hasWave77: notes.includes('Wave 77'),
+      hasReleaseNotesFeature: notes.includes('itch.io release notes'),
+    }
+  })
+
+  expect(result.hasTitle).toBe(true)
+  expect(result.hasBlurb).toBe(true)
+  expect(result.hasWhatsNew).toBe(true)
+  expect(result.hasWavesHeader).toBe(true)
+  expect(result.hasWave77).toBe(true)
+  expect(result.hasReleaseNotesFeature).toBe(true)
+})
+
+test('wave 77 indie.minigame.releaseNotes and export.buildReleaseNotes bridges match', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { releaseNotes: (m: 'rpg') => string } }
+      export: { buildReleaseNotes: (m: 'rpg') => string }
+    }
+    const mg = v.indie.minigame
+    const fromIndie = mg.releaseNotes('rpg')
+    const fromExport = v.export.buildReleaseNotes('rpg')
+    return {
+      indieFn: typeof mg.releaseNotes === 'function',
+      exportFn: typeof v.export.buildReleaseNotes === 'function',
+      match: fromIndie === fromExport,
+      hasRpgTitle: fromIndie.includes('# Lotus RPG Pack'),
+      hasQuestBlurb: fromIndie.includes('Collect NPCs'),
+    }
+  })
+
+  expect(result.indieFn).toBe(true)
+  expect(result.exportFn).toBe(true)
+  expect(result.match).toBe(true)
+  expect(result.hasRpgTitle).toBe(true)
+  expect(result.hasQuestBlurb).toBe(true)
+})
+
+test('wave 77 buildPackHTML embeds __LOTUS_PACK_RELEASE_NOTES__ with platformer notes', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'platformer') => void
+          buildPackHTML: (m: 'platformer') => string
+          releaseNotes: (m: 'platformer') => string
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const expected = v.indie.minigame.releaseNotes('platformer')
+    const marker = 'window.__LOTUS_PACK_RELEASE_NOTES__ = '
+    const idx = html.indexOf(marker)
+    let embedded = ''
+    if (idx >= 0) {
+      const rest = html.slice(idx + marker.length)
+      const end = rest.indexOf('; window.')
+      const jsonStr = end >= 0 ? rest.slice(0, end) : rest.split(';')[0]
+      embedded = JSON.parse(jsonStr) as string
+    }
+    return {
+      hasTag: html.includes('__LOTUS_PACK_RELEASE_NOTES__'),
+      embedded,
+      expected,
+      match: embedded === expected,
+      hasWave77: embedded.includes('Wave 77'),
+    }
+  })
+
+  expect(result.hasTag).toBe(true)
+  expect(result.match).toBe(true)
+  expect(result.hasWave77).toBe(true)
+})
+
+test('wave 77 buildItchZip includes RELEASE_NOTES.md with genre markdown', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: {
+        buildItchZip: (m: 'fps') => Blob
+        listItchZipEntries: (b: Blob) => Promise<string[]>
+        readItchZipEntry: (b: Blob, n: string) => Promise<string | null>
+        buildReleaseNotes: (m: 'fps') => string
+      }
+    }
+    const blob = v.export.buildItchZip('fps')
+    const entries = await v.export.listItchZipEntries(blob)
+    const notesRaw = await v.export.readItchZipEntry(blob, 'RELEASE_NOTES.md')
+    const expected = v.export.buildReleaseNotes('fps')
+    return {
+      entries,
+      hasReleaseNotes: entries.includes('RELEASE_NOTES.md'),
+      notesRaw,
+      expected,
+      match: notesRaw === expected,
+      hasFpsTitle: notesRaw?.includes('# Lotus FPS Pack') ?? false,
+    }
+  })
+
+  expect(result.hasReleaseNotes).toBe(true)
+  expect(result.entries).toEqual(expect.arrayContaining(['index.html', 'meta.json', 'icon.png', 'RELEASE_NOTES.md']))
+  expect(result.match).toBe(true)
+  expect(result.hasFpsTitle).toBe(true)
+})
+
+test('wave 77 /releasenotes platformer terminal prints release notes markdown', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output: string | null; error: string | null } | undefined }
+      export: { buildReleaseNotes: (m: 'platformer') => string }
+    }
+    const out = v.terminal.exec('/releasenotes platformer')
+    const expected = v.export.buildReleaseNotes('platformer')
+    return {
+      error: out?.error,
+      output: out?.output ?? '',
+      expected,
+      match: out?.output === expected,
+      hasTitle: out?.output?.includes('# Lotus Platformer Pack') ?? false,
+      hasWave77: out?.output?.includes('Wave 77') ?? false,
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.match).toBe(true)
+  expect(result.hasTitle).toBe(true)
+  expect(result.hasWave77).toBe(true)
+})
+
+test('wave 78 indie.mp.killcam bridge exposes trigger, active, durationSec', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const k = (window.lotus! as typeof window.lotus & {
+      indie: { mp: { killcam: { trigger: (r?: string) => boolean; active: () => boolean; durationSec: () => number } } }
+    }).indie.mp.killcam
+    k.trigger('test')
+    return {
+      hasTrigger: typeof k.trigger === 'function',
+      hasActive: typeof k.active === 'function',
+      hasDuration: typeof k.durationSec === 'function',
+      active: k.active(),
+      durationSec: k.durationSec(),
+    }
+  })
+
+  expect(result.hasTrigger).toBe(true)
+  expect(result.hasActive).toBe(true)
+  expect(result.hasDuration).toBe(true)
+  expect(result.active).toBe(true)
+  expect(result.durationSec).toBe(3)
+})
+
+test('wave 78 mpKillcam trigger seeks replay 5s and clears after duration', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const k = (window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          killcam: {
+            trigger: (r?: string) => boolean
+            active: () => boolean
+            seekOffset: () => number
+            tick: (dt: number) => void
+          }
+        }
+      }
+    }).indie.mp.killcam
+    k.trigger('player_killed')
+    const seekAfterTrigger = k.seekOffset()
+    const activeAfterTrigger = k.active()
+    k.tick(3.1)
+    return {
+      seekAfterTrigger,
+      activeAfterTrigger,
+      activeAfterTick: k.active(),
+      seekAfterTick: k.seekOffset(),
+    }
+  })
+
+  expect(result.seekAfterTrigger).toBe(5)
+  expect(result.activeAfterTrigger).toBe(true)
+  expect(result.activeAfterTick).toBe(false)
+  expect(result.seekAfterTick).toBe(0)
+})
+
+test('wave 78 MP_SCORE_SCRIPT reports player_killed on mp_target hit', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          scoreScript: string
+          killcam: { reportKill: (victimId: string, killerId?: string) => boolean }
+        }
+      }
+    }
+    return {
+      hasReportKill: v.indie.mp.scoreScript.includes('mpReportPlayerKill'),
+      hasPeers: v.indie.mp.scoreScript.includes('mpLobbyPeers'),
+      hasTarget: v.indie.mp.scoreScript.includes('mp_target'),
+      callable: typeof v.indie.mp.killcam.reportKill === 'function',
+    }
+  })
+
+  expect(result.hasReportKill).toBe(true)
+  expect(result.hasPeers).toBe(true)
+  expect(result.hasTarget).toBe(true)
+  expect(result.callable).toBe(true)
+})
+
+test('wave 78 mpKillcam onPlayerKilled triggers only for victim peer', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const k = (window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          killcam: {
+            setLocalId: (id: string) => string
+            onPlayerKilled: (killer: string, victim: string) => void
+            active: () => boolean
+            triggerReason: () => string
+            seekOffset: () => number
+          }
+        }
+      }
+    }).indie.mp.killcam
+    k.setLocalId('host1')
+    k.onPlayerKilled('host1', 'client9')
+    const killerView = { active: k.active(), reason: k.triggerReason(), seek: k.seekOffset() }
+    k.setLocalId('client9')
+    k.onPlayerKilled('host1', 'client9')
+    const victimView = { active: k.active(), reason: k.triggerReason(), seek: k.seekOffset() }
+    return { killerView, victimView }
+  })
+
+  expect(result.killerView.active).toBe(false)
+  expect(result.victimView.active).toBe(true)
+  expect(result.victimView.reason).toBe('player_killed')
+  expect(result.victimView.seek).toBe(5)
+})
+
+test('wave 79 hapticPresetForProfile desktop returns strong preset (100% intensity, battery saver off)', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const preset = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { hapticPresetForProfile: (n: string) => { hapticIntensity: number; hapticBatterySaver: boolean } | null } }
+    }
+    return v.indie.input.hapticPresetForProfile('desktop')
+  })
+
+  expect(preset).toEqual({ hapticIntensity: 1, hapticBatterySaver: false })
+})
+
+test('wave 79 hapticPresetForProfile mobile returns light preset (50% intensity, battery saver on)', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const preset = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { hapticPresetForProfile: (n: string) => { hapticIntensity: number; hapticBatterySaver: boolean } | null } }
+    }
+    return v.indie.input.hapticPresetForProfile('mobile')
+  })
+
+  expect(preset).toEqual({ hapticIntensity: 0.5, hapticBatterySaver: true })
+})
+
+test('wave 79 indie.input.applyProfile mobile sets hapticIntensity + hapticBatterySaver on world.environment', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { applyProfile: (n: string) => unknown } }
+      world: { environment: { hapticIntensity?: number; hapticBatterySaver?: boolean; touchLayoutPreset?: string } }
+    }
+    v.indie.input.applyProfile('desktop')
+    v.indie.input.applyProfile('mobile')
+    return {
+      intensity: v.world.environment.hapticIntensity,
+      batterySaver: v.world.environment.hapticBatterySaver,
+      preset: v.world.environment.touchLayoutPreset,
+    }
+  })
+
+  expect(result.intensity).toBe(0.5)
+  expect(result.batterySaver).toBe(true)
+  expect(result.preset).toBe('compact')
+})
+
+test('wave 79 indie.haptics.applyFromProfile desktop applies strong haptics without changing touch layout preset', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        haptics: {
+          applyFromProfile: (n: string) => { hapticIntensity: number; hapticBatterySaver: boolean } | null
+        }
+        input: { applyProfile: (n: string) => unknown }
+      }
+      world: { environment: { hapticIntensity?: number; hapticBatterySaver?: boolean; touchLayoutPreset?: string } }
+    }
+    v.indie.input.applyProfile('mobile')
+    const preset = v.indie.haptics.applyFromProfile('desktop')
+    return {
+      preset,
+      intensity: v.world.environment.hapticIntensity,
+      batterySaver: v.world.environment.hapticBatterySaver,
+      touchLayoutPreset: v.world.environment.touchLayoutPreset,
+    }
+  })
+
+  expect(result.preset).toEqual({ hapticIntensity: 1, hapticBatterySaver: false })
+  expect(result.intensity).toBe(1)
+  expect(result.batterySaver).toBe(false)
+  expect(result.touchLayoutPreset).toBe('compact')
+})
+
+test('wave 79 World Settings shows linked haptic values for active input profile (data-lotus-linked-haptics)', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { applyProfile: (n: string) => unknown } }
+    }
+    v.indie.input.applyProfile('mobile')
+  })
+
+  const linked = page.locator('[data-lotus-linked-haptics]')
+  await expect(linked).toContainText('Linked haptics (mobile)')
+  await expect(linked).toContainText('50% intensity')
+  await expect(linked).toContainText('battery saver on')
 })

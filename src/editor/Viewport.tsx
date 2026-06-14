@@ -72,6 +72,13 @@ import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
 import { resetGamepadInput } from '../engine/gamepadInput'
 import { touchControlsActive, TouchOverlay } from './touchOverlay'
+import {
+  isSaveMenuPaused,
+  mountExportSaveMenu,
+  toggleSaveMenu,
+  unmountExportSaveMenu,
+} from './exportSaveMenu'
+import { loadCheckpoint, listSlots, saveCheckpoint } from '../engine/saveSystem'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
 import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
@@ -1599,6 +1606,11 @@ export function Viewport() {
         if (s.selectedIds.length) deleteSelection(s.selectedIds)
         return
       }
+      if (s.playing && world.environment.saveSlotsEnabled === true && e.code === 'Escape') {
+        e.preventDefault()
+        toggleSaveMenu(mount)
+        return
+      }
       if (matchesShortcutId(e, 'viewport.deselect')) {
         s.select(null)
       }
@@ -1668,6 +1680,26 @@ export function Viewport() {
           touchOverlay.mount(mount, world.environment.touchLayoutPreset)
         }
         world.beginPlay()
+        if (world.environment.saveSlotsEnabled === true) {
+          mountExportSaveMenu({
+            parent: mount,
+            enabled: true,
+            handlers: {
+              getCheckpointData: () => {
+                const pos = pawn.position
+                return { playTime: world.playClock, pawn: [pos.x, pos.y, pos.z] }
+              },
+              onLoadCheckpoint: (data) => {
+                const row = data as { pawn?: number[]; playTime?: number }
+                pawn.restoreCheckpoint(row)
+                if (typeof row.playTime === 'number') world.playClock = row.playTime
+              },
+              saveSlot: (slot, data) => saveCheckpoint(slot, data),
+              loadSlot: (slot) => loadCheckpoint(slot),
+              listSlots: () => listSlots(),
+            },
+          })
+        }
         if (world.playApi && (isMiniGameHudEnabled() || hasMiniGameManager(world.actors.values()))) {
           mountMiniGameHudForPlay(mount, world.playApi)
         }
@@ -1696,6 +1728,7 @@ export function Viewport() {
         void world.restoreEditorAfterPIE()
         pawn.unpossess()
         touchOverlay.unmount()
+        unmountExportSaveMenu()
         resetGamepadInput()
         unmountHud()
         unmountMiniGameHudForPlay()
@@ -1781,7 +1814,7 @@ export function Viewport() {
       if (s.bufferViz === 'depth') syncDepthVizUniforms(activeCam)
       // UE pause + frame-step
       let simDt = dt
-      if (s.playing && s.paused) {
+      if (s.playing && (s.paused || isSaveMenuPaused())) {
         if (s.stepFrames > stepConsumed) {
           stepConsumed = s.stepFrames
           simDt = 1 / 60

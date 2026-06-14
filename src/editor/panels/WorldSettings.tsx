@@ -51,6 +51,7 @@ import {
 import {
   applyInputProfile,
   getActiveInputProfile,
+  hapticPresetForProfile,
   listInputProfiles,
   saveInputProfile,
 } from '../../engine/inputProfiles'
@@ -328,6 +329,7 @@ function InputBindingsSection() {
   const bindings = getBindings()
   const profiles = listInputProfiles()
   const activeProfile = getActiveInputProfile()
+  const linkedHaptics = hapticPresetForProfile(activeProfile)
   const applyProfile = (name: string) => {
     const applied = applyInputProfile(name)
     if (!applied) return
@@ -350,6 +352,12 @@ function InputBindingsSection() {
             ))}
           </select>
         </label>
+        {linkedHaptics && (
+          <div className="panel-empty" style={{ gridColumn: '1 / -1' }} data-lotus-linked-haptics>
+            Linked haptics ({activeProfile}): {Math.round(linkedHaptics.hapticIntensity * 100)}% intensity
+            {linkedHaptics.hapticBatterySaver ? ', battery saver on' : ', battery saver off'}
+          </div>
+        )}
         <div className="hud-widget-row" style={{ gridColumn: '1 / -1' }}>
           <button
             type="button"
@@ -418,9 +426,9 @@ function InputBindingsSection() {
           Reset bindings to defaults
         </button>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Profiles in <code>lotus-engine.inputProfiles</code> bundle bindings + touch layout preset.
+          Profiles in <code>lotus-engine.inputProfiles</code> bundle bindings + touch layout + haptic preset.
           Bridge: <code>indie.input.applyProfile</code> · <code>saveProfile</code> · <code>loadProfile</code> ·{' '}
-          <code>activeProfile</code>
+          <code>activeProfile</code> · <code>indie.haptics.applyFromProfile</code>
         </div>
       </div>
     </details>

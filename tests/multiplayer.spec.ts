@@ -748,12 +748,33 @@ test('wave 73 multiplayer relay: spectator replay_sample request returns host sn
     await pageA.keyboard.press('Alt+KeyP')
     await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
     await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+    await pageB.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
 
-    const hostIsB = await pageB.evaluate(() => (window.lotus!.multiplayer as { isHost: () => boolean }).isHost())
-    const hostPage = hostIsB ? pageB : pageA
-    const spectatorPage = hostIsB ? pageA : pageB
+    let hostPage: import('@playwright/test').Page | undefined
+    let spectatorPage: import('@playwright/test').Page | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const [aHost, bHost, aSpec, bSpec] = await Promise.all([
+        pageA.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageB.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageA.evaluate(() => window.lotus!.multiplayer.spectatorMode?.() === true),
+        pageB.evaluate(() => window.lotus!.multiplayer.spectatorMode?.() === true),
+      ])
+      if (aHost && !bHost && bSpec) {
+        hostPage = pageA
+        spectatorPage = pageB
+        break
+      }
+      if (!aHost && bHost && aSpec) {
+        hostPage = pageB
+        spectatorPage = pageA
+        break
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    expect(hostPage, 'expected stable MP host + spectator roles').toBeDefined()
+    expect(spectatorPage).toBeDefined()
 
-    await hostPage.evaluate(() => {
+    await hostPage!.evaluate(() => {
       const mp = window.lotus!.multiplayer as {
         replay: {
           reset: () => void
@@ -777,7 +798,7 @@ test('wave 73 multiplayer relay: spectator replay_sample request returns host sn
       }
     })
 
-    const replay = await spectatorPage.evaluate(async () => {
+    const replay = await spectatorPage!.evaluate(async () => {
       const mp = window.lotus!.multiplayer as {
         replay: {
           seek: (offsetSec: number) => number
@@ -798,6 +819,154 @@ test('wave 73 multiplayer relay: spectator replay_sample request returns host sn
     expect(replay.seek).toBeGreaterThanOrEqual(0)
     expect(replay.count).toBeGreaterThanOrEqual(1)
     expect(replay.x).toBeGreaterThanOrEqual(0)
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})
+
+test('wave 78 multiplayer relay: player_killed triggers victim killcam', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave78-killcam'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    const mpInit = ({ url, room }: { url: string; room: string }) => {
+      localStorage.clear()
+      localStorage.setItem('lotus-engine.multiplayer', JSON.stringify({ url, room, enabled: true }))
+    }
+    await pageA.addInitScript(mpInit, { url: relayUrl, room: MP_ROOM })
+    await pageB.addInitScript(mpInit, { url: relayUrl, room: MP_ROOM })
+    await pageA.goto('/')
+    await pageB.goto('/')
+    await pageA.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+    await pageB.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+
+    let hostPage: import('@playwright/test').Page | undefined
+    let clientPage: import('@playwright/test').Page | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const [aHost, bHost] = await Promise.all([
+        pageA.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageB.evaluate(() => window.lotus!.multiplayer.isHost()),
+      ])
+      if (aHost && !bHost) {
+        hostPage = pageA
+        clientPage = pageB
+        break
+      }
+      if (!aHost && bHost) {
+        hostPage = pageB
+        clientPage = pageA
+        break
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    expect(hostPage, 'expected stable MP host election').toBeDefined()
+    expect(clientPage, 'expected MP client tab').toBeDefined()
+
+    const ids = await Promise.all([
+      hostPage!.evaluate(() => window.lotus!.multiplayer.localId()),
+      clientPage!.evaluate(() => window.lotus!.multiplayer.localId()),
+    ])
+    const hostId = ids[0]
+    const clientId = ids[1]
+
+    await clientPage!.evaluate(() => {
+      ;(window as unknown as { __wave78Killed?: { killer: string; victim: string } | null }).__wave78Killed = null
+      const api = window.lotus!.world.playApi
+      api?.on('player_killed', (killerId: string, victimId: string) => {
+        ;(window as unknown as { __wave78Killed?: { killer: string; victim: string } | null }).__wave78Killed = {
+          killer: killerId,
+          victim: victimId,
+        }
+      })
+    })
+
+    await hostPage!.evaluate(() => {
+      const mp = window.lotus!.multiplayer as {
+        replay: {
+          reset: () => void
+          setRecordEnabled: (on: boolean) => void
+          recordPoses: (
+            entries: Array<{ peerId: string; position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number } }>,
+            now?: number,
+          ) => void
+          bufferLength: () => number
+        }
+        localId: () => string
+      }
+      mp.replay.reset()
+      mp.replay.setRecordEnabled(true)
+      const id = mp.localId()
+      const t0 = performance.now()
+      for (let i = 0; i <= 60; i++) {
+        mp.replay.recordPoses(
+          [{ peerId: id, position: { x: i, y: 1, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }],
+          t0 + i * 100,
+        )
+      }
+      return mp.replay.bufferLength()
+    })
+
+    const hostReport = await hostPage!.evaluate((victimId) => {
+      const v = window.lotus! as typeof window.lotus & {
+        indie: { mp: { killcam: { reportKill: (victim: string) => boolean; active: () => boolean } } }
+        multiplayer: { isHost: () => boolean }
+      }
+      const ok = v.indie.mp.killcam.reportKill(victimId as string)
+      return { ok, isHost: v.multiplayer.isHost(), killerActive: v.indie.mp.killcam.active() }
+    }, clientId)
+
+    expect(hostReport.isHost).toBe(true)
+    expect(hostReport.ok).toBe(true)
+    expect(hostReport.killerActive).toBe(false)
+
+    await clientPage!.waitForFunction(
+      (expectedVictim) => {
+        const killed = (window as unknown as { __wave78Killed?: { killer: string; victim: string } | null })
+          .__wave78Killed
+        const active = (
+          window.lotus! as typeof window.lotus & { indie: { mp: { killcam: { active: () => boolean } } } }
+        ).indie.mp.killcam.active()
+        return killed?.victim === expectedVictim && active === true
+      },
+      clientId,
+      { timeout: 15_000 },
+    )
+
+    const clientState = await clientPage!.evaluate(() => {
+      const killed = (window as unknown as { __wave78Killed?: { killer: string; victim: string } | null })
+        .__wave78Killed
+      const k = (window.lotus! as typeof window.lotus & {
+        indie: { mp: { killcam: { active: () => boolean; seekOffset: () => number; triggerReason: () => string } } }
+      }).indie.mp.killcam
+      return {
+        killed,
+        active: k.active(),
+        seek: k.seekOffset(),
+        reason: k.triggerReason(),
+      }
+    })
+
+    expect(clientState.killed?.killer).toBe(hostId)
+    expect(clientState.killed?.victim).toBe(clientId)
+    expect(clientState.active).toBe(true)
+    expect(clientState.seek).toBeGreaterThanOrEqual(5)
+    expect(clientState.reason).toBe('player_killed')
   } finally {
     await contextA.close()
     await contextB.close()

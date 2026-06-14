@@ -1,4 +1,5 @@
 import { buildExportPackMeta, serializePackMetaForExport } from './exportPackMeta'
+import { buildReleaseNotes } from './itchReleaseNotes'
 import { buildButlerPushCommand, storeLastItchZipName } from './itchButlerHint'
 import type { ExportOptions } from './exportPlayable'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
@@ -10,7 +11,7 @@ import { spawnMiniGame, type MiniGameMode } from './starterMiniGames'
 import { useEditor } from './store'
 
 /** v3.49 — itch.io upload zip entries (store method, no compression). */
-export const ITCH_ZIP_ENTRY_NAMES = ['index.html', 'meta.json', 'icon.png'] as const
+export const ITCH_ZIP_ENTRY_NAMES = ['index.html', 'meta.json', 'icon.png', 'RELEASE_NOTES.md'] as const
 
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256)
@@ -185,10 +186,12 @@ export function itchPackZipFilename(mode: MiniGameMode): string {
 export function buildItchZipFiles(mode: MiniGameMode, opts: ExportOptions = {}): Record<string, Uint8Array> {
   const html = buildMiniGamePackHTML(mode, opts)
   const meta = serializePackMetaForExport(buildExportPackMeta(mode))
+  const releaseNotes = opts.packReleaseNotes ?? buildReleaseNotes(mode)
   return {
     'index.html': utf8Encode(html),
     'meta.json': utf8Encode(meta),
     'icon.png': base64ToBytes(MINIGAME_PACK_ICON_B64),
+    'RELEASE_NOTES.md': utf8Encode(releaseNotes),
   }
 }
 

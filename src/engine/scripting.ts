@@ -28,6 +28,7 @@ import {
   mpLocalId,
   mpPingMs,
   mpRefreshRooms,
+  mpReportPlayerKill,
   mpSpectatorEnable,
   mpSpectatorPeers,
 } from './multiplayer'
@@ -209,6 +210,8 @@ export interface ScriptApi {
   getMpPeerScores: () => Record<string, number>
   /** Add MP score delta — host authoritative, clients request via relay */
   addMpScore: (delta: number, peerId?: string) => boolean
+  /** Wave 78 — report deathmatch kill; host rebroadcasts player_killed relay */
+  mpReportPlayerKill: (victimId: string) => boolean
   /** Wave 65 — save checkpoint JSON to a named slot (localStorage) */
   saveGame: (slot: string, data?: unknown) => boolean
   /** Wave 65 — load checkpoint data from a slot */
@@ -397,6 +400,7 @@ export function makeScriptApi(
       }
       return addMpScore(actors, delta, peerId, emit)
     },
+    mpReportPlayerKill: (victimId) => mpReportPlayerKill(victimId),
     saveGame: (slot, data) => {
       if (!isSaveEnabled()) return false
       const payload =

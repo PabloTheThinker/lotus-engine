@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v4.18 (waves 71–75).** v0.33–v4.18 shipped; **build clean**, **`npm run test` — 319 passed**.
+- **Last clean commit: v4.43 (waves 76–80).** v0.33–v4.43 shipped; **build clean**, **`npm run test` — 344 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -479,12 +479,22 @@
 | 74 | v4.09–v4.13 | Adaptive haptics — perf/battery/intensity scaling |
 | 75 | v4.14–v4.18 | Cross-level saves — `__global__` namespace — 319 tests |
 
+## Shipped (v4.19–v4.43, Waves 76–80 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 76 | v4.19–v4.23 | Grid nav agents — per-layer crowd on grid navmesh |
+| 77 | v4.24–v4.28 | itch.io release notes — CHANGELOG slice in pack zip |
+| 78 | v4.29–v4.33 | MP killcam — replay on `player_killed` |
+| 79 | v4.34–v4.38 | Haptic profiles — desktop/mobile intensity presets |
+| 80 | v4.39–v4.43 | Save slot UI — Escape pause menu in export — 344 tests |
+
 ## Next up (indie roadmap)
 
-1. **AI navmesh agents** — crowd follow grid navmesh per layer
-2. **itch.io release notes** — auto-generate from CHANGELOG slice per pack
-3. **MP killcam** — replay buffer on death event
-4. **Haptic profiles** — link to input profiles (desktop strong / mobile light)
+1. **Grid agent AI behaviors** — patrol / chase on navmesh layer
+2. **Pack changelog HTML** — embed release notes in itch page template
+3. **MP team modes** — red/blue teams on deathmatch template
+4. **Save cloud sync stub** — optional IndexedDB + cross-device hint
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

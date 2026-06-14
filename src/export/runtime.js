@@ -124,6 +124,9 @@ const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
 const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
 const SAVES_ENABLED = window.__LOTUS_SAVES__ === true || window.__LOTUS_SAVES__ === 'true'
+const SAVE_MENU_ENABLED =
+  SAVES_ENABLED &&
+  (window.__LOTUS_SAVE_MENU__ === true || window.__LOTUS_SAVE_MENU__ === 'true')
 const CLOUD_SAVES_ENABLED = window.__LOTUS_CLOUD_SAVES__ === true || window.__LOTUS_CLOUD_SAVES__ === 'true'
 const CROSS_LEVEL_SAVES_ENABLED =
   SAVES_ENABLED &&
@@ -1871,6 +1874,110 @@ function updateSeqAudio(t) {
   seqAudioLastT = t
 }
 
+// ---- Wave 80 — pause save menu overlay (mirrors exportSaveMenu.ts) ----
+const SAVE_MENU_SLOTS = ['slot1', 'slot2', 'slot3']
+let saveMenuPaused = false
+let saveMenuRoot = null
+
+function exportCheckpointPayload() {
+  return {
+    playTime: clock,
+    pawn:
+      pawnMode === 'fly'
+        ? [pawnCam.position.x, pawnCam.position.y, pawnCam.position.z]
+        : [feet.x, feet.y, feet.z],
+  }
+}
+
+function applyExportCheckpoint(data) {
+  if (!data || typeof data !== 'object') return
+  const pawn = data.pawn
+  if (Array.isArray(pawn) && pawn.length >= 3) {
+    if (pawnMode === 'fly') pawnCam.position.set(pawn[0], pawn[1], pawn[2])
+    else feet.set(pawn[0], pawn[1], pawn[2])
+  }
+  if (typeof data.playTime === 'number') clock = data.playTime
+}
+
+function refreshExportSaveMenuHints() {
+  if (!saveMenuRoot) return
+  const filled = new Set(exportListSaveSlots())
+  for (const slot of SAVE_MENU_SLOTS) {
+    const hint = saveMenuRoot.querySelector(`[data-slot-hint="${slot}"]`)
+    const loadBtn = saveMenuRoot.querySelector(`[data-slot-load="${slot}"]`)
+    const has = filled.has(slot)
+    if (hint) hint.textContent = has ? 'Saved data available' : 'Empty'
+    if (loadBtn) loadBtn.disabled = !has
+  }
+}
+
+function showExportSaveMenu() {
+  if (!SAVE_MENU_ENABLED || !saveMenuRoot) return
+  saveMenuRoot.style.display = 'flex'
+  saveMenuPaused = true
+  refreshExportSaveMenuHints()
+  if (document.pointerLockElement) void document.exitPointerLock()
+}
+
+function hideExportSaveMenu() {
+  if (saveMenuRoot) saveMenuRoot.style.display = 'none'
+  saveMenuPaused = false
+}
+
+function toggleExportSaveMenu() {
+  if (saveMenuPaused) hideExportSaveMenu()
+  else showExportSaveMenu()
+}
+
+function initExportSaveMenu() {
+  if (!SAVE_MENU_ENABLED) return
+  const rows = SAVE_MENU_SLOTS.map((slot) => {
+    const n = slot.replace(/^slot/, '')
+    return `<div class="lotus-save-menu-row">
+      <span class="lotus-save-menu-slot-label">Save Slot ${n}</span>
+      <button type="button" class="lotus-save-menu-btn lotus-save-menu-btn-save" data-slot-save="${slot}">Save</button>
+      <button type="button" class="lotus-save-menu-btn lotus-save-menu-btn-load" data-slot-load="${slot}" disabled>Load</button>
+      <div class="lotus-save-menu-slot-hint" data-slot-hint="${slot}">Empty</div>
+    </div>`
+  }).join('')
+  saveMenuRoot = document.createElement('div')
+  saveMenuRoot.id = 'lotus-save-menu'
+  saveMenuRoot.className = 'lotus-save-menu-overlay'
+  saveMenuRoot.setAttribute('role', 'dialog')
+  saveMenuRoot.setAttribute('aria-label', 'Pause — Save / Load')
+  saveMenuRoot.innerHTML = `<div class="lotus-save-menu-panel">
+    <div class="lotus-save-menu-title">PAUSED</div>
+    <div class="lotus-save-menu-sub">Escape to resume · Save or load a checkpoint</div>
+    ${rows}
+    <button type="button" class="lotus-save-menu-resume" data-save-menu-resume>Resume</button>
+  </div>`
+  document.body.appendChild(saveMenuRoot)
+  for (const slot of SAVE_MENU_SLOTS) {
+    saveMenuRoot.querySelector(`[data-slot-save="${slot}"]`)?.addEventListener('click', (e) => {
+      e.preventDefault()
+      exportSaveCheckpoint(slot, exportCheckpointPayload())
+      refreshExportSaveMenuHints()
+    })
+    saveMenuRoot.querySelector(`[data-slot-load="${slot}"]`)?.addEventListener('click', (e) => {
+      e.preventDefault()
+      const data = exportLoadCheckpoint(slot)
+      if (data == null) return
+      applyExportCheckpoint(data)
+      hideExportSaveMenu()
+    })
+  }
+  saveMenuRoot.querySelector('[data-save-menu-resume]')?.addEventListener('click', (e) => {
+    e.preventDefault()
+    hideExportSaveMenu()
+  })
+  addEventListener('keydown', (e) => {
+    if (!SAVES_ENABLED || !SAVE_MENU_ENABLED) return
+    if (e.code !== 'Escape') return
+    e.preventDefault()
+    toggleExportSaveMenu()
+  })
+}
+
 // ---- Wave 65 — localStorage save slots (mirrors saveSystem.ts) ----
 const SAVE_STORAGE_PREFIX = 'lotus-engine.saves'
 let saveLevelName = LEVEL?.name ?? 'Untitled'
@@ -2316,6 +2423,7 @@ async function boot() {
   playRenderTier = created.tier
   bindPawnInput()
   initExportTouchHud()
+  initExportSaveMenu()
   let bootMenuPick = false
   if (MAIN_MENU_ENABLED) {
     if (overlay) overlay.textContent = 'Select a level'
@@ -2381,6 +2489,14 @@ async function boot() {
       reset: resetStreamProgress,
     }
   }
+  if (SAVE_MENU_ENABLED) {
+    window.__LOTUS_SAVE_MENU_API__ = {
+      showMenu: showExportSaveMenu,
+      hideMenu: hideExportSaveMenu,
+      toggleMenu: toggleExportSaveMenu,
+      isPaused: () => saveMenuPaused,
+    }
+  }
   if (SAVES_ENABLED) {
     window.__LOTUS_SAVE_SLOTS__ = {
       checkpoint: exportSaveCheckpoint,
@@ -2426,7 +2542,9 @@ async function boot() {
   const c = new THREE.Clock()
   renderer.setAnimationLoop(() => {
     const dt = Math.min(c.getDelta(), 0.1)
-    clock += dt
+    const frozen = SAVE_MENU_ENABLED && saveMenuPaused
+    const simDt = frozen ? 0 : dt
+    if (!frozen) clock += simDt
     perfFpsAcc += dt
     perfFpsFrames++
     if (perfFpsAcc >= 0.5) {
@@ -2442,8 +2560,8 @@ async function boot() {
       const gateOk = perfGate?.perfPass !== false
       perfBadge.textContent = `${perfFps} fps · ${playRenderTier}${gpuN ? ` · GPU×${gpuN}` : ''}${gateOk ? '' : ' · PERF!'}`
     }
-    if (physWorld) {
-      physWorld.timestep = Math.min(dt, 1 / 30)
+    if (physWorld && simDt > 0) {
+      physWorld.timestep = Math.min(simDt, 1 / 30)
       physWorld.step()
       for (const [a, body] of bindings) {
         const t = body.translation(), r = body.rotation()
@@ -2451,17 +2569,25 @@ async function boot() {
         a.root.quaternion.set(r.x, r.y, r.z, r.w)
       }
     }
-    tickScriptTimers(dt)
-    for (const [a, t] of ticks) { try { t(dt) } catch (e) { /* script error */ } }
-    tickTriggerVolumes(pawnMode === 'fly' ? pawnCam.position : feet)
-    for (const a of actors.values()) {
-      for (const b of a.data.behaviors ?? []) {
-        if (b.type === 'rotator') { a.root.rotation.x += b.speedX * dt; a.root.rotation.y += b.speedY * dt; a.root.rotation.z += b.speedZ * dt }
+    if (simDt > 0) {
+      tickScriptTimers(simDt)
+      for (const [a, t] of ticks) { try { t(simDt) } catch (e) { /* script error */ } }
+    }
+    if (simDt > 0) tickTriggerVolumes(pawnMode === 'fly' ? pawnCam.position : feet)
+    if (simDt > 0) {
+      for (const a of actors.values()) {
+        for (const b of a.data.behaviors ?? []) {
+          if (b.type === 'rotator') {
+            a.root.rotation.x += b.speedX * simDt
+            a.root.rotation.y += b.speedY * simDt
+            a.root.rotation.z += b.speedZ * simDt
+          }
+        }
       }
     }
     const seq = LEVEL.sequence
     let seqDofFocus = null
-    if (seq && seq.autoPlay && seq.tracks.length) {
+    if (simDt > 0 && seq && seq.autoPlay && seq.tracks.length) {
       const t = clock % seq.duration
       let hasAudio = false
       for (const tr of seq.tracks) {
@@ -2505,7 +2631,7 @@ async function boot() {
       if (pullCam) dofFocus = resolveExportDofFocus(pullCam, LEVEL.environment ?? {}, clock)
     }
     if (dofFocus != null && exportTslPipeline?.setDofFocus) exportTslPipeline.setDofFocus(dofFocus)
-    for (const ps of particleSystems) ps.update(dt)
+    if (simDt > 0) for (const ps of particleSystems) ps.update(simDt)
     if (particleSystems.some((p) => p.trailLen > 0)) {
       let trailTris = 0
       for (const ps of particleSystems) {
@@ -2518,7 +2644,7 @@ async function boot() {
     if (subSystems.length) window.__LOTUS_EXPORT_SUB_EMITTER_QA__ = { systems: subSystems.length }
     if (GAMEPAD_ENABLED) pollExportGamepad()
     if (TOUCH_ENABLED && typeof window.__lotusSyncTouchBindings === 'function') window.__lotusSyncTouchBindings()
-    updatePawn(dt)
+    if (simDt > 0) updatePawn(simDt)
     if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
     applyStreamingVisibility(pawnCam.position)
     // Widget3D export fallback — canvas billboard planes (no CSS3D)

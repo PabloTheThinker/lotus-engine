@@ -1,5 +1,6 @@
 /**
  * Wave 59 (v3.34–v3.38) — Input profiles: save/load binding presets (desktop vs mobile).
+ * Wave 79 (v4.34–v4.38) — Haptic presets linked to input profiles (desktop strong / mobile light).
  * localStorage `lotus-engine.inputProfiles`.
  */
 
@@ -16,9 +17,18 @@ import { world } from './World'
 export const BUNDLED_PROFILE_IDS = ['desktop', 'mobile'] as const
 export type BundledProfileId = (typeof BUNDLED_PROFILE_IDS)[number]
 
+export interface HapticPreset {
+  hapticIntensity: number
+  hapticBatterySaver: boolean
+}
+
 export interface InputProfileData {
   bindings: InputBindings
   touchLayoutPreset: TouchLayoutPreset
+  /** Wave 79 — master rumble strength 0–1 (desktop strong / mobile light). */
+  hapticIntensity?: number
+  /** Wave 79 — reduce rumble on battery when true. */
+  hapticBatterySaver?: boolean
 }
 
 export const BUNDLED_INPUT_PROFILES: Record<BundledProfileId, InputProfileData> = {
@@ -28,6 +38,8 @@ export const BUNDLED_INPUT_PROFILES: Record<BundledProfileId, InputProfileData> 
       touch: { ...DEFAULT_TOUCH_SLOTS },
     },
     touchLayoutPreset: 'wide',
+    hapticIntensity: 1,
+    hapticBatterySaver: false,
   },
   mobile: {
     bindings: {
@@ -35,6 +47,8 @@ export const BUNDLED_INPUT_PROFILES: Record<BundledProfileId, InputProfileData> 
       touch: { ...DEFAULT_TOUCH_SLOTS },
     },
     touchLayoutPreset: 'compact',
+    hapticIntensity: 0.5,
+    hapticBatterySaver: true,
   },
 }
 
@@ -81,9 +95,17 @@ function normalizeProfile(entry: unknown): InputProfileData | null {
     bindings.gamepad = { ...(raw.bindings.gamepad ?? {}) }
     bindings.touch = { ...(raw.bindings.touch ?? {}) }
   }
+  const hapticIntensity =
+    typeof raw.hapticIntensity === 'number'
+      ? Math.max(0, Math.min(1, raw.hapticIntensity))
+      : undefined
+  const hapticBatterySaver =
+    typeof raw.hapticBatterySaver === 'boolean' ? raw.hapticBatterySaver : undefined
   return {
     bindings,
     touchLayoutPreset: normalizeTouchLayoutPreset(raw.touchLayoutPreset),
+    hapticIntensity,
+    hapticBatterySaver,
   }
 }
 
@@ -133,6 +155,35 @@ export function captureCurrentProfile(): InputProfileData {
       touch: { ...bindings.touch },
     },
     touchLayoutPreset: normalizeTouchLayoutPreset(world.environment.touchLayoutPreset),
+    hapticIntensity: world.environment.hapticIntensity ?? 1,
+    hapticBatterySaver: world.environment.hapticBatterySaver !== false,
+  }
+}
+
+/** Linked haptic preset for bundled or saved input profiles (Wave 79). */
+export function hapticPresetForProfile(name: string): HapticPreset | null {
+  if (isBundledProfile(name)) {
+    const bundled = BUNDLED_INPUT_PROFILES[name]
+    return {
+      hapticIntensity: bundled.hapticIntensity ?? 1,
+      hapticBatterySaver: bundled.hapticBatterySaver === true,
+    }
+  }
+  const saved = loadStore().saved[name]
+  if (!saved) return null
+  if (saved.hapticIntensity == null && saved.hapticBatterySaver == null) return null
+  return {
+    hapticIntensity: saved.hapticIntensity ?? 1,
+    hapticBatterySaver: saved.hapticBatterySaver !== false,
+  }
+}
+
+function applyProfileHaptics(profile: InputProfileData): void {
+  if (profile.hapticIntensity != null) {
+    world.environment.hapticIntensity = profile.hapticIntensity
+  }
+  if (profile.hapticBatterySaver != null) {
+    world.environment.hapticBatterySaver = profile.hapticBatterySaver
   }
 }
 
@@ -141,6 +192,7 @@ export function applyInputProfile(name: string): InputProfileData | null {
   if (!profile) return null
   applyBindings(profile.bindings)
   world.environment.touchLayoutPreset = profile.touchLayoutPreset
+  applyProfileHaptics(profile)
   world.applyEnvironment()
   const store = loadStore()
   store.active = name
@@ -159,6 +211,8 @@ export function saveInputProfile(name: string, data?: InputProfileData): boolean
       touch: { ...profile.bindings.touch },
     },
     touchLayoutPreset: profile.touchLayoutPreset,
+    hapticIntensity: profile.hapticIntensity,
+    hapticBatterySaver: profile.hapticBatterySaver,
   }
   store.active = trimmed
   persistStore(store)

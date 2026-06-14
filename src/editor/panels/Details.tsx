@@ -2786,6 +2786,10 @@ function FoliageSection({ actor }: { actor: Actor }) {
               ))}
             </div>
           </label>
+          <div className="panel-empty" style={{ padding: '2px 0', fontSize: '0.85em' }}>
+            Bake per layer with <code>/gridnavmesh [0-3]</code>, then spawn crowd agents via{' '}
+            <code>/gridnavagent [layer]</code> or <code>gridMap.navAgents.spawn</code> during Play.
+          </div>
           <Num
             label="Grid Brush"
             value={props.gridBrushSize ?? 0}

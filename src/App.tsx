@@ -18,6 +18,7 @@ import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable
 import { captureExportScreenshot } from './editor/captureExportScreenshot'
 import { buildExportPackMeta } from './editor/exportPackMeta'
 import { buildButlerPushCommand } from './editor/itchButlerHint'
+import { buildReleaseNotes } from './editor/itchReleaseNotes'
 import {
   buildItchZipBlob,
   exportItchUploadPack,
@@ -164,6 +165,14 @@ import {
   getNavmeshLayerMask,
   setNavmeshLayerMask,
 } from './engine/gridNavmeshBake'
+import {
+  clampGridNavLayer,
+  gridNavAgentCount,
+  gridNavAgentGetPosition,
+  gridNavAgentLayer,
+  spawnGridNavAgent,
+  tickGridNavAgents,
+} from './engine/gridNavAgents'
 import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
 import {
   batteryHapticScale,
@@ -192,6 +201,7 @@ import {
 import {
   activeProfile,
   applyInputProfile,
+  hapticPresetForProfile,
   listInputProfiles,
   loadInputProfile,
   profiles,
@@ -320,7 +330,21 @@ import {
   mpReplayRecordEnabled,
   mpReplaySampleAt,
   mpReplaySeek,
+  mpReportPlayerKill,
 } from './engine/multiplayer'
+import {
+  MP_KILLCAM_DURATION_SEC,
+  MP_KILLCAM_SEEK_SEC,
+  mpKillcamActive,
+  mpKillcamOnGameWon,
+  mpKillcamOnPlayerKilled,
+  mpKillcamRemainingSec,
+  mpKillcamSeekOffset,
+  mpKillcamSetLocalIdHook,
+  mpKillcamTick,
+  mpKillcamTrigger,
+  mpKillcamTriggerReason,
+} from './engine/mpKillcam'
 import {
   mpReplayRecordPoses,
   mpReplayReset,
@@ -383,6 +407,11 @@ import {
   saveCheckpoint,
   setSaveContext,
 } from './engine/saveSystem'
+import {
+  hideSaveMenu,
+  isSaveMenuPaused,
+  showSaveMenu,
+} from './editor/exportSaveMenu'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 const lotusBridge = {
@@ -836,6 +865,15 @@ const lotusBridge = {
         return v
       },
       batterySaver: () => world.environment.hapticBatterySaver !== false,
+      applyFromProfile: (name: string) => {
+        const preset = hapticPresetForProfile(name)
+        if (!preset) return null
+        world.environment.hapticIntensity = preset.hapticIntensity
+        world.environment.hapticBatterySaver = preset.hapticBatterySaver
+        world.applyEnvironment()
+        useEditor.getState().touch()
+        return preset
+      },
     },
     gamepad: {
       poll: () => pollGamepadInput(world.environment.gamepadHaptics, world.environment),
@@ -873,6 +911,7 @@ const lotusBridge = {
       profiles: () => profiles(),
       listProfiles: () => listInputProfiles(),
       activeProfile: () => activeProfile(),
+      hapticPresetForProfile: (name: string) => hapticPresetForProfile(name),
       applyProfile: (name: string) => {
         const applied = applyInputProfile(name)
         if (applied) {
@@ -929,6 +968,7 @@ const lotusBridge = {
         buildButlerPushCommand(buildExportPackMeta(mode, channel), itchPackZipFilename(mode), user, game, channel),
       packMeta: (mode: 'platformer' | 'rpg' | 'fps', channel?: 'html' | 'beta' | 'demo') =>
         buildExportPackMeta(mode, channel),
+      releaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
       captureScreenshot: () => captureExportScreenshot(),
     },
     mp: {
@@ -978,6 +1018,27 @@ const lotusBridge = {
         seek: (offsetSec: number) => mpReplaySeek(offsetSec),
         bufferLength: () => mpReplayBufferLength(),
         recordEnabled: () => mpReplayRecordEnabled(),
+      },
+      killcam: {
+        trigger: (reason?: string) => {
+          mpKillcamTrigger(reason)
+          return true
+        },
+        active: () => mpKillcamActive(),
+        durationSec: () => MP_KILLCAM_DURATION_SEC,
+        seekSec: () => MP_KILLCAM_SEEK_SEC,
+        remainingSec: () => mpKillcamRemainingSec(),
+        triggerReason: () => mpKillcamTriggerReason(),
+        onPlayerKilled: (killerId: string, victimId: string) => mpKillcamOnPlayerKilled(killerId, victimId),
+        onGameWon: (winnerId: string) => mpKillcamOnGameWon(winnerId),
+        reportKill: (victimId: string, killerId?: string) => mpReportPlayerKill(victimId, killerId),
+        seekOffset: () => mpKillcamSeekOffset(),
+        tick: (dt: number) => mpKillcamTick(dt),
+        /** E2E — pin local peer id for victim killcam checks */
+        setLocalId: (peerId: string) => {
+          mpKillcamSetLocalIdHook(() => peerId)
+          return peerId
+        },
       },
     },
     spawnCharacterStarter,
@@ -1100,6 +1161,20 @@ const lotusBridge = {
     collectGridNavMeshes: (mask: number) => collectGridNavMeshes(world.actors, mask).length,
     collectFoliageNavColliderMeshes: (mask: number) =>
       collectFoliageNavColliderMeshes(world.actors, mask).length,
+    /** Wave 76 — DetourCrowd agents on per-layer grid navmesh bakes */
+    navAgents: {
+      spawn: (
+        id: string,
+        layer: number,
+        pos: [number, number, number],
+        target?: [number, number, number],
+      ) => spawnGridNavAgent(world.actors, id, layer, pos, target),
+      tick: (dt: number) => tickGridNavAgents(dt),
+      count: (layer?: number) => gridNavAgentCount(layer),
+      layer: (id: string) => gridNavAgentLayer(id),
+      getPosition: (id: string) => gridNavAgentGetPosition(id),
+      clampLayer: (layer: number) => clampGridNavLayer(layer),
+    },
   },
   /** Wave 74 — adaptive haptics scale (perf gate + battery + intensity) */
   adaptiveHaptics: {
@@ -1142,10 +1217,11 @@ const lotusBridge = {
       return body ? new TextDecoder().decode(body) : null
     },
     captureScreenshot: () => captureExportScreenshot(),
+    buildReleaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
   },
-  /** Wave 65 — localStorage save slots (PIE + export); Wave 70 — IndexedDB cloud backup; Wave 75 — cross-level */
+  /** Wave 65 — localStorage save slots (PIE + export); Wave 70 — IndexedDB cloud backup; Wave 75 — cross-level; Wave 80 — pause menu */
   save: {
     checkpoint: (slot: string, data: unknown) => {
       setSaveContext({
@@ -1237,6 +1313,9 @@ const lotusBridge = {
     isActive: () => isSaveEnabled(),
     isCrossLevelActive: () => isCrossLevelSavesEnabled(),
     isCloudBackupActive: () => isCloudBackupEnabled(),
+    showMenu: () => showSaveMenu(),
+    hideMenu: () => hideSaveMenu(),
+    isPaused: () => isSaveMenuPaused(),
   },
   /** Wave 60 — cell load progress (export UX + devtools) */
   streaming: {

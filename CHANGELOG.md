@@ -4,6 +4,35 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 76–80: v4.19–v4.43 (indie swarm)
+
+### Wave 76 (v4.19–v4.23) — AI navmesh agents
+- `gridNavAgents.ts` — per-layer crowd on grid navmesh; `/gridnavagent`
+
+### Wave 77 (v4.24–v4.28) — itch.io release notes
+- `itchReleaseNotes.ts` — CHANGELOG slice; `RELEASE_NOTES.md` in itch zip
+
+### Wave 78 (v4.29–v4.33) — MP killcam
+- `mpKillcam.ts` — 5s replay seek on `player_killed`; 3s overlay
+
+### Wave 79 (v4.34–v4.38) — Haptic profiles
+- Desktop strong / mobile light haptics linked to input profiles
+
+### Wave 80 (v4.39–v4.43) — Save slot UI
+- `exportSaveMenu.ts` — Escape pause menu with Save/Load slots 1–3
+
+### Fixed
+- Wave 62 zip test — expect `RELEASE_NOTES.md` in itch pack
+- Wave 73 relay — stable host + spectator role election
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 344 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 71–75: v3.94–v4.18 (indie swarm)
 
 ### Wave 71 (v3.94–v3.98) — Grid navmesh bake

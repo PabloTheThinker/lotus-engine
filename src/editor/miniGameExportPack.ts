@@ -1,6 +1,7 @@
 import { captureExportScreenshot } from './captureExportScreenshot'
 import { buildPlayableHTML, type ExportOptions } from './exportPlayable'
 import { buildExportPackMeta } from './exportPackMeta'
+import { buildReleaseNotes } from './itchReleaseNotes'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
 import { spawnMiniGame, type MiniGameMode } from './starterMiniGames'
 import { useEditor } from './store'
@@ -41,6 +42,7 @@ export function buildMiniGamePackHTML(mode: MiniGameMode, opts: ExportOptions = 
     minigamePreset: mode,
     minigamePack: mode,
     packMeta: opts.packMeta ?? buildExportPackMeta(mode),
+    packReleaseNotes: opts.packReleaseNotes ?? buildReleaseNotes(mode),
     packScreenshotB64: screenshot,
     pwaIcons: opts.pwaIcons ?? miniGamePackIconStub(),
     quality: opts.quality ?? 'mobile',

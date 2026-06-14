@@ -13,8 +13,10 @@ import { bindingsForExport } from '../engine/inputBindings'
 import { profileNameForExport } from '../engine/inputProfiles'
 import { shouldShowTouchControls } from '../engine/touchInput'
 import { MINIGAME_OVERLAY_CSS } from './miniGameHud'
+import { SAVE_MENU_OVERLAY_CSS } from './exportSaveMenu'
 import { MINIGAME_MANAGER_NAME, spawnMiniGame, type MiniGameMode } from './starterMiniGames'
 import { buildExportPackMeta, type ExportPackMeta } from './exportPackMeta'
+import { buildReleaseNotes, serializeReleaseNotesForExport } from './itchReleaseNotes'
 
 export interface ExportOptions {
   /** add PWA manifest + service worker stub for offline single-file play */
@@ -33,6 +35,8 @@ export interface ExportOptions {
   packMeta?: ExportPackMeta | null
   /** v3.25 — optional pack screenshot PNG base64 (__LOTUS_PACK_SCREENSHOT__) */
   packScreenshotB64?: string | null
+  /** v4.24 — itch.io release notes markdown (__LOTUS_PACK_RELEASE_NOTES__) */
+  packReleaseNotes?: string | null
 }
 
 function levelHasMiniGameManager(level: SerializedLevel): boolean {
@@ -159,7 +163,10 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const packMetaJSON = packMeta ? escapeJsonForScript(JSON.stringify(packMeta)) : 'null'
   const packScreenshotB64 = opts.packScreenshotB64 ?? null
   const packScreenshotJSON = packScreenshotB64 ? `'${packScreenshotB64}'` : 'null'
+  const packReleaseNotes = opts.packReleaseNotes ?? (minigamePack ? buildReleaseNotes(minigamePack) : null)
+  const packReleaseNotesJSON = packReleaseNotes ? serializeReleaseNotesForExport(packReleaseNotes) : 'null'
   const savesEnabled = mainLevel.environment?.saveSlotsEnabled === true
+  const saveMenuEnabled = savesEnabled
   const cloudSavesEnabled = savesEnabled && mainLevel.environment?.cloudSaveBackup === true
   const crossLevelSavesEnabled = savesEnabled && mainLevel.environment?.crossLevelSaves === true
 
@@ -184,6 +191,7 @@ ${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
   }
   ${touchEnabled ? TOUCH_OVERLAY_CSS : ''}
   ${minigameHud ? MINIGAME_OVERLAY_CSS : ''}
+  ${saveMenuEnabled ? SAVE_MENU_OVERLAY_CSS : ''}
   ${streamingExport ? `#${'lotus-stream-progress'} { pointer-events: none; }` : ''}
 </style>
 <script type="importmap">
@@ -201,7 +209,7 @@ ${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON}; window.__LOTUS_SAVES__ = ${savesEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SAVES__ = ${cloudSavesEnabled ? 'true' : 'false'}; window.__LOTUS_CROSS_LEVEL_SAVES__ = ${crossLevelSavesEnabled ? 'true' : 'false'};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON}; window.__LOTUS_PACK_RELEASE_NOTES__ = ${packReleaseNotesJSON}; window.__LOTUS_SAVES__ = ${savesEnabled ? 'true' : 'false'}; window.__LOTUS_SAVE_MENU__ = ${saveMenuEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SAVES__ = ${cloudSavesEnabled ? 'true' : 'false'}; window.__LOTUS_CROSS_LEVEL_SAVES__ = ${crossLevelSavesEnabled ? 'true' : 'false'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}
