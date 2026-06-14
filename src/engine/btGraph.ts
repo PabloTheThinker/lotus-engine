@@ -240,7 +240,20 @@ function parseBTServicesFromScript(script: string | undefined): { serviceNodeId:
 /** Wave 29 — host composite/decorator for a service node (service edge parent). */
 export function getBTServiceHostNodeId(graph: BTGraph, serviceNodeId: string): string | null {
   const edge = graph.edges.find((e) => e.to === serviceNodeId && e.kind === 'service')
-  return edge?.from ?? null
+  if (edge) return edge.from
+  for (const [decoratorId, stash] of Object.entries(graph.subtrees ?? {})) {
+    if (!stash.nodes.some((n) => n.id === serviceNodeId)) continue
+    const subEdge = stash.edges.find((e) => e.to === serviceNodeId && e.kind === 'service')
+    return subEdge?.from ?? decoratorId
+  }
+  return null
+}
+
+/** Wave 32 — service node ids inside a collapsed decorator subtree. */
+export function getBTSubtreeServiceNodeIds(graph: BTGraph, subtreeDecoratorId: string): string[] {
+  const stash = graph.subtrees?.[subtreeDecoratorId]
+  if (!stash) return []
+  return stash.nodes.filter((n) => BT_SERVICE_TYPES.has(n.type)).map((n) => n.id)
 }
 
 /** Wave 29 — nearest decorator ancestor hosting a service (for PIE breakpoint polish). */
@@ -270,9 +283,18 @@ export function registerBTBreakpointStepInto(hostNodeId: string) {
 
 export function shouldBTServiceStepInto(graph: BTGraph, serviceNodeId: string): boolean {
   const host = getBTServiceHostNodeId(graph, serviceNodeId)
-  if (!host || !btStepIntoHosts.has(host)) return false
-  btStepIntoHosts.delete(host)
-  return true
+  if (host && btStepIntoHosts.has(host)) {
+    btStepIntoHosts.delete(host)
+    return true
+  }
+  for (const [decoratorId, stash] of Object.entries(graph.subtrees ?? {})) {
+    if (!stash.nodes.some((n) => n.id === serviceNodeId)) continue
+    if (btStepIntoHosts.has(decoratorId)) {
+      btStepIntoHosts.delete(decoratorId)
+      return true
+    }
+  }
+  return false
 }
 
 function findBTGraphNode(graph: BTGraph, nodeId: string): BTGraphNode | null {
@@ -665,14 +687,16 @@ function inferBBValueType(value: unknown): BTBlackboardType {
   return 'bool'
 }
 
-function collectDescendants(graph: BTGraph, rootId: string): Set<string> {
+function collectDescendants(graph: BTGraph, rootId: string, includeServices = false): Set<string> {
   const out = new Set<string>()
-  const stack = childrenOf(graph, rootId)
+  const stack = [...childrenOf(graph, rootId)]
+  if (includeServices) stack.push(...servicesOf(graph, rootId))
   while (stack.length) {
     const id = stack.pop()!
     if (out.has(id)) continue
     out.add(id)
     stack.push(...childrenOf(graph, id))
+    if (includeServices) stack.push(...servicesOf(graph, id))
   }
   return out
 }
@@ -681,7 +705,7 @@ function collectDescendants(graph: BTGraph, rootId: string): Set<string> {
 export function collapseBTSubtree(graph: BTGraph, nodeId: string): BTGraph {
   const node = graph.nodes.find((n) => n.id === nodeId)
   if (!node || !BT_DECORATOR_TYPES.has(node.type)) return graph
-  const desc = collectDescendants(graph, nodeId)
+  const desc = collectDescendants(graph, nodeId, true)
   if (!desc.size) return graph
   const subtreeNodes = graph.nodes.filter((n) => desc.has(n.id))
   const subtreeEdges = graph.edges.filter((e) => desc.has(e.from) || desc.has(e.to))

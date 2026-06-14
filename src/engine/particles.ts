@@ -379,6 +379,8 @@ export class ParticleSystem {
   gpuSubEmitterUniforms = { on: false, count: 8, speed: 1.5, life: 0.4, rate: 1 }
   /** Wave 31 — when set, death bursts use GPU sub-burst kernel instead of CPU spawn. */
   gpuSubBurstSpawn?: (x: number, y: number, z: number, se: SubEmitterProps) => boolean
+  /** Wave 32 — batched multi-death sub-burst in one kernel dispatch. */
+  gpuSubBurstSpawnBatch?: (origins: { x: number; y: number; z: number }[], se: SubEmitterProps) => boolean
   gpuSubBurstFrames = 0
 
   snapshotAliveForGPU() {
@@ -393,26 +395,35 @@ export class ParticleSystem {
     const subOn = se?.enabled && !off('subEmitter') && se.onDeath
     if (!subOn || !this.prevAliveSnapshot.length) return 0
     const rate = Math.max(0, Math.min(1, this.gpuSubEmitterUniforms.rate))
+    const burstSe = {
+      ...se!,
+      count: Math.max(1, Math.round(this.gpuSubEmitterUniforms.count)),
+      speed: this.gpuSubEmitterUniforms.speed,
+      lifetime: this.gpuSubEmitterUniforms.life,
+    }
+    const origins: { x: number; y: number; z: number }[] = []
     let bursts = 0
     for (let i = 0; i < this.cap; i++) {
       if (this.prevAliveSnapshot[i] && !this.alive[i]) {
         if (rate < 1 && Math.random() > rate) continue
         const i3 = i * 3
-        const burstSe = {
-          ...se!,
-          count: Math.max(1, Math.round(this.gpuSubEmitterUniforms.count)),
-          speed: this.gpuSubEmitterUniforms.speed,
-          lifetime: this.gpuSubEmitterUniforms.life,
-        }
-        const x = this.positions[i3]
-        const y = this.positions[i3 + 1]
-        const z = this.positions[i3 + 2]
-        if (this.gpuSubBurstSpawn?.(x, y, z, burstSe)) {
+        origins.push({
+          x: this.positions[i3]!,
+          y: this.positions[i3 + 1]!,
+          z: this.positions[i3 + 2]!,
+        })
+        bursts++
+      }
+    }
+    if (origins.length && this.gpuSubBurstSpawnBatch?.(origins, burstSe)) {
+      this.gpuSubBurstFrames++
+    } else {
+      for (const o of origins) {
+        if (this.gpuSubBurstSpawn?.(o.x, o.y, o.z, burstSe)) {
           this.gpuSubBurstFrames++
         } else {
-          this.spawnBurstAt(x, y, z, burstSe)
+          this.spawnBurstAt(o.x, o.y, o.z, burstSe)
         }
-        bursts++
       }
     }
     this.gpuSubEmitterBursts += bursts

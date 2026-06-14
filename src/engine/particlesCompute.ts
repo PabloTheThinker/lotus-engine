@@ -71,7 +71,11 @@ interface SubBurstKernel {
   speedU: UniformSlot
   lifeU: UniformSlot
   seedU: UniformSlot
+  deathCountU: UniformSlot
 }
+
+const MAX_BATCH_DEATHS = 8
+let deathOriginsBuf = new Float32Array(MAX_BATCH_DEATHS * 3)
 
 interface TrailKernel {
   computeNode: unknown
@@ -148,6 +152,7 @@ export async function bindParticleIntegrateKernel(
       Fn: (fn: () => void) => { compute: (n: number) => unknown }
       float: (n: number) => ScalarEl
       instanceIndex: ScalarEl
+      mod: (a: unknown, b: unknown) => ScalarEl
       uniform: (n: ScalarEl) => ScalarEl & UniformSlot
       If: (cond: unknown, fn: () => void) => void
       sin: (v: unknown) => ScalarEl
@@ -359,6 +364,9 @@ export async function bindParticleIntegrateKernel(
     const burstSpeedU = t.uniform(t.float(1))
     const burstLifeU = t.uniform(t.float(0.4))
     const burstSeedU = t.uniform(t.float(0))
+    const deathCountU = t.uniform(t.float(1))
+    const deathOrigAttr = new StorageBufferAttribute(deathOriginsBuf, 3)
+    const deathOrigBuf = t.storage(deathOrigAttr, 'vec3', MAX_BATCH_DEATHS)
     const subBurstNode = t.Fn(() => {
       const alive = aliveBuf.element(t.instanceIndex)
       t.If(alive.lessThan(0.5), () => {
@@ -371,9 +379,11 @@ export async function bindParticleIntegrateKernel(
           maxL.assign(burstLifeU)
           const p = posBuf.element(t.instanceIndex)
           const v = velBuf.element(t.instanceIndex)
-          p.x.assign(originXU)
-          p.y.assign(originYU)
-          p.z.assign(originZU)
+          const di = t.mod(t.instanceIndex, deathCountU)
+          const orig = deathOrigBuf.element(di)
+          p.x.assign(orig.x)
+          p.y.assign(orig.y)
+          p.z.assign(orig.z)
           const a = h.mul(6.283)
           const sp = burstSpeedU.mul(t.float(0.6).add(h.mul(0.4)))
           v.x.assign(t.sin(a).mul(sp))
@@ -398,6 +408,7 @@ export async function bindParticleIntegrateKernel(
       speedU: burstSpeedU,
       lifeU: burstLifeU,
       seedU: burstSeedU,
+      deathCountU,
     }
     kernelCap = cap
     gpuKernelReady = true
@@ -419,6 +430,7 @@ interface ScalarEl {
   add: (v: unknown) => ScalarEl
   addAssign: (v: unknown) => void
   div: (v: unknown) => ScalarEl
+  mod: (v: unknown) => ScalarEl
   subAssign: (v: unknown) => void
   mulAssign: (v: unknown) => void
   assign: (v: unknown) => void
@@ -566,6 +578,31 @@ export function isParticleGpuSubBurstReady(): boolean {
 }
 
 /** Wave 31 — spawn sub-emitter burst at world origin into dead GPU slots. */
+function dispatchSubBurstKernel(
+  renderer: unknown,
+  modules: ParticleGPUModules | undefined,
+  seed: number,
+  cap: number,
+  deathCount: number,
+): boolean {
+  if (!subBurstKernel) return false
+  const r = renderer as { compute?: (n: unknown) => void }
+  if (!r?.compute) return false
+  try {
+    const count = Math.max(1, modules?.subEmitterCount ?? 8)
+    const rate = Math.max(0, Math.min(1, modules?.subEmitterRate ?? 1))
+    subBurstKernel.spawnProbU.value = Math.min(1, (count / Math.max(1, cap)) * rate * Math.max(1, deathCount))
+    subBurstKernel.speedU.value = modules?.subEmitterSpeed ?? 1.5
+    subBurstKernel.lifeU.value = modules?.subEmitterLife ?? 0.4
+    subBurstKernel.seedU.value = seed
+    subBurstKernel.deathCountU.value = Math.max(1, deathCount)
+    r.compute(subBurstKernel.computeNode)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function runParticleGPUSubEmitterBurst(
   renderer: unknown,
   ox: number,
@@ -575,24 +612,28 @@ export function runParticleGPUSubEmitterBurst(
   seed = 0,
   cap = 64,
 ): boolean {
-  if (!subBurstKernel) return false
-  const r = renderer as { compute?: (n: unknown) => void }
-  if (!r?.compute) return false
-  try {
-    const count = Math.max(1, modules?.subEmitterCount ?? 8)
-    const rate = Math.max(0, Math.min(1, modules?.subEmitterRate ?? 1))
-    subBurstKernel.originXU.value = ox
-    subBurstKernel.originYU.value = oy
-    subBurstKernel.originZU.value = oz
-    subBurstKernel.spawnProbU.value = Math.min(1, (count / Math.max(1, cap)) * rate)
-    subBurstKernel.speedU.value = modules?.subEmitterSpeed ?? 1.5
-    subBurstKernel.lifeU.value = modules?.subEmitterLife ?? 0.4
-    subBurstKernel.seedU.value = seed
-    r.compute(subBurstKernel.computeNode)
-    return true
-  } catch {
-    return false
+  deathOriginsBuf[0] = ox
+  deathOriginsBuf[1] = oy
+  deathOriginsBuf[2] = oz
+  return dispatchSubBurstKernel(renderer, modules, seed, cap, 1)
+}
+
+/** Wave 32 — batched multi-death sub-burst in a single kernel dispatch. */
+export function runParticleGPUSubEmitterBurstBatch(
+  renderer: unknown,
+  origins: { x: number; y: number; z: number }[],
+  modules?: ParticleGPUModules,
+  seed = 0,
+  cap = 64,
+): boolean {
+  if (!origins.length) return false
+  const n = Math.min(origins.length, MAX_BATCH_DEATHS)
+  for (let i = 0; i < n; i++) {
+    deathOriginsBuf[i * 3] = origins[i]!.x
+    deathOriginsBuf[i * 3 + 1] = origins[i]!.y
+    deathOriginsBuf[i * 3 + 2] = origins[i]!.z
   }
+  return dispatchSubBurstKernel(renderer, modules, seed, cap, n)
 }
 
 export function isParticleGpuTrailReady(): boolean {

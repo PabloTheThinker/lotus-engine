@@ -49,6 +49,7 @@ import {
 } from './streaming'
 import { applySerializedBakedAO, applySerializedBakedAOMap } from './lightmapBake'
 import { buildBatchedExportMeshes, serializeBatchedMeshes } from './batchExport'
+import { restoreGradingLUTFromEnvironment } from './postColorGradingLut'
 import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
 import { tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
@@ -628,6 +629,7 @@ export class World {
     this.clear()
     this.levelName = level.name
     this.environment = { ...DEFAULT_ENVIRONMENT, ...level.environment }
+    restoreGradingLUTFromEnvironment(this.environment)
     this.streaming = { ...DEFAULT_STREAMING, ...level.streaming }
     this.sequence = level.sequence ? JSON.parse(JSON.stringify(level.sequence)) : emptySequence()
     this.dataTables = level.data ? JSON.parse(JSON.stringify(level.data)) : {}

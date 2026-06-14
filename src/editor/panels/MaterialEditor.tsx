@@ -546,7 +546,12 @@ export function MaterialEditor() {
         e.preventDefault()
         const ids = graph.nodes.map((n) => n.id)
         const idx = focusedNodeId ? ids.indexOf(focusedNodeId) : -1
-        const nextId = ids[(idx + 1) % ids.length]!
+        const nextIdx = e.shiftKey
+          ? idx <= 0
+            ? ids.length - 1
+            : idx - 1
+          : (idx + 1) % ids.length
+        const nextId = ids[nextIdx]!
         const n = graph.nodes.find((x) => x.id === nextId)
         if (!n) return
         setFocusedNodeId(nextId)
@@ -894,10 +899,11 @@ export function MaterialEditor() {
               if (!a || !b) return null
               const p1 = portPos(a, null)
               const p2 = portPos(b, tp)
+              const pinPreview = !!legendDragPreview && tp === legendDragPreview
               return (
                 <path
                   key={i}
-                  className="bp-wire mat"
+                  className={`bp-wire mat${pinPreview ? ' mat-wire-pin-preview' : ''}`}
                   d={wirePath(p1.x, p1.y, p2.x, p2.y)}
                   onClick={() =>
                     mutate((g) => {

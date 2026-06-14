@@ -505,6 +505,11 @@ export interface EnvironmentSettings {
   postGradingLutStrength?: number
   /** Wave 31 — decoded LUT cube size (from .cube/.3dl) */
   postGradingLutSize?: number
+  /** Wave 32 — persisted LUT RGBA (base64) + atlas dims for level save / export */
+  postGradingLutData?: string
+  postGradingLutAtlasW?: number
+  postGradingLutAtlasH?: number
+  postGradingLutFormat?: 'cube' | '3dl' | 'png'
   /** Wave 29 — A/B preset compare blend (0 = A, 1 = B) */
   postGradingCompareT?: number
   postGradingCompareA?: 'neutral' | 'cinematic' | 'highContrast'

@@ -1929,6 +1929,208 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 32 PNG LUT decode + level persist', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        decodePng: (rgba: Uint8Array, w: number, h: number) => { size: number; format: string } | null
+        persistLut: (name: string, decoded: { size: number; format: string; texture: unknown }) => {
+          postGradingLutData?: string
+          postGradingLutAtlasW?: number
+          postGradingLutFormat?: string
+        } | null
+        restoreLut: () => boolean
+      }
+    }
+    const w = 4
+    const h = 2
+    const rgba = new Uint8Array(w * h * 4)
+    for (let i = 0; i < w * h; i++) {
+      rgba[i * 4] = 200
+      rgba[i * 4 + 1] = 100
+      rgba[i * 4 + 2] = 50
+      rgba[i * 4 + 3] = 255
+    }
+    const decoded = v.colorGrading.decodePng(rgba, w, h)
+    const persisted = decoded ? v.colorGrading.persistLut('test.png', decoded as never) : null
+    const restored = v.colorGrading.restoreLut()
+    return {
+      size: decoded?.size,
+      format: decoded?.format,
+      hasData: !!persisted?.postGradingLutData,
+      atlasW: persisted?.postGradingLutAtlasW,
+      restored,
+    }
+  })
+
+  expect(result.size).toBe(2)
+  expect(result.format).toBe('png')
+  expect(result.hasData).toBe(true)
+  expect(result.atlasW).toBe(4)
+  expect(result.restored).toBe(true)
+})
+
+test('wave 32 GPU batched sub-burst dispatch', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: { gpuSubBurstBatchReady: () => boolean; create: (b: 'gpu') => unknown }
+    }
+    const ps = v.particles.create('gpu') as { gpuSubBurstSpawnBatch?: unknown; gpuSubBurstSpawn?: unknown }
+    return {
+      batchReady: v.particles.gpuSubBurstBatchReady(),
+      hasBatch: typeof ps.gpuSubBurstSpawnBatch === 'function',
+      hasSpawn: typeof ps.gpuSubBurstSpawn === 'function',
+    }
+  })
+
+  expect(result.batchReady).toBe(true)
+  expect(result.hasBatch).toBe(true)
+  expect(result.hasSpawn).toBe(true)
+})
+
+test('wave 32 export embeds decoded LUT bytes', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        decodePng: (rgba: Uint8Array, w: number, h: number) => unknown
+        persistLut: (name: string, decoded: unknown) => unknown
+        exportLutPayload: () => { data: string; atlasW: number } | null
+      }
+      export: { buildPlayableHTML: () => string }
+    }
+    const w = 4
+    const h = 2
+    const rgba = new Uint8Array(w * h * 4).fill(128)
+    const decoded = v.colorGrading.decodePng(rgba, w, h)
+    if (decoded) v.colorGrading.persistLut('export.png', decoded)
+    const payload = v.colorGrading.exportLutPayload()
+    const html = v.export.buildPlayableHTML()
+    return {
+      hasPayload: !!payload?.data,
+      inHtml: html.includes('__LOTUS_LUT__') && html.includes('decodeExportLUTTexture'),
+      atlasW: payload?.atlasW,
+    }
+  })
+
+  expect(result.hasPayload).toBe(true)
+  expect(result.inHtml).toBe(true)
+  expect(result.atlasW).toBe(4)
+})
+
+test('wave 32 BT subtree step-into + blackboard watch', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        collapseSubtree: (g: import('../src/engine/btGraph').BTGraph, id: string) => import('../src/engine/btGraph').BTGraph
+        subtreeServiceIds: (g: import('../src/engine/btGraph').BTGraph, id: string) => string[]
+        stepIntoBreakpoint: (hostId: string) => void
+        shouldServiceStepInto: (g: import('../src/engine/btGraph').BTGraph, id: string) => boolean
+        activeBlackboard: (actorId: string) => Record<string, unknown> | null
+      }
+    }
+    let graph = v.bt.emptyGraph()
+    graph.nodes.push(
+      { id: 'root', type: 'Root', x: 80, y: 80, props: {} },
+      { id: 'dec', type: 'Repeat', x: 240, y: 80, props: {} },
+      { id: 'svc', type: 'SvcSetBB', x: 400, y: 80, props: { key: 'phase', value: 'attack' } },
+    )
+    graph.edges.push(
+      { from: 'root', to: 'dec' },
+      { from: 'dec', to: 'svc', kind: 'service' },
+    )
+    graph = v.bt.collapseSubtree(graph, 'dec')
+    const svcIds = v.bt.subtreeServiceIds(graph, 'dec')
+    v.bt.stepIntoBreakpoint('dec')
+    const stepInto = v.bt.shouldServiceStepInto(graph, 'svc')
+    return {
+      svcIds,
+      stepInto,
+      bbApi: typeof v.bt.activeBlackboard === 'function',
+    }
+  })
+
+  expect(result.svcIds).toContain('svc')
+  expect(result.stepInto).toBe(true)
+  expect(result.bbApi).toBe(true)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.btGraph = { nodes: [{ id: 'root', type: 'Root', x: 80, y: 80, props: {} }], edges: [] }
+  })
+  await page.evaluate(() => {
+    const v = window.lotus!
+    v.useEditor.getState().setBottomTab('bt')
+    v.terminal.exec('/simulate')
+  })
+  await page.waitForFunction(() => window.lotus?.getLiveSnapshot().playing === true)
+  await expect(page.locator('.bt-bb-watch summary')).toHaveText('Blackboard watch (PIE)')
+  await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
+})
+
+test('wave 32 material Shift+Tab reverse + wire pin preview', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+        { id: 'c2', type: 'Color', x: 100, y: 200, props: { color: '#ff8844' } },
+      ],
+      edges: [
+        { from: 'c1', to: 'out:baseColor' },
+        { from: 'c2', to: 'out:emissive' },
+      ],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  await page.locator('.mat-canvas-pan').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+  })
+  const focusedAfterForward = await page.evaluate(() => {
+    const rects = document.querySelectorAll('.mat-minimap rect[stroke="#ffe066"]')
+    return rects.length
+  })
+  expect(focusedAfterForward).toBe(1)
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }),
+    )
+  })
+  await page.evaluate(() => {
+    const chip = document.querySelector('.mat-legend-chip')
+    chip?.dispatchEvent(new DragEvent('dragstart', { bubbles: true }))
+  })
+  await expect(page.locator('.mat-wire-pin-preview')).toHaveCount(1)
+  await page.evaluate(() => {
+    const chip = document.querySelector('.mat-legend-chip')
+    chip?.dispatchEvent(new DragEvent('dragend', { bubbles: true }))
+  })
+})
+
 test('wave 31 cube LUT decode', async ({ page }) => {
   await bootEditor(page)
 

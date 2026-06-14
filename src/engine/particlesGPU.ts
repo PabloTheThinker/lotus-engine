@@ -11,7 +11,7 @@ import {
   isParticleGpuKernelReady,
   runParticleGPUEmit,
   runParticleGPUIntegrate,
-  runParticleGPUSubEmitterBurst,
+  runParticleGPUSubEmitterBurstBatch,
   runParticleGPUTrailShift,
 } from './particlesCompute'
 
@@ -63,26 +63,25 @@ export class GPUParticleSystem extends ParticleSystem {
     this.backend = this.gpuTier ? 'gpu' : 'cpu'
     this.computeSim = this.gpuTier
     if (this.gpuTier) {
-      this.gpuSubBurstSpawn = (x, y, z) => {
-        if (!this.computeRenderer) return false
-        const se = this.props.subEmitter
-        if (!se) return false
-        const modules = {
-          subEmitterCount: this.gpuSubEmitterUniforms.count,
-          subEmitterSpeed: this.gpuSubEmitterUniforms.speed,
-          subEmitterLife: this.gpuSubEmitterUniforms.life,
-          subEmitterRate: this.gpuSubEmitterUniforms.rate,
-        }
-        return runParticleGPUSubEmitterBurst(
+      const subBurstModules = () => ({
+        subEmitterCount: this.gpuSubEmitterUniforms.count,
+        subEmitterSpeed: this.gpuSubEmitterUniforms.speed,
+        subEmitterLife: this.gpuSubEmitterUniforms.life,
+        subEmitterRate: this.gpuSubEmitterUniforms.rate,
+      })
+      this.gpuSubBurstSpawnBatch = (origins) => {
+        if (!this.computeRenderer || !origins.length) return false
+        if (!this.props.subEmitter) return false
+        return runParticleGPUSubEmitterBurstBatch(
           this.computeRenderer,
-          x,
-          y,
-          z,
-          modules,
+          origins,
+          subBurstModules(),
           this.emitSeed++,
           this.simBuffers().alive.length,
         )
       }
+      this.gpuSubBurstSpawn = (x, y, z, se) =>
+        this.gpuSubBurstSpawnBatch?.([{ x, y, z }], se) ?? false
     }
   }
 

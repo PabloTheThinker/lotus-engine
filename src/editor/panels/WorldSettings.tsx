@@ -30,7 +30,11 @@ import {
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { sanitizeLevelKey, world } from '../../engine/World'
 import { COLOR_GRADING_PRESET_IDS, COLOR_GRADING_PRESET_THUMBNAILS } from '../../engine/postStackColorGrading'
-import { decodeGradingLUTFile, registerGradingLUTUpload } from '../../engine/postColorGradingLut'
+import {
+  decodeGradingLUTFile,
+  decodePngLUTAtlas,
+  persistDecodedLUTToEnvironment,
+} from '../../engine/postColorGradingLut'
 import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
@@ -1170,18 +1174,41 @@ export function WorldSettings() {
           <input type="checkbox" checked={!!env.postAces} onChange={(e) => set('postAces', e.target.checked)} />
         </label>
         <label className="field">
-          <span>Grading LUT (.cube / .3dl)</span>
+          <span>Grading LUT (.cube / .3dl / .png)</span>
           <input
             type="file"
-            accept=".cube,.3dl"
+            accept=".cube,.3dl,.png,.jpg,.jpeg"
             onChange={(e) => {
               const f = e.target.files?.[0]
               if (!f) return
+              const lower = f.name.toLowerCase()
+              if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+                const img = new Image()
+                img.onload = () => {
+                  const canvas = document.createElement('canvas')
+                  canvas.width = img.width
+                  canvas.height = img.height
+                  const ctx = canvas.getContext('2d')
+                  if (!ctx) return
+                  ctx.drawImage(img, 0, 0)
+                  const pixels = ctx.getImageData(0, 0, img.width, img.height).data
+                  const decoded = decodePngLUTAtlas(pixels, img.width, img.height)
+                  if (decoded) {
+                    persistDecodedLUTToEnvironment(env, f.name, decoded)
+                    touch()
+                    useEditor.getState().setStatus(`LUT atlas: ${f.name} (${decoded.size}³, png)`)
+                  } else {
+                    useEditor.getState().setStatus(`LUT decode failed: ${f.name}`)
+                  }
+                }
+                img.src = URL.createObjectURL(f)
+                return
+              }
               void f.text().then((text) => {
                 const decoded = decodeGradingLUTFile(f.name, text)
                 if (decoded) {
-                  set('postGradingLutName', registerGradingLUTUpload(f.name))
-                  set('postGradingLutSize', decoded.size)
+                  persistDecodedLUTToEnvironment(env, f.name, decoded)
+                  touch()
                   useEditor.getState().setStatus(`LUT decoded: ${f.name} (${decoded.size}³, ${decoded.format})`)
                 } else {
                   useEditor.getState().setStatus(`LUT decode failed: ${f.name}`)

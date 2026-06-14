@@ -77,6 +77,7 @@ export function BTEditor() {
   const [graph, setGraph] = useState<BTGraph | null>(null)
   const [liveNode, setLiveNode] = useState<string | null>(null)
   const [liveServices, setLiveServices] = useState<string[]>([])
+  const [liveBBWatch, setLiveBBWatch] = useState<Record<string, unknown>>({})
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [selectedDiffGutterIds, setSelectedDiffGutterIds] = useState<Set<string>>(() => new Set())
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
@@ -188,6 +189,7 @@ export function BTEditor() {
     if (!playing || !actor?.id) {
       setLiveNode(null)
       setLiveServices([])
+      setLiveBBWatch({})
       return
     }
     let raf = 0
@@ -197,6 +199,7 @@ export function BTEditor() {
       const runtimeId = getActiveBTGraphNodeId(actor.id, compiled?.pathIndex)
       setLiveNode(g ? resolveBTEditorHighlightNodeId(g, runtimeId) : runtimeId)
       setLiveServices(getActiveBTServiceNodeIds(actor.id))
+      setLiveBBWatch(getActiveBTBlackboard(actor.id) ?? {})
       raf = requestAnimationFrame(tick)
     }
     tick()
@@ -769,6 +772,22 @@ export function BTEditor() {
           )}
         </div>
         <div className="bt-side">
+          {playing && (
+            <details className="details-section bt-bb-watch" open>
+              <summary>Blackboard watch (PIE)</summary>
+              <div className="bt-bb-watch-grid">
+                {Object.keys(liveBBWatch).length === 0 && (
+                  <div className="panel-empty">No live keys — tree not running or blackboard empty</div>
+                )}
+                {Object.entries(liveBBWatch).map(([k, v]) => (
+                  <div className="bt-bb-watch-row" key={k}>
+                    <span className="bt-bb-watch-key">{k}</span>
+                    <code className="bt-bb-watch-val">{JSON.stringify(v)}</code>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           <details className="details-section" open>
             <summary>Validation</summary>
             <div className="bt-validation">

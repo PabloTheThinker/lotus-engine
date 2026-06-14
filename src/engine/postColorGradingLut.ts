@@ -28,10 +28,14 @@ export function createIdentityLUTTexture(): THREE.DataTexture {
   return tex
 }
 
+export type GradingLUTFormat = 'cube' | '3dl' | 'png' | 'identity'
+
 export interface DecodedGradingLUT {
   size: number
   texture: THREE.DataTexture
-  format: 'cube' | '3dl' | 'identity'
+  format: GradingLUTFormat
+  /** Wave 32 — raw RGBA bytes for export / level persist */
+  rgbaBytes?: Uint8Array
 }
 
 function buildLUTTextureFromRGB(size: number, rgb: Float32Array): THREE.DataTexture {
@@ -78,7 +82,8 @@ export function parseCubeLUT(text: string): DecodedGradingLUT | null {
     rgb[i + 1] = (Math.floor(t / size) % size) / (size - 1)
     rgb[i + 2] = Math.floor(t / (size * size)) / (size - 1)
   }
-  return { size, texture: buildLUTTextureFromRGB(size, rgb), format: 'cube' }
+  const texture = buildLUTTextureFromRGB(size, rgb)
+  return { size, texture, format: 'cube', rgbaBytes: texture.image.data as Uint8Array }
 }
 
 /** Parse ASCII .3dl (line triplets, infer cube size). */
@@ -101,7 +106,109 @@ export function parse3dlLUT(text: string): DecodedGradingLUT | null {
   const rgb = new Float32Array(need)
   const copy = Math.min(need, samples.length)
   for (let i = 0; i < copy; i++) rgb[i] = samples[i]!
-  return { size, texture: buildLUTTextureFromRGB(size, rgb), format: '3dl' }
+  const texture = buildLUTTextureFromRGB(size, rgb)
+  return { size, texture, format: '3dl', rgbaBytes: texture.image.data as Uint8Array }
+}
+
+/** Infer 3D LUT cube size from 2D atlas dimensions (width = size², height = size). */
+export function inferLUTAtlasSize(width: number, height: number): number {
+  if (width > 0 && height > 0 && width === height * height) return height
+  const side = Math.round(Math.cbrt(width * height))
+  return Math.max(2, Math.min(64, side))
+}
+
+function buildLUTTextureFromRGBA(width: number, height: number, rgba: Uint8Array, size: number): THREE.DataTexture {
+  const tex = new THREE.DataTexture(rgba, width, height, THREE.RGBAFormat)
+  tex.needsUpdate = true
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.userData.lutSize = size
+  return tex
+}
+
+/** Wave 32 — PNG/JPEG atlas → 3D LUT texture (square atlas layout). */
+export function decodePngLUTAtlas(
+  rgba: Uint8ClampedArray | Uint8Array,
+  width: number,
+  height: number,
+): DecodedGradingLUT | null {
+  if (width < 2 || height < 2) return null
+  const size = inferLUTAtlasSize(width, height)
+  const bytes = rgba instanceof Uint8Array ? rgba : new Uint8Array(rgba)
+  const tex = buildLUTTextureFromRGBA(width, height, bytes, size)
+  return { size, texture: tex, format: 'png', rgbaBytes: bytes }
+}
+
+export function decodePngLUTFromBase64(b64: string, width: number, height: number): DecodedGradingLUT | null {
+  try {
+    const raw = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    return decodePngLUTAtlas(raw, width, height)
+  } catch {
+    return null
+  }
+}
+
+export function serializeGradingLUTForLevel(env: EnvironmentSettings): Pick<
+  EnvironmentSettings,
+  'postGradingLutData' | 'postGradingLutAtlasW' | 'postGradingLutAtlasH' | 'postGradingLutFormat'
+> | null {
+  if (!env.postGradingLutName || !env.postGradingLutData) return null
+  return {
+    postGradingLutData: env.postGradingLutData,
+    postGradingLutAtlasW: env.postGradingLutAtlasW,
+    postGradingLutAtlasH: env.postGradingLutAtlasH,
+    postGradingLutFormat: env.postGradingLutFormat ?? 'png',
+  }
+}
+
+/** Restore decoded LUT texture from level environment on load. */
+export function restoreGradingLUTFromEnvironment(env: EnvironmentSettings): boolean {
+  const name = env.postGradingLutName
+  if (!name || !env.postGradingLutData) return false
+  const w = env.postGradingLutAtlasW ?? 0
+  const h = env.postGradingLutAtlasH ?? 0
+  if (w < 2 || h < 2) return false
+  const decoded = decodePngLUTFromBase64(env.postGradingLutData, w, h)
+  if (!decoded) return false
+  decodedLUTCache.set(name, decoded.texture)
+  return true
+}
+
+export function getExportGradingLUTPayload(env: EnvironmentSettings): {
+  name: string
+  size: number
+  format: string
+  data: string
+  atlasW: number
+  atlasH: number
+} | null {
+  if (!env.postGradingLutName || !env.postGradingLutData) return null
+  return {
+    name: env.postGradingLutName,
+    size: env.postGradingLutSize ?? GRADING_LUT_SIZE,
+    format: env.postGradingLutFormat ?? 'png',
+    data: env.postGradingLutData,
+    atlasW: env.postGradingLutAtlasW ?? env.postGradingLutSize ?? GRADING_LUT_SIZE,
+    atlasH: env.postGradingLutAtlasH ?? env.postGradingLutSize ?? GRADING_LUT_SIZE,
+  }
+}
+
+export function persistDecodedLUTToEnvironment(
+  env: EnvironmentSettings,
+  fileName: string,
+  decoded: DecodedGradingLUT,
+): void {
+  env.postGradingLutName = registerGradingLUTUpload(fileName)
+  env.postGradingLutSize = decoded.size
+  env.postGradingLutFormat =
+    decoded.format === 'identity' ? 'png' : decoded.format
+  if (decoded.rgbaBytes && decoded.texture.image.width && decoded.texture.image.height) {
+    env.postGradingLutAtlasW = decoded.texture.image.width
+    env.postGradingLutAtlasH = decoded.texture.image.height
+    let bin = ''
+    for (let i = 0; i < decoded.rgbaBytes.length; i++) bin += String.fromCharCode(decoded.rgbaBytes[i]!)
+    env.postGradingLutData = btoa(bin)
+  }
+  decodedLUTCache.set(env.postGradingLutName, decoded.texture)
 }
 
 export function decodeGradingLUTFile(fileName: string, text: string): DecodedGradingLUT | null {
@@ -129,7 +236,7 @@ export interface ColorGradingLUTState {
   size: number
   strength: number
   texture: THREE.DataTexture
-  format: 'cube' | '3dl' | 'identity'
+  format: GradingLUTFormat
 }
 
 export function getColorGradingLUTState(env: EnvironmentSettings): ColorGradingLUTState {
@@ -143,7 +250,10 @@ export function getColorGradingLUTState(env: EnvironmentSettings): ColorGradingL
     size,
     strength: env.postGradingLutStrength ?? 1,
     texture,
-    format: cached ? (name?.toLowerCase().endsWith('.3dl') ? '3dl' : 'cube') : 'identity',
+    format: cached
+      ? ((env.postGradingLutFormat as GradingLUTFormat) ??
+        (name?.toLowerCase().endsWith('.3dl') ? '3dl' : name?.toLowerCase().endsWith('.png') ? 'png' : 'cube'))
+      : 'identity',
   }
 }
 

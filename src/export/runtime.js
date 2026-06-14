@@ -15,6 +15,21 @@ const LEVELS =
 const MAIN_KEY = window.__LOTUS_MAIN__ ?? window.__VEKTRA_MAIN__ ?? 'main'
 const EXPORT = window.__LOTUS_EXPORT__ ?? window.__VEKTRA_EXPORT__ ?? { quality: 'desktop' }
 const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
+const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
+
+/** Wave 32 — decode embedded LUT atlas bytes from export payload. */
+function decodeExportLUTTexture(payload) {
+  if (!payload?.data || !payload.atlasW || !payload.atlasH) return null
+  try {
+    const raw = Uint8Array.from(atob(payload.data), (c) => c.charCodeAt(0))
+    const tex = new THREE.DataTexture(raw, payload.atlasW, payload.atlasH, THREE.RGBAFormat)
+    tex.needsUpdate = true
+    tex.colorSpace = THREE.SRGBColorSpace
+    return { tex, size: payload.size ?? 16 }
+  } catch {
+    return null
+  }
+}
 const ALWAYS_LOADED = new Set(['DirectionalLight', 'AmbientLight', 'PlayerStart'])
 if (!LEVELS || !LEVELS[MAIN_KEY]) throw new Error('Lotus: no level data')
 
@@ -71,7 +86,8 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const { traa } = await import('three/addons/tsl/display/TRAANode.js')
     const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js')
     const { dof } = await import('three/addons/tsl/display/DepthOfFieldNode.js')
-    const { pass, add, mul, max, pow, mrt, output, normalView, velocity, metalness, roughness, vec3, vec4, float, reflector, perspectiveDepthToViewZ, acesFilmicToneMapping } = tsl
+    const { pass, add, mul, max, pow, mrt, output, normalView, velocity, metalness, roughness, vec2, vec3, vec4, float, mix, texture, reflector, perspectiveDepthToViewZ, acesFilmicToneMapping } = tsl
+    const embeddedLut = EXPORT_LUT ? decodeExportLUTTexture(EXPORT_LUT) : null
     const env = LEVEL.environment ?? {}
     const bloomOn = env.bloomEnabled !== false
     const strength = env.bloomStrength ?? 0.35
@@ -146,14 +162,22 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const gamma = baseGamma
     const gain = baseGain.map((v) => v * gainMul)
     const colorGradingOnResolved = colorGradingOn || gradingPreset !== 'off'
-    const lutOn = !!env.postGradingLutName
+    const lutOn = !!env.postGradingLutName || !!embeddedLut
     const lutStrength = Math.max(0, Math.min(1, env.postGradingLutStrength ?? 1))
-    const lutSize = env.postGradingLutSize ?? 16
-    const applyLutGrading = (rgb, size, strength) => {
-      const u = mul(add(mul(rgb.r ?? rgb.x, size - 1), mul(rgb.g ?? rgb.y, size - 1)), 1 / (size * size))
-      const v = mul(rgb.b ?? rgb.z, 1 / size)
-      void vec2(u, v)
-      return mix(rgb, mul(rgb, vec3(1.04, 1.02, 0.98)), float(strength))
+    const lutSize = embeddedLut?.size ?? env.postGradingLutSize ?? 16
+    const lutTexture = embeddedLut?.tex ?? null
+    const applyLutGrading = (rgb, size, strength, lutTex) => {
+      if (!lutTex || strength <= 0.001) {
+        return mix(rgb, mul(rgb, vec3(1.04, 1.02, 0.98)), float(strength))
+      }
+      const r = rgb.r ?? rgb.x ?? rgb
+      const g = rgb.g ?? rgb.y ?? rgb
+      const b = rgb.b ?? rgb.z ?? float(0)
+      const grid = size * size
+      const u = mul(add(mul(r, float(size - 1)), mul(g, float(size - 1))), float(1 / grid))
+      const v = mul(b, float(1 / size))
+      const sampled = texture(lutTex, vec2(u, v)).rgb
+      return mix(rgb, sampled, float(strength))
     }
     void presetThumbnails
     void blendGradingCompare
@@ -242,7 +266,7 @@ async function createExportTSLPipeline(primary, scene, camera) {
           rgb = mul(rgb, gainV)
         }
         if (lutOn && lutStrength > 0.001) {
-          rgb = applyLutGrading(rgb, lutSize, lutStrength)
+          rgb = applyLutGrading(rgb, lutSize, lutStrength, lutTexture)
         }
         if (acesOn) {
           rgb = acesFilmicToneMapping(rgb, float(Math.max(0.35, (env.exposure ?? 0.75) * (acesOn ? 1.02 : 1))))

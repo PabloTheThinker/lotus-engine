@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.98 (wave 31).** v0.33–v1.98 shipped; **build clean**, **`npm run test` — 100 passed**.
+- **Last clean commit: v2.03 (wave 32).** v0.33–v2.03 shipped; **build clean**, **`npm run test` — 105 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -358,13 +358,15 @@
 | v1.97 | BT blackboard-equals breakpoint + service step-into (`registerBTBreakpointStepInto`) |
 | v1.98 | Material Tab focus cycle + legend drag pin preview on minimap — 100 tests passed |
 
-## Next up (v1.99+, Wave 32)
+## Shipped (v1.99–v2.03, Wave 32)
 
-1. **TSL post** — PNG LUT atlas import + persisted decode in level save
-2. **GPU particles** — batched multi-death sub-burst dispatch (single kernel pass)
-3. **Export** — embed decoded LUT bytes in playable export payload
-4. **BT** — step-into nested decorator subtrees + blackboard watch panel
-5. **Material TSL** — focused-node Shift+Tab reverse cycle + pin preview on canvas wires
+| Ver | What |
+|---|---|
+| v1.99 | PNG LUT atlas import + persisted decode in level save — `decodePngLUTAtlas`, `persistDecodedLUTToEnvironment`, `restoreGradingLUTFromEnvironment` |
+| v2.00 | GPU batched multi-death sub-burst — `runParticleGPUSubEmitterBurstBatch`, `gpuSubBurstSpawnBatch` |
+| v2.01 | Export embeds decoded LUT bytes — `window.__LOTUS_LUT__`, `decodeExportLUTTexture` in playable runtime |
+| v2.02 | BT step-into nested collapsed decorator subtrees + PIE blackboard watch panel |
+| v2.03 | Material Shift+Tab reverse focus cycle + legend drag wire pin preview — 105 tests passed |
 
 ## Remaining gap-list queue (post–wave 7)
 

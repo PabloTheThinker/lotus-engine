@@ -1,4 +1,5 @@
 import runtimeSource from '../export/runtime.js?raw'
+import { getExportGradingLUTPayload } from '../engine/postColorGradingLut'
 import { splitLevelByCells } from '../engine/streaming'
 import { sanitizeLevelKey, world } from '../engine/World'
 import type { SerializedLevel } from '../engine/types'
@@ -106,6 +107,8 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   )
   const title = s.levelName || 'Lotus Level'
   const pwa = !!opts.pwa
+  const lutPayload = getExportGradingLUTPayload(world.environment)
+  const lutJSON = lutPayload ? escapeJsonForScript(JSON.stringify(lutPayload)) : 'null'
   const branding = loadProjectSettings().showLotusBranding
   const badgeHtml = branding
     ? `<div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>`
@@ -146,7 +149,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

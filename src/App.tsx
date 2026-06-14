@@ -58,6 +58,7 @@ import {
   registerBTBreakpointStepOver,
   shouldBTBreakpointFire,
   shouldBTServiceStepInto,
+  getBTSubtreeServiceNodeIds,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTBlackboard, getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
@@ -78,10 +79,15 @@ import {
 import {
   createIdentityLUTTexture,
   decodeGradingLUTFile,
+  decodePngLUTAtlas,
   getColorGradingLUTState,
+  getExportGradingLUTPayload,
   getGradingLUTStub,
   parse3dlLUT,
   parseCubeLUT,
+  persistDecodedLUTToEnvironment,
+  restoreGradingLUTFromEnvironment,
+  serializeGradingLUTForLevel,
 } from './engine/postColorGradingLut'
 import { isParticleGpuSubBurstReady } from './engine/particlesCompute'
 import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
@@ -289,6 +295,8 @@ const lotusBridge = {
     stepIntoBreakpoint: (hostId = '') => registerBTBreakpointStepInto(hostId),
     shouldServiceStepInto: (graph = emptyBTGraph(), serviceNodeId = '') =>
       shouldBTServiceStepInto(graph, serviceNodeId),
+    subtreeServiceIds: (graph = emptyBTGraph(), decoratorId = '') =>
+      getBTSubtreeServiceNodeIds(graph, decoratorId),
     activeBlackboard: (actorId = '') => getActiveBTBlackboard(actorId),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
@@ -337,6 +345,14 @@ const lotusBridge = {
     parseCube: (text = '') => parseCubeLUT(text),
     parse3dl: (text = '') => parse3dlLUT(text),
     decodeLut: (name = '', text = '') => decodeGradingLUTFile(name, text),
+    decodePng: (rgba: Uint8Array | Uint8ClampedArray, w: number, h: number) =>
+      decodePngLUTAtlas(rgba, w, h),
+    persistLut: (fileName: string, decoded: NonNullable<ReturnType<typeof decodePngLUTAtlas>>) => {
+      persistDecodedLUTToEnvironment(world.environment, fileName, decoded)
+      return serializeGradingLUTForLevel(world.environment)
+    },
+    restoreLut: () => restoreGradingLUTFromEnvironment(world.environment),
+    exportLutPayload: () => getExportGradingLUTPayload(world.environment),
     identityLut: () => !!createIdentityLUTTexture(),
   },
   projectSettings: {
@@ -350,6 +366,10 @@ const lotusBridge = {
     create: (backend: 'cpu' | 'gpu' = 'cpu') => createParticleSystem({ ...DEFAULT_PARTICLES, maxParticles: 32 }, backend),
     qaMatrix: runParticleGPUQAMatrix,
     gpuSubBurstReady: () => isParticleGpuSubBurstReady(),
+    gpuSubBurstBatchReady: () => {
+      const ps = createParticleSystem({ ...DEFAULT_PARTICLES, maxParticles: 32 }, 'gpu')
+      return typeof ps.gpuSubBurstSpawnBatch === 'function'
+    },
   },
   export: {
     buildPlayableHTML,

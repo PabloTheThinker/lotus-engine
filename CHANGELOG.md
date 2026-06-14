@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 32: v1.99–v2.03
+
+### Added
+- **v1.99** PNG LUT atlas decode + level persist — `decodePngLUTAtlas`, `persistDecodedLUTToEnvironment`, `restoreGradingLUTFromEnvironment` on load
+- **v2.00** GPU batched sub-burst kernel — `runParticleGPUSubEmitterBurstBatch`, `gpuSubBurstSpawnBatch` single-dispatch multi-death path
+- **v2.01** Export LUT payload — `window.__LOTUS_LUT__`, `decodeExportLUTTexture` + TSL atlas sampling in playable runtime
+- **v2.02** BT nested subtree step-into (`getBTSubtreeServiceNodeIds`) + live PIE blackboard watch panel (`.bt-bb-watch`)
+- **v2.03** Material Shift+Tab reverse focus cycle + `.mat-wire-pin-preview` on canvas wires during legend drag — 105 tests passed
+
+### Changed
+- `colorGrading.decodePng` / `persistLut` / `restoreLut` / `exportLutPayload` bridges; `particles.gpuSubBurstBatchReady` bridge
+- `bt.subtreeServiceIds` bridge; collapse decorator subtrees now stash attached service nodes
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 105 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 31: v1.94–v1.98
 
 ### Added
