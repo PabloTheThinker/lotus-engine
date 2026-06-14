@@ -11,6 +11,7 @@ import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, init
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
+import { addMpScore, getMpScore } from './mpGameplay'
 import { mpConnected, mpIsHost, mpLocalId } from './multiplayer'
 
 /**
@@ -151,6 +152,14 @@ export interface ScriptApi {
   mpIsHost: () => boolean
   /** This client's relay peer id */
   mpLocalId: () => string
+  /** Pawn camera yaw (radians) while playing — for hitscan / facing */
+  pawnYaw: () => number
+  /** Pawn camera pitch (radians) while playing */
+  pawnPitch: () => number
+  /** Read MP deathmatch score for a peer (defaults to local id) */
+  getMpScore: (peerId?: string) => number
+  /** Add MP score delta — host authoritative, clients request via relay */
+  addMpScore: (delta: number, peerId?: string) => boolean
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -190,6 +199,8 @@ export function makeScriptApi(
   loadLevel: (name: string) => boolean | Promise<boolean> = () => false,
   boundActor?: Actor,
   loadCell: (cx: number, cz: number) => boolean | Promise<boolean> = () => false,
+  pawnYaw: () => number = () => 0,
+  pawnPitch: () => number = () => 0,
 ): ScriptApi {
   const api: ScriptApi = {
     log: (...args) =>
@@ -301,6 +312,21 @@ export function makeScriptApi(
     mpConnected,
     mpIsHost,
     mpLocalId,
+    pawnYaw,
+    pawnPitch,
+    getMpScore: (peerId) => getMpScore(actors, peerId),
+    addMpScore: (delta, peerId) => {
+      const emit = (signal: string, ...args: unknown[]) => {
+        for (const h of signalHandlers.get(signal) ?? []) {
+          try {
+            h(...args)
+          } catch (err) {
+            logSink('error', `signal "${signal}" handler: ${(err as Error).message}`)
+          }
+        }
+      }
+      return addMpScore(actors, delta, peerId, emit)
+    },
   }
   return api
 }

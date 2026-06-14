@@ -1328,6 +1328,14 @@ export function WorldSettings() {
             onChange={(e) => set('touchControls', e.target.checked)}
           />
         </label>
+        <label className="field check" title="Gamepad left stick + A/Y/X face buttons during Play and export (auto when a pad is connected)">
+          <span>Gamepad controls</span>
+          <input
+            type="checkbox"
+            checked={env.gamepadControls !== false}
+            onChange={(e) => set('gamepadControls', e.target.checked)}
+          />
+        </label>
         <label className="field check">
           <span>Export batch static meshes</span>
           <input

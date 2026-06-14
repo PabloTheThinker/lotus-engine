@@ -48,6 +48,16 @@
 | 39 | v2.34–v2.38 | **Touch input PWA** — virtual joystick, `touchControls`, `__LOTUS_TOUCH__` export |
 | 40 | v2.39–v2.43 | **Anim polish** — script var curve presets, blend ↔ @export link, Apply Preset UI — **144 tests** |
 
+## Shipped (Waves 41–45, v2.44–v2.68)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 41 | v2.44–v2.48 | **TileMap layers + autotile** — multi-layer grid paint/erase, `autotileNeighbors`, Details layer picker |
+| 42 | v2.49–v2.53 | **Starter mini-games** — platformer/RPG/FPS win scripts, `/minigame`, `game_won` signal |
+| 43 | v2.54–v2.58 | **MP deathmatch** — scoreboard, target tag hits, `/mpdeathmatch`, host-authoritative `addMpScore` |
+| 44 | v2.59–v2.63 | **Touch + gamepad** — Fire/Interact buttons, `gamepadInput.ts`, export `__LOTUS_GAMEPAD__` |
+| 45 | v2.64–v2.68 | **2D blend ↔ @export** — `blendScriptVarLinkX/Y`, AnimStateEditor param links — **169 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -56,11 +66,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **TileMap layers** — multi-layer grid paint + autotile rules
-2. **Starter polish** — playable mini-games from each template (scripts + win condition)
-3. **MP gameplay** — score sync + simple deathmatch rules on indie template
-4. **Touch polish** — action buttons (Fire/Interact) + gamepad API fallback
-5. **Animation blend trees** — 2D blend space ↔ @export param links
+1. **TileMap polish** — autotile preview in viewport + per-layer visibility
+2. **Mini-game polish** — HUD win/lose overlay + export playable mini-game presets
+3. **MP score sync** — client scoreboard mirror + `mp_game_won` relay smoke
+4. **Input polish** — gamepad glyph hints + touch button layout presets
+5. **Scene flow** — main menu → level select from starter templates
 
 ## Non-goals (honest skip)
 
@@ -71,5 +81,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **110+** automated smoke tests; export perf gate green on mid-tier laptop GPU
+- **169** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

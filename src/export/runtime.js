@@ -17,6 +17,7 @@ const EXPORT = window.__LOTUS_EXPORT__ ?? window.__VEKTRA_EXPORT__ ?? { quality:
 const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
 const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
+const GAMEPAD_ENABLED = window.__LOTUS_GAMEPAD__ === true || window.__LOTUS_GAMEPAD__ === 'true'
 
 /** Wave 32 — decode embedded LUT atlas bytes from export payload. */
 function decodeExportLUTTexture(payload) {
@@ -322,20 +323,102 @@ const pressed = new Set()
 addEventListener('keydown', (e) => { if (!keys.has(e.code)) pressed.add(e.code); keys.add(e.code) })
 addEventListener('keyup', (e) => keys.delete(e.code))
 
-/** Wave 39 — virtual stick state for mobile PWA export */
+/** Wave 39/44 — virtual stick + action buttons for mobile PWA export */
 let touchMove = { x: 0, y: 0 }
 let touchJump = false
+let touchFire = false
+let touchInteract = false
+/** Wave 44 — gamepad stick + face buttons share the same injection path */
+let gamepadMove = { x: 0, y: 0 }
+let gamepadJump = false
+let gamepadFire = false
+let gamepadInteract = false
+let gpPrevJump = false
+let gpPrevFire = false
+let gpPrevInteract = false
 const TOUCH_DEAD = 0.28
+function mergedAltMove() {
+  return {
+    x: Math.abs(gamepadMove.x) > Math.abs(touchMove.x) ? gamepadMove.x : touchMove.x,
+    y: Math.abs(gamepadMove.y) > Math.abs(touchMove.y) ? gamepadMove.y : touchMove.y,
+  }
+}
 function touchKeyDown(code) {
   if (keys.has(code)) return true
+  const move = mergedAltMove()
   switch (code) {
-    case 'KeyW': return touchMove.y < -TOUCH_DEAD
-    case 'KeyS': return touchMove.y > TOUCH_DEAD
-    case 'KeyA': return touchMove.x < -TOUCH_DEAD
-    case 'KeyD': return touchMove.x > TOUCH_DEAD
-    case 'Space': return touchJump
+    case 'KeyW': return move.y < -TOUCH_DEAD
+    case 'KeyS': return move.y > TOUCH_DEAD
+    case 'KeyA': return move.x < -TOUCH_DEAD
+    case 'KeyD': return move.x > TOUCH_DEAD
+    case 'Space': return touchJump || gamepadJump
+    case 'KeyF': return touchFire || gamepadFire
+    case 'KeyE': return touchInteract || gamepadInteract
     default: return false
   }
+}
+function pollExportGamepad() {
+  if (!GAMEPAD_ENABLED || !navigator.getGamepads) {
+    gamepadMove = { x: 0, y: 0 }
+    gamepadJump = false
+    gamepadFire = false
+    gamepadInteract = false
+    gpPrevJump = false
+    gpPrevFire = false
+    gpPrevInteract = false
+    return false
+  }
+  const pads = navigator.getGamepads()
+  let pad = null
+  for (let i = 0; i < pads.length; i++) {
+    if (pads[i]?.connected) { pad = pads[i]; break }
+  }
+  if (!pad) {
+    gamepadMove = { x: 0, y: 0 }
+    gamepadJump = false
+    gamepadFire = false
+    gamepadInteract = false
+    gpPrevJump = false
+    gpPrevFire = false
+    gpPrevInteract = false
+    return false
+  }
+  const dead = 0.18
+  let x = pad.axes[0] ?? 0
+  let y = pad.axes[1] ?? 0
+  if (Math.hypot(x, y) < dead) { x = 0; y = 0 }
+  else {
+    const mag = Math.hypot(x, y)
+    const scale = (mag - dead) / (1 - dead)
+    x = (x / mag) * scale
+    y = (y / mag) * scale
+  }
+  gamepadMove = { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) }
+  const btn = (i) => !!pad.buttons[i]?.pressed
+  gamepadJump = btn(0)
+  gamepadInteract = btn(2)
+  gamepadFire = btn(3) || btn(7)
+  if (gamepadJump && !gpPrevJump) pressed.add('Space')
+  if (gamepadFire && !gpPrevFire) pressed.add('KeyF')
+  if (gamepadInteract && !gpPrevInteract) pressed.add('KeyE')
+  gpPrevJump = gamepadJump
+  gpPrevFire = gamepadFire
+  gpPrevInteract = gamepadInteract
+  return true
+}
+function bindActionButton(btn, code, getDown, setDown) {
+  const press = (e) => {
+    e.preventDefault()
+    if (!getDown()) pressed.add(code)
+    setDown(true)
+  }
+  const release = (e) => { e.preventDefault(); setDown(false) }
+  btn.addEventListener('touchstart', press, { passive: false })
+  btn.addEventListener('touchend', release, { passive: false })
+  btn.addEventListener('touchcancel', release, { passive: false })
+  btn.addEventListener('mousedown', press)
+  btn.addEventListener('mouseup', release)
+  btn.addEventListener('mouseleave', release)
 }
 function initExportTouchHud() {
   if (!TOUCH_ENABLED) return
@@ -356,11 +439,24 @@ function initExportTouchHud() {
   knob.className = 'lotus-touch-joystick-knob'
   base.appendChild(knob)
   stickZone.appendChild(base)
+  const actions = document.createElement('div')
+  actions.className = 'lotus-touch-actions'
+  hud.appendChild(actions)
+  const interactBtn = document.createElement('button')
+  interactBtn.type = 'button'
+  interactBtn.className = 'lotus-touch-interact'
+  interactBtn.textContent = 'Use'
+  actions.appendChild(interactBtn)
+  const fireBtn = document.createElement('button')
+  fireBtn.type = 'button'
+  fireBtn.className = 'lotus-touch-fire'
+  fireBtn.textContent = 'Fire'
+  actions.appendChild(fireBtn)
   const jumpBtn = document.createElement('button')
   jumpBtn.type = 'button'
   jumpBtn.className = 'lotus-touch-jump'
   jumpBtn.textContent = 'Jump'
-  hud.appendChild(jumpBtn)
+  actions.appendChild(jumpBtn)
   let stickId = null
   const setStick = (t) => {
     const rect = base.getBoundingClientRect()
@@ -417,11 +513,9 @@ function initExportTouchHud() {
   }
   base.addEventListener('touchend', endStick, { passive: false })
   base.addEventListener('touchcancel', endStick, { passive: false })
-  const pressJump = (e) => { e.preventDefault(); if (!touchJump) pressed.add('Space'); touchJump = true }
-  const releaseJump = (e) => { e.preventDefault(); touchJump = false }
-  jumpBtn.addEventListener('touchstart', pressJump, { passive: false })
-  jumpBtn.addEventListener('touchend', releaseJump, { passive: false })
-  jumpBtn.addEventListener('touchcancel', releaseJump, { passive: false })
+  bindActionButton(jumpBtn, 'Space', () => touchJump, (v) => { touchJump = v })
+  bindActionButton(fireBtn, 'KeyF', () => touchFire, (v) => { touchFire = v })
+  bindActionButton(interactBtn, 'KeyE', () => touchInteract, (v) => { touchInteract = v })
 }
 
 let skyObj = null
@@ -1487,8 +1581,10 @@ async function boot() {
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
     (TOUCH_ENABLED
-      ? `${particleTier} · Touch stick + Jump · tap canvas for mouse look`
-      : `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`)
+      ? `${particleTier} · Touch stick + actions · tap canvas for mouse look`
+      : GAMEPAD_ENABLED
+        ? `${particleTier} · WASD / gamepad · click canvas for mouse look`
+        : `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`)
   const perfMinFps = EXPORT.perfMinFps ?? 24
   window.__LOTUS_EXPORT_PERF__ = {
     tier: playRenderTier,
@@ -1589,6 +1685,7 @@ async function boot() {
     }
     const subSystems = particleSystems.filter((p) => p.subEmitterOn)
     if (subSystems.length) window.__LOTUS_EXPORT_SUB_EMITTER_QA__ = { systems: subSystems.length }
+    if (GAMEPAD_ENABLED) pollExportGamepad()
     updatePawn(dt)
     if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
     applyStreamingVisibility(pawnCam.position)

@@ -113,6 +113,10 @@ export class Actor {
   blendSpace2D?: import('./animStateMachine').BlendSpace2D
   /** Wave 40 — 1D blend param driven by this @export script var at runtime */
   blendScriptVarLink?: string
+  /** Wave 45 — 2D blend paramX driven by this @export script var at runtime */
+  blendScriptVarLinkX?: string
+  /** Wave 45 — 2D blend paramY driven by this @export script var at runtime */
+  blendScriptVarLinkY?: string
   animParams?: Record<string, number>
   /** prefab instance root: source prefab asset name */
   prefabSource?: string
@@ -338,7 +342,20 @@ export class Actor {
       streamCell: this.streamCell ? [this.streamCell[0], this.streamCell[1]] : undefined,
       postProcess: this.postProcessProps ? { ...this.postProcessProps } : undefined,
       particles: this.particleProps ? { ...this.particleProps } : undefined,
-      foliage: this.foliageProps ? { ...this.foliageProps, instances: this.foliageProps.instances.map((i) => [...i]) } : undefined,
+      foliage: this.foliageProps
+        ? {
+            ...this.foliageProps,
+            instances: this.foliageProps.instances.map((i) => [...i]),
+            gridLayers: this.foliageProps.gridLayers
+              ? Object.fromEntries(
+                  Object.entries(this.foliageProps.gridLayers).map(([k, bucket]) => [
+                    Number(k),
+                    bucket.map((i) => [...i]),
+                  ]),
+                )
+              : undefined,
+          }
+        : undefined,
       autoPlayClip: this.autoPlayClip,
       animStateMachine: this.animStateMachine
         ? JSON.parse(JSON.stringify(this.animStateMachine))
@@ -346,6 +363,8 @@ export class Actor {
       blendSpace1D: this.blendSpace1D ? JSON.parse(JSON.stringify(this.blendSpace1D)) : undefined,
       blendSpace2D: this.blendSpace2D ? JSON.parse(JSON.stringify(this.blendSpace2D)) : undefined,
       blendScriptVarLink: this.blendScriptVarLink || undefined,
+      blendScriptVarLinkX: this.blendScriptVarLinkX || undefined,
+      blendScriptVarLinkY: this.blendScriptVarLinkY || undefined,
       animParams:
         this.animParams && Object.keys(this.animParams).length
           ? { ...this.animParams }

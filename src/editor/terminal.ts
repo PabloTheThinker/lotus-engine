@@ -11,7 +11,9 @@ import type { Actor } from '../engine/Actor'
 import { DEFAULT_MATERIAL, type MaterialProps } from '../engine/types'
 import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
+import { spawnIndieMpDeathmatch } from './indieMpGameplay'
 import { spawnIndieMpTemplate } from './indieMpTemplate'
+import { spawnMiniGame } from './starterMiniGames'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './starterTemplates'
 import { useEditor } from './store'
 
@@ -44,7 +46,9 @@ SLASH COMMANDS
   /platformer [mode] Greybox platformer scene (side|wide)
   /rpg [mode]        Greybox top-down RPG scene (small|large)
   /fps               Greybox FPS corridor scene
+  /minigame <mode>   Playable mini-game starter (platformer|rpg|fps) with win condition
   /mpstarter         Greybox indie multiplayer scene (host + client spawns, sync crates)
+  /mpdeathmatch      Indie MP deathmatch (targets, scoreboard, first to 3 wins)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -281,12 +285,27 @@ function runSlash(parts: string[]): TerminalResult {
       spawnFpsStarter()
       return { output: 'FPS starter', error: null, level: 'log' }
     }
+    case '/minigame': {
+      const mode = (args[0] ?? '').toLowerCase()
+      if (!['platformer', 'rpg', 'fps'].includes(mode)) {
+        return { output: null, error: 'Usage: /minigame platformer|rpg|fps', level: 'error' }
+      }
+      spawnMiniGame(mode as 'platformer' | 'rpg' | 'fps')
+      return { output: `Mini-game: ${mode} — press Play to win`, error: null, level: 'log' }
+    }
     case '/mpstarter': {
       if (args.length) {
         return { output: null, error: 'Usage: /mpstarter', level: 'error' }
       }
       spawnIndieMpTemplate()
       return { output: 'Indie MP starter — enable Multiplayer in World Settings, then Play', error: null, level: 'log' }
+    }
+    case '/mpdeathmatch': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /mpdeathmatch', level: 'error' }
+      }
+      spawnIndieMpDeathmatch()
+      return { output: 'Indie MP deathmatch — first to 3 wins (Fire / KeyF)', error: null, level: 'log' }
     }
     case '/undo':
       undo()
@@ -408,7 +427,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/mpstarter', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/mpstarter', '/mpdeathmatch', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

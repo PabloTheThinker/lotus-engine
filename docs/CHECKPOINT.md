@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.43 (waves 36–40).** v0.33–v2.43 shipped; **build clean**, **`npm run test` — 144 passed**.
+- **Last clean commit: v2.68 (waves 41–45).** v0.33–v2.68 shipped; **build clean**, **`npm run test` — 169 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -409,12 +409,23 @@
 | 39 | v2.34–v2.38 | Touch input PWA — virtual joystick, export `__LOTUS_TOUCH__` |
 | 40 | v2.39–v2.43 | Anim polish — script var presets, blend ↔ @export, Sequencer Apply Preset — 144 tests |
 
+## Shipped (v2.44–v2.68, Waves 41–45 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 41 | v2.44–v2.48 | TileMap layers + autotile — `gridMap` layer paint/erase, `autotileNeighbors`, Details layer UI |
+| 42 | v2.49–v2.53 | Starter mini-games — `starterMiniGames.ts`, `/minigame platformer\|rpg\|fps`, `game_won` signal |
+| 43 | v2.54–v2.58 | MP deathmatch — `mpGameplay.ts`, scoreboard, `/mpdeathmatch`, relay host-score smoke |
+| 44 | v2.59–v2.63 | Touch Fire/Interact + gamepad — `touchInput`, `gamepadInput`, export `__LOTUS_GAMEPAD__` |
+| 45 | v2.64–v2.68 | 2D blend ↔ @export — `blendScriptVarLinkX/Y`, AnimStateEditor links, `resolveAnimParams` — 169 tests |
+
 ## Next up (indie roadmap)
 
-1. **TileMap layers** — multi-layer grid + autotile
-2. **Starter mini-games** — win conditions per template
-3. **MP gameplay rules** — score sync on indie template
-4. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
+1. **TileMap polish** — autotile preview in viewport + layer visibility toggles
+2. **Mini-game polish** — HUD win/lose UI + export playable mini-game presets
+3. **MP score sync** — client scoreboard mirror + `mp_game_won` relay assert
+4. **Input polish** — gamepad glyph hints in export overlay + touch button layout presets
+5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward
 

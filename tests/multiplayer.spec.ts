@@ -94,3 +94,95 @@ test('multiplayer 2-tab relay: Tab B sees peer when Tab A plays', async ({
     await contextB.close()
   }
 })
+
+test('wave 43 multiplayer relay: host score syncs to client', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave43-score'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    await pageA.addInitScript(
+      ({ url, room }) => {
+        localStorage.clear()
+        localStorage.setItem('lotus-engine.multiplayer', JSON.stringify({ url, room, enabled: true }))
+      },
+      { url: relayUrl, room: MP_ROOM },
+    )
+    await pageB.addInitScript(
+      ({ url, room }) => {
+        localStorage.clear()
+        localStorage.setItem('lotus-engine.multiplayer', JSON.stringify({ url, room, enabled: true }))
+      },
+      { url: relayUrl, room: MP_ROOM },
+    )
+    await pageA.goto('/')
+    await pageB.goto('/')
+    await pageA.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+    await pageB.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    const spawnDm = async (page: import('@playwright/test').Page) => {
+      await page.evaluate(() => {
+        const v = window.lotus! as typeof window.lotus & { indie: { spawnIndieMpDeathmatch: () => void } }
+        v.indie.spawnIndieMpDeathmatch()
+      })
+    }
+    await spawnDm(pageA)
+    await spawnDm(pageB)
+
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+    await pageB.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+
+    // Host = lexicographically smallest peer id — wait until exactly one tab is host.
+    let hostPage: import('@playwright/test').Page | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const [aHost, bHost] = await Promise.all([
+        pageA.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageB.evaluate(() => window.lotus!.multiplayer.isHost()),
+      ])
+      if (aHost && !bHost) {
+        hostPage = pageA
+        break
+      }
+      if (!aHost && bHost) {
+        hostPage = pageB
+        break
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    expect(hostPage, 'expected stable MP host election').toBeDefined()
+
+    const hostScore = await hostPage!.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        indie: { mp: { addScore: (d: number, id?: string) => boolean; getScore: (id?: string) => number } }
+        multiplayer: { connected: () => boolean; isHost: () => boolean }
+      }
+      const added = v.indie.mp.addScore(2)
+      return {
+        connected: v.multiplayer.connected(),
+        isHost: v.multiplayer.isHost(),
+        added,
+        after: v.indie.mp.getScore(),
+      }
+    })
+
+    expect(hostScore.connected).toBe(true)
+    expect(hostScore.isHost).toBe(true)
+    expect(hostScore.added).toBe(true)
+    expect(hostScore.after).toBeGreaterThanOrEqual(2)
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})

@@ -4,6 +4,44 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 41–45: v2.44–v2.68 (indie swarm)
+
+### Wave 41 (v2.44–v2.48) — TileMap layers + autotile
+- `gridMap.ts` — `paintGridLayer`, `eraseGridLayer`, `getLayerCellCount`, `autotileNeighbors`
+- `FoliageProps` — `activeGridLayer`, `gridLayers`, `gridAutotile`
+- Details layer picker; Viewport layer overlay; `window.lotus.gridMap` layer APIs
+
+### Wave 42 (v2.49–v2.53) — Starter mini-games
+- `starterMiniGames.ts` — platformer/RPG/FPS win scripts + goal zones
+- `/minigame platformer|rpg|fps` terminal command; `game_won` signal
+- `window.lotus.indie.minigame` bridge
+
+### Wave 43 (v2.54–v2.58) — MP deathmatch + score
+- `mpGameplay.ts`, `indieMpGameplay.ts` — scoreboard, target tag, first-to-3 wins
+- `/mpdeathmatch`, `spawnIndieMpDeathmatch`, `api.getMpScore` / `addMpScore`
+- Multiplayer relay smoke: host score authority
+
+### Wave 44 (v2.59–v2.63) — Touch Fire/Interact + gamepad
+- `touchInput.ts` — fire/interact just-pressed; `touchOverlay.ts` action buttons
+- `gamepadInput.ts` — stick + A/B actions; export `__LOTUS_GAMEPAD__`
+- `window.lotus.indie.touch` + `gamepad` bridges
+
+### Wave 45 (v2.64–v2.68) — 2D blend ↔ @export
+- `blendScriptVarLinkX` / `blendScriptVarLinkY` on actors
+- AnimStateEditor 2D param link fields; `resolveAnimParams` reads linked script vars
+
+### Fixed
+- Export E2E overlay assertions — accept gamepad/touch boot copy (Wave 44)
+- MP relay test — stable host election poll before score assert
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 169 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 36–40: v2.19–v2.43 (indie swarm)
 
 ### Wave 36 (v2.19–v2.23) — GridMap UX

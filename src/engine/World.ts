@@ -254,10 +254,28 @@ export class World {
     setReverbZone('')
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
     const loadCell = (cx: number, cz: number) => this.loadCellDuringPlay(cx, cz)
-    this.playApi = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, undefined, loadCell)
+    this.playApi = makeScriptApi(
+      this.actors,
+      () => this.playClock,
+      () => this.pawnPosition,
+      loadLevel,
+      undefined,
+      loadCell,
+      () => this.pawnYaw,
+      () => this.pawnPitch,
+    )
     initAllActorGAS(this.actors.values())
     for (const a of this.actors.values()) {
-      const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, a, loadCell)
+      const api = makeScriptApi(
+        this.actors,
+        () => this.playClock,
+        () => this.pawnPosition,
+        loadLevel,
+        a,
+        loadCell,
+        () => this.pawnYaw,
+        () => this.pawnPitch,
+      )
       a.beginPlay(api)
       if (a.particleSystem && a.particleProps && a.particleProps.burst > 0) {
         a.particleSystem.burst(a.particleProps.burst)
@@ -295,6 +313,9 @@ export class World {
   playClock = 0
   /** updated by the viewport each frame while playing; null otherwise */
   pawnPosition: THREE.Vector3 | null = null
+  /** pawn camera yaw/pitch (radians) while playing */
+  pawnYaw = 0
+  pawnPitch = 0
   playApi: ReturnType<typeof makeScriptApi> | null = null
   private lastCameraCut: string | null = null
   private lastSeqTime = 0
@@ -349,7 +370,16 @@ export class World {
     if (!actor?.script?.trim()) return false
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
     const loadCell = (cx: number, cz: number) => this.loadCellDuringPlay(cx, cz)
-    const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, actor, loadCell)
+    const api = makeScriptApi(
+      this.actors,
+      () => this.playClock,
+      () => this.pawnPosition,
+      loadLevel,
+      actor,
+      loadCell,
+      () => this.pawnYaw,
+      () => this.pawnPitch,
+    )
     try {
       actor.beginPlay(api)
       return true
@@ -450,7 +480,16 @@ export class World {
     const loadCell = (cxi: number, czi: number) => this.loadCellDuringPlay(cxi, czi)
     for (const sa of toAdd) {
       const actor = this.actors.get(sa.id)!
-      const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, actor, loadCell)
+      const api = makeScriptApi(
+        this.actors,
+        () => this.playClock,
+        () => this.pawnPosition,
+        loadLevel,
+        actor,
+        loadCell,
+        () => this.pawnYaw,
+        () => this.pawnPitch,
+      )
       actor.beginPlay(api)
     }
     scriptLog('log', `loadCell(${cx},${cz}): +${toAdd.length} actors`)
@@ -585,6 +624,8 @@ export class World {
               (n) => this.loadLevelDuringPlay(n),
               actor,
               (cx, cz) => this.loadCellDuringPlay(cx, cz),
+              () => this.pawnYaw,
+              () => this.pawnPitch,
             ),
           ),
       )
@@ -917,7 +958,18 @@ export class World {
       case 'FoliageLayer':
         actor = createFoliageLayerActor(sa.name, sa.id)
         if (sa.foliage) {
-          actor.foliageProps = { ...sa.foliage, instances: sa.foliage.instances.map((i) => [...i]) }
+          actor.foliageProps = {
+            ...sa.foliage,
+            instances: sa.foliage.instances.map((i) => [...i]),
+            gridLayers: sa.foliage.gridLayers
+              ? Object.fromEntries(
+                  Object.entries(sa.foliage.gridLayers).map(([k, bucket]) => [
+                    Number(k),
+                    (bucket as number[][]).map((i) => [...i]),
+                  ]),
+                )
+              : undefined,
+          }
           buildFoliageMesh(actor)
         }
         break
@@ -1043,6 +1095,8 @@ export class World {
     if (sa.blendSpace2D) actor.blendSpace2D = JSON.parse(JSON.stringify(sa.blendSpace2D))
     if (sa.animParams) actor.animParams = { ...sa.animParams }
     if (sa.blendScriptVarLink) actor.blendScriptVarLink = sa.blendScriptVarLink
+    if (sa.blendScriptVarLinkX) actor.blendScriptVarLinkX = sa.blendScriptVarLinkX
+    if (sa.blendScriptVarLinkY) actor.blendScriptVarLinkY = sa.blendScriptVarLinkY
     if (sa.materialGraph && sa.type !== 'StaticMesh' && sa.type !== 'CustomMesh') {
       actor.materialGraph = JSON.parse(JSON.stringify(sa.materialGraph))
     }

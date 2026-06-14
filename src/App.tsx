@@ -44,26 +44,56 @@ import {
   savePrefab,
   summarizePrefabOverrides,
 } from './editor/prefabs'
+import {
+  MP_SCORE_SCRIPT,
+  MP_SCOREBOARD_SCRIPT,
+  MP_TAG_TARGET,
+  MP_SCORE_WIN,
+  addMpScore,
+  getMpScore,
+  spawnIndieMpDeathmatch,
+} from './editor/indieMpGameplay'
 import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
+import {
+  attachMiniGameScripts,
+  FPS_MINIGAME_SCRIPT,
+  FPS_TARGET_TAG,
+  GOAL_ZONE_NAME,
+  MINIGAME_MANAGER_NAME,
+  PLATFORMER_MINIGAME_SCRIPT,
+  RPG_MINIGAME_SCRIPT,
+  RPG_NPC_GOAL,
+  spawnMiniGame,
+} from './editor/starterMiniGames'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
 import { resolveAnimParams } from './engine/animStateMachine'
 import {
+  activeGridLayerIndex,
+  autotileNeighbors,
   eraseGridCell,
+  eraseGridLayer,
   getGridCellCount,
+  getLayerCellCount,
   gridCellKey,
   gridCellsInBrush,
   paintGridCell,
+  paintGridLayer,
   worldToGridCell,
 } from './engine/gridMap'
+import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
 import { getActionAxis } from './engine/inputActions'
 import { createResource, getResource, listResources, saveResource } from './engine/resources'
 import { listScriptVarPresets, loadScriptVarPreset, saveScriptVarPreset } from './engine/scriptVarPresets'
 import { applyScriptVarPreset, keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
 import {
+  endTouchInputFrame,
   getTouchMoveAxis,
   isTouchDevice,
+  isTouchFireJustPressed,
+  isTouchInteractJustPressed,
   resetTouchInput,
   shouldShowTouchControls,
+  syncTouchInputState,
   VirtualJoystick,
 } from './engine/touchInput'
 import { DEFAULT_RAY_CAST, DEFAULT_TIMER } from './engine/types'
@@ -135,7 +165,7 @@ import { runParticleGPUQAMatrix } from './engine/particleGPUQA'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
-import { loadMPSettings, mpEnabled, mpConnected, mpKnownPeerIds } from './engine/multiplayer'
+import { loadMPSettings, mpEnabled, mpConnected, mpIsHost, mpKnownPeerIds } from './engine/multiplayer'
 import * as THREE from 'three'
 import {
   characterIsOnFloor,
@@ -225,6 +255,7 @@ const lotusBridge = {
     loadSettings: loadMPSettings,
     enabled: mpEnabled,
     connected: mpConnected,
+    isHost: mpIsHost,
     peerCount: () => mpKnownPeerIds().length,
   },
   /** Rapier kinematic character — E2E + devtools (Wave 10) */
@@ -472,6 +503,30 @@ const lotusBridge = {
         return true
       },
       getBlendScriptVarLink: (actorId: string) => world.actors.get(actorId)?.blendScriptVarLink,
+      setBlendScriptVarLinkX: (actorId: string, varName?: string) => {
+        const actor = world.actors.get(actorId)
+        if (!actor) return false
+        actor.blendScriptVarLinkX = varName?.trim() || undefined
+        useEditor.getState().touch()
+        return true
+      },
+      getBlendScriptVarLinkX: (actorId: string) => world.actors.get(actorId)?.blendScriptVarLinkX,
+      setBlendScriptVarLinkY: (actorId: string, varName?: string) => {
+        const actor = world.actors.get(actorId)
+        if (!actor) return false
+        actor.blendScriptVarLinkY = varName?.trim() || undefined
+        useEditor.getState().touch()
+        return true
+      },
+      getBlendScriptVarLinkY: (actorId: string) => world.actors.get(actorId)?.blendScriptVarLinkY,
+      setBlend2DScriptVarLinks: (actorId: string, linkX?: string, linkY?: string) => {
+        const actor = world.actors.get(actorId)
+        if (!actor) return false
+        actor.blendScriptVarLinkX = linkX?.trim() || undefined
+        actor.blendScriptVarLinkY = linkY?.trim() || undefined
+        useEditor.getState().touch()
+        return true
+      },
     },
     touch: {
       isTouchDevice: () => isTouchDevice(),
@@ -488,21 +543,64 @@ const lotusBridge = {
         return true
       },
       createJoystick: (parent: HTMLElement, radius = 48) => new VirtualJoystick(parent, { radius }),
+      fireJustPressed: () => isTouchFireJustPressed(),
+      interactJustPressed: () => isTouchInteractJustPressed(),
+      simulate: (opts: { fireJust?: boolean; interactJust?: boolean }) => {
+        syncTouchInputState({ x: 0, y: 0 }, false, false, false, !!opts.fireJust, false, !!opts.interactJust)
+        return true
+      },
+      endFrame: () => {
+        endTouchInputFrame()
+        return true
+      },
+    },
+    gamepad: {
+      poll: () => pollGamepadInput(),
+      getMoveAxis: () => getGamepadMoveAxis(),
+      controlsEnabled: () => shouldEnableGamepadControls(world.environment.gamepadControls),
+      setControlsEnabled: (on: boolean) => {
+        world.environment.gamepadControls = on
+        useEditor.getState().touch()
+        return on
+      },
+      reset: () => {
+        resetGamepadInput()
+        return true
+      },
+    },
+    minigame: {
+      managerName: MINIGAME_MANAGER_NAME,
+      goalZoneName: GOAL_ZONE_NAME,
+      fpsTargetTag: FPS_TARGET_TAG,
+      rpgNpcGoal: RPG_NPC_GOAL,
+      platformerScript: PLATFORMER_MINIGAME_SCRIPT,
+      rpgScript: RPG_MINIGAME_SCRIPT,
+      fpsScript: FPS_MINIGAME_SCRIPT,
+      attachMiniGameScripts,
+      spawnMiniGame,
     },
     mp: {
       tagHost: MP_TAG_HOST,
       tagSync: MP_TAG_SYNC,
+      tagTarget: MP_TAG_TARGET,
       hostScript: MP_HOST_SCRIPT,
       syncScript: MP_SYNC_SCRIPT,
+      scoreScript: MP_SCORE_SCRIPT,
+      scoreboardScript: MP_SCOREBOARD_SCRIPT,
+      winScore: MP_SCORE_WIN,
+      getScore: (peerId?: string) => getMpScore(world.actors, peerId),
+      addScore: (delta: number, peerId?: string) => addMpScore(world.actors, delta, peerId),
     },
     spawnCharacterStarter,
     spawnPlatformerStarter,
     spawnTopDownRpgStarter,
     spawnFpsStarter,
     spawnIndieMpTemplate,
+    spawnIndieMpDeathmatch,
     configureIndieMpSettings,
+    spawnMiniGame,
   },
-  /** Wave 36 — GridMap cell helpers (foliage snap mode) */
+  /** Wave 36–41 — GridMap cell helpers (foliage snap mode) */
   gridMap: {
     worldToGridCell: (x: number, y: number, z: number) => worldToGridCell(x, y, z),
     gridCellKey: (cx: number, cy: number, cz: number) => gridCellKey(cx, cy, cz),
@@ -514,6 +612,14 @@ const lotusBridge = {
     cellsInBrush: (cx: number, cy: number, cz: number, brushSize: number) =>
       gridCellsInBrush(cx, cy, cz, brushSize),
     tileKinds: ['box', 'sphere', 'plane'] as const,
+    activeLayer: (props: import('./engine/types').FoliageProps) => activeGridLayerIndex(props),
+    paintLayer: (props: import('./engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) =>
+      paintGridLayer(props, layer, cx, cy, cz),
+    eraseLayer: (props: import('./engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) =>
+      eraseGridLayer(props, layer, cx, cy, cz),
+    getLayerCellCount: (props: import('./engine/types').FoliageProps, layer: number) => getLayerCellCount(props, layer),
+    autotileNeighbors: (hasN: boolean, hasE: boolean, hasS: boolean, hasW: boolean) =>
+      autotileNeighbors(hasN, hasE, hasS, hasW),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,

@@ -26,11 +26,16 @@ import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
 import { rebuildFoliage, updateLabel3DBillboards } from '../engine/factory'
 import {
-  eraseGridBrush,
+  activeGridLayerIndex,
+  eraseGridLayerBrush,
   getGridCellCount,
+  getLayerCellCount,
   gridOverlaySize,
-  paintGridBrush,
+  paintGridLayerBrush,
+  restoreGridPaint,
+  snapshotGridPaint,
   worldToGridCell,
+  type GridPaintSnapshot,
 } from '../engine/gridMap'
 import { Widget3DLayer } from './Widget3DLayer'
 import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engine/landscape'
@@ -47,6 +52,7 @@ import { consoleState } from './consoleCommands'
 import type { TransformSnapshot } from '../engine/types'
 import { EditorCameraControls } from './EditorCameraControls'
 import { PlayController } from './PlayController'
+import { resetGamepadInput } from '../engine/gamepadInput'
 import { touchControlsActive, TouchOverlay } from './touchOverlay'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
@@ -1036,7 +1042,7 @@ export function Viewport() {
 
     // ---- foliage painting (UE Foliage mode) ----
     let painting = false
-    let strokeBefore: number[][] | null = null
+    let strokeBefore: GridPaintSnapshot | null = null
     let lastStamp: THREE.Vector3 | null = null
     let gridPaintHelper: THREE.GridHelper | null = null
 
@@ -1068,8 +1074,9 @@ export function Viewport() {
       const props = layer.foliageProps
       if (props.snap) {
         const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
-        if (e.shiftKey) eraseGridBrush(props, cell.x, cell.y, cell.z)
-        else paintGridBrush(props, cell.x, cell.y, cell.z)
+        const gridLayer = activeGridLayerIndex(props)
+        if (e.shiftKey) eraseGridLayerBrush(props, gridLayer, cell.x, cell.y, cell.z)
+        else paintGridLayerBrush(props, gridLayer, cell.x, cell.y, cell.z)
         rebuildFoliage(layer)
         s.touch()
         return
@@ -1102,7 +1109,7 @@ export function Viewport() {
       const layer = s.selectedId ? world.actors.get(s.selectedId) : null
       if (!layer?.foliageProps) return
       painting = true
-      strokeBefore = layer.foliageProps.instances.map((i) => [...i])
+      strokeBefore = snapshotGridPaint(layer.foliageProps)
       lastStamp = null
       stampFoliage(e)
       e.stopPropagation()
@@ -1137,8 +1144,9 @@ export function Viewport() {
         syncGridPaintOverlay(hit, brush)
         if (hit) {
           const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+          const gl = activeGridLayerIndex(layer.foliageProps)
           s.setStatus(
-            `GridMap · cell (${cell.x}, ${cell.y}, ${cell.z}) · ${getGridCellCount(layer.foliageProps)} tiles`,
+            `GridMap · L${gl} · cell (${cell.x}, ${cell.y}, ${cell.z}) · ${getLayerCellCount(layer.foliageProps, gl)} / ${getGridCellCount(layer.foliageProps)} tiles`,
           )
         }
       } else if (gridPaintHelper) {
@@ -1153,16 +1161,16 @@ export function Viewport() {
       const layer = s.selectedId ? world.actors.get(s.selectedId) : null
       if (layer?.foliageProps && strokeBefore) {
         const before = strokeBefore
-        const after = layer.foliageProps.instances.map((i) => [...i])
+        const after = snapshotGridPaint(layer.foliageProps)
         if (JSON.stringify(before) !== JSON.stringify(after)) {
           runCommand({
             label: 'Foliage stroke',
             execute() {
-              layer.foliageProps!.instances = after.map((i) => [...i])
+              restoreGridPaint(layer.foliageProps!, after)
               rebuildFoliage(layer)
             },
             undo() {
-              layer.foliageProps!.instances = before.map((i) => [...i])
+              restoreGridPaint(layer.foliageProps!, before)
               rebuildFoliage(layer)
             },
           })
@@ -1517,6 +1525,7 @@ export function Viewport() {
         if (!s.simulate) {
           pawn.useRapierCharacter = world.environment.useRapierCharacter !== false
           pawn.useRaycastVehicle = world.environment.useRaycastVehicle === true
+          pawn.setGamepadControls(world.environment)
           pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
           s.setPendingSpawn(null)
           s.select(null)
@@ -1527,6 +1536,7 @@ export function Viewport() {
         void world.restoreEditorAfterPIE()
         pawn.unpossess()
         touchOverlay.unmount()
+        resetGamepadInput()
         unmountHud()
         mpDisconnect()
         s.touch()
@@ -1677,7 +1687,9 @@ export function Viewport() {
 
       // scripts can ask where the player is
       world.pawnPosition = s.playing && !s.simulate ? pawn.position : null
-      if (s.playing) mpTick(dt, world.pawnPosition, pawn.camera.rotation.y)
+      world.pawnYaw = s.playing && !s.simulate ? pawn.viewYaw : 0
+      world.pawnPitch = s.playing && !s.simulate ? pawn.viewPitch : 0
+      if (s.playing) mpTick(dt, world.pawnPosition, pawn.viewYaw)
 
       // WebAudio listener — true 3D spatialization (PannerNode / HRTF)
       const listenCam = possessed ? pawn.camera : quadMode ? paneCameras[s.activeViewportPane] : editorCamera
@@ -2072,6 +2084,8 @@ export function Viewport() {
       }
       world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)
       world.pawnPosition = null
+      world.pawnYaw = 0
+      world.pawnPitch = 0
       widget3dLayer.dispose()
       bundle.dispose()
       if (domElement.parentElement === mount) mount.removeChild(domElement)

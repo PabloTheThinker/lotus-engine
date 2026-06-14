@@ -1,4 +1,5 @@
 import { Input } from './Input'
+import { getGamepadMoveAxis } from './gamepadInput'
 import { getTouchMoveAxis } from './touchInput'
 
 /**
@@ -72,21 +73,30 @@ const AXIS_DEAD = 0.28
  * MoveForward: negative = forward (W), positive = back (S).
  * MoveRight: negative = left (A), positive = right (D).
  */
+function mergedAltAxis() {
+  const touch = getTouchMoveAxis()
+  const gamepad = getGamepadMoveAxis()
+  return {
+    x: Math.abs(gamepad.x) > Math.abs(touch.x) ? gamepad.x : touch.x,
+    y: Math.abs(gamepad.y) > Math.abs(touch.y) ? gamepad.y : touch.y,
+  }
+}
+
 export function getActionAxis(name: string): number {
   const lower = name.toLowerCase()
-  const touch = getTouchMoveAxis()
+  const alt = mergedAltAxis()
   if (lower === 'moveforward') {
     let v = 0
     if (Input.isDown('KeyW')) v -= 1
     if (Input.isDown('KeyS')) v += 1
-    if (Math.abs(touch.y) > AXIS_DEAD && Math.abs(touch.y) > Math.abs(v)) v = touch.y
+    if (Math.abs(alt.y) > AXIS_DEAD && Math.abs(alt.y) > Math.abs(v)) v = alt.y
     return Math.max(-1, Math.min(1, v))
   }
   if (lower === 'moveright') {
     let v = 0
     if (Input.isDown('KeyA')) v -= 1
     if (Input.isDown('KeyD')) v += 1
-    if (Math.abs(touch.x) > AXIS_DEAD && Math.abs(touch.x) > Math.abs(v)) v = touch.x
+    if (Math.abs(alt.x) > AXIS_DEAD && Math.abs(alt.x) > Math.abs(v)) v = alt.x
     return Math.max(-1, Math.min(1, v))
   }
   return 0

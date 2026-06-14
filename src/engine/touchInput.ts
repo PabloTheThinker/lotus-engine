@@ -1,6 +1,7 @@
 /**
- * Touch input — virtual joystick + jump for mobile PWA / editor PIE preview.
+ * Touch input — virtual joystick + action buttons for mobile PWA / editor PIE preview.
  * Wave 39 (v2.34): axis state, VirtualJoystick, device detection.
+ * Wave 44 (v2.59): Fire + Interact buttons, isTouchFireJustPressed / isTouchInteractJustPressed.
  */
 
 export interface TouchAxis {
@@ -15,6 +16,10 @@ const ZERO: TouchAxis = { x: 0, y: 0 }
 let moveAxis: TouchAxis = { ...ZERO }
 let jumpDown = false
 let jumpJustPressed = false
+let fireDown = false
+let fireJustPressed = false
+let interactDown = false
+let interactJustPressed = false
 
 /** True when the host has touch capability (coarse pointer or touch events). */
 export function isTouchDevice(): boolean {
@@ -37,21 +42,55 @@ export function isTouchJumpJustPressed(): boolean {
   return jumpJustPressed
 }
 
+export function isTouchFireDown(): boolean {
+  return fireDown
+}
+
+export function isTouchFireJustPressed(): boolean {
+  return fireJustPressed
+}
+
+export function isTouchInteractDown(): boolean {
+  return interactDown
+}
+
+export function isTouchInteractJustPressed(): boolean {
+  return interactJustPressed
+}
+
 /** Internal — called by overlay / export HUD each frame. */
-export function syncTouchInputState(axis: TouchAxis, jump: boolean, jumpJust: boolean) {
+export function syncTouchInputState(
+  axis: TouchAxis,
+  jump: boolean,
+  jumpJust: boolean,
+  fire = false,
+  fireJust = false,
+  interact = false,
+  interactJust = false,
+) {
   moveAxis = { x: clamp(axis.x), y: clamp(axis.y) }
   jumpDown = jump
+  fireDown = fire
+  interactDown = interact
   if (jumpJust) jumpJustPressed = true
+  if (fireJust) fireJustPressed = true
+  if (interactJust) interactJustPressed = true
 }
 
 export function endTouchInputFrame() {
   jumpJustPressed = false
+  fireJustPressed = false
+  interactJustPressed = false
 }
 
 export function resetTouchInput() {
   moveAxis = { ...ZERO }
   jumpDown = false
   jumpJustPressed = false
+  fireDown = false
+  fireJustPressed = false
+  interactDown = false
+  interactJustPressed = false
 }
 
 function clamp(v: number): number {
@@ -157,16 +196,16 @@ export class VirtualJoystick {
   }
 }
 
-/** Large jump button (bottom-right). */
-export class TouchJumpButton {
+/** On-screen action button (jump / fire / interact). */
+export class TouchActionButton {
   readonly root: HTMLElement
   private down = false
   private just = false
 
-  constructor(parent: HTMLElement, label = 'Jump') {
+  constructor(parent: HTMLElement, label: string, className: string) {
     const btn = document.createElement('button')
     btn.type = 'button'
-    btn.className = 'lotus-touch-jump'
+    btn.className = className
     btn.textContent = label
     btn.setAttribute('aria-label', label)
     parent.appendChild(btn)
@@ -205,6 +244,13 @@ export class TouchJumpButton {
     this.root.remove()
     this.down = false
     this.just = false
+  }
+}
+
+/** Large jump button (bottom-right). */
+export class TouchJumpButton extends TouchActionButton {
+  constructor(parent: HTMLElement, label = 'Jump') {
+    super(parent, label, 'lotus-touch-jump')
   }
 }
 

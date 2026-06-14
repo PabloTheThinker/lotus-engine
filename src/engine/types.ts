@@ -252,6 +252,10 @@ export interface SerializedActor {
   animParams?: Record<string, number>
   /** Wave 40 — 1D blend param driven by this @export script var */
   blendScriptVarLink?: string
+  /** Wave 45 — 2D blend paramX driven by this @export script var */
+  blendScriptVarLinkX?: string
+  /** Wave 45 — 2D blend paramY driven by this @export script var */
+  blendScriptVarLinkY?: string
   /** material node graph */
   materialGraph?: import('./materialGraph').MaterialGraph
   /** cpu = fast per-object; gpu = per-pixel shader graph */
@@ -377,6 +381,12 @@ export interface FoliageProps {
   snap?: boolean
   /** GridMap brush radius in cells (0 = single cell) */
   gridBrushSize?: number
+  /** Active TileMap layer index (0–3) */
+  activeGridLayer?: number
+  /** Per-layer packed cells — same tuple as instances */
+  gridLayers?: Record<number, number[][]>
+  /** 4-neighbor autotile variant refresh on paint (snap mode) */
+  gridAutotile?: boolean
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {
@@ -620,6 +630,8 @@ export interface EnvironmentSettings {
   exportBatchStatic?: boolean
   /** Wave 39 — on-screen touch stick + jump (auto on touch devices when unset) */
   touchControls?: boolean
+  /** Wave 44 — Gamepad API stick + face buttons (auto when a pad is connected when unset) */
+  gamepadControls?: boolean
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */

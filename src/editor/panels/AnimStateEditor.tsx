@@ -204,6 +204,23 @@ export function AnimStateEditor() {
       ev.kind === 'range' ||
       (ev.kind === 'plain' && (typeof ev.value === 'number' || typeof ev.value === 'boolean')),
   )
+
+  const setBlend2dLink = (axis: 'X' | 'Y', next?: string) => {
+    const field = axis === 'X' ? 'blendScriptVarLinkX' : 'blendScriptVarLinkY'
+    const prev = actor[field]
+    runCommand(
+      new PropertyCommand(
+        `Blend 2D @export link ${axis} → ${actor.name}`,
+        () => {
+          actor[field] = next
+        },
+        () => {
+          actor[field] = prev
+        },
+      ),
+    )
+    useEditor.getState().touch()
+  }
   const blendSpan = Math.max(0.001, blendMax - blendMin)
 
   const valueToX = (v: number, w: number) => 40 + ((v - blendMin) / blendSpan) * (w - 80)
@@ -307,8 +324,48 @@ export function AnimStateEditor() {
                 onChange={(e) => mutateBlend2d((b) => (b.paramY = e.target.value))}
               />
             </label>
+            <label className="field">
+              <span>@export link X</span>
+              <select
+                value={actor.blendScriptVarLinkX ?? ''}
+                onChange={(e) => setBlend2dLink('X', e.target.value || undefined)}
+                title="Drive paramX from an @export script var at runtime"
+              >
+                <option value="">(animParams.{blend2d.paramX})</option>
+                {blendLinkExports.map((ev) => (
+                  <option key={ev.name} value={ev.name}>
+                    {ev.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>@export link Y</span>
+              <select
+                value={actor.blendScriptVarLinkY ?? ''}
+                onChange={(e) => setBlend2dLink('Y', e.target.value || undefined)}
+                title="Drive paramY from an @export script var at runtime"
+              >
+                <option value="">(animParams.{blend2d.paramY})</option>
+                {blendLinkExports.map((ev) => (
+                  <option key={ev.name} value={ev.name}>
+                    {ev.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="panel-empty">
-              Runtime: animParams.{blend2d.paramX} × animParams.{blend2d.paramY} drive barycentric blend.
+              Runtime:{' '}
+              {actor.blendScriptVarLinkX || actor.blendScriptVarLinkY
+                ? [
+                    actor.blendScriptVarLinkX
+                      ? `scriptVars.${actor.blendScriptVarLinkX} → "${blend2d.paramX}"`
+                      : `animParams.${blend2d.paramX}`,
+                    actor.blendScriptVarLinkY
+                      ? `scriptVars.${actor.blendScriptVarLinkY} → "${blend2d.paramY}"`
+                      : `animParams.${blend2d.paramY}`,
+                  ].join(' × ')
+                : `animParams.${blend2d.paramX} × animParams.${blend2d.paramY} drive barycentric blend.`}
             </div>
           </div>
           <div className="anim-blend2d-plot-wrap">

@@ -5,7 +5,9 @@ import { isCharacterControllerReady, moveAndSlide } from '../engine/characterCon
 import { getRapier, physicsReady } from '../engine/physics'
 import { world } from '../engine/World'
 import { ensurePlayVehicle, isRaycastVehicleReady, updateRaycastVehicle } from '../engine/physicsVehicle'
+import { getGamepadMoveAxis, isGamepadJumpDown, pollGamepadInput, shouldEnableGamepadControls } from '../engine/gamepadInput'
 import { getTouchMoveAxis, isTouchJumpDown } from '../engine/touchInput'
+import type { EnvironmentSettings } from '../engine/types'
 
 /**
  * PlayController — the pawn possessed during Play-In-Editor.
@@ -40,6 +42,8 @@ export class PlayController {
   /** When true, use Rapier move_and_slide instead of raycast character (World Settings). */
   useRapierCharacter = true
   useRaycastVehicle = false
+  /** Wave 44 — poll Gamepad API each frame when enabled. */
+  gamepadControls = true
   private spawnPoint = new THREE.Vector3()
   private readonly eyeHeight = 1.65
   private readonly boomLength = 4.5
@@ -150,6 +154,16 @@ export class PlayController {
     return this.mode === 'fly' ? this.camera.position : this.feet
   }
 
+  /** camera look yaw (radians) — for script hitscan */
+  get viewYaw(): number {
+    return this.yaw
+  }
+
+  /** camera look pitch (radians) */
+  get viewPitch(): number {
+    return this.pitch
+  }
+
   /**
    * Wall collision: cast at knee and chest height along the move direction;
    * on hit, slide along the wall (strip the into-wall component).
@@ -223,6 +237,19 @@ export class PlayController {
     }
   }
 
+  setGamepadControls(env: EnvironmentSettings) {
+    this.gamepadControls = shouldEnableGamepadControls(env.gamepadControls)
+  }
+
+  private mergedMoveAxis() {
+    const touch = getTouchMoveAxis()
+    const gamepad = getGamepadMoveAxis()
+    return {
+      x: Math.abs(gamepad.x) > Math.abs(touch.x) ? gamepad.x : touch.x,
+      y: Math.abs(gamepad.y) > Math.abs(touch.y) ? gamepad.y : touch.y,
+    }
+  }
+
   update(dt: number) {
     if (!this.active) {
       // keep third-person body parked where the pawn is even while ejected
@@ -230,17 +257,19 @@ export class PlayController {
       return
     }
 
+    if (this.gamepadControls) pollGamepadInput()
+
     const move = new THREE.Vector3()
     if (this.keys.has('KeyW')) move.z -= 1
     if (this.keys.has('KeyS')) move.z += 1
     if (this.keys.has('KeyA')) move.x -= 1
     if (this.keys.has('KeyD')) move.x += 1
-    const touch = getTouchMoveAxis()
+    const alt = this.mergedMoveAxis()
     const td = 0.28
-    if (touch.y < -td) move.z -= 1
-    if (touch.y > td) move.z += 1
-    if (touch.x < -td) move.x -= 1
-    if (touch.x > td) move.x += 1
+    if (alt.y < -td) move.z -= 1
+    if (alt.y > td) move.z += 1
+    if (alt.x < -td) move.x -= 1
+    if (alt.x > td) move.x += 1
 
     if (this.mode === 'vehicle') {
       if (this.useRaycastVehicle && physicsReady()) {
@@ -314,7 +343,7 @@ export class PlayController {
     }
 
     if (this.useRapierCharacter && physicsReady() && isCharacterControllerReady()) {
-      if (this.grounded && (this.keys.has('Space') || isTouchJumpDown())) this.vy = 8.5
+      if (this.grounded && (this.keys.has('Space') || isTouchJumpDown() || isGamepadJumpDown())) this.vy = 8.5
       this.vy -= 22 * dt
       const res = moveAndSlide({
         position: this.feet,
@@ -338,7 +367,7 @@ export class PlayController {
         this.body.rotation.y = Math.atan2(-dx, -dz)
       }
       this.vy -= 22 * dt
-      if (this.grounded && (this.keys.has('Space') || isTouchJumpDown())) {
+      if (this.grounded && (this.keys.has('Space') || isTouchJumpDown() || isGamepadJumpDown())) {
         this.vy = 8.5
         this.grounded = false
       }

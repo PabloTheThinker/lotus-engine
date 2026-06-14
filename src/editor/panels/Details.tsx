@@ -47,6 +47,7 @@ import {
   summarizePrefabOverrides,
 } from '../prefabs'
 import { buildFoliageMesh } from '../../engine/factory'
+import { activeGridLayerIndex, getLayerCellCount, syncGridInstancesFromLayers } from '../../engine/gridMap'
 import { buildLandscapeMesh, syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
@@ -2496,6 +2497,7 @@ function FoliageSection({ actor }: { actor: Actor }) {
   const setFoliagePaint = useEditor((s) => s.setFoliagePaint)
   const props = actor.foliageProps!
   const gridMode = !!props.snap
+  const activeLayer = activeGridLayerIndex(props)
   const rebuild = () => {
     buildFoliageMesh(actor)
     touch()
@@ -2526,18 +2528,48 @@ function FoliageSection({ actor }: { actor: Actor }) {
         </>
       )}
       {gridMode && (
-        <Num
-          label="Grid Brush"
-          value={props.gridBrushSize ?? 0}
-          step={1}
-          min={0}
-          max={8}
-          onLive={(v) => {
-            props.gridBrushSize = Math.max(0, Math.floor(v))
-            touch()
-          }}
-          onCommit={() => {}}
-        />
+        <>
+          <label className="field">
+            <span>Layer</span>
+            <div className="paint-layers">
+              {[0, 1, 2, 3].map((i) => (
+                <span
+                  key={i}
+                  className={`paint-layer ${activeLayer === i ? 'active' : ''}`}
+                  onClick={() => {
+                    props.activeGridLayer = i
+                    touch()
+                  }}
+                >
+                  {i}
+                </span>
+              ))}
+            </div>
+          </label>
+          <label className="field check">
+            <span>Autotile</span>
+            <input
+              type="checkbox"
+              checked={!!props.gridAutotile}
+              onChange={(e) => {
+                props.gridAutotile = e.target.checked
+                touch()
+              }}
+            />
+          </label>
+          <Num
+            label="Grid Brush"
+            value={props.gridBrushSize ?? 0}
+            step={1}
+            min={0}
+            max={8}
+            onLive={(v) => {
+              props.gridBrushSize = Math.max(0, Math.floor(v))
+              touch()
+            }}
+            onCommit={() => {}}
+          />
+        </>
       )}
       <label className="field check">
         <span>Paint Mode</span>
@@ -2545,15 +2577,23 @@ function FoliageSection({ actor }: { actor: Actor }) {
       </label>
       <button
         onClick={() => {
-          props.instances = []
+          if (gridMode) {
+            if (props.gridLayers) props.gridLayers[activeLayer] = []
+            else props.instances = []
+            syncGridInstancesFromLayers(props)
+          } else {
+            props.instances = []
+          }
           rebuild()
         }}
       >
-        Clear ({props.instances.length} {gridMode ? 'tiles' : 'instances'})
+        Clear (
+        {gridMode ? getLayerCellCount(props, activeLayer) : props.instances.length}{' '}
+        {gridMode ? `layer ${activeLayer} tiles` : 'instances'})
       </button>
       <div className="panel-empty" style={{ padding: '2px 0' }}>
         {gridMode
-          ? 'Click-drag paints grid cells · Shift erases · hover shows cell coords in status.'
+          ? 'Click-drag paints active layer · Shift erases · autotile refreshes 4-neighbors.'
           : 'Click-drag paints onto surfaces · Shift erases.'}
       </div>
     </Section>

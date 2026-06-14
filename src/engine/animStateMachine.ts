@@ -82,11 +82,15 @@ export function scriptVarAsAnimParam(v: unknown): number | undefined {
 /**
  * Wave 40 (v2.41) — merge animParams with optional blendScriptVarLink override.
  * When set, blendSpace1D.param reads from actor.scriptVars[blendScriptVarLink].
+ * Wave 45 (v2.65) — blendScriptVarLinkX/Y override blendSpace2D paramX/paramY.
  */
 export function resolveAnimParams(actor: {
   animParams?: Record<string, number>
   blendScriptVarLink?: string
+  blendScriptVarLinkX?: string
+  blendScriptVarLinkY?: string
   blendSpace1D?: BlendSpace1D
+  blendSpace2D?: BlendSpace2D
   scriptVars?: Record<string, unknown>
 }): Record<string, number> {
   const params = { ...(actor.animParams ?? {}) }
@@ -95,6 +99,17 @@ export function resolveAnimParams(actor: {
   if (link && param) {
     const n = scriptVarAsAnimParam(actor.scriptVars?.[link])
     if (n !== undefined) params[param] = n
+  }
+  const bs2d = actor.blendSpace2D
+  const linkX = actor.blendScriptVarLinkX?.trim()
+  const linkY = actor.blendScriptVarLinkY?.trim()
+  if (linkX && bs2d?.paramX) {
+    const n = scriptVarAsAnimParam(actor.scriptVars?.[linkX])
+    if (n !== undefined) params[bs2d.paramX] = n
+  }
+  if (linkY && bs2d?.paramY) {
+    const n = scriptVarAsAnimParam(actor.scriptVars?.[linkY])
+    if (n !== undefined) params[bs2d.paramY] = n
   }
   return params
 }

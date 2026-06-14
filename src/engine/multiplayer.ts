@@ -55,6 +55,7 @@ const PREDICT_POS_THRESHOLD = 0.5
 const PREDICT_ROT_THRESHOLD = 0.35
 let sendAcc = 0
 let worldRef: World | null = null
+let scoreDeltaHandler: ((peerId: string, delta: number) => void) | null = null
 /** ids spawned by the network host (safe to despawn on disconnect) */
 const netSpawned = new Set<string>()
 
@@ -336,6 +337,17 @@ export function mpNotifyDespawn(aid: string) {
   send({ t: 'despawn', id: localId, aid })
 }
 
+/** Register host handler for client score requests (indie MP deathmatch). */
+export function mpSetScoreDeltaHandler(fn: ((peerId: string, delta: number) => void) | null) {
+  scoreDeltaHandler = fn
+}
+
+/** Client requests a score delta — host applies via mpSetScoreDeltaHandler. */
+export function mpRequestScoreDelta(delta: number, peerId?: string) {
+  if (!mpConnected() || mpIsHost()) return
+  send({ t: 'score', id: peerId ?? localId, delta })
+}
+
 /** Optional client input uplink (host may consume later). */
 export function mpSendInput(pawnPos: THREE.Vector3 | null, pawnYaw: number, actions?: string[]) {
   if (!mpConnected() || mpIsHost() || mpIsDedicatedServer()) return
@@ -383,6 +395,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       actions?: string[]
       ownerId?: string
       ts?: number
+      delta?: number
     }
     try {
       msg = JSON.parse(String(ev.data))
@@ -431,6 +444,10 @@ export function mpConnect(world: World, status: (msg: string) => void) {
     }
     if (msg.t === 'own' && msg.aid && !mpIsHost() && isFromHost(msg.id)) {
       applyOwnership(msg.aid, msg.ownerId ?? '')
+      return
+    }
+    if (msg.t === 'score' && mpIsHost() && typeof msg.delta === 'number' && msg.id) {
+      scoreDeltaHandler?.(msg.id, msg.delta)
       return
     }
     if (msg.t === 'input' && msg.p && worldRef && mpIsHost()) {
