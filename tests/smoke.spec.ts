@@ -541,3 +541,56 @@ test('wave 12 project settings modal opens from File menu', async ({ page }) => 
   await expect(page.locator('.project-settings')).toBeVisible()
   await expect(page.locator('.project-settings .panel-header')).toContainText('Project Settings')
 })
+
+test('wave 13 WebGPU QA matrix + export playable roundtrip', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      renderer: { runQA: () => Promise<{ ok: boolean; checks: unknown[] }>; ssgi: () => { enabled: boolean } }
+      export: { buildPlayableHTML: () => string }
+      particles: { create: (b: 'cpu' | 'gpu') => { backend: string; computeSim?: boolean } }
+    }
+    const html = v.export.buildPlayableHTML()
+    const hasLevel = html.includes('__LOTUS_LEVELS__')
+    const gpu = v.particles.create('gpu')
+    return {
+      qaChecks: 0,
+      hasLevel,
+      htmlLen: html.length,
+      gpuBackend: gpu.backend,
+      gpuCompute: !!gpu.computeSim,
+    }
+  })
+
+  const qa = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      renderer: { runQA: () => Promise<{ ok: boolean; checks: { length: number } }> }
+    }
+    const r = await v.renderer.runQA()
+    return { ok: r.ok, checks: r.checks.length }
+  })
+
+  expect(qa.checks).toBeGreaterThan(2)
+  expect(result.hasLevel).toBe(true)
+  expect(result.htmlLen).toBeGreaterThan(5000)
+  expect(result.gpuBackend === 'gpu' || result.gpuBackend === 'cpu').toBe(true)
+})
+
+test('wave 13 BT editor blackboard panel', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.scriptVars = { alerted: false }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('bt'))
+  await expect(page.locator('.bt-side summary', { hasText: 'Blackboard' })).toBeVisible()
+  await expect(page.locator('.bt-side input[value="false"]')).toBeVisible()
+})

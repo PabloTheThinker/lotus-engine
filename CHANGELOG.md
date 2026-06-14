@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 13: v0.97–v1.02
+
+### Added
+- **v0.97** WebGPU QA matrix + `createLotusRenderer` — adapter/device checks gate WebGPU tier (`webgpuQA.ts`, `lotusRenderer.ts`)
+- **v0.98** WebGPURenderer viewport swap — opt-in when `renderBackend: webgpu`; WebGL aux for composer/path tracer/probes
+- **v0.99** GPU particle compute tier — `GPUParticleSystem` fixed-substep batch sim when `particleBackend: gpu`
+- **v1.00** SSGI screen-space pass hook — `postStackSSGI.ts` bleed pass in WebGL composer when SSGI enabled
+- **v1.01** BT editor v2 — edge delete (click wire), node property panel, blackboard sidebar
+- **v1.02** Export playable E2E — `window.lotus.export.buildPlayableHTML` roundtrip test; `renderer.runQA` bridge
+
+### Changed
+- Viewport stats badge shows `WEBGPUR` when WebGPURenderer is active on canvas
+- Particle emitters respect `World Settings → Niagara backend` via `createParticleSystem`
+- `window.lotus` bridge: `renderer`, `particles`, `export`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 25 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 12: v0.91–v0.96
 
 ### Added

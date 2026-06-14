@@ -10,7 +10,8 @@ import {
   getPostFxSettings,
   isWebGPUAvailable,
 } from '../engine/renderBackend'
-import { ssgiStatusLabel } from '../engine/ssgiPreset'
+import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } from '../engine/lotusRenderer'
+import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { ensureLightProbeGrid } from '../engine/ssrProbeGI'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
@@ -242,16 +243,33 @@ export function Viewport() {
 
   useEffect(() => {
     const mount = mountRef.current!
+    let disposed = false
+    let teardown: (() => void) | null = null
+
+    void (async () => {
     RectAreaLightUniformsLib.init()
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    const bundle: LotusRendererBundle = await createLotusRenderer(
+      mount,
+      world.environment.renderBackend ?? 'webgl',
+    )
+    if (disposed) {
+      bundle.dispose()
+      return
+    }
+    const renderer = bundle.webgl
+    const primaryRenderer = bundle.primary
+    const webgpuActive = bundle.webgpuActive
+    const domElement = primaryRenderer.domElement
     configureAssetLoaders(renderer)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 0.75
     renderer.outputColorSpace = THREE.SRGBColorSpace
-    mount.appendChild(renderer.domElement)
-    renderer.domElement.tabIndex = -1
+    if (webgpuActive) {
+      primaryRenderer.setSize(mount.clientWidth, mount.clientHeight, false)
+    }
+    domElement.tabIndex = -1
 
     const widget3dLayer = new Widget3DLayer()
     widget3dLayer.attach(mount)
@@ -260,14 +278,14 @@ export function Viewport() {
     const editorCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
     editorCamera.position.set(8, 6, 10)
     editorCamera.lookAt(0, 0, 0)
-    const controls = new EditorCameraControls(editorCamera, renderer.domElement)
+    const controls = new EditorCameraControls(editorCamera, domElement)
 
     const topCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
     const frontCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
     const sideCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 5000)
-    const topControls = new EditorCameraControls(topCamera, renderer.domElement)
-    const frontControls = new EditorCameraControls(frontCamera, renderer.domElement)
-    const sideControls = new EditorCameraControls(sideCamera, renderer.domElement)
+    const topControls = new EditorCameraControls(topCamera, domElement)
+    const frontControls = new EditorCameraControls(frontCamera, domElement)
+    const sideControls = new EditorCameraControls(sideCamera, domElement)
     topControls.setProjection('top')
     frontControls.setProjection('front')
     sideControls.setProjection('side')
@@ -318,7 +336,7 @@ export function Viewport() {
     }
 
     function pointerInPane(e: MouseEvent | { clientX: number; clientY: number }, pane?: PaneRect): void {
-      const rect = renderer.domElement.getBoundingClientRect()
+      const rect = domElement.getBoundingClientRect()
       const pr = pane ?? paneRectFor(activePane())
       pointer.set(
         ((e.clientX - rect.left - pr.screenX) / Math.max(pr.w, 1)) * 2 - 1,
@@ -343,7 +361,7 @@ export function Viewport() {
         paneControls[pane].enabled = pane === st.activeViewportPane
       }
     }
-    const pawn = new PlayController(renderer.domElement)
+    const pawn = new PlayController(domElement)
     world.scene.add(pawn.body)
     pawn.collidables = () => {
       const out: THREE.Object3D[] = []
@@ -366,6 +384,7 @@ export function Viewport() {
       webgpuOk = ok
     })
     const postFx = getPostFxSettings(world.environment)
+    const ssgiSettings = getSSGISettings(world.environment)
     const postStack = createWebGLPostStack(
       renderer,
       world.scene,
@@ -373,6 +392,7 @@ export function Viewport() {
       mount.clientWidth,
       mount.clientHeight,
       postFx,
+      ssgiSettings,
     )
     const composer = postStack.composer
     const renderPass = postStack.renderPass
@@ -444,6 +464,7 @@ export function Viewport() {
 
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
+      postStack.applySSGI(getSSGISettings(world.environment))
     }
 
     // editor-only chrome
@@ -454,7 +475,7 @@ export function Viewport() {
     world.scene.add(grid, axes)
 
     // transform gizmo
-    const gizmo = new TransformControls(editorCamera, renderer.domElement)
+    const gizmo = new TransformControls(editorCamera, domElement)
     const gizmoHelper: THREE.Object3D =
       'getHelper' in gizmo ? (gizmo as unknown as { getHelper(): THREE.Object3D }).getHelper() : (gizmo as unknown as THREE.Object3D)
     gizmoHelper.userData.isHelper = true
@@ -776,7 +797,7 @@ export function Viewport() {
 
     let altLatch = false
     let rmbDown: [number, number] | null = null
-    renderer.domElement.addEventListener('mousedown', (e) => {
+    domElement.addEventListener('mousedown', (e) => {
       altLatch = e.altKey
       if (e.button === 0) downPos = [e.clientX, e.clientY]
       if (e.button === 2) rmbDown = [e.clientX, e.clientY]
@@ -784,19 +805,19 @@ export function Viewport() {
       pickMenuSetter.current(null)
       const st = useEditor.getState()
       if (!st.playing && st.viewportLayout === 'quad') {
-        const rect = renderer.domElement.getBoundingClientRect()
+        const rect = domElement.getBoundingClientRect()
         const hit = paneAt(canvasPaneRects(), e.clientX - rect.left, e.clientY - rect.top)
         if (hit) st.setActiveViewportPane(hit)
       }
     })
 
     // RMB click (no drag) → piercing pick (Unity Ctrl+RMB) or UE context menu
-    renderer.domElement.addEventListener('mouseup', (e) => {
+    domElement.addEventListener('mouseup', (e) => {
       if (e.button !== 2 || !rmbDown) return
       const moved = Math.hypot(e.clientX - rmbDown[0], e.clientY - rmbDown[1])
       rmbDown = null
       if (moved > 4 || useEditor.getState().playing) return
-      const rect = renderer.domElement.getBoundingClientRect()
+      const rect = domElement.getBoundingClientRect()
       const s = useEditor.getState()
       const piercing = e.ctrlKey || e.metaKey || s.gizmoMode === 'select'
       if (piercing) {
@@ -838,7 +859,7 @@ export function Viewport() {
       runCommand(new AddActorCommand(copy))
       s.select(sel.id) // keep the gizmo (and the drag) on the original
     })
-    renderer.domElement.addEventListener('mouseup', (e) => {
+    domElement.addEventListener('mouseup', (e) => {
       if (e.button !== 0 || !downPos || e.altKey) return
       const moved = Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1])
       downPos = null
@@ -888,7 +909,7 @@ export function Viewport() {
       }
     }
 
-    renderer.domElement.addEventListener('mousedown', (e) => {
+    domElement.addEventListener('mousedown', (e) => {
       const s = useEditor.getState()
       if (e.button !== 0 || !s.sculptActive || s.playing) return
       const land = s.selectedId ? world.actors.get(s.selectedId) : null
@@ -898,7 +919,7 @@ export function Viewport() {
       sculptAt(e)
       e.stopPropagation()
     })
-    renderer.domElement.addEventListener('mousemove', (e) => {
+    domElement.addEventListener('mousemove', (e) => {
       const s = useEditor.getState()
       // brush cursor follows the terrain whenever sculpt mode is on
       if (s.sculptActive && !s.playing) {
@@ -1006,7 +1027,7 @@ export function Viewport() {
       s.touch()
     }
 
-    renderer.domElement.addEventListener('mousedown', (e) => {
+    domElement.addEventListener('mousedown', (e) => {
       const s = useEditor.getState()
       if (e.button !== 0 || !s.foliagePaint || s.playing) return
       const layer = s.selectedId ? world.actors.get(s.selectedId) : null
@@ -1017,7 +1038,7 @@ export function Viewport() {
       stampFoliage(e)
       e.stopPropagation()
     })
-    renderer.domElement.addEventListener('mousemove', (e) => {
+    domElement.addEventListener('mousemove', (e) => {
       if (painting) stampFoliage(e)
     })
     window.addEventListener('mouseup', () => {
@@ -1091,7 +1112,7 @@ export function Viewport() {
       const v = new THREE.Vector3()
       return raycaster.ray.intersectPlane(plane, v) ? v : null
     }
-    renderer.domElement.addEventListener('dragover', (e) => {
+    domElement.addEventListener('dragover', (e) => {
       e.preventDefault()
       if (!dragGhost.payload) return
       const p = surfacePointAt(e)
@@ -1100,10 +1121,10 @@ export function Viewport() {
       g.visible = true
       g.position.set(p.x, dragGhost.payload.kind === 'mesh' ? p.y + 0.5 : p.y + 0.4, p.z)
     })
-    renderer.domElement.addEventListener('dragleave', () => {
+    domElement.addEventListener('dragleave', () => {
       if (ghostMesh) ghostMesh.visible = false
     })
-    renderer.domElement.addEventListener('drop', (e) => {
+    domElement.addEventListener('drop', (e) => {
       e.preventDefault()
       if (ghostMesh) ghostMesh.visible = false
       dragGhost.payload = null
@@ -1332,6 +1353,10 @@ export function Viewport() {
       const h = mount.clientHeight
       renderer.setSize(w, h)
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      if (webgpuActive) {
+        primaryRenderer.setSize(w, h, false)
+        primaryRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      }
       postStack.setSize(w, h)
       const st = useEditor.getState()
       const panes = computePanes(w, h, st.viewportLayout, st.maximizedPane)
@@ -1740,8 +1765,18 @@ export function Viewport() {
             ptSceneVersion = -1
             ptEnvVersion = -1
           }
-          if (usePostFx) composer.render()
-          else renderer.render(world.scene, activeCam)
+          const useWebGPURender =
+            webgpuActive &&
+            !pathTraceActive &&
+            s.bufferViz === 'none' &&
+            s.viewportLayout === 'single'
+          if (useWebGPURender) {
+            primaryRenderer.render(world.scene, activeCam)
+          } else if (usePostFx) {
+            composer.render()
+          } else {
+            renderer.render(world.scene, activeCam)
+          }
         }
         widget3dLayer.setViewportRect(null)
         widget3dLayer.setSize(mount.clientWidth, mount.clientHeight)
@@ -1854,13 +1889,14 @@ export function Viewport() {
         const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
         const tsl = getTSLPostState(backend === 'webgpu', webgpuOk)
         const ssgi = ssgiStatusLabel(world.environment, webgpuOk)
-        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris · ${backend.toUpperCase()}${tsl.tier === 'active' ? '+' : ''}${ssgi}`
+        const tris = rendererTriangleCount(primaryRenderer)
+        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${tris.toLocaleString()} tris · ${backend.toUpperCase()}${webgpuActive ? 'R' : ''}${tsl.tier === 'active' ? '+' : ''}${ssgi}`
         frames = 0
         fpsTimer = 0
       }
     })
 
-    return () => {
+    teardown = () => {
       world.onLevelSwitched = null
       renderer.setAnimationLoop(null)
       window.removeEventListener('keydown', onKeyDown)
@@ -1886,8 +1922,14 @@ export function Viewport() {
       world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)
       world.pawnPosition = null
       widget3dLayer.dispose()
-      renderer.dispose()
-      mount.removeChild(renderer.domElement)
+      bundle.dispose()
+      if (domElement.parentElement === mount) mount.removeChild(domElement)
+    }
+    })()
+
+    return () => {
+      disposed = true
+      teardown?.()
     }
   }, [])
 

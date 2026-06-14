@@ -36,6 +36,9 @@ import { compileBTGraph, emptyBTGraph } from './engine/btGraph'
 import { getActiveBTPaths } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
+import { runWebGPUQAMatrix } from './engine/webgpuQA'
+import { DEFAULT_PARTICLES } from './engine/particles'
+import { createParticleSystem } from './engine/particlesGPU'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
@@ -178,6 +181,16 @@ const lotusBridge = {
   },
   projectSettings: {
     load: loadProjectSettings,
+  },
+  renderer: {
+    runQA: runWebGPUQAMatrix,
+    ssgi: () => getSSGISettings(world.environment),
+  },
+  particles: {
+    create: (backend: 'cpu' | 'gpu' = 'cpu') => createParticleSystem({ ...DEFAULT_PARTICLES, maxParticles: 32 }, backend),
+  },
+  export: {
+    buildPlayableHTML,
   },
 }
 const win = window as unknown as Record<string, unknown>

@@ -696,7 +696,7 @@ export class World {
         }
         break
       case 'ParticleEmitter':
-        actor = createParticleEmitterActor(sa.name, sa.id)
+        actor = createParticleEmitterActor(sa.name, sa.id, this.environment.particleBackend ?? 'cpu')
         if (sa.particles) {
           actor.particleProps = { ...DEFAULT_PARTICLES, ...sa.particles }
           actor.particleSystem!.props = actor.particleProps

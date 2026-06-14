@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
-import { ParticleSystem, DEFAULT_PARTICLES } from './particles'
+import { DEFAULT_PARTICLES } from './particles'
+import { createParticleSystem, type ParticleBackend } from './particlesGPU'
 import type { ActorType, CameraProps, GeometryKind, Label3DProps, LightProps, MaterialProps } from './types'
 import { DEFAULT_FOLIAGE, DEFAULT_LABEL3D, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS, DEFAULT_SOUND_EMITTER } from './types'
 import type { FoliageProps } from './types'
@@ -155,10 +156,14 @@ export function createEmptyActor(name: string, id = nextActorId()): Actor {
 }
 
 /** ParticleEmitter — Niagara/CPUParticles3D analog with editor preview. */
-export function createParticleEmitterActor(name: string, id = nextActorId()): Actor {
+export function createParticleEmitterActor(
+  name: string,
+  id = nextActorId(),
+  particleBackend: ParticleBackend = 'cpu',
+): Actor {
   const actor = new Actor(id, name, 'ParticleEmitter')
   actor.particleProps = { ...DEFAULT_PARTICLES }
-  const system = new ParticleSystem(actor.particleProps)
+  const system = createParticleSystem(actor.particleProps, particleBackend)
   system.points.userData.actorId = id
   system.ribbon.userData.actorId = id
   system.mesh.userData.actorId = id

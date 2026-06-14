@@ -8,6 +8,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
 import { SSRPass } from 'three/addons/postprocessing/SSRPass.js'
 import type { PostFxSettings } from './renderBackend'
+import { createSSGIPass, updateSSGIPass } from './postStackSSGI'
+import type { SSGISettings } from './ssgiPreset'
 
 export interface WebGLPostStack {
   composer: EffectComposer
@@ -16,7 +18,9 @@ export interface WebGLPostStack {
   ssaoPass: SSAOPass | null
   ssrPass: SSRPass | null
   fxaaPass: ShaderPass | null
+  ssgiPass: ShaderPass | null
   setSize: (w: number, h: number) => void
+  applySSGI: (settings: SSGISettings) => void
   applySettings: (post: {
     bloomEnabled: boolean
     bloomStrength: number
@@ -34,6 +38,7 @@ export function createWebGLPostStack(
   width: number,
   height: number,
   fx: PostFxSettings,
+  ssgi?: SSGISettings,
 ): WebGLPostStack {
   const floatOk = renderer.capabilities.isWebGL2 && !!renderer.extensions.get('EXT_color_buffer_float')
   const composerTarget = new THREE.WebGLRenderTarget(width, height, {
@@ -70,6 +75,9 @@ export function createWebGLPostStack(
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.6, 0.9)
   composer.addPass(bloomPass)
 
+  const ssgiPass = ssgi ? createSSGIPass(ssgi) : null
+  if (ssgiPass) composer.addPass(ssgiPass)
+
   let fxaaPass: ShaderPass | null = null
   if (fx.fxaa) {
     fxaaPass = new ShaderPass(FXAAShader)
@@ -85,6 +93,10 @@ export function createWebGLPostStack(
     ssaoPass,
     ssrPass,
     fxaaPass,
+    ssgiPass,
+    applySSGI(settings) {
+      updateSSGIPass(ssgiPass, settings)
+    },
     setSize(w, h) {
       composer.setSize(w, h)
       bloomPass.resolution.set(w, h)

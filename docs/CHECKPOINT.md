@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 12)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 13)
 
-> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v0.96.
+> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.02.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v0.96 (wave 12).** v0.33–v0.96 shipped; **build clean**, **`npm run test` — 23 passed**.
+- **Last clean commit: v1.02 (wave 13).** v0.33–v1.02 shipped; **build clean**, **`npm run test` — 25 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -161,13 +161,24 @@
 | v0.95 | Voronoi fracture + strain multiplier on breakable physics |
 | v0.96 | SSGI quality preset (WebGPU) + command palette asset search |
 
-## Next up (v0.97+, Wave 13)
+## Shipped wave 13 (v0.97 → v1.02)
 
-1. **Full WebGPURenderer swap** — after QA matrix
-2. **GPU particles compute** — full TSL `ComputeNode` sim
-3. **Expanded E2E** — export playable roundtrip
-4. **BT editor** — edge delete, property pins, blackboard panel
-5. **SSGI** — real screen-space pass hook when WebGPU renderer lands
+| Ver | What |
+|---|---|
+| v0.97 | WebGPU QA matrix + `createLotusRenderer` factory |
+| v0.98 | WebGPURenderer viewport swap (opt-in tier, WebGL aux) |
+| v0.99 | GPU particle compute-tier batch sim (`GPUParticleSystem`) |
+| v1.00 | SSGI screen-space pass in WebGL composer |
+| v1.01 | BT editor v2 — wire delete, node props, blackboard panel |
+| v1.02 | Export playable E2E + `window.lotus.renderer` bridge |
+
+## Next up (v1.03+, Wave 14)
+
+1. **TSL PostProcessing** — full bloom/SSAO migration off EffectComposer
+2. **GPU particles** — real `ComputeNode` sim (not batch CPU)
+3. **Export playable** — load exported HTML in Playwright and assert play boot
+4. **WebGPU export runtime** — match editor tier in `runtime.js`
+5. **BT editor** — edge drag-to-connect, decorator nodes
 
 ## Remaining gap-list queue (post–wave 7)
 
