@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import { getActiveBTGraphNodeId, getActiveBTServiceNodeIds } from '../../engine/behaviorTree'
 import {
@@ -19,6 +19,7 @@ import {
   summarizeBTServices,
   diffBTScriptPreview,
   getBTScriptDiffGutterNodeIds,
+  scrollRectForBTNode,
   getBTNodeServiceCompileHint,
   validateBTGraph,
   type BTGraph,
@@ -160,6 +161,18 @@ export function BTEditor() {
     return () => cancelAnimationFrame(raf)
   }, [playing, actor?.id, actor?.btGraph])
 
+  const canvasBounds = useMemo(() => {
+    const g = graph
+    if (!g) return { w: 800, h: 320 }
+    let maxX = 400
+    let maxY = 280
+    for (const n of g.nodes) {
+      maxX = Math.max(maxX, n.x + NODE_W + 48)
+      maxY = Math.max(maxY, n.y + HEADER_H + 48)
+    }
+    return { w: maxX, h: maxY }
+  }, [graph])
+
   if (!actor || !graph) {
     return <div className="panel-empty">Select an actor to edit its Behavior Tree.</div>
   }
@@ -286,8 +299,20 @@ export function BTEditor() {
   }
 
   const canvasPoint = (e: React.MouseEvent) => {
-    const rect = canvasRef.current!.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const wrap = canvasRef.current!
+    const rect = wrap.getBoundingClientRect()
+    return {
+      x: e.clientX - rect.left + wrap.scrollLeft,
+      y: e.clientY - rect.top + wrap.scrollTop,
+    }
+  }
+
+  const scrollNodeIntoView = (nodeId: string) => {
+    const wrap = canvasRef.current
+    const target = graph?.nodes.find((n) => n.id === nodeId)
+    if (!wrap || !target) return
+    const { scrollLeft, scrollTop } = scrollRectForBTNode(target, wrap.clientWidth, wrap.clientHeight, NODE_W, HEADER_H)
+    wrap.scrollTo({ left: scrollLeft, top: scrollTop, behavior: 'smooth' })
   }
 
   const node = selectedNode ? graph.nodes.find((n) => n.id === selectedNode) : null
@@ -415,7 +440,7 @@ export function BTEditor() {
             setAddMenu(p)
           }}
         >
-          <svg className="bt-canvas" width="100%" height="280">
+          <svg className="bt-canvas" width={canvasBounds.w} height={canvasBounds.h}>
             {pendingWire && (() => {
               const from = graph.nodes.find((n) => n.id === pendingWire.from)
               if (!from) return null
@@ -524,6 +549,7 @@ export function BTEditor() {
                       onClick={(e) => {
                         e.stopPropagation()
                         setSelectedNode(n.id)
+                        scrollNodeIntoView(n.id)
                         const hint = getBTNodeServiceCompileHint(graph, n.id)
                         useEditor.getState().setStatus(hint ?? `Script diff at ${def.title}`)
                       }}
@@ -614,7 +640,31 @@ export function BTEditor() {
           <details className="details-section" open={scriptDiff.changed}>
             <summary>Script compile diff</summary>
             <pre className={`bt-preview bt-script-diff${scriptDiff.changed ? ' changed' : ''}`}>
-              {scriptDiff.lines.join('\n')}
+              {scriptDiff.entries.map((entry, i) => (
+                <span
+                  key={i}
+                  className={entry.nodeId ? 'bt-script-diff-line jump' : 'bt-script-diff-line'}
+                  role={entry.nodeId ? 'button' : undefined}
+                  tabIndex={entry.nodeId ? 0 : undefined}
+                  onClick={() => {
+                    if (!entry.nodeId) return
+                    setSelectedNode(entry.nodeId)
+                    scrollNodeIntoView(entry.nodeId)
+                    const hint = getBTNodeServiceCompileHint(graph, entry.nodeId)
+                    useEditor.getState().setStatus(hint ?? `Jumped to diff node`)
+                  }}
+                  onKeyDown={(e) => {
+                    if (entry.nodeId && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault()
+                      setSelectedNode(entry.nodeId)
+                      scrollNodeIntoView(entry.nodeId)
+                    }
+                  }}
+                >
+                  {entry.text}
+                  {'\n'}
+                </span>
+              ))}
             </pre>
           </details>
           <details className="details-section" open>

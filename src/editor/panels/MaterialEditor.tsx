@@ -86,6 +86,20 @@ function nodesInSoloChannel(graph: MaterialGraph, channel: string | null): Set<s
   return ids
 }
 
+const CHANNEL_LEGEND_COLORS: Record<string, string> = {
+  baseColor: '#5b8def',
+  emissive: '#e87840',
+  emissiveInt: '#c06030',
+  roughness: '#9aa0a8',
+  metalness: '#b8c0cc',
+  opacity: '#7a8a9a',
+  clearCoat: '#88c8ff',
+  clearCoatRoughness: '#6aa8d8',
+  sheen: '#d8b8ff',
+  sheenRoughness: '#a888d8',
+  wpo: '#66cc88',
+}
+
 function MaterialGraphMinimap({
   graph,
   isolateChannel,
@@ -103,6 +117,7 @@ function MaterialGraphMinimap({
   viewportH: number
   onPanTo: (gx: number, gy: number) => void
 }) {
+  const dragPan = useRef(false)
   if (graph.nodes.length < 2) return null
   let minX = Infinity
   let minY = Infinity
@@ -128,17 +143,34 @@ function MaterialGraphMinimap({
   const viewGy = -panOffset.y / Math.max(zoom, 0.05)
   const viewGw = vw / Math.max(zoom, 0.05)
   const viewGh = vh / Math.max(zoom, 0.05)
+  const mapMinimapPoint = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    return { gx: mx / sx + minX - pad, gy: my / sy + minY - pad }
+  }
   return (
     <svg
       className="mat-minimap"
       width={mw}
       height={mh}
       aria-label="Material graph minimap"
-      onClick={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect()
-        const mx = e.clientX - rect.left
-        const my = e.clientY - rect.top
-        onPanTo(mx / sx + minX - pad, my / sy + minY - pad)
+      onMouseDown={(e) => {
+        e.preventDefault()
+        dragPan.current = true
+        const { gx, gy } = mapMinimapPoint(e)
+        onPanTo(gx, gy)
+      }}
+      onMouseMove={(e) => {
+        if (!dragPan.current) return
+        const { gx, gy } = mapMinimapPoint(e)
+        onPanTo(gx, gy)
+      }}
+      onMouseUp={() => {
+        dragPan.current = false
+      }}
+      onMouseLeave={() => {
+        dragPan.current = false
       }}
     >
       {graph.edges.map((edge, i) => {
@@ -565,6 +597,23 @@ export function MaterialEditor() {
           viewportH={viewportSize.h}
           onPanTo={panToGraph}
         />
+        {wiredChannels.length > 0 && (
+          <div className="mat-channel-legend" aria-label="Wired material channels">
+            {wiredChannels.map((ch) => (
+              <button
+                key={ch}
+                type="button"
+                className={`mat-legend-chip${isolateChannel === ch ? ' active' : ''}`}
+                style={{ '--legend-color': CHANNEL_LEGEND_COLORS[ch] ?? '#6eb5ff' } as React.CSSProperties}
+                title={`Solo ${ch} (Alt+${wiredChannels.indexOf(ch) + 1})`}
+                onClick={() => setIsolateChannel((prev) => (prev === ch ? null : ch))}
+              >
+                <span className="mat-legend-swatch" />
+                {ch}
+              </button>
+            ))}
+          </div>
+        )}
         <div
           className="bp-canvas mat-canvas-pan"
           ref={canvasRef}

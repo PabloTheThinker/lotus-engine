@@ -3,7 +3,7 @@ import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
 import { DEFAULT_TSL_DOF, type TSLDOFSettings } from './postStackDOF'
-import type { ColorGradingSettings } from './postStackColorGrading'
+import { applyColorGradingTSL, type ColorGradingSettings } from './postStackColorGrading'
 import { applySSRToTSLNode, type SSRSettings } from './ssrPreset'
 import { syncTSLSSRGround, type TSLSSRGroundHandle } from './ssrGround'
 
@@ -27,6 +27,7 @@ export interface TSLPipelineStack {
     ssrSettings?: SSRSettings,
     dofSettings?: TSLDOFSettings,
     colorGrading?: ColorGradingSettings,
+    aces?: { enabled: boolean; exposure: number },
   ) => void
   dispose: () => void
 }
@@ -90,11 +91,17 @@ export async function createTSLRenderPipeline(
     const velocity = (tsl as { velocity: unknown }).velocity
     const metalness = (tsl as { metalness: unknown }).metalness
     const roughness = (tsl as { roughness: unknown }).roughness
-    const vec3 = (tsl as { vec3: (n: unknown) => unknown }).vec3
+    const vec2 = (tsl as { vec2: (a: unknown, b: unknown) => unknown }).vec2
+    const vec3 = (tsl as { vec3: (a: unknown, b?: unknown) => unknown }).vec3
     const vec4 = (tsl as { vec4: (a: unknown, b?: unknown) => unknown }).vec4
     const mul = (tsl as { mul: (a: unknown, b: unknown) => unknown }).mul
     const add = (tsl as { add: (a: unknown, b: unknown) => unknown }).add
     const float = (tsl as { float: (n: number) => unknown }).float
+    const max = (tsl as { max: (a: unknown, b: unknown) => unknown }).max
+    const pow = (tsl as { pow: (a: unknown, b: unknown) => unknown }).pow
+    const acesFilmicToneMapping = (tsl as {
+      acesFilmicToneMapping: (c: unknown, e: unknown) => unknown
+    }).acesFilmicToneMapping
     const perspectiveDepthToViewZ = (tsl as {
       perspectiveDepthToViewZ: (d: unknown, n: unknown, f: unknown) => unknown
     }).perspectiveDepthToViewZ
@@ -121,6 +128,8 @@ export async function createTSLRenderPipeline(
       gamma: [1, 1, 1],
       gain: [1, 1, 1],
     }
+    let acesOn = false
+    let acesExposure = 0.75
     let activeCam = camera
 
     type TSLNode = unknown
@@ -233,10 +242,17 @@ export async function createTSLRenderPipeline(
         }
       }
 
-      if (colorGradingSettings.enabled) {
-        const g = colorGradingSettings.gain
-        const gainAvg = (g[0] + g[1] + g[2]) / 3
-        colorNode = mul(colorNode, float(gainAvg))
+      if (colorGradingSettings.enabled || acesOn) {
+        colorNode = applyColorGradingTSL(colorNode, colorGradingSettings, {
+          vec3: (x, y, z) => vec3(vec2(x, y), z),
+          vec4,
+          float,
+          add,
+          mul,
+          max,
+          pow,
+          acesFilmicToneMapping,
+        }, { aces: acesOn, exposure: acesExposure })
       }
 
       if (bloomOn) {
@@ -291,7 +307,7 @@ export async function createTSLRenderPipeline(
         bloomRadius = r
         rebuildOutput()
       },
-      applyPostFx(fx, bloom, ssgi, ssr, dof, colorGrading) {
+      applyPostFx(fx, bloom, ssgi, ssr, dof, colorGrading, aces) {
         ssaoOn = fx.ssao
         fxaaOn = fx.fxaa
         taaOn = fx.taa
@@ -299,6 +315,10 @@ export async function createTSLRenderPipeline(
         dofOn = fx.dof
         if (dof) dofSettings = dof
         if (colorGrading) colorGradingSettings = colorGrading
+        if (aces) {
+          acesOn = aces.enabled
+          acesExposure = aces.exposure
+        }
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
         ssrSettings = ssr

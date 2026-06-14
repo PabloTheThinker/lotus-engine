@@ -1116,6 +1116,10 @@ export function WorldSettings() {
           <span>Color grading (lift/gamma/gain)</span>
           <input type="checkbox" checked={!!env.postColorGrading} onChange={(e) => set('postColorGrading', e.target.checked)} />
         </label>
+        <label className="field check">
+          <span>ACES tonemap (WebGPU TSL)</span>
+          <input type="checkbox" checked={!!env.postAces} onChange={(e) => set('postAces', e.target.checked)} />
+        </label>
         {env.postColorGrading && (
           <>
             <label className="field">

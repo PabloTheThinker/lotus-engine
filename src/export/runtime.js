@@ -71,7 +71,7 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const { traa } = await import('three/addons/tsl/display/TRAANode.js')
     const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js')
     const { dof } = await import('three/addons/tsl/display/DepthOfFieldNode.js')
-    const { pass, add, mul, mrt, output, normalView, velocity, metalness, roughness, vec3, vec4, float, reflector, perspectiveDepthToViewZ } = tsl
+    const { pass, add, mul, max, pow, mrt, output, normalView, velocity, metalness, roughness, vec3, vec4, float, reflector, perspectiveDepthToViewZ, acesFilmicToneMapping } = tsl
     const env = LEVEL.environment ?? {}
     const bloomOn = env.bloomEnabled !== false
     const strength = env.bloomStrength ?? 0.35
@@ -99,6 +99,11 @@ async function createExportTSLPipeline(primary, scene, camera) {
     }
     const ssgiRow = ssgiTable[ssgiPreset] ?? ssgiTable.off
     const dofOn = env.postDof === true
+    const colorGradingOn = env.postColorGrading === true
+    const acesOn = env.postAces === true
+    const lift = env.postLift ?? [0, 0, 0]
+    const gamma = env.postGamma ?? [1, 1, 1]
+    const gain = env.postGain ?? [1, 1, 1]
     const groundReflect = env.postSsrGround === true && ssrOn
     let tslGround = null
     if (groundReflect) {
@@ -169,6 +174,22 @@ async function createExportTSLPipeline(primary, scene, camera) {
           ssrTex = denoise(ssrTex, depth, normal, activeCam)
           color = add(color, ssrTex)
         }
+      }
+      if (colorGradingOn || acesOn) {
+        const zero = float(0)
+        const minGamma = vec3(0.01, 0.01, 0.01)
+        let rgb = color.rgb ?? color
+        if (colorGradingOn) {
+          const liftV = vec3(lift[0], lift[1], lift[2])
+          const gammaV = vec3(gamma[0], gamma[1], gamma[2])
+          const gainV = vec3(gain[0], gain[1], gain[2])
+          rgb = pow(max(add(rgb, liftV), zero), max(gammaV, minGamma))
+          rgb = mul(rgb, gainV)
+        }
+        if (acesOn) {
+          rgb = acesFilmicToneMapping(rgb, float(env.exposure ?? 0.75))
+        }
+        color = color.a !== undefined ? vec4(rgb, color.a) : rgb
       }
       if (bloomOn) {
         const bp = bloom(color, strength, radius, threshold)

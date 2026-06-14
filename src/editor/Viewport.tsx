@@ -14,7 +14,7 @@ import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } 
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getSSRSettings, ssrStatusLabel } from '../engine/ssrPreset'
 import { getDOFSettings } from '../engine/postStackDOF'
-import { getColorGradingSettings } from '../engine/postStackColorGrading'
+import { getACESPostEnabled, getColorGradingSettings } from '../engine/postStackColorGrading'
 import { syncSSRGroundReflector } from '../engine/ssrGround'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { createTSLRenderPipeline, type TSLPipelineStack } from '../engine/postStackTSLPipeline'
@@ -526,6 +526,7 @@ export function Viewport() {
         getSSRSettings(world.environment),
         dof.tsl,
         colorGrading,
+        { enabled: getACESPostEnabled(world.environment), exposure: world.environment.exposure ?? 0.75 },
       )
     }
 

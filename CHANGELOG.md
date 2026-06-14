@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 26: v1.69–v1.73
+
+### Added
+- **v1.69** TSL post full LGG — `applyColorGradingTSL` lift/gamma/gain on WebGPU (replaces gain-only stub)
+- **v1.70** ACES filmic tonemap stub — `postAces` env + `acesFilmicToneMapping` in editor/export TSL pipelines
+- **v1.71** GPU particle wind/rotation — Niagara modules on integrate kernel (`windX/Y/Z`, `rotationSpeed` uniforms)
+- **v1.72** Export TSL color grading parity — LGG + ACES block in `createExportTSLPipeline`
+- **v1.73** BT diff scroll/jump + material minimap drag-pan + channel legend — 74 tests passed
+
+### Changed
+- `window.lotus.colorGrading.acesEnabled()` + `bt.diffLineTargets` + `bt.scrollRectForNode` bridges
+- BT canvas scrollable with gutter `≠` scroll-into-view; compile diff lines click-to-jump
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 74 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 25: v1.64–v1.68
 
 ### Added

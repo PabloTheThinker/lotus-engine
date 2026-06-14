@@ -45,6 +45,8 @@ import {
   summarizeBTServices,
   diffBTScriptPreview,
   getBTScriptDiffGutterNodeIds,
+  getBTScriptDiffLineTargets,
+  scrollRectForBTNode,
   getBTNodeServiceCompileHint,
   validateBTGraph,
 } from './engine/btGraph'
@@ -52,7 +54,7 @@ import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTr
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
 import { getDOFSettings, resolveCameraDOFFocusDistance } from './engine/postStackDOF'
-import { getColorGradingSettings } from './engine/postStackColorGrading'
+import { getACESPostEnabled, getColorGradingSettings } from './engine/postStackColorGrading'
 import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
@@ -228,6 +230,9 @@ const lotusBridge = {
     summarizeServices: summarizeBTServices,
     diffScript: (graph = emptyBTGraph(), script = '') => diffBTScriptPreview(script, graph),
     diffGutter: (graph = emptyBTGraph(), script = '') => getBTScriptDiffGutterNodeIds(script, graph),
+    diffLineTargets: (graph = emptyBTGraph(), script = '') => getBTScriptDiffLineTargets(script, graph),
+    scrollRectForNode: (node: { x: number; y: number }, wrapW: number, wrapH: number) =>
+      scrollRectForBTNode(node, wrapW, wrapH),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
@@ -253,6 +258,7 @@ const lotusBridge = {
   },
   colorGrading: {
     settings: () => getColorGradingSettings(world.environment),
+    acesEnabled: () => getACESPostEnabled(world.environment),
   },
   projectSettings: {
     load: loadProjectSettings,

@@ -116,6 +116,8 @@ export class GPUParticleSystem extends ParticleSystem {
       const p = this.props
       const offForces = p.modulesOff?.includes('forces')
       const offSpawn = p.modulesOff?.includes('spawn')
+      const offWind = p.modulesOff?.includes('wind')
+      const offRotation = p.modulesOff?.includes('rotation')
       const gravity = offForces ? 0 : p.gravity
       const drag = offForces ? 0 : p.drag
 
@@ -142,7 +144,15 @@ export class GPUParticleSystem extends ParticleSystem {
           colorStart: [c0.r, c0.g, c0.b] as [number, number, number],
           colorEnd: [c1.r, c1.g, c1.b] as [number, number, number],
         }
-        if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style)) {
+        const modules = {
+          windX: p.windX ?? 0,
+          windY: p.windY ?? 0,
+          windZ: p.windZ ?? 0,
+          rotationSpeed: p.rotationSpeed ?? 0,
+          windOff: offWind || offForces,
+          rotationOff: offRotation || offForces,
+        }
+        if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style, modules)) {
           this.computeIntegratedFrames++
           this.syncGPUAliveFromBuffers()
           const geo = this.points.geometry

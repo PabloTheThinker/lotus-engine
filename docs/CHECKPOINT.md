@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.68 (wave 25).** v0.33–v1.68 shipped; **build clean**, **`npm run test` — 69 passed**.
+- **Last clean commit: v1.73 (wave 26).** v0.33–v1.73 shipped; **build clean**, **`npm run test` — 74 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -298,13 +298,23 @@
 | v1.67 | Perf gate re-probe — `scheduleExportPerfProbe` on save/export |
 | v1.68 | BT gutter click-to-jump; material minimap solo highlight + zoom hint — 69 tests passed |
 
-## Next up (v1.69+, Wave 26)
+## Shipped (v1.69–v1.73, Wave 26)
 
-1. **TSL post** — full lift/gamma/gain on WebGPU + ACES tonemap stub
-2. **GPU particles** — Niagara wind/rotation modules on GPU path
-3. **Export** — color grading + DOF in export TSL pipeline parity
-4. **BT** — gutter diff scroll-into-view + compile diff line jump
-5. **Material TSL** — minimap drag-pan + channel legend overlay
+| Ver | What |
+|---|---|
+| v1.69 | TSL post full LGG — `applyColorGradingTSL` lift/gamma/gain on WebGPU |
+| v1.70 | ACES filmic tonemap stub — `postAces` env + TSL `acesFilmicToneMapping` |
+| v1.71 | GPU particle wind/rotation — integrate kernel uniforms + `particlesGPU` module pass |
+| v1.72 | Export TSL color grading parity — LGG + ACES in `createExportTSLPipeline` |
+| v1.73 | BT diff scroll/jump; material minimap drag-pan + channel legend — 74 tests passed |
+
+## Next up (v1.74+, Wave 27)
+
+1. **TSL post** — ACES polish + exposure-linked grading presets
+2. **GPU particles** — Niagara collision module on GPU path
+3. **Export** — DOF focus-pull sequencer parity in playable runtime
+4. **BT** — diff gutter batch-resolve + PIE sync on compile-to-script
+5. **Material TSL** — minimap zoom wheel + legend channel drag-reorder
 
 ## Remaining gap-list queue (post–wave 7)
 

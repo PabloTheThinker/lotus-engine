@@ -1741,6 +1741,111 @@ test('wave 25 export sub-emitter runtime surface', async ({ page }) => {
   expect(result.hasSpawnBurst || result.hasSubEmitterOn).toBe(true)
 })
 
+test('wave 26 TSL color grading LGG + ACES bridges', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: { settings: () => { lift: number[]; gamma: number[]; gain: number[] }; acesEnabled: () => boolean }
+    }
+    v.world.environment.postColorGrading = true
+    v.world.environment.postLift = [0.05, 0, 0]
+    v.world.environment.postGamma = [1.1, 1, 1]
+    v.world.environment.postGain = [1.15, 1, 1]
+    v.world.environment.postAces = true
+    const cg = v.colorGrading.settings()
+    return { lift: cg.lift[0], gamma: cg.gamma[0], gain: cg.gain[0], aces: v.colorGrading.acesEnabled() }
+  })
+
+  expect(result.lift).toBeCloseTo(0.05)
+  expect(result.gamma).toBeCloseTo(1.1)
+  expect(result.gain).toBeCloseTo(1.15)
+  expect(result.aces).toBe(true)
+})
+
+test('wave 26 GPU particle wind/rotation integrate uniforms', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: { create: (b: 'gpu') => { props: { windX?: number; rotationSpeed?: number } } }
+    }
+    const ps = v.particles.create('gpu')
+    return { windX: ps.props.windX, rotationSpeed: ps.props.rotationSpeed }
+  })
+
+  expect(result.windX).toBeGreaterThan(0)
+  expect(result.rotationSpeed).toBeGreaterThan(0)
+})
+
+test('wave 26 export TSL color grading parity', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    v.world.environment.postColorGrading = true
+    v.world.environment.postAces = true
+    return v.export.buildPlayableHTML()
+  })
+
+  expect(html).toContain('postColorGrading')
+  expect(html).toContain('acesFilmicToneMapping')
+})
+
+test('wave 26 BT diff line jump targets', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        diffLineTargets: (g: import('../src/engine/btGraph').BTGraph, script: string) => Array<{ nodeId: string | null }>
+        scrollRectForNode: (n: { x: number; y: number }, w: number, h: number) => { scrollLeft: number; scrollTop: number }
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const svc = { id: 'svc26', type: 'SvcPlayerNear', x: 200, y: 200, props: { radius: 5 } }
+    const sel = { id: 'sel26', type: 'Selector', x: 300, y: 80, props: {} }
+    graph.nodes.push(svc, sel)
+    graph.edges = [
+      { from: root.id, to: sel.id },
+      { from: sel.id, to: svc.id, kind: 'service' },
+    ]
+    const targets = v.bt.diffLineTargets(graph, '// stale')
+    const scroll = v.bt.scrollRectForNode({ x: 300, y: 80 }, 400, 280)
+    return { hasTarget: targets.some((t) => t.nodeId === 'svc26'), scrollLeft: scroll.scrollLeft }
+  })
+
+  expect(result.hasTarget).toBe(true)
+  expect(result.scrollLeft).toBeGreaterThan(0)
+})
+
+test('wave 26 material minimap legend + drag-pan surface', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+      ],
+      edges: [{ from: 'c1', to: 'out:baseColor' }],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  await expect(page.locator('.mat-channel-legend')).toBeVisible()
+  await expect(page.locator('.mat-legend-chip', { hasText: 'baseColor' })).toBeVisible()
+  await expect(page.locator('.mat-minimap')).toBeVisible()
+})
+
 test('wave 25 material minimap zoom hint', async ({ page }) => {
   await bootEditor(page)
 

@@ -280,16 +280,65 @@ export function getBTScriptDiffGutterNodeIds(
   return [...ids]
 }
 
+export interface BTScriptDiffEntry {
+  text: string
+  nodeId: string | null
+}
+
+/** Wave 26 — map a diff line to a BT node id when possible (services / paths). */
+export function resolveBTScriptDiffLineNodeId(line: string, graph: BTGraph): string | null {
+  const svcMatch = line.match(/"serviceNodeId"\s*:\s*"([^"]+)"/)
+  if (svcMatch) return svcMatch[1]
+  const compiled = compileBTGraph(graphForBTCompile(graph))
+  if (compiled) {
+    for (const [path, id] of Object.entries(compiled.pathIndex)) {
+      if (line.includes(`"${path}"`) || line.includes(path)) return id
+    }
+    for (const svc of compiled.services ?? []) {
+      if (line.includes(svc.serviceNodeId)) return svc.serviceNodeId
+    }
+  }
+  for (const n of graph.nodes) {
+    if (BT_SERVICE_TYPES.has(n.type) && line.includes(n.type)) return n.id
+  }
+  return null
+}
+
+/** Wave 26 — scroll offsets to center a node in the BT canvas viewport. */
+export function scrollRectForBTNode(
+  node: { x: number; y: number },
+  wrapW: number,
+  wrapH: number,
+  nodeW = 170,
+  headerH = 24,
+): { scrollLeft: number; scrollTop: number } {
+  const cx = node.x + nodeW / 2
+  const cy = node.y + headerH / 2
+  return {
+    scrollLeft: Math.max(0, cx - wrapW / 2),
+    scrollTop: Math.max(0, cy - wrapH / 2),
+  }
+}
+
+/** Wave 26 — diff lines with optional node jump targets. */
+export function getBTScriptDiffLineTargets(
+  existingScript: string | undefined,
+  graph: BTGraph,
+): BTScriptDiffEntry[] {
+  const { lines } = diffBTScriptPreview(existingScript, graph)
+  return lines.map((text) => ({ text, nodeId: resolveBTScriptDiffLineNodeId(text, graph) }))
+}
+
 /** Wave 23 — diff actor script vs compile-to-script preview (services-aware). */
 export function diffBTScriptPreview(
   existingScript: string | undefined,
   graph: BTGraph,
-): { changed: boolean; lines: string[]; preview: string } {
+): { changed: boolean; lines: string[]; preview: string; entries: BTScriptDiffEntry[] } {
   const preview = compileBTGraphToScript(graph) ?? ''
   const prev = (existingScript ?? '').trim()
   const next = preview.trim()
-  if (!next) return { changed: false, lines: ['(compile failed)'], preview: '' }
-  if (prev === next) return { changed: false, lines: ['✓ Matches actor script'], preview }
+  if (!next) return { changed: false, lines: ['(compile failed)'], preview: '', entries: [{ text: '(compile failed)', nodeId: null }] }
+  if (prev === next) return { changed: false, lines: ['✓ Matches actor script'], preview, entries: [{ text: '✓ Matches actor script', nodeId: null }] }
   const prevLines = prev.split('\n')
   const nextLines = next.split('\n')
   const lines: string[] = []
@@ -304,7 +353,8 @@ export function diffBTScriptPreview(
   if (!lines.length) lines.push('(script differs — whitespace or length)')
   const svcLine = nextLines.find((l) => l.includes('__btServices'))
   if (svcLine) lines.push(`  services: ${svcLine.trim()}`)
-  return { changed: true, lines, preview }
+  const entries = lines.map((text) => ({ text, nodeId: resolveBTScriptDiffLineNodeId(text, graph) }))
+  return { changed: true, lines, preview, entries }
 }
 
 /** Wave 22 — human-readable service compile preview for BT editor panel. */

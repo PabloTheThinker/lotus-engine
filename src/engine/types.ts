@@ -493,6 +493,8 @@ export interface EnvironmentSettings {
   postLift?: [number, number, number]
   postGamma?: [number, number, number]
   postGain?: [number, number, number]
+  /** Wave 26 — ACES filmic tonemap on WebGPU TSL post stack */
+  postAces?: boolean
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
   /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */
@@ -555,6 +557,7 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   postLift: [0, 0, 0],
   postGamma: [1, 1, 1],
   postGain: [1, 1, 1],
+  postAces: false,
   useRapierCharacter: true,
   useRaycastVehicle: false,
   exportBatchStatic: false,

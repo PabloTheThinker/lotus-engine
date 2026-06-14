@@ -63,3 +63,44 @@ export function updateColorGradingPass(pass: ShaderPass | null, settings: ColorG
   pass.material.uniforms.gamma.value.set(...settings.gamma)
   pass.material.uniforms.gain.value.set(...settings.gain)
 }
+
+/** Wave 26 — TSL lift/gamma/gain + optional ACES filmic tonemap stub. */
+export interface TSLColorGradingOps {
+  vec3: (x: number, y: number, z: number) => unknown
+  vec4: (rgb: unknown, a: unknown) => unknown
+  float: (n: number) => unknown
+  add: (a: unknown, b: unknown) => unknown
+  mul: (a: unknown, b: unknown) => unknown
+  max: (a: unknown, b: unknown) => unknown
+  pow: (a: unknown, b: unknown) => unknown
+  acesFilmicToneMapping: (color: unknown, exposure: unknown) => unknown
+}
+
+export function applyColorGradingTSL(
+  colorNode: unknown,
+  settings: ColorGradingSettings,
+  tsl: TSLColorGradingOps,
+  opts: { aces?: boolean; exposure?: number } = {},
+): unknown {
+  if (!settings.enabled && !opts.aces) return colorNode
+  const node = colorNode as { rgb?: unknown; a?: unknown }
+  const zero = tsl.float(0)
+    const minGamma = tsl.vec3(0.01, 0.01, 0.01)
+  let rgb = node.rgb ?? colorNode
+  if (settings.enabled) {
+    const lift = tsl.vec3(settings.lift[0], settings.lift[1], settings.lift[2])
+    const gamma = tsl.vec3(settings.gamma[0], settings.gamma[1], settings.gamma[2])
+    const gain = tsl.vec3(settings.gain[0], settings.gain[1], settings.gain[2])
+    rgb = tsl.pow(tsl.max(tsl.add(rgb, lift), zero), tsl.max(gamma, minGamma))
+    rgb = tsl.mul(rgb, gain)
+  }
+  if (opts.aces) {
+    rgb = tsl.acesFilmicToneMapping(rgb, tsl.float(opts.exposure ?? 0.75))
+  }
+  if (node.a !== undefined) return tsl.vec4(rgb, node.a)
+  return rgb
+}
+
+export function getACESPostEnabled(env: EnvironmentSettings): boolean {
+  return env.postAces === true
+}

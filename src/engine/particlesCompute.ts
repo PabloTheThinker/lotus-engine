@@ -25,6 +25,12 @@ interface IntegrateKernel {
   dtU: UniformSlot
   gravityU: UniformSlot
   dragU: UniformSlot
+  windXU: UniformSlot
+  windYU: UniformSlot
+  windZU: UniformSlot
+  rotationSpeedU: UniformSlot
+  windOffU: UniformSlot
+  rotationOffU: UniformSlot
   sizeStartU: UniformSlot
   sizeEndU: UniformSlot
   opacityEndU: UniformSlot
@@ -142,6 +148,13 @@ export async function bindParticleIntegrateKernel(
     const dtU = t.uniform(t.float(0))
     const gravityU = t.uniform(t.float(0))
     const dragU = t.uniform(t.float(0))
+    const windXU = t.uniform(t.float(0))
+    const windYU = t.uniform(t.float(0))
+    const windZU = t.uniform(t.float(0))
+    const rotationSpeedU = t.uniform(t.float(0))
+    const windOffU = t.uniform(t.float(0))
+    const rotationOffU = t.uniform(t.float(0))
+    const degToRad = t.float(Math.PI / 180)
     const sizeStartU = t.uniform(t.float(0.2))
     const sizeEndU = t.uniform(t.float(0.04))
     const opacityEndU = t.uniform(t.float(0))
@@ -159,6 +172,20 @@ export async function bindParticleIntegrateKernel(
         const v = velBuf.element(t.instanceIndex)
         const drag = t.float(1).sub(dragU.mul(dtU) as ScalarEl)
         v.y.addAssign(gravityU)
+        t.If(windOffU.lessThan(0.5), () => {
+          v.x.addAssign(windXU.mul(dtU))
+          v.y.addAssign(windYU.mul(dtU))
+          v.z.addAssign(windZU.mul(dtU))
+        })
+        t.If(rotationOffU.lessThan(0.5), () => {
+          const rad = rotationSpeedU.mul(degToRad).mul(dtU)
+          const vx = v.x
+          const vz = v.z
+          const c = t.cos(rad)
+          const s = t.sin(rad)
+          v.x.assign(vx.mul(c).sub(vz.mul(s)))
+          v.z.assign(vx.mul(s).add(vz.mul(c)))
+        })
         v.x.mulAssign(drag)
         v.y.mulAssign(drag)
         v.z.mulAssign(drag)
@@ -225,6 +252,12 @@ export async function bindParticleIntegrateKernel(
       dtU,
       gravityU,
       dragU,
+      windXU,
+      windYU,
+      windZU,
+      rotationSpeedU,
+      windOffU,
+      rotationOffU,
       sizeStartU,
       sizeEndU,
       opacityEndU,
@@ -315,12 +348,22 @@ export interface ParticleGPUStyle {
   colorEnd: [number, number, number]
 }
 
+export interface ParticleGPUModules {
+  windX?: number
+  windY?: number
+  windZ?: number
+  rotationSpeed?: number
+  windOff?: boolean
+  rotationOff?: boolean
+}
+
 export function runParticleGPUIntegrate(
   renderer: unknown,
   dt: number,
   gravity: number,
   drag: number,
   style?: ParticleGPUStyle,
+  modules?: ParticleGPUModules,
 ): boolean {
   if (!gpuKernelReady || !kernel) return false
   const r = renderer as { compute?: (n: unknown) => void }
@@ -329,6 +372,12 @@ export function runParticleGPUIntegrate(
     kernel.dtU.value = dt
     kernel.gravityU.value = gravity * dt
     kernel.dragU.value = drag
+    kernel.windXU.value = modules?.windX ?? 0
+    kernel.windYU.value = modules?.windY ?? 0
+    kernel.windZU.value = modules?.windZ ?? 0
+    kernel.rotationSpeedU.value = modules?.rotationSpeed ?? 0
+    kernel.windOffU.value = modules?.windOff ? 1 : 0
+    kernel.rotationOffU.value = modules?.rotationOff ? 1 : 0
     if (style) {
       kernel.sizeStartU.value = style.sizeStart
       kernel.sizeEndU.value = style.sizeEnd
