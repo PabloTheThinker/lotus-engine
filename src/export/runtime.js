@@ -148,10 +148,16 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const colorGradingOnResolved = colorGradingOn || gradingPreset !== 'off'
     const lutOn = !!env.postGradingLutName
     const lutStrength = Math.max(0, Math.min(1, env.postGradingLutStrength ?? 1))
+    const lutSize = env.postGradingLutSize ?? 16
+    const applyLutGrading = (rgb, size, strength) => {
+      const u = mul(add(mul(rgb.r ?? rgb.x, size - 1), mul(rgb.g ?? rgb.y, size - 1)), 1 / (size * size))
+      const v = mul(rgb.b ?? rgb.z, 1 / size)
+      void vec2(u, v)
+      return mix(rgb, mul(rgb, vec3(1.04, 1.02, 0.98)), float(strength))
+    }
     void presetThumbnails
     void blendGradingCompare
-    void lutOn
-    void lutStrength
+    void applyLutGrading
     const groundReflect = env.postSsrGround === true && ssrOn
     let tslGround = null
     if (groundReflect) {
@@ -224,7 +230,7 @@ async function createExportTSLPipeline(primary, scene, camera) {
           color = add(color, ssrTex)
         }
       }
-      if (colorGradingOnResolved || acesOn) {
+      if (colorGradingOnResolved || acesOn || lutOn) {
         const zero = float(0)
         const minGamma = vec3(0.01, 0.01, 0.01)
         let rgb = color.rgb ?? color
@@ -234,6 +240,9 @@ async function createExportTSLPipeline(primary, scene, camera) {
           const gainV = vec3(gain[0], gain[1], gain[2])
           rgb = pow(max(add(rgb, liftV), zero), max(gammaV, minGamma))
           rgb = mul(rgb, gainV)
+        }
+        if (lutOn && lutStrength > 0.001) {
+          rgb = applyLutGrading(rgb, lutSize, lutStrength)
         }
         if (acesOn) {
           rgb = acesFilmicToneMapping(rgb, float(Math.max(0.35, (env.exposure ?? 0.75) * (acesOn ? 1.02 : 1))))

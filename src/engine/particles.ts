@@ -377,6 +377,9 @@ export class ParticleSystem {
   gpuSubEmitterBursts = 0
   /** Wave 30 — last sub-emitter uniforms passed to GPU integrate kernel. */
   gpuSubEmitterUniforms = { on: false, count: 8, speed: 1.5, life: 0.4, rate: 1 }
+  /** Wave 31 — when set, death bursts use GPU sub-burst kernel instead of CPU spawn. */
+  gpuSubBurstSpawn?: (x: number, y: number, z: number, se: SubEmitterProps) => boolean
+  gpuSubBurstFrames = 0
 
   snapshotAliveForGPU() {
     this.prevAliveSnapshot = this.alive.slice()
@@ -401,7 +404,14 @@ export class ParticleSystem {
           speed: this.gpuSubEmitterUniforms.speed,
           lifetime: this.gpuSubEmitterUniforms.life,
         }
-        this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], burstSe)
+        const x = this.positions[i3]
+        const y = this.positions[i3 + 1]
+        const z = this.positions[i3 + 2]
+        if (this.gpuSubBurstSpawn?.(x, y, z, burstSe)) {
+          this.gpuSubBurstFrames++
+        } else {
+          this.spawnBurstAt(x, y, z, burstSe)
+        }
         bursts++
       }
     }

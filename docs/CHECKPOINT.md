@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.93 (wave 30).** v0.33–v1.93 shipped; **build clean**, **`npm run test` — 95 passed**.
+- **Last clean commit: v1.98 (wave 31).** v0.33–v1.98 shipped; **build clean**, **`npm run test` — 100 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -348,13 +348,23 @@
 | v1.92 | BT step-over (F10) + conditional breakpoints (`service-active`, `decorator-host`) |
 | v1.93 | Material legend↔pin bidirectional sync + eased minimap focus pan — 95 tests passed |
 
-## Next up (v1.94+, Wave 31)
+## Shipped (v1.94–v1.98, Wave 31)
 
-1. **TSL post** — real `.cube`/`.3dl` LUT decode (replace identity strip)
-2. **GPU particles** — GPU-side sub-emitter burst spawn kernel (beyond CPU death detect)
-3. **Export** — LUT apply parity in playable runtime shader path
-4. **BT** — conditional breakpoint on blackboard key/value + service step-into
-5. **Material TSL** — focused-node keyboard nav (Tab cycle) + legend drag pin preview
+| Ver | What |
+|---|---|
+| v1.94 | `.cube`/`.3dl` LUT decode — `parseCubeLUT`, `parse3dlLUT`, texture cache, 2D atlas sampling |
+| v1.95 | GPU sub-emitter burst spawn kernel — `runParticleGPUSubEmitterBurst` on death origin |
+| v1.96 | Export LUT apply parity — `applyLutGrading` in playable runtime TSL path |
+| v1.97 | BT blackboard-equals breakpoint + service step-into (`registerBTBreakpointStepInto`) |
+| v1.98 | Material Tab focus cycle + legend drag pin preview on minimap — 100 tests passed |
+
+## Next up (v1.99+, Wave 32)
+
+1. **TSL post** — PNG LUT atlas import + persisted decode in level save
+2. **GPU particles** — batched multi-death sub-burst dispatch (single kernel pass)
+3. **Export** — embed decoded LUT bytes in playable export payload
+4. **BT** — step-into nested decorator subtrees + blackboard watch panel
+5. **Material TSL** — focused-node Shift+Tab reverse cycle + pin preview on canvas wires
 
 ## Remaining gap-list queue (post–wave 7)
 

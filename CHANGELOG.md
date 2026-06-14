@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 31: v1.94–v1.98
+
+### Added
+- **v1.94** `.cube`/`.3dl` LUT decode — `parseCubeLUT`, `parse3dlLUT`, `decodeGradingLUTFile`, 2D atlas UV sampling
+- **v1.95** GPU sub-emitter burst kernel — `runParticleGPUSubEmitterBurst`, `gpuSubBurstSpawn` on GPU particle path
+- **v1.96** Export `applyLutGrading` parity in playable runtime post stack
+- **v1.97** BT `blackboard-equals` conditional breakpoint + step-into host → service break
+- **v1.98** Material Tab node focus cycle + legend drag minimap pin preview — 100 tests passed
+
+### Changed
+- `colorGrading.parseCube` / `decodeLut` bridges; `bt.stepIntoBreakpoint` / `activeBlackboard` bridges
+- World Settings LUT upload reads file text and decodes on import
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 100 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 30: v1.89–v1.93
 
 ### Added

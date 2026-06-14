@@ -61,6 +61,18 @@ interface EmitKernel {
   defaultLifeU: UniformSlot
 }
 
+/** Wave 31 — radial burst spawn at death origin into dead GPU slots. */
+interface SubBurstKernel {
+  computeNode: unknown
+  originXU: UniformSlot
+  originYU: UniformSlot
+  originZU: UniformSlot
+  spawnProbU: UniformSlot
+  speedU: UniformSlot
+  lifeU: UniformSlot
+  seedU: UniformSlot
+}
+
 interface TrailKernel {
   computeNode: unknown
   trailLen: number
@@ -68,6 +80,7 @@ interface TrailKernel {
 
 let kernel: IntegrateKernel | null = null
 let emitKernel: EmitKernel | null = null
+let subBurstKernel: SubBurstKernel | null = null
 let trailKernel: TrailKernel | null = null
 let kernelCap = 0
 
@@ -78,6 +91,7 @@ export async function initParticleCompute(renderer: unknown): Promise<ParticleCo
   gpuEmitReady = false
   kernel = null
   emitKernel = null
+  subBurstKernel = null
   computeNote = 'WebGPU renderer required'
   try {
     const r = renderer as { isWebGPURenderer?: boolean; compute?: (n: unknown) => void }
@@ -118,7 +132,7 @@ export async function bindParticleIntegrateKernel(
 ): Promise<boolean> {
   const r = renderer as { compute?: (n: unknown) => void }
   if (!r?.compute || !computeReady) return false
-  if (kernel && emitKernel && kernelCap === cap) {
+  if (kernel && emitKernel && subBurstKernel && kernelCap === cap) {
     gpuKernelReady = true
     gpuEmitReady = true
     return true
@@ -337,6 +351,54 @@ export async function bindParticleIntegrateKernel(
       subEmitterRateU,
     }
     emitKernel = { computeNode: emitNode, spawnProbU, speedU, seedU, defaultLifeU }
+
+    const originXU = t.uniform(t.float(0))
+    const originYU = t.uniform(t.float(0))
+    const originZU = t.uniform(t.float(0))
+    const burstProbU = t.uniform(t.float(0))
+    const burstSpeedU = t.uniform(t.float(1))
+    const burstLifeU = t.uniform(t.float(0.4))
+    const burstSeedU = t.uniform(t.float(0))
+    const subBurstNode = t.Fn(() => {
+      const alive = aliveBuf.element(t.instanceIndex)
+      t.If(alive.lessThan(0.5), () => {
+        const h = t.fract(t.sin(t.instanceIndex.add(burstSeedU)).mul(43758.5453) as ScalarEl)
+        t.If(h.lessThan(burstProbU), () => {
+          alive.assign(1)
+          const lifeSlot = lifeBuf.element(t.instanceIndex)
+          const maxL = maxLifeBuf.element(t.instanceIndex)
+          lifeSlot.assign(burstLifeU)
+          maxL.assign(burstLifeU)
+          const p = posBuf.element(t.instanceIndex)
+          const v = velBuf.element(t.instanceIndex)
+          p.x.assign(originXU)
+          p.y.assign(originYU)
+          p.z.assign(originZU)
+          const a = h.mul(6.283)
+          const sp = burstSpeedU.mul(t.float(0.6).add(h.mul(0.4)))
+          v.x.assign(t.sin(a).mul(sp))
+          v.y.assign(sp.mul(0.5))
+          v.z.assign(t.cos(a).mul(sp))
+          const col = colorBuf.element(t.instanceIndex)
+          col.x.assign(colorStartRU)
+          col.y.assign(colorStartGU)
+          col.z.assign(colorStartBU)
+          col.w.assign(1)
+          sizeBuf.element(t.instanceIndex).assign(sizeStartU)
+        })
+      })
+    }).compute(cap)
+
+    subBurstKernel = {
+      computeNode: subBurstNode,
+      originXU,
+      originYU,
+      originZU,
+      spawnProbU: burstProbU,
+      speedU: burstSpeedU,
+      lifeU: burstLifeU,
+      seedU: burstSeedU,
+    }
     kernelCap = cap
     gpuKernelReady = true
     gpuEmitReady = true
@@ -346,6 +408,7 @@ export async function bindParticleIntegrateKernel(
     gpuEmitReady = false
     kernel = null
     emitKernel = null
+    subBurstKernel = null
     return false
   }
 }
@@ -496,6 +559,40 @@ export function isParticleGpuKernelReady(): boolean {
 
 export function isParticleGpuEmitReady(): boolean {
   return gpuEmitReady
+}
+
+export function isParticleGpuSubBurstReady(): boolean {
+  return !!subBurstKernel
+}
+
+/** Wave 31 — spawn sub-emitter burst at world origin into dead GPU slots. */
+export function runParticleGPUSubEmitterBurst(
+  renderer: unknown,
+  ox: number,
+  oy: number,
+  oz: number,
+  modules?: ParticleGPUModules,
+  seed = 0,
+  cap = 64,
+): boolean {
+  if (!subBurstKernel) return false
+  const r = renderer as { compute?: (n: unknown) => void }
+  if (!r?.compute) return false
+  try {
+    const count = Math.max(1, modules?.subEmitterCount ?? 8)
+    const rate = Math.max(0, Math.min(1, modules?.subEmitterRate ?? 1))
+    subBurstKernel.originXU.value = ox
+    subBurstKernel.originYU.value = oy
+    subBurstKernel.originZU.value = oz
+    subBurstKernel.spawnProbU.value = Math.min(1, (count / Math.max(1, cap)) * rate)
+    subBurstKernel.speedU.value = modules?.subEmitterSpeed ?? 1.5
+    subBurstKernel.lifeU.value = modules?.subEmitterLife ?? 0.4
+    subBurstKernel.seedU.value = seed
+    r.compute(subBurstKernel.computeNode)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function isParticleGpuTrailReady(): boolean {

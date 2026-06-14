@@ -45,9 +45,10 @@ const ColorGradingShader = {
       c = pow(max(c + lift, vec3(0.0)), max(gamma, vec3(0.01)));
       c *= gain;
       if (lutEnabled > 0.5) {
-        float grid = lutSize * lutSize;
-        float idx = (c.r * (lutSize - 1.0) + c.g * (lutSize - 1.0) * lutSize);
-        vec2 lutUv = vec2((idx + 0.5) / grid, 0.5);
+        float r = c.r * (lutSize - 1.0);
+        float g = c.g * (lutSize - 1.0);
+        float b = c.b * (lutSize - 1.0);
+        vec2 lutUv = vec2((r + g * lutSize + 0.5) / (lutSize * lutSize), (b + 0.5) / lutSize);
         vec3 lutC = texture2D(lutMap, lutUv).rgb;
         c = mix(c, lutC, clamp(lutStrength, 0.0, 1.0));
       }

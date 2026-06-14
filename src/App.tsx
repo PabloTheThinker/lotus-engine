@@ -54,11 +54,13 @@ import {
   getBTBreakpointCondition,
   getBTServiceDecoratorHostId,
   getBTServiceHostNodeId,
+  registerBTBreakpointStepInto,
   registerBTBreakpointStepOver,
   shouldBTBreakpointFire,
+  shouldBTServiceStepInto,
   validateBTGraph,
 } from './engine/btGraph'
-import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
+import { getActiveBTBlackboard, getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
 import { getDOFSettings, resolveCameraDOFFocusDistance } from './engine/postStackDOF'
@@ -73,7 +75,15 @@ import {
   getColorGradingSettings,
   blendColorGradingSettings,
 } from './engine/postStackColorGrading'
-import { createIdentityLUTTexture, getColorGradingLUTState, getGradingLUTStub } from './engine/postColorGradingLut'
+import {
+  createIdentityLUTTexture,
+  decodeGradingLUTFile,
+  getColorGradingLUTState,
+  getGradingLUTStub,
+  parse3dlLUT,
+  parseCubeLUT,
+} from './engine/postColorGradingLut'
+import { isParticleGpuSubBurstReady } from './engine/particlesCompute'
 import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
@@ -269,9 +279,17 @@ const lotusBridge = {
       const n = graph.nodes.find((x) => x.id === nodeId)
       return n ? getBTBreakpointCondition(n) : 'always'
     },
-    shouldBreakpointFire: (graph = emptyBTGraph(), nodeId = '', activeServices: string[] = []) =>
-      shouldBTBreakpointFire(graph, nodeId, activeServices),
+    shouldBreakpointFire: (
+      graph = emptyBTGraph(),
+      nodeId = '',
+      activeServices: string[] = [],
+      blackboard: Record<string, unknown> = {},
+    ) => shouldBTBreakpointFire(graph, nodeId, activeServices, blackboard),
     stepOverBreakpoint: (nodeId = '') => registerBTBreakpointStepOver(nodeId),
+    stepIntoBreakpoint: (hostId = '') => registerBTBreakpointStepInto(hostId),
+    shouldServiceStepInto: (graph = emptyBTGraph(), serviceNodeId = '') =>
+      shouldBTServiceStepInto(graph, serviceNodeId),
+    activeBlackboard: (actorId = '') => getActiveBTBlackboard(actorId),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
@@ -316,6 +334,9 @@ const lotusBridge = {
     ) => blendColorGradingSettings(a, b, t),
     lutStub: () => getGradingLUTStub(world.environment),
     lutApply: () => getColorGradingLUTState(world.environment),
+    parseCube: (text = '') => parseCubeLUT(text),
+    parse3dl: (text = '') => parse3dlLUT(text),
+    decodeLut: (name = '', text = '') => decodeGradingLUTFile(name, text),
     identityLut: () => !!createIdentityLUTTexture(),
   },
   projectSettings: {
@@ -328,6 +349,7 @@ const lotusBridge = {
   particles: {
     create: (backend: 'cpu' | 'gpu' = 'cpu') => createParticleSystem({ ...DEFAULT_PARTICLES, maxParticles: 32 }, backend),
     qaMatrix: runParticleGPUQAMatrix,
+    gpuSubBurstReady: () => isParticleGpuSubBurstReady(),
   },
   export: {
     buildPlayableHTML,

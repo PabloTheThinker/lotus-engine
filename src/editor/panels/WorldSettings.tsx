@@ -30,7 +30,7 @@ import {
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { sanitizeLevelKey, world } from '../../engine/World'
 import { COLOR_GRADING_PRESET_IDS, COLOR_GRADING_PRESET_THUMBNAILS } from '../../engine/postStackColorGrading'
-import { registerGradingLUTUpload } from '../../engine/postColorGradingLut'
+import { decodeGradingLUTFile, registerGradingLUTUpload } from '../../engine/postColorGradingLut'
 import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
@@ -1170,16 +1170,31 @@ export function WorldSettings() {
           <input type="checkbox" checked={!!env.postAces} onChange={(e) => set('postAces', e.target.checked)} />
         </label>
         <label className="field">
-          <span>Grading LUT (stub upload)</span>
+          <span>Grading LUT (.cube / .3dl)</span>
           <input
             type="file"
-            accept=".png,.jpg,.cube,.3dl"
+            accept=".cube,.3dl"
             onChange={(e) => {
               const f = e.target.files?.[0]
-              if (f) set('postGradingLutName', registerGradingLUTUpload(f.name))
+              if (!f) return
+              void f.text().then((text) => {
+                const decoded = decodeGradingLUTFile(f.name, text)
+                if (decoded) {
+                  set('postGradingLutName', registerGradingLUTUpload(f.name))
+                  set('postGradingLutSize', decoded.size)
+                  useEditor.getState().setStatus(`LUT decoded: ${f.name} (${decoded.size}³, ${decoded.format})`)
+                } else {
+                  useEditor.getState().setStatus(`LUT decode failed: ${f.name}`)
+                }
+              })
             }}
           />
-          {env.postGradingLutName && <em>{env.postGradingLutName}</em>}
+          {env.postGradingLutName && (
+            <em>
+              {env.postGradingLutName}
+              {env.postGradingLutSize ? ` · ${env.postGradingLutSize}³` : ''}
+            </em>
+          )}
         </label>
         {env.postGradingLutName && (
           <label className="field">

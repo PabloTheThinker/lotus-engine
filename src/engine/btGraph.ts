@@ -245,9 +245,10 @@ export function getBTServiceHostNodeId(graph: BTGraph, serviceNodeId: string): s
 
 /** Wave 29 — nearest decorator ancestor hosting a service (for PIE breakpoint polish). */
 /** Wave 30 — conditional breakpoint modes for service/decorator polish. */
-export type BTBreakpointCondition = 'always' | 'service-active' | 'decorator-host'
+export type BTBreakpointCondition = 'always' | 'service-active' | 'decorator-host' | 'blackboard-equals'
 
 const btBreakpointSkipOnce = new Set<string>()
+const btStepIntoHosts = new Set<string>()
 
 export function registerBTBreakpointStepOver(nodeId: string) {
   btBreakpointSkipOnce.add(nodeId)
@@ -263,6 +264,17 @@ export function clearBTBreakpointStepOvers() {
   btBreakpointSkipOnce.clear()
 }
 
+export function registerBTBreakpointStepInto(hostNodeId: string) {
+  btStepIntoHosts.add(hostNodeId)
+}
+
+export function shouldBTServiceStepInto(graph: BTGraph, serviceNodeId: string): boolean {
+  const host = getBTServiceHostNodeId(graph, serviceNodeId)
+  if (!host || !btStepIntoHosts.has(host)) return false
+  btStepIntoHosts.delete(host)
+  return true
+}
+
 function findBTGraphNode(graph: BTGraph, nodeId: string): BTGraphNode | null {
   const direct = graph.nodes.find((n) => n.id === nodeId)
   if (direct) return direct
@@ -275,7 +287,7 @@ function findBTGraphNode(graph: BTGraph, nodeId: string): BTGraphNode | null {
 
 export function getBTBreakpointCondition(node: BTGraphNode): BTBreakpointCondition {
   const raw = node.props.breakpointCondition
-  if (raw === 'service-active' || raw === 'decorator-host') return raw
+  if (raw === 'service-active' || raw === 'decorator-host' || raw === 'blackboard-equals') return raw
   return 'always'
 }
 
@@ -283,9 +295,11 @@ export function shouldBTBreakpointFire(
   graph: BTGraph,
   nodeId: string,
   activeServiceIds: string[] = [],
+  blackboard: Record<string, unknown> = {},
 ): boolean {
   if (consumeBTBreakpointStepOver(nodeId)) return false
   const node = findBTGraphNode(graph, nodeId)
+  if (BT_SERVICE_TYPES.has(node?.type ?? '') && shouldBTServiceStepInto(graph, nodeId)) return true
   if (!node?.breakpoint) return false
   const cond = getBTBreakpointCondition(node)
   if (cond === 'always') return true
@@ -294,6 +308,12 @@ export function shouldBTBreakpointFire(
   }
   if (cond === 'decorator-host') {
     return BT_DECORATOR_TYPES.has(node.type) || BT_COMPOSITE_TYPES.has(node.type)
+  }
+  if (cond === 'blackboard-equals') {
+    const key = String(node.props.breakpointBBKey ?? '')
+    const want = String(node.props.breakpointBBValue ?? '')
+    if (!key) return true
+    return String(blackboard[key] ?? '') === want
   }
   return true
 }

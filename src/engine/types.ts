@@ -503,6 +503,8 @@ export interface EnvironmentSettings {
   postGradingLutName?: string
   /** Wave 30 — LUT blend strength when uploaded (0–1) */
   postGradingLutStrength?: number
+  /** Wave 31 — decoded LUT cube size (from .cube/.3dl) */
+  postGradingLutSize?: number
   /** Wave 29 — A/B preset compare blend (0 = A, 1 = B) */
   postGradingCompareT?: number
   postGradingCompareA?: 'neutral' | 'cinematic' | 'highContrast'

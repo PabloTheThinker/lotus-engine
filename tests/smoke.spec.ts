@@ -1929,6 +1929,125 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 31 cube LUT decode', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        parseCube: (t: string) => { size: number; format: string } | null
+        decodeLut: (n: string, t: string) => { size: number; format: string } | null
+      }
+    }
+    const cube = `LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n`
+    const parsed = v.colorGrading.parseCube(cube)
+    const decoded = v.colorGrading.decodeLut('test.cube', cube)
+    return { parsedSize: parsed?.size, decodedSize: decoded?.size, format: decoded?.format }
+  })
+
+  expect(result.parsedSize).toBe(2)
+  expect(result.decodedSize).toBe(2)
+  expect(result.format).toBe('cube')
+})
+
+test('wave 31 GPU sub-emitter burst kernel surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { particles: { gpuSubBurstReady: () => boolean } }
+    const ps = v.particles.create('gpu') as { gpuSubBurstSpawn?: unknown; gpuSubBurstFrames: number }
+    return { ready: v.particles.gpuSubBurstReady(), hasSpawn: typeof ps.gpuSubBurstSpawn === 'function' }
+  })
+
+  expect(result.hasSpawn).toBe(true)
+})
+
+test('wave 31 export LUT apply parity', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    return v.export.buildPlayableHTML()
+  })
+
+  expect(html).toContain('applyLutGrading')
+  expect(html).toContain('postGradingLutSize')
+})
+
+test('wave 31 BT blackboard breakpoint + step-into', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        shouldBreakpointFire: (
+          g: import('../src/engine/btGraph').BTGraph,
+          id: string,
+          active: string[],
+          bb: Record<string, unknown>,
+        ) => boolean
+        stepIntoBreakpoint: (hostId: string) => void
+        shouldServiceStepInto: (g: import('../src/engine/btGraph').BTGraph, id: string) => boolean
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const task = {
+      id: 'task31',
+      type: 'TaskWait',
+      x: 200,
+      y: 200,
+      props: { breakpointCondition: 'blackboard-equals', breakpointBBKey: 'phase', breakpointBBValue: 'attack' },
+      breakpoint: true,
+    }
+    graph.nodes.push(task)
+    const noMatch = v.bt.shouldBreakpointFire(graph, 'task31', [], { phase: 'idle' })
+    const match = v.bt.shouldBreakpointFire(graph, 'task31', [], { phase: 'attack' })
+    v.bt.stepIntoBreakpoint('sel_host')
+    return { noMatch, match, stepIntoApi: typeof v.bt.stepIntoBreakpoint === 'function' }
+  })
+
+  expect(result.noMatch).toBe(false)
+  expect(result.match).toBe(true)
+  expect(result.stepIntoApi).toBe(true)
+})
+
+test('wave 31 material Tab focus + legend drag preview', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+        { id: 'c2', type: 'Color', x: 100, y: 200, props: { color: '#ff8844' } },
+      ],
+      edges: [{ from: 'c1', to: 'out:baseColor' }],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  await page.locator('.mat-canvas-pan').click()
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+  })
+  await expect(page.locator('.mat-minimap rect[stroke="#ffe066"]')).toHaveCount(1)
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+  })
+  const chips = page.locator('.mat-legend-chip')
+  await chips.first().hover()
+  await page.mouse.down()
+  await chips.first().hover()
+  await page.mouse.up()
+})
+
 test('wave 30 LUT apply in grading pass', async ({ page }) => {
   await bootEditor(page)
 

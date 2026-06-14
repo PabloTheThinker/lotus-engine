@@ -11,6 +11,7 @@ import {
   isParticleGpuKernelReady,
   runParticleGPUEmit,
   runParticleGPUIntegrate,
+  runParticleGPUSubEmitterBurst,
   runParticleGPUTrailShift,
 } from './particlesCompute'
 
@@ -61,6 +62,28 @@ export class GPUParticleSystem extends ParticleSystem {
     this.gpuTier = shouldUseGPUParticles(backend)
     this.backend = this.gpuTier ? 'gpu' : 'cpu'
     this.computeSim = this.gpuTier
+    if (this.gpuTier) {
+      this.gpuSubBurstSpawn = (x, y, z) => {
+        if (!this.computeRenderer) return false
+        const se = this.props.subEmitter
+        if (!se) return false
+        const modules = {
+          subEmitterCount: this.gpuSubEmitterUniforms.count,
+          subEmitterSpeed: this.gpuSubEmitterUniforms.speed,
+          subEmitterLife: this.gpuSubEmitterUniforms.life,
+          subEmitterRate: this.gpuSubEmitterUniforms.rate,
+        }
+        return runParticleGPUSubEmitterBurst(
+          this.computeRenderer,
+          x,
+          y,
+          z,
+          modules,
+          this.emitSeed++,
+          this.simBuffers().alive.length,
+        )
+      }
+    }
   }
 
   async bindComputeRenderer(renderer: unknown) {
@@ -188,7 +211,9 @@ export class GPUParticleSystem extends ParticleSystem {
         if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style, modules)) {
           this.computeIntegratedFrames++
           this.syncGPUAliveFromBuffers()
+          const prevBurst = this.gpuSubBurstFrames
           this.processGPUSubEmitterDeaths()
+          if (this.gpuSubBurstFrames > prevBurst) this.syncGPUAliveFromBuffers()
           const geo = this.points.geometry
           geo.attributes.position.needsUpdate = true
           geo.attributes.aColor.needsUpdate = true

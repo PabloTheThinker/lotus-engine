@@ -112,10 +112,12 @@ function MaterialGraphMinimap({
   onZoomAt,
   onFocusNode,
   focusedNodeId,
+  legendDragPreview,
 }: {
   graph: MaterialGraph
   isolateChannel: string | null
   pinnedChannel?: string | null
+  legendDragPreview?: string | null
   panOffset: { x: number; y: number }
   zoom: number
   viewportW: number
@@ -146,7 +148,7 @@ function MaterialGraphMinimap({
   const sx = mw / Math.max(gw, 1)
   const sy = mh / Math.max(gh, 1)
   const soloNodes = nodesInSoloChannel(graph, isolateChannel)
-  const pinNodes = nodesInSoloChannel(graph, pinnedChannel ?? null)
+  const pinNodes = nodesInSoloChannel(graph, pinnedChannel ?? legendDragPreview ?? null)
   const outNode = graph.nodes.find((n) => n.type === 'Output')
   const vw = Math.max(viewportW, 320)
   const vh = Math.max(viewportH, 200)
@@ -456,6 +458,7 @@ export function MaterialEditor() {
   const [isolateChannel, setIsolateChannel] = useState<string | null>(null)
   const [pinnedMinimapChannel, setPinnedMinimapChannel] = useState<string | null>(null)
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null)
+  const [legendDragPreview, setLegendDragPreview] = useState<string | null>(null)
   const [upstreamFlashIds, setUpstreamFlashIds] = useState<Set<string>>(() => new Set())
   const [channelOrder, setChannelOrder] = useState<string[]>([])
   const legendDrag = useRef<string | null>(null)
@@ -531,21 +534,36 @@ export function MaterialEditor() {
   }, [graph, isolateChannel])
 
   useEffect(() => {
-    if (!graph || world.environment.materialBackend !== 'tsl') return
+    if (!graph) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsolateChannel(null)
         setPinnedMinimapChannel(null)
+        setFocusedNodeId(null)
         return
       }
-      if (e.altKey && e.key >= '1' && e.key <= '9') {
+      if (e.key === 'Tab' && graph.nodes.length > 0) {
+        e.preventDefault()
+        const ids = graph.nodes.map((n) => n.id)
+        const idx = focusedNodeId ? ids.indexOf(focusedNodeId) : -1
+        const nextId = ids[(idx + 1) % ids.length]!
+        const n = graph.nodes.find((x) => x.id === nextId)
+        if (!n) return
+        setFocusedNodeId(nextId)
+        const z = Math.max(zoom, 0.05)
+        setPanOffset({
+          x: viewportSize.w / 2 - (n.x + NODE_W / 2) * z,
+          y: viewportSize.h / 2 - (n.y + 36) * z,
+        })
+      }
+      if (world.environment.materialBackend === 'tsl' && e.altKey && e.key >= '1' && e.key <= '9') {
         const ch = orderedChannels[parseInt(e.key, 10) - 1]
         if (ch) setIsolateChannel((prev) => (prev === ch ? null : ch))
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [graph, orderedChannels])
+  }, [graph, orderedChannels, focusedNodeId, viewportSize, panOffset, zoom])
 
   if (!actor?.mesh || !actor.materialProps) {
     return (
@@ -748,6 +766,7 @@ export function MaterialEditor() {
           viewportW={viewportSize.w}
           viewportH={viewportSize.h}
           focusedNodeId={focusedNodeId}
+          legendDragPreview={legendDragPreview}
           onPanTo={panToGraph}
           onZoomAt={zoomAtGraph}
           onFocusNode={focusGraphNode}
@@ -759,7 +778,7 @@ export function MaterialEditor() {
                 key={ch}
                 type="button"
                 draggable
-                className={`mat-legend-chip${isolateChannel === ch ? ' active' : ''}${pinnedMinimapChannel === ch ? ' pinned' : ''}`}
+                className={`mat-legend-chip${isolateChannel === ch ? ' active' : ''}${pinnedMinimapChannel === ch ? ' pinned' : ''}${legendDragPreview === ch ? ' preview' : ''}`}
                 style={{ '--legend-color': CHANNEL_LEGEND_COLORS[ch] ?? '#6eb5ff' } as React.CSSProperties}
                 title={`Solo ${ch} (Alt+${orderedChannels.indexOf(ch) + 1}) · Shift+click pin minimap · drag to reorder`}
                 onClick={(e) => {
@@ -780,14 +799,20 @@ export function MaterialEditor() {
                 }}
                 onDragStart={() => {
                   legendDrag.current = ch
+                  setLegendDragPreview(ch)
                 }}
-                onDragOver={(e) => e.preventDefault()}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  if (legendDrag.current) setLegendDragPreview(ch)
+                }}
                 onDrop={() => {
                   if (legendDrag.current) reorderLegendChannel(legendDrag.current, ch)
                   legendDrag.current = null
+                  setLegendDragPreview(null)
                 }}
                 onDragEnd={() => {
                   legendDrag.current = null
+                  setLegendDragPreview(null)
                 }}
               >
                 <span className="mat-legend-swatch" />

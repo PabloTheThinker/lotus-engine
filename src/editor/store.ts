@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { registerBTBreakpointStepOver } from '../engine/btGraph'
+import { registerBTBreakpointStepInto, registerBTBreakpointStepOver } from '../engine/btGraph'
 import { loadPrefs } from './Preferences'
 import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
 
@@ -90,6 +90,7 @@ interface EditorState {
   setBreakpointHit: (h: { actorId: string; nodeId: string } | null) => void
   continueFromBreakpoint: () => void
   stepOverFromBreakpoint: () => void
+  stepIntoFromBreakpoint: (hostNodeId: string) => void
   stepFrames: number
   requestStep: () => void
   setPlaying: (p: boolean) => void
@@ -279,6 +280,10 @@ export const useEditor = create<EditorState>((set, get) => ({
   stepOverFromBreakpoint: () => {
     const hit = get().breakpointHit
     if (hit) registerBTBreakpointStepOver(hit.nodeId)
+    set({ paused: false, breakpointHit: null })
+  },
+  stepIntoFromBreakpoint: (hostNodeId) => {
+    registerBTBreakpointStepInto(hostNodeId)
     set({ paused: false, breakpointHit: null })
   },
   stepFrames: 0,

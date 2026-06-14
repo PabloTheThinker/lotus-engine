@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { world } from '../../engine/World'
-import { getActiveBTGraphNodeId, getActiveBTServiceNodeIds } from '../../engine/behaviorTree'
+import { getActiveBTBlackboard, getActiveBTGraphNodeId, getActiveBTServiceNodeIds } from '../../engine/behaviorTree'
 import {
   BT_COMPOSITE_TYPES,
   BT_DECORATOR_TYPES,
@@ -155,7 +155,8 @@ export function BTEditor() {
       }
       if (!node?.breakpoint) return false
       const activeServices = getActiveBTServiceNodeIds(actorId)
-      if (!shouldBTBreakpointFire(liveGraph ?? { nodes: [], edges: [] }, hitId, activeServices)) {
+      const bb = getActiveBTBlackboard(actorId) ?? {}
+      if (!shouldBTBreakpointFire(liveGraph ?? { nodes: [], edges: [] }, hitId, activeServices, bb)) {
         return false
       }
       const title = BT_NODE_DEFS[node.type]?.title ?? node.type
@@ -482,6 +483,19 @@ export function BTEditor() {
             >
               ↷ Step over
             </button>
+            {(breakpointServiceHost || breakpointDecoratorHost || breakpointHitNode) && (
+              <button
+                className="bt-step-into"
+                onClick={() =>
+                  useEditor
+                    .getState()
+                    .stepIntoFromBreakpoint(breakpointServiceHost ?? breakpointDecoratorHost ?? breakpointHitNode!)
+                }
+                title="Step into — break on next service tick under host"
+              >
+                ↳ Step into
+              </button>
+            )}
           </>
         )}
         <label className="field check bt-auto">
@@ -872,8 +886,27 @@ export function BTEditor() {
                       <option value="always">Always</option>
                       <option value="service-active">Service active</option>
                       <option value="decorator-host">Decorator / composite host</option>
+                      <option value="blackboard-equals">Blackboard equals</option>
                     </select>
                   </label>
+                )}
+                {node.breakpoint && getBTBreakpointCondition(node) === 'blackboard-equals' && (
+                  <>
+                    <label className="field">
+                      <span>BB key</span>
+                      <input
+                        value={String(node.props.breakpointBBKey ?? '')}
+                        onChange={(e) => updateNodeProp(node.id, 'breakpointBBKey', e.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>BB value</span>
+                      <input
+                        value={String(node.props.breakpointBBValue ?? '')}
+                        onChange={(e) => updateNodeProp(node.id, 'breakpointBBValue', e.target.value)}
+                      />
+                    </label>
+                  </>
                 )}
                 {Object.entries(node.props).map(([k, v]) => (
                   <label className="field" key={k}>

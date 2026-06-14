@@ -266,6 +266,11 @@ export function getActiveBTServiceNodeIds(actorId: string): string[] {
   return [...(activeServiceNodes.get(actorId) ?? [])]
 }
 
+export function getActiveBTBlackboard(actorId: string): Record<string, unknown> | null {
+  const row = active.find((a) => a.actor.id === actorId)
+  return row?.bb ?? null
+}
+
 function tickServicesForPath(
   services: { hostPath: string; serviceNodeId?: string; service: BTServiceNode }[] | undefined,
   activePath: string | undefined,

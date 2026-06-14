@@ -1445,6 +1445,15 @@ input[type='checkbox'] {
 .mat-pin-pinned {
   box-shadow: 0 0 0 1px #c9a8ff;
 }
+.mat-legend-chip.preview {
+  outline: 1px dashed #c9a8ff;
+  opacity: 0.92;
+}
+.bt-step-into {
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-left: 4px;
+}
 .bt-step-over {
   font-size: 11px;
   padding: 2px 8px;
