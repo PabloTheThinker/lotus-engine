@@ -1,5 +1,14 @@
 import type { Actor } from './Actor'
-import { mpBroadcastPeerScores, mpConnected, mpIsHost, mpLocalId, mpRequestScoreDelta } from './multiplayer'
+import {
+  mpBroadcastPeerScores,
+  mpBroadcastTeamScores,
+  mpConnected,
+  mpIsHost,
+  mpLocalId,
+  mpRequestScoreDelta,
+  mpRequestTeamScoreDelta,
+} from './multiplayer'
+import { applyMpTeamScoreDelta, mpTeamsGet } from './mpTeams'
 
 /** Deathmatch target tag — raycast hits award score (host authoritative). */
 export const MP_TAG_TARGET = 'mp_target'
@@ -66,5 +75,33 @@ export function addMpScore(
   const id = peerId ?? mpLocalId()
   if (mpIsHost()) return applyMpScoreDelta(actors, id, delta, emit)
   mpRequestScoreDelta(delta, id)
+  return true
+}
+
+export {
+  applyMpTeamScoreDelta,
+  getMpTeamScores,
+  mirrorMpTeamScores,
+  type MpTeam,
+  type MpTeamScores,
+} from './mpTeams'
+
+/** Host applies team score locally; clients request via relay. */
+export function addMpTeamScore(
+  actors: Map<string, Actor>,
+  delta: number,
+  peerId?: string,
+  emit?: (signal: string, ...args: unknown[]) => void,
+): boolean {
+  if (!mpConnected()) return false
+  const id = peerId ?? mpLocalId()
+  const team = mpTeamsGet(id)
+  if (!team) return false
+  if (mpIsHost()) {
+    return applyMpTeamScoreDelta(actors, team, delta, emit, (scores, gameWon) =>
+      mpBroadcastTeamScores(scores, gameWon),
+    )
+  }
+  mpRequestTeamScoreDelta(delta, team, id)
   return true
 }

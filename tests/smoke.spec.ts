@@ -6268,7 +6268,7 @@ test('wave 62 export.buildItchZip returns PK zip with index.html meta.json icon.
 
   expect(result.pk).toBe(true)
   expect(result.type).toBe('application/zip')
-  expect(result.entries).toEqual(['RELEASE_NOTES.md', 'icon.png', 'index.html', 'meta.json'])
+  expect(result.entries).toEqual(['CHANGELOG.html', 'RELEASE_NOTES.md', 'icon.png', 'index.html', 'meta.json'])
 })
 
 test('wave 62 export.itchZipFilename uses {genre}-lotus-pack.zip pattern', async ({ page }) => {
@@ -8526,4 +8526,703 @@ test('wave 79 World Settings shows linked haptic values for active input profile
   await expect(linked).toContainText('Linked haptics (mobile)')
   await expect(linked).toContainText('50% intensity')
   await expect(linked).toContainText('battery saver on')
+})
+
+test('wave 83 indie MP teams deathmatch template', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpTeamsDeathmatch: () => void
+        mp: { teamsScoreScript: string; teamsScoreboardScript: string }
+      }
+      world: { actors: { values: () => IterableIterator<{ name: string; tags?: string[]; syncProperties?: string[] }> }; hudWidgets: { id: string }[] }
+    }
+    v.indie.spawnIndieMpTeamsDeathmatch()
+    const actors = [...v.world.actors.values()]
+    const redHost = actors.find((a) => a.name === 'RedHostSpawn')
+    const blueHost = actors.find((a) => a.name === 'BlueHostSpawn')
+    const board = actors.find((a) => a.name === 'MpScoreboard')
+    return {
+      floor: actors.some((a) => a.name === 'MpTeamsFloor'),
+      redPad: actors.some((a) => a.name === 'MpRedPad'),
+      bluePad: actors.some((a) => a.name === 'MpBluePad'),
+      redTags: redHost?.tags ?? [],
+      blueTags: blueHost?.tags ?? [],
+      sync: board?.syncProperties ?? [],
+      hud: v.world.hudWidgets.some((w) => w.id === 'mp_teams_hud'),
+      scoreScript: v.indie.mp.teamsScoreScript,
+      boardScript: v.indie.mp.teamsScoreboardScript,
+    }
+  })
+
+  expect(result.floor).toBe(true)
+  expect(result.redPad).toBe(true)
+  expect(result.bluePad).toBe(true)
+  expect(result.redTags).toContain('mp_team_red')
+  expect(result.blueTags).toContain('mp_team_blue')
+  expect(result.sync).toContain('teamScores')
+  expect(result.hud).toBe(true)
+  expect(result.scoreScript).toMatch(/mpTeamsAreFriendly/)
+  expect(result.scoreScript).toMatch(/addMpTeamScore/)
+  expect(result.boardScript).toMatch(/getMpTeamScores/)
+})
+
+test('wave 83 indie.mp.teams bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnIndieMpTeamsDeathmatch: () => void; mp: { teams: { redTag: string; blueTag: string; assign: (id: string) => string; getTeam: (id: string) => string | undefined } } }
+    }
+    v.indie.spawnIndieMpTeamsDeathmatch()
+    const t = v.indie.mp.teams
+    const a = t.assign('peer-a')
+    const b = t.assign('peer-b')
+    return {
+      redTag: t.redTag,
+      blueTag: t.blueTag,
+      a,
+      b,
+      getA: t.getTeam('peer-a'),
+    }
+  })
+
+  expect(result.redTag).toBe('mp_team_red')
+  expect(result.blueTag).toBe('mp_team_blue')
+  expect(result.a).toBe('red')
+  expect(result.b).toBe('blue')
+  expect(result.getA).toBe('red')
+})
+
+test('wave 83 /mpteams terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (s: string) => { output: string | null } }
+      world: { actors: { values: () => IterableIterator<{ name: string; tags?: string[] }> } }
+    }
+    const out = v.terminal.exec('/mpteams')
+    const actors = [...v.world.actors.values()]
+    const red = actors.find((a) => a.name === 'RedHostSpawn')
+    const blue = actors.find((a) => a.name === 'BlueHostSpawn')
+    return {
+      output: out.output ?? '',
+      redTags: red?.tags ?? [],
+      blueTags: blue?.tags ?? [],
+    }
+  })
+
+  expect(result.output).toMatch(/teams/i)
+  expect(result.redTags).toContain('mp_team_red')
+  expect(result.blueTags).toContain('mp_team_blue')
+})
+
+test('wave 83 team scoreboard + friendly fire off', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpTeamsDeathmatch: () => void
+        mp: {
+          teamsScoreScript: string
+          teamsScoreboardScript: string
+          applyMpTeamScoreDelta: (team: 'red' | 'blue', delta: number, emit?: (s: string, ...a: unknown[]) => void) => boolean
+          getTeamScores: () => { red: number; blue: number }
+        }
+      }
+    }
+    v.indie.spawnIndieMpTeamsDeathmatch()
+    let won: string | undefined
+    v.indie.mp.applyMpTeamScoreDelta('red', 3, (signal, team) => {
+      won = `${signal}:${team}`
+    })
+    return {
+      scoreScript: v.indie.mp.teamsScoreScript,
+      boardScript: v.indie.mp.teamsScoreboardScript,
+      scores: v.indie.mp.getTeamScores(),
+      won,
+    }
+  })
+
+  expect(result.scoreScript).toMatch(/mpTeamsAreFriendly/)
+  expect(result.boardScript).toMatch(/teamScores/)
+  expect(result.boardScript).toMatch(/getMpTeamScores/)
+  expect(result.scores.red).toBe(3)
+  expect(result.scores.blue).toBe(0)
+  expect(result.won).toBe('mp_game_won:red')
+})
+
+test('wave 84 exportCloudSaveManifest lists IndexedDB cloud slots with savedAt timestamps', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      save: {
+        backupToCloud: (slot: string, data: unknown) => Promise<boolean>
+        cloudManifest: () => Promise<{
+          level: string
+          slots: { slot: string; savedAt: number }[]
+          crossDeviceHint: string
+        }>
+      }
+    }
+    v.world.levelName = 'Wave84Level'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    await v.save.backupToCloud('sync-a', { hp: 84 })
+    const manifest = await v.save.cloudManifest()
+    return {
+      level: manifest.level,
+      slots: manifest.slots,
+      hint: manifest.crossDeviceHint,
+    }
+  })
+
+  expect(result.level).toBe('Wave84Level')
+  expect(result.slots.some((s) => s.slot === 'sync-a' && s.savedAt > 0)).toBe(true)
+  expect(result.hint).toContain('LOTUS-CLOUD-SYNC:v1|Wave84Level|')
+  expect(result.hint).toContain('sync-a@')
+})
+
+test('wave 84 lotus.save bridge exposes cloudManifest, crossDeviceHint, syncEnabled', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).save as Record<string, unknown>
+    return {
+      cloudManifest: typeof s.cloudManifest === 'function',
+      crossDeviceHint: typeof s.crossDeviceHint === 'function',
+      syncEnabled: typeof s.syncEnabled === 'function',
+    }
+  })
+
+  expect(result.cloudManifest).toBe(true)
+  expect(result.crossDeviceHint).toBe(true)
+  expect(result.syncEnabled).toBe(true)
+})
+
+test('wave 84 World Settings shows cloud sync hint and Copy cloud save manifest button (data-lotus-cloud-sync-hint)', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      useEditor: { getState: () => { touch: () => void } }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    v.useEditor.getState().touch()
+  })
+
+  await page.locator('details.world-settings > summary').click()
+  const hint = page.locator('[data-lotus-cloud-sync-hint]')
+  await expect(hint).toContainText('Cross-device cloud sync stub')
+  await expect(hint).toContainText('Copy cloud save manifest')
+})
+
+test('wave 84 export embeds __LOTUS_CLOUD_SYNC__ true + runtime listCloudManifest when cloud backup enabled', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const htmlOn = v.export.buildPlayableHTML()
+    v.world.environment.cloudSaveBackup = false
+    const htmlOff = v.export.buildPlayableHTML()
+    return {
+      syncOn: htmlOn.includes('__LOTUS_CLOUD_SYNC__ = true'),
+      syncOff: htmlOff.includes('__LOTUS_CLOUD_SYNC__ = false'),
+      listCloudManifest: htmlOn.includes('exportListCloudManifest'),
+      exportCloudManifest: htmlOn.includes('exportCloudSaveManifest'),
+      cloudSyncApi: htmlOn.includes('__LOTUS_CLOUD_SYNC_API__'),
+    }
+  })
+
+  expect(result.syncOn).toBe(true)
+  expect(result.syncOff).toBe(true)
+  expect(result.listCloudManifest).toBe(true)
+  expect(result.exportCloudManifest).toBe(true)
+  expect(result.cloudSyncApi).toBe(true)
+})
+
+test('wave 84 save menu includes Copy cloud save manifest button when cloud sync enabled (data-lotus-cloud-sync-menu)', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      copyBtn: html.includes('data-copy-cloud-manifest'),
+      copyLabel: html.includes('Copy cloud save manifest'),
+      menuBlock: html.includes('data-lotus-cloud-sync-menu'),
+      hintCss: html.includes('lotus-save-menu-cloud-hint'),
+    }
+  })
+
+  expect(result.copyBtn).toBe(true)
+  expect(result.copyLabel).toBe(true)
+  expect(result.menuBlock).toBe(true)
+  expect(result.hintCss).toBe(true)
+})
+
+test('wave 81 gridMap.navAgents bridge exposes setBehavior, getBehavior, spawnPatrol, spawnChase', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const navAgents = (window.lotus! as typeof window.lotus).gridMap.navAgents as Record<string, unknown>
+    return {
+      hasSetBehavior: typeof navAgents.setBehavior === 'function',
+      hasGetBehavior: typeof navAgents.getBehavior === 'function',
+      hasSpawnPatrol: typeof navAgents.spawnPatrol === 'function',
+      hasSpawnChase: typeof navAgents.spawnChase === 'function',
+    }
+  })
+
+  expect(result.hasSetBehavior).toBe(true)
+  expect(result.hasGetBehavior).toBe(true)
+  expect(result.hasSpawnPatrol).toBe(true)
+  expect(result.hasSpawnChase).toBe(true)
+})
+
+test('wave 81 gridMap.navAgents.setBehavior patrol|chase|idle round-trips via getBehavior', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const navAgents = (window.lotus! as typeof window.lotus).gridMap.navAgents as {
+      setBehavior: (id: string, b: 'patrol' | 'chase' | 'idle') => void
+      getBehavior: (id: string) => 'patrol' | 'chase' | 'idle' | null
+    }
+    navAgents.setBehavior('test_ai_agent', 'patrol')
+    const patrol = navAgents.getBehavior('test_ai_agent')
+    navAgents.setBehavior('test_ai_agent', 'chase')
+    const chase = navAgents.getBehavior('test_ai_agent')
+    navAgents.setBehavior('test_ai_agent', 'idle')
+    const idle = navAgents.getBehavior('test_ai_agent')
+    return { patrol, chase, idle }
+  })
+
+  expect(result.patrol).toBe('patrol')
+  expect(result.chase).toBe('chase')
+  expect(result.idle).toBe('idle')
+})
+
+test('wave 81 /gridnavai patrol [layer] terminal spawns patrol AI agent on grid navmesh layer', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output?: string | null; error?: string | null } }
+    }
+    const out = v.terminal.exec('/gridnavai patrol 1')
+    return {
+      error: out.error,
+      output: out.output ?? '',
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toMatch(/Grid nav AI patrol spawn started on layer 1/)
+  expect(result.output).toMatch(/grid_nav_ai_patrol_L1/)
+})
+
+test('wave 81 /gridnavai chase [layer] terminal spawns chase AI agent (targets grid_nav_target tag)', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output?: string | null; error?: string | null } }
+    }
+    const out = v.terminal.exec('/gridnavai chase 2')
+    return {
+      error: out.error,
+      output: out.output ?? '',
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toMatch(/Grid nav AI chase spawn started on layer 2/)
+  expect(result.output).toMatch(/grid_nav_ai_chase_L2/)
+})
+
+test('wave 81 gridMap.navAgents.spawnPatrol bakes layer navmesh and registers patrol behavior', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        navAgents: {
+          spawnPatrol: (
+            id: string,
+            layer: number,
+            pos: [number, number, number],
+            waypoints?: [number, number, number][],
+          ) => Promise<boolean>
+          count: (layer?: number) => number
+          layer: (id: string) => number | null
+          getBehavior: (id: string) => 'patrol' | 'chase' | 'idle' | null
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 1, 0, 0, 0)
+    v.gridMap.paintLayer(props, 1, 1, 0, 0)
+    v.gridMap.paintLayer(props, 1, 2, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    const spawned = await v.gridMap.navAgents.spawnPatrol('test_patrol_L1', 1, [0, 1, 0])
+    return {
+      ok: true,
+      spawned,
+      total: v.gridMap.navAgents.count(),
+      layerCount: v.gridMap.navAgents.count(1),
+      agentLayer: v.gridMap.navAgents.layer('test_patrol_L1'),
+      behavior: v.gridMap.navAgents.getBehavior('test_patrol_L1'),
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.spawned).toBe(true)
+  expect(result.total).toBe(1)
+  expect(result.layerCount).toBe(1)
+  expect(result.agentLayer).toBe(1)
+  expect(result.behavior).toBe('patrol')
+})
+
+test('wave 82 renderPackChangelogHtml returns styled section with pack title and lotus-pack-changelog class', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { renderPackChangelogHtml: (m: 'platformer') => string; buildReleaseNotes: (m: 'platformer') => string }
+    }
+    const html = v.export.renderPackChangelogHtml('platformer')
+    const notes = v.export.buildReleaseNotes('platformer')
+    return {
+      hasSection: html.includes('<section class="lotus-pack-changelog">'),
+      hasStyle: html.includes('.lotus-pack-changelog'),
+      hasTitle: html.includes('Lotus Platformer Pack'),
+      hasWhatsNew: html.includes("What's new"),
+      hasWaves: html.includes('Waves 76–80'),
+      notesHasTitle: notes.includes('# Lotus Platformer Pack'),
+    }
+  })
+
+  expect(result.hasSection).toBe(true)
+  expect(result.hasStyle).toBe(true)
+  expect(result.hasTitle).toBe(true)
+  expect(result.hasWhatsNew).toBe(true)
+  expect(result.hasWaves).toBe(true)
+  expect(result.notesHasTitle).toBe(true)
+})
+
+test('wave 82 buildPackHTML embeds __LOTUS_PACK_CHANGELOG_HTML__ and __LOTUS_PACK_CHANGELOG_BOOT__ for platformer pack', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'platformer') => void
+          buildPackHTML: (m: 'platformer') => string
+        }
+      }
+      export: { renderPackChangelogHtml: (m: 'platformer') => string }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const expected = v.export.renderPackChangelogHtml('platformer')
+    const marker = 'window.__LOTUS_PACK_CHANGELOG_HTML__ = '
+    const idx = html.indexOf(marker)
+    let embedded = ''
+    if (idx >= 0) {
+      const rest = html.slice(idx + marker.length)
+      const end = rest.indexOf('; window.')
+      const jsonStr = end >= 0 ? rest.slice(0, end) : rest.split(';')[0]
+      embedded = JSON.parse(jsonStr) as string
+    }
+    return {
+      hasHtmlTag: html.includes('__LOTUS_PACK_CHANGELOG_HTML__'),
+      hasBootTag: html.includes('__LOTUS_PACK_CHANGELOG_BOOT__'),
+      bootEnabled: html.includes('__LOTUS_PACK_CHANGELOG_BOOT__ = true'),
+      embedded,
+      expected,
+      match: embedded === expected,
+      hasChangelogClass: embedded.includes('lotus-pack-changelog'),
+    }
+  })
+
+  expect(result.hasHtmlTag).toBe(true)
+  expect(result.hasBootTag).toBe(true)
+  expect(result.bootEnabled).toBe(true)
+  expect(result.match).toBe(true)
+  expect(result.hasChangelogClass).toBe(true)
+})
+
+test('wave 82 buildItchZip includes CHANGELOG.html sidecar with lotus-pack-changelog section', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: {
+        buildItchZip: (m: 'rpg') => Blob
+        listItchZipEntries: (b: Blob) => Promise<string[]>
+        readItchZipEntry: (b: Blob, n: string) => Promise<string | null>
+        renderPackChangelogHtml: (m: 'rpg') => string
+      }
+    }
+    const blob = v.export.buildItchZip('rpg')
+    const entries = await v.export.listItchZipEntries(blob)
+    const changelogRaw = await v.export.readItchZipEntry(blob, 'CHANGELOG.html')
+    const snippet = v.export.renderPackChangelogHtml('rpg')
+    return {
+      entries,
+      hasChangelog: entries.includes('CHANGELOG.html'),
+      changelogRaw,
+      hasDoctype: changelogRaw?.includes('<!doctype html>') ?? false,
+      hasSection: changelogRaw?.includes('lotus-pack-changelog') ?? false,
+      hasRpgTitle: changelogRaw?.includes('Lotus RPG Pack') ?? false,
+      snippetInDoc: changelogRaw?.includes(snippet) ?? false,
+    }
+  })
+
+  expect(result.hasChangelog).toBe(true)
+  expect(result.entries).toEqual(
+    expect.arrayContaining(['index.html', 'meta.json', 'icon.png', 'RELEASE_NOTES.md', 'CHANGELOG.html']),
+  )
+  expect(result.hasDoctype).toBe(true)
+  expect(result.hasSection).toBe(true)
+  expect(result.hasRpgTitle).toBe(true)
+  expect(result.snippetInDoc).toBe(true)
+})
+
+test('wave 82 /packchangelog platformer terminal prints itch embed HTML snippet', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output: string | null; error: string | null } | undefined }
+      export: { renderPackChangelogHtml: (m: 'platformer') => string }
+    }
+    const out = v.terminal.exec('/packchangelog platformer')
+    const expected = v.export.renderPackChangelogHtml('platformer')
+    return {
+      error: out?.error,
+      output: out?.output ?? '',
+      expected,
+      match: out?.output === expected,
+      hasSection: out?.output?.includes('<section class="lotus-pack-changelog">') ?? false,
+      hasTitle: out?.output?.includes('Lotus Platformer Pack') ?? false,
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.match).toBe(true)
+  expect(result.hasSection).toBe(true)
+  expect(result.hasTitle).toBe(true)
+})
+
+test('wave 82 buildPackHTML includes pack changelog boot overlay CSS (#lotus-pack-changelog-boot)', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'fps') => void
+          buildPackHTML: (m: 'fps') => string
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('fps')
+    const html = v.indie.minigame.buildPackHTML('fps')
+    return {
+      hasBootCss: html.includes('#lotus-pack-changelog-boot'),
+      hasPlayBtnClass: html.includes('.lotus-pack-changelog-play'),
+      hasChangelogHtmlGlobal: html.includes('__LOTUS_PACK_CHANGELOG_HTML__'),
+    }
+  })
+
+  expect(result.hasBootCss).toBe(true)
+  expect(result.hasPlayBtnClass).toBe(true)
+  expect(result.hasChangelogHtmlGlobal).toBe(true)
+})
+
+test('wave 85 exportAchievements ACHIEVEMENTS per genre + unlockAchievement listUnlocked localStorage', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        achievements: {
+          list: (pack?: string) => { id: string; title: string }[]
+          unlock: (id: string, pack?: string) => boolean
+          unlocked: (id?: string, pack?: string) => boolean | string[]
+          packId: (pack?: string) => string | null
+        }
+      }
+    }
+    const ach = v.indie.achievements
+    ach.packId('platformer')
+    localStorage.removeItem('lotus-engine.achievements.platformer')
+    const listed = ach.list('platformer')
+    const first = ach.unlock('platformer_win', 'platformer')
+    const second = ach.unlock('platformer_win', 'platformer')
+    const ids = ach.unlocked(undefined, 'platformer') as string[]
+    const key = localStorage.getItem('lotus-engine.achievements.platformer')
+    return {
+      count: listed.length,
+      id: listed[0]?.id,
+      first,
+      second,
+      ids,
+      key,
+      rpgId: ach.list('rpg')[0]?.id,
+      fpsId: ach.list('fps')[0]?.id,
+    }
+  })
+
+  expect(result.count).toBe(1)
+  expect(result.id).toBe('platformer_win')
+  expect(result.first).toBe(true)
+  expect(result.second).toBe(false)
+  expect(result.ids).toContain('platformer_win')
+  expect(result.key).toContain('platformer_win')
+  expect(result.rpgId).toBe('rpg_win')
+  expect(result.fpsId).toBe('fps_win')
+})
+
+test('wave 85 indie.achievements bridge exposes list unlock unlocked packId', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const ach = (window.lotus! as typeof window.lotus).indie.achievements as Record<string, unknown>
+    return {
+      list: typeof ach.list === 'function',
+      unlock: typeof ach.unlock === 'function',
+      unlocked: typeof ach.unlocked === 'function',
+      packId: typeof ach.packId === 'function',
+      showToast: typeof ach.showToast === 'function',
+    }
+  })
+
+  expect(result.list).toBe(true)
+  expect(result.unlock).toBe(true)
+  expect(result.unlocked).toBe(true)
+  expect(result.packId).toBe(true)
+  expect(result.showToast).toBe(true)
+})
+
+test('wave 85 buildPackHTML embeds __LOTUS_ACHIEVEMENTS__ with platformer trophies', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'platformer') => void
+          buildPackHTML: (m: 'platformer') => string
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const marker = 'window.__LOTUS_ACHIEVEMENTS__ = '
+    const idx = html.indexOf(marker)
+    let parsed: { packId?: string; achievements?: { id: string }[] } | null = null
+    if (idx >= 0) {
+      const rest = html.slice(idx + marker.length)
+      const end = rest.indexOf('; window.')
+      const jsonStr = end >= 0 ? rest.slice(0, end) : rest.split(';')[0]
+      parsed = JSON.parse(jsonStr)
+    }
+    return {
+      hasTag: html.includes('__LOTUS_ACHIEVEMENTS__'),
+      toastCss: html.includes('lotus-achievement-toast'),
+      packId: parsed?.packId,
+      winId: parsed?.achievements?.[0]?.id,
+      runtimeUnlock: html.includes('unlockAchievement'),
+      runtimeApi: html.includes('__LOTUS_ACHIEVEMENTS_API__'),
+    }
+  })
+
+  expect(result.hasTag).toBe(true)
+  expect(result.toastCss).toBe(true)
+  expect(result.packId).toBe('platformer')
+  expect(result.winId).toBe('platformer_win')
+  expect(result.runtimeUnlock).toBe(true)
+  expect(result.runtimeApi).toBe(true)
+})
+
+test('wave 85 mini-game scripts call unlockAchievement on game_won', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const m = (window.lotus! as typeof window.lotus).indie.minigame as {
+      platformerScript: string
+      rpgScript: string
+      fpsScript: string
+    }
+    return {
+      platformer: m.platformerScript.includes("api.unlockAchievement('platformer_win')"),
+      rpgZone: m.rpgScript.includes("api.unlockAchievement('rpg_win')"),
+      rpgCollect: m.rpgScript.includes('api.emit(\'game_won\')') && m.rpgScript.includes("api.unlockAchievement('rpg_win')"),
+      fps: m.fpsScript.includes("api.unlockAchievement('fps_win')"),
+    }
+  })
+
+  expect(result.platformer).toBe(true)
+  expect(result.rpgZone).toBe(true)
+  expect(result.rpgCollect).toBe(true)
+  expect(result.fps).toBe(true)
+})
+
+test('wave 85 miniGameHud achievement toast renders via indie.achievements.showToast', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const ach = (window.lotus! as typeof window.lotus).indie.achievements as {
+      showToast: (t: string, s?: string, i?: string) => void
+    }
+    ach.showToast('Goal Getter', 'Reach the goal zone', '🏁')
+    const toast = document.querySelector('.lotus-achievement-toast')
+    return {
+      toast: !!toast,
+      title: toast?.querySelector('.lotus-achievement-toast-title')?.textContent ?? '',
+      sub: toast?.querySelector('.lotus-achievement-toast-sub')?.textContent ?? '',
+    }
+  })
+
+  expect(result.toast).toBe(true)
+  expect(result.title).toBe('Goal Getter')
+  expect(result.sub).toBe('Reach the goal zone')
 })

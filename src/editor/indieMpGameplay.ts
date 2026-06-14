@@ -7,9 +7,19 @@ import {
   MP_TAG_TARGET,
   applyMpScoreDelta,
   mirrorMpPeerScores,
+  mirrorMpTeamScores,
 } from '../engine/mpGameplay'
+import {
+  MP_TAG_BLUE,
+  MP_TAG_RED,
+  MP_TEAM_SCORES_VAR,
+  applyMpTeamScoreDelta,
+  mpTeamsSet,
+  type MpTeam,
+} from '../engine/mpTeams'
 import { mpKillcamOnGameWon, mpKillcamOnPlayerKilled } from '../engine/mpKillcam'
 import {
+  mpBroadcastTeamScores,
   mpLobbyRoom,
   mpSetGameWonRelayHandler,
   mpSetLobbyRefreshHandler,
@@ -17,6 +27,10 @@ import {
   mpSetPeerScoresMirrorHandler,
   mpSetPlayerKilledRelayHandler,
   mpSetScoreDeltaHandler,
+  mpSetTeamAssignMirrorHandler,
+  mpSetTeamGameWonRelayHandler,
+  mpSetTeamScoreDeltaHandler,
+  mpSetTeamScoresMirrorHandler,
 } from '../engine/multiplayer'
 import { AddActorCommand, runCommand } from './commands'
 import { buildSerializedActor } from './spawn'
@@ -32,10 +46,15 @@ export {
   findMpScoreboard,
   getMpScore,
   getMpPeerScores,
+  getMpTeamScores,
   mirrorMpPeerScores,
+  mirrorMpTeamScores,
   addMpScore,
+  addMpTeamScore,
   applyMpScoreDelta,
+  applyMpTeamScoreDelta,
 } from '../engine/mpGameplay'
+export { MP_TAG_RED, MP_TAG_BLUE, MP_TEAM_SCORES_VAR, mpTeamsAssign, mpTeamsGet, mpTeamsGetAll, mpTeamsAreFriendly } from '../engine/mpTeams'
 
 export const MP_LOBBY_MANAGER_NAME = 'MpLobbyManager'
 export const MP_SPECTATOR_MANAGER_NAME = 'MpSpectatorManager'
@@ -184,6 +203,70 @@ const MP_LOBBY_HUD_WIDGETS: HudWidget[] = [
   },
 ]
 
+/** Team deathmatch score script — friendly fire off, awards team score. */
+export const MP_TEAMS_SCORE_SCRIPT = `// mp_teams_score — red/blue teams (host authoritative, friendly fire off)
+// @export winScore = 3
+function onTick(_dt) {
+  if (!api.mpConnected()) return
+  if (!api.actionJustPressed('Fire')) return
+  const pos = api.pawnPosition()
+  if (!pos) return
+  const yaw = api.pawnYaw()
+  const pitch = api.pawnPitch()
+  const cosP = Math.cos(pitch)
+  const dir = [-Math.sin(yaw) * cosP, Math.sin(pitch), -Math.cos(yaw) * cosP]
+  const origin = [pos.x, pos.y + 1.4, pos.z]
+  const hit = api.raycast(origin, dir, 80)
+  if (!hit || !hit.actor.tags.includes('mp_target')) return
+  const killerId = api.mpLocalId()
+  const victimId = api.mpLobbyPeers().find((id) => id !== killerId)
+  if (victimId && api.mpTeamsAreFriendly(killerId, victimId)) return
+  if (victimId) api.mpReportPlayerKill(victimId)
+  api.addMpTeamScore(1)
+}
+`
+
+/** Team scoreboard — host owns teamScores scriptVar; clients mirror via score relay. */
+export const MP_TEAMS_SCOREBOARD_SCRIPT = `// mp_teams_scoreboard — team score HUD (Wave 83)
+// @export winScore = 3
+// @export teamScores = { red: 0, blue: 0 }
+function onBeginPlay() {
+  api.on('mp_game_won', (winner, score) => {
+    api.log('MP team winner: ' + winner + ' (' + score + ')')
+  })
+  if (!api.mpIsHost()) return
+  const scores = { red: 0, blue: 0, ...(vars.teamScores || {}) }
+  actor.scriptVars = { ...(actor.scriptVars ?? {}), teamScores: scores }
+}
+function onTick(_dt) {
+  let scores = { red: 0, blue: 0 } as { red: number; blue: number }
+  if (api.mpIsHost()) {
+    const raw = (actor.scriptVars?.teamScores ?? vars.teamScores ?? { red: 0, blue: 0 }) as {
+      red: number
+      blue: number
+    }
+    scores = { red: raw.red ?? 0, blue: raw.blue ?? 0 }
+    actor.scriptVars = { ...(actor.scriptVars ?? {}), teamScores: scores }
+  } else if (api.mpConnected()) {
+    scores = api.getMpTeamScores()
+  } else {
+    const raw = (actor.scriptVars?.teamScores ?? vars.teamScores ?? { red: 0, blue: 0 }) as {
+      red: number
+      blue: number
+    }
+    scores = { red: raw.red ?? 0, blue: raw.blue ?? 0 }
+  }
+  const cap = vars.winScore as number
+  const team = api.mpGetTeam()
+  const teamLabel = team ? team.toUpperCase() + ' ' : ''
+  api.hud.text(
+    'mp_teams_hud',
+    teamLabel + 'R:' + scores.red + ' B:' + scores.blue + ' /' + cap,
+    { anchor: 'tr', x: 16, y: 16, size: 17, color: '#e8ecf0' },
+  )
+}
+`
+
 /** PlayerStart script — Fire raycast vs mp_target → api.addMpScore(1). */
 export const MP_SCORE_SCRIPT = `// mp_score — deathmatch lite (host authoritative)
 // @export winScore = 3
@@ -286,6 +369,40 @@ function buildScoreboardActor() {
   return board
 }
 
+function buildTeamsScoreboardActor() {
+  const board = buildSerializedActor({ kind: 'empty' }, [0, 2, 0])
+  board.name = MP_SCOREBOARD_NAME
+  board.script = MP_TEAMS_SCOREBOARD_SCRIPT
+  board.scriptVars = { [MP_TEAM_SCORES_VAR]: { red: 0, blue: 0 }, winScore: MP_SCORE_WIN }
+  board.syncProperties = [MP_TEAM_SCORES_VAR]
+  return board
+}
+
+function buildTeamSpawn(
+  name: string,
+  position: [number, number, number],
+  team: MpTeam,
+  color: string,
+) {
+  const spawn = buildSerializedActor({ kind: 'playerstart' }, position)
+  spawn.name = name
+  spawn.pawnMode = 'thirdperson' as PawnMode
+  spawn.tags = team === 'red' ? [MP_TAG_RED] : [MP_TAG_BLUE]
+  spawn.script = MP_TEAMS_SCORE_SCRIPT
+  spawn.material = {
+    color,
+    roughness: 0.75,
+    metalness: 0.05,
+    emissive: color,
+    emissiveIntensity: 0.4,
+    wireframe: false,
+    opacity: 1,
+    transparent: false,
+  }
+  if (name === 'RedHostSpawn') spawn.tags.push(MP_TAG_HOST)
+  return spawn
+}
+
 function buildTarget(name: string, position: [number, number, number], color: string) {
   const target = starterBox(name, position, [0.9, 1.4, 0.9], color)
   target.tags = [MP_TAG_TARGET]
@@ -298,6 +415,17 @@ const MP_SCORE_HUD_WIDGET: HudWidget = {
   id: 'mp_score_hud',
   type: 'text',
   text: 'DM —',
+  anchor: 'tr',
+  x: 16,
+  y: 16,
+  size: 17,
+  color: '#e8ecf0',
+}
+
+const MP_TEAMS_HUD_WIDGET: HudWidget = {
+  id: 'mp_teams_hud',
+  type: 'text',
+  text: 'R:0 B:0',
   anchor: 'tr',
   x: 16,
   y: 16,
@@ -474,6 +602,83 @@ function transitionLobbyToDeathmatch() {
  * Indie MP deathmatch greybox — floor, spawns with MP_SCORE_SCRIPT,
  * mp_target dummies, scoreboard actor, score HUD widget.
  */
+/**
+ * Indie MP teams deathmatch — red/blue spawns, team scoreboard, friendly fire off.
+ */
+export function spawnIndieMpTeamsDeathmatch() {
+  const floor = starterBox('MpTeamsFloor', [0, -0.1, 0], [20, 0.2, 20], '#4a5568')
+  floor.material!.roughness = 0.85
+
+  const redPad = starterBox('MpRedPad', [-6, 0.05, 0], [5, 0.1, 5], '#e5484d')
+  redPad.material!.emissive = '#e5484d'
+  redPad.material!.emissiveIntensity = 0.25
+
+  const bluePad = starterBox('MpBluePad', [6, 0.05, 0], [5, 0.1, 5], '#2f80ed')
+  bluePad.material!.emissive = '#2f80ed'
+  bluePad.material!.emissiveIntensity = 0.25
+
+  const redHost = buildTeamSpawn('RedHostSpawn', [-6, 0.2, 0], 'red', '#e5484d')
+  const redClient = buildTeamSpawn('RedClientSpawn', [-4, 0.2, -2], 'red', '#e5484d')
+  const blueHost = buildTeamSpawn('BlueHostSpawn', [6, 0.2, 0], 'blue', '#2f80ed')
+  const blueClient = buildTeamSpawn('BlueClientSpawn', [4, 0.2, 2], 'blue', '#2f80ed')
+
+  const targetA = buildTarget('MpTargetA', [0, 0.7, -5], '#e07a5f')
+  const targetB = buildTarget('MpTargetB', [-2, 0.7, 3], '#81b29a')
+  const targetC = buildTarget('MpTargetC', [2, 0.7, 3], '#f2cc8f')
+
+  const scoreboard = buildTeamsScoreboardActor()
+  const sun = buildSerializedActor({ kind: 'light', type: 'DirectionalLight' }, [6, 12, 4])
+  sun.name = 'MpTeamsSun'
+
+  const undoNames = [
+    'MpTeamsFloor',
+    'MpRedPad',
+    'MpBluePad',
+    'RedHostSpawn',
+    'RedClientSpawn',
+    'BlueHostSpawn',
+    'BlueClientSpawn',
+    'MpTargetA',
+    'MpTargetB',
+    'MpTargetC',
+    MP_SCOREBOARD_NAME,
+    'MpTeamsSun',
+  ]
+
+  runCommand({
+    label: 'Indie MP teams deathmatch',
+    execute() {
+      for (const sa of [
+        floor,
+        redPad,
+        bluePad,
+        redHost,
+        redClient,
+        blueHost,
+        blueClient,
+        targetA,
+        targetB,
+        targetC,
+        scoreboard,
+        sun,
+      ]) {
+        new AddActorCommand(sa).execute()
+      }
+      world.environment.useRapierCharacter = true
+      world.applyEnvironment()
+      const hasHud = world.hudWidgets.some((w) => w.id === MP_TEAMS_HUD_WIDGET.id)
+      if (!hasHud) world.hudWidgets.push({ ...MP_TEAMS_HUD_WIDGET })
+      useEditor.getState().setStatus('Indie MP teams — red vs blue, first team to 3 wins (friendly fire off)')
+      useEditor.getState().touch()
+    },
+    undo() {
+      removeActorsByName(undoNames)
+      world.hudWidgets = world.hudWidgets.filter((w) => w.id !== MP_TEAMS_HUD_WIDGET.id)
+      useEditor.getState().touch()
+    },
+  })
+}
+
 export function spawnIndieMpDeathmatch() {
   const floor = starterBox('MpDmFloor', [0, -0.1, 0], [18, 0.2, 18], '#4a5568')
   floor.material!.roughness = 0.85
@@ -538,14 +743,36 @@ mpSetScoreDeltaHandler((peerId, delta) => {
   applyMpScoreDelta(world.actors, peerId, delta, relayPlaySignal)
 })
 
+/** Host applies team score deltas requested by clients over the relay (Wave 83). */
+mpSetTeamScoreDeltaHandler((_peerId, team, delta) => {
+  applyMpTeamScoreDelta(world.actors, team, delta, relayPlaySignal, (scores, gameWon) =>
+    mpBroadcastTeamScores(scores, gameWon),
+  )
+})
+
 /** Clients mirror host peerScores snapshots from the score relay. */
 mpSetPeerScoresMirrorHandler((scores) => {
   mirrorMpPeerScores(world.actors, scores)
 })
 
+/** Clients mirror host teamScores snapshots from the score relay (Wave 83). */
+mpSetTeamScoresMirrorHandler((scores) => {
+  mirrorMpTeamScores(world.actors, scores)
+})
+
+/** Clients apply host team_assign relay (Wave 83). */
+mpSetTeamAssignMirrorHandler((peerId, team) => {
+  mpTeamsSet(peerId, team)
+})
+
 /** Clients receive mp_game_won when host broadcasts a win on the score relay. */
 mpSetGameWonRelayHandler((peerId, score) => {
   relayPlaySignal('mp_game_won', peerId, score)
+})
+
+/** Clients receive team mp_game_won when host broadcasts a team win (Wave 83). */
+mpSetTeamGameWonRelayHandler((team, score) => {
+  relayPlaySignal('mp_game_won', team, score)
 })
 
 /** Relay player_killed — victim client gets killcam overlay. */

@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v4.43 (waves 76–80).** v0.33–v4.43 shipped; **build clean**, **`npm run test` — 344 passed**.
+- **Last clean commit: v4.68 (waves 81–85).** v0.33–v4.68 shipped; **build clean**, **`npm run test` — 369 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -489,12 +489,22 @@
 | 79 | v4.34–v4.38 | Haptic profiles — desktop/mobile intensity presets |
 | 80 | v4.39–v4.43 | Save slot UI — Escape pause menu in export — 344 tests |
 
+## Shipped (v4.44–v4.68, Waves 81–85 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 81 | v4.44–v4.48 | Grid agent AI — patrol / chase / idle on navmesh; `/gridnavai` |
+| 82 | v4.49–v4.53 | Pack changelog HTML — `CHANGELOG.html` in itch zip + boot overlay |
+| 83 | v4.54–v4.58 | MP team deathmatch — red/blue teams, friendly fire off; `/mpteams` |
+| 84 | v4.59–v4.63 | Cloud save sync stub — manifest + cross-device hint |
+| 85 | v4.64–v4.68 | Export achievements — localStorage trophies + HUD toasts — 369 tests |
+
 ## Next up (indie roadmap)
 
-1. **Grid agent AI behaviors** — patrol / chase on navmesh layer
-2. **Pack changelog HTML** — embed release notes in itch page template
-3. **MP team modes** — red/blue teams on deathmatch template
-4. **Save cloud sync stub** — optional IndexedDB + cross-device hint
+1. **Grid nav path debug** — path viz + `/gridnavpath` on baked layer
+2. **itch.io embed widget** — single-file changelog + achievements widget
+3. **MP CTF mode** — flag capture on teams template
+4. **Cloud save import/export** — download/upload JSON manifest file
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

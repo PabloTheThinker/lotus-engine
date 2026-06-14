@@ -4,6 +4,35 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 81–85: v4.44–v4.68 (indie swarm)
+
+### Wave 81 (v4.44–v4.48) — Grid agent AI behaviors
+- `gridNavAi.ts` — patrol / chase / idle on grid navmesh layer; `/gridnavai`
+
+### Wave 82 (v4.49–v4.53) — Pack changelog HTML
+- `packChangelogHtml.ts` — styled `CHANGELOG.html` in itch zip + boot overlay
+
+### Wave 83 (v4.54–v4.58) — MP team deathmatch
+- `mpTeams.ts` — red/blue teams, friendly fire off, `/mpteams`, `indie.mp.teams`
+
+### Wave 84 (v4.59–v4.63) — Cloud save sync stub
+- `cloudSaveSync.ts` — manifest + cross-device hint in World Settings / save menu
+
+### Wave 85 (v4.64–v4.68) — Export achievements
+- `exportAchievements.ts` — per-genre trophies, `__LOTUS_ACHIEVEMENTS__`, HUD toasts
+
+### Fixed
+- Wave 62 zip test — expect `CHANGELOG.html` in itch pack
+- Wave 73 relay — dedicated host (`000000`) stabilizes spectator replay_sample roles
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 369 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 76–80: v4.19–v4.43 (indie swarm)
 
 ### Wave 76 (v4.19–v4.23) — AI navmesh agents

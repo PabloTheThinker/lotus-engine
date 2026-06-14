@@ -9,6 +9,7 @@ import {
   type PlatformerStarterMode,
   type TopDownRpgStarterMode,
 } from './starterTemplates'
+import { setAchievementPackId } from './exportAchievements'
 import { enableMiniGameHud } from './miniGameHud'
 import { useEditor } from './store'
 
@@ -39,6 +40,7 @@ ${miniGameTimeoutBlock()}
   api.on('enter:${GOAL_ZONE_NAME}', () => {
     api.log('Goal reached!')
     api.emit('game_won')
+    api.unlockAchievement('platformer_win')
   })
 }
 `
@@ -54,6 +56,7 @@ ${miniGameTimeoutBlock()}
   api.on('enter:RpgQuestZone', () => {
     api.log('Quest zone reached!')
     api.emit('game_won')
+    api.unlockAchievement('rpg_win')
   })
 }
 function onTick(_dt) {
@@ -70,7 +73,10 @@ function onTick(_dt) {
     _collected.add(npc.name)
     api.log('Collected ' + npc.name + ' (' + _collected.size + '/' + vars.npcGoal + ')')
   }
-  if (_collected.size >= vars.npcGoal) api.emit('game_won')
+  if (_collected.size >= vars.npcGoal) {
+    api.emit('game_won')
+    api.unlockAchievement('rpg_win')
+  }
 }
 `
 
@@ -94,7 +100,10 @@ function onTick(_dt) {
   hit.actor.root.visible = false
   _destroyed++
   api.log('Target destroyed (' + _destroyed + '/' + vars.targetsToWin + ')')
-  if (_destroyed >= vars.targetsToWin) api.emit('game_won')
+  if (_destroyed >= vars.targetsToWin) {
+    api.emit('game_won')
+    api.unlockAchievement('fps_win')
+  }
 }
 `
 
@@ -257,5 +266,6 @@ export function spawnMiniGame(mode: MiniGameMode, variant?: string) {
       break
   }
   attachMiniGameScripts(mode)
+  setAchievementPackId(mode)
   enableMiniGameHud()
 }

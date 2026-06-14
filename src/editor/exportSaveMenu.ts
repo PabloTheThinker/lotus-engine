@@ -60,6 +60,20 @@ export const SAVE_MENU_OVERLAY_CSS = `
     font: inherit; cursor: pointer;
   }
   .lotus-save-menu-resume:hover { background: rgba(255, 255, 255, 0.12); }
+  .lotus-save-menu-cloud {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .lotus-save-menu-cloud-hint {
+    font-size: 11px; font-weight: 500; color: #6b7585;
+    margin-bottom: 8px; line-height: 1.4;
+  }
+  .lotus-save-menu-cloud-copy {
+    width: 100%; padding: 8px 14px; border: none; border-radius: 6px;
+    background: rgba(47, 128, 237, 0.22); color: #b8d4ff;
+    font: inherit; cursor: pointer;
+  }
+  .lotus-save-menu-cloud-copy:hover { background: rgba(47, 128, 237, 0.32); }
   @keyframes lotus-save-menu-in {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -72,6 +86,9 @@ export interface SaveMenuHandlers {
   saveSlot: (slot: string, data: unknown) => boolean
   loadSlot: (slot: string) => unknown | null
   listSlots?: () => string[]
+  /** Wave 84 — IndexedDB cloud manifest copy (cross-device stub). */
+  cloudSyncEnabled?: boolean
+  copyCloudManifest?: () => Promise<string | null>
 }
 
 let overlayEl: HTMLElement | null = null
@@ -134,6 +151,14 @@ function wireMenuButtons(root: HTMLElement): void {
     e.preventDefault()
     hideSaveMenu()
   })
+  root.querySelector<HTMLButtonElement>('[data-copy-cloud-manifest]')?.addEventListener('click', (e) => {
+    e.preventDefault()
+    if (!handlers?.copyCloudManifest) return
+    void handlers.copyCloudManifest().then((hint) => {
+      if (!hint) return
+      void navigator.clipboard?.writeText(hint).catch(() => {})
+    })
+  })
 }
 
 function buildMenuDOM(): HTMLElement {
@@ -153,10 +178,19 @@ function buildMenuDOM(): HTMLElement {
     </div>`
   }).join('')
 
+  const cloudSyncBlock =
+    handlers?.cloudSyncEnabled && handlers?.copyCloudManifest
+      ? `<div class="lotus-save-menu-cloud" data-lotus-cloud-sync-menu>
+      <div class="lotus-save-menu-cloud-hint">Cross-device stub — copy cloud save manifest token for QR / another browser</div>
+      <button type="button" class="lotus-save-menu-cloud-copy" data-copy-cloud-manifest>Copy cloud save manifest</button>
+    </div>`
+      : ''
+
   root.innerHTML = `<div class="lotus-save-menu-panel">
     <div class="lotus-save-menu-title">PAUSED</div>
     <div class="lotus-save-menu-sub">Escape to resume · Save or load a checkpoint</div>
     ${rows}
+    ${cloudSyncBlock}
     <button type="button" class="lotus-save-menu-resume" data-save-menu-resume>Resume</button>
   </div>`
   wireMenuButtons(root)

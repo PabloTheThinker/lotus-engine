@@ -608,7 +608,7 @@ export class World {
       this.physicsAccumulator -= physDt
     }
     tickCrowd(dt)
-    tickGridNavAgents(dt)
+    tickGridNavAgents(dt, this.actors)
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
       const st = this.playClock % this.sequence.duration

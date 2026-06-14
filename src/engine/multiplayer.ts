@@ -64,6 +64,14 @@ import {
   type MpReplayPose,
   type MpReplayPoseWire,
 } from './mpReplayBuffer'
+import {
+  mpTeamsAssign,
+  mpTeamsGet,
+  mpTeamsReset,
+  mpTeamsSet,
+  type MpTeam,
+  type MpTeamScores,
+} from './mpTeams'
 
 /**
  * Multiplayer — Godot MultiplayerSynchronizer / MultiplayerSpawner-lite over a
@@ -85,6 +93,7 @@ import {
  *   replay_sample  { t, id, offsetSec? }      — spectator requests host pose ring sample
  *   replay_sample  { t, id, offsetSec, bufferLength, samples } — host rewind snapshot
  *   player_killed  { t, id, killerId, victimId }              — deathmatch kill relay (Wave 78)
+ *   team_assign    { t, id, peerId, team }                    — host assigns red/blue (Wave 83)
  *   list_rooms  { t }                         — query public room registry
  *   rooms       { t, rooms:[{room,peers}] }   — room list snapshot
  *   room_registry { t, rooms }                — broadcast when rooms change
@@ -122,8 +131,12 @@ let pingAcc = 0
 let worldRef: World | null = null
 
 let scoreDeltaHandler: ((peerId: string, delta: number) => void) | null = null
+let teamScoreDeltaHandler: ((peerId: string, team: MpTeam, delta: number) => void) | null = null
 let peerScoresMirrorHandler: ((scores: Record<string, number>) => void) | null = null
+let teamScoresMirrorHandler: ((scores: MpTeamScores) => void) | null = null
+let teamAssignMirrorHandler: ((peerId: string, team: MpTeam) => void) | null = null
 let gameWonRelayHandler: ((peerId: string, score: number) => void) | null = null
+let teamGameWonRelayHandler: ((team: MpTeam, score: number) => void) | null = null
 let playerKilledRelayHandler: ((killerId: string, victimId: string) => void) | null = null
 let lobbyStartHandler: (() => void) | null = null
 let lobbyRefreshHandler: (() => void) | null = null
@@ -463,14 +476,34 @@ export function mpSetScoreDeltaHandler(fn: ((peerId: string, delta: number) => v
   scoreDeltaHandler = fn
 }
 
+/** Register host handler for client team score requests (Wave 83). */
+export function mpSetTeamScoreDeltaHandler(fn: ((peerId: string, team: MpTeam, delta: number) => void) | null) {
+  teamScoreDeltaHandler = fn
+}
+
 /** Client mirror — host peerScores snapshot applied to local scoreboard. */
 export function mpSetPeerScoresMirrorHandler(fn: ((scores: Record<string, number>) => void) | null) {
   peerScoresMirrorHandler = fn
 }
 
+/** Client mirror — host teamScores snapshot applied to local scoreboard (Wave 83). */
+export function mpSetTeamScoresMirrorHandler(fn: ((scores: MpTeamScores) => void) | null) {
+  teamScoresMirrorHandler = fn
+}
+
+/** Client mirror — host team_assign relay applied locally (Wave 83). */
+export function mpSetTeamAssignMirrorHandler(fn: ((peerId: string, team: MpTeam) => void) | null) {
+  teamAssignMirrorHandler = fn
+}
+
 /** Client relay — host mp_game_won forwarded to local playApi. */
 export function mpSetGameWonRelayHandler(fn: ((peerId: string, score: number) => void) | null) {
   gameWonRelayHandler = fn
+}
+
+/** Client relay — host team mp_game_won forwarded to local playApi (Wave 83). */
+export function mpSetTeamGameWonRelayHandler(fn: ((team: MpTeam, score: number) => void) | null) {
+  teamGameWonRelayHandler = fn
 }
 
 /** Client relay — host player_killed forwarded to local playApi + killcam. */
@@ -583,10 +616,39 @@ export function mpBroadcastPeerScores(
   })
 }
 
+/** Host broadcasts authoritative teamScores (+ optional team win) via score relay (Wave 83). */
+export function mpBroadcastTeamScores(scores: MpTeamScores, gameWon?: { team: MpTeam; score: number }) {
+  if (!mpConnected() || !mpIsHost()) return
+  send({
+    t: 'score',
+    id: localId,
+    teamScores: scores,
+    ...(gameWon ? { teamGameWon: [gameWon.team, gameWon.score] as [MpTeam, number] } : {}),
+  })
+}
+
+/** Host assigns a peer to red/blue and relays team_assign (Wave 83). */
+export function mpBroadcastTeamAssign(peerId: string, team?: MpTeam) {
+  if (!peerId) return 'red'
+  if (!mpConnected()) return mpTeamsAssign(peerId)
+  if (!mpIsHost()) return mpTeamsGet(peerId) ?? 'red'
+  const assigned = team ?? mpTeamsAssign(peerId)
+  mpTeamsSet(peerId, assigned)
+  send({ t: 'team_assign', id: localId, peerId, team: assigned })
+  teamAssignMirrorHandler?.(peerId, assigned)
+  return assigned
+}
+
 /** Client requests a score delta — host applies via mpSetScoreDeltaHandler. */
 export function mpRequestScoreDelta(delta: number, peerId?: string) {
   if (!mpConnected() || mpIsHost()) return
   send({ t: 'score', id: peerId ?? localId, delta })
+}
+
+/** Client requests a team score delta — host applies via mpSetTeamScoreDeltaHandler (Wave 83). */
+export function mpRequestTeamScoreDelta(delta: number, team: MpTeam, peerId?: string) {
+  if (!mpConnected() || mpIsHost()) return
+  send({ t: 'score', id: peerId ?? localId, delta, team })
 }
 
 /** Optional client input uplink (host may consume later). */
@@ -613,6 +675,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   mpNetReset()
   mpMatchmakingReset()
   mpLobbyReset(localId)
+  mpTeamsReset()
   mpSpectatorReset(localId)
   mpReplayReset()
   mpKillcamReset()
@@ -631,7 +694,10 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   ws.onopen = () => {
     send({ t: 'join', room: cfg.room, id: localId })
     if (cfg.spectator) send({ t: 'spectator_join', id: localId })
-    if (!cfg.spectator) send({ t: 'lobby_join', id: localId, ready: false })
+    if (!cfg.spectator) {
+      send({ t: 'lobby_join', id: localId, ready: false })
+      if (mpIsHost()) mpBroadcastTeamAssign(localId)
+    }
     mpRefreshRooms()
     status(formatMpStatusLine())
   }
@@ -651,6 +717,10 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       ts?: number
       delta?: number
       peerScores?: Record<string, number>
+      teamScores?: MpTeamScores
+      team?: MpTeam
+      teamGameWon?: [MpTeam, number]
+      peerId?: string
       gameWon?: [string, number]
       killerId?: string
       victimId?: string
@@ -674,6 +744,15 @@ export function mpConnect(world: World, status: (msg: string) => void) {
         }
       }
       if (mpSpectatorMode()) send({ t: 'spectator_join', id: localId })
+      if (mpIsHost() && !mpIsSpectator(msg.id)) {
+        mpBroadcastTeamAssign(msg.id)
+        for (const id of allPeerIds()) {
+          if (id !== msg.id) {
+            const existing = mpTeamsGet(id)
+            if (existing) mpBroadcastTeamAssign(id, existing)
+          }
+        }
+      }
       lobbyRefreshHandler?.()
       return
     }
@@ -748,14 +827,24 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       return
     }
     if (msg.t === 'score' && mpIsHost() && typeof msg.delta === 'number' && msg.id) {
-      scoreDeltaHandler?.(msg.id, msg.delta)
+      if (msg.team) teamScoreDeltaHandler?.(msg.id, msg.team, msg.delta)
+      else scoreDeltaHandler?.(msg.id, msg.delta)
       return
     }
-    if (msg.t === 'score' && !mpIsHost() && isFromHost(msg.id) && msg.peerScores) {
-      peerScoresMirrorHandler?.(msg.peerScores)
+    if (msg.t === 'score' && !mpIsHost() && isFromHost(msg.id)) {
+      if (msg.peerScores) peerScoresMirrorHandler?.(msg.peerScores)
+      if (msg.teamScores) teamScoresMirrorHandler?.(msg.teamScores)
       if (Array.isArray(msg.gameWon) && msg.gameWon.length >= 2) {
         gameWonRelayHandler?.(String(msg.gameWon[0]), Number(msg.gameWon[1]))
       }
+      if (Array.isArray(msg.teamGameWon) && msg.teamGameWon.length >= 2) {
+        teamGameWonRelayHandler?.(msg.teamGameWon[0], Number(msg.teamGameWon[1]))
+      }
+      return
+    }
+    if (msg.t === 'team_assign' && isFromHost(msg.id) && msg.peerId && msg.team) {
+      mpTeamsSet(msg.peerId, msg.team)
+      teamAssignMirrorHandler?.(msg.peerId, msg.team)
       return
     }
     if (
@@ -828,6 +917,7 @@ export function mpDisconnect() {
   mpMatchmakingSetStatusSink(null, null)
   pingAcc = 0
   mpLobbyReset()
+  mpTeamsReset()
   mpSpectatorReset()
   mpReplayReset()
   mpKillcamReset()

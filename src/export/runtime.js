@@ -122,12 +122,19 @@ function touchSlotFor(action) {
 const MINIGAME_ENABLED = window.__LOTUS_MINIGAME__ === true || window.__LOTUS_MINIGAME__ === 'true'
 const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
 const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
+const ACHIEVEMENTS_DEF = window.__LOTUS_ACHIEVEMENTS__ ?? null
+const ACHIEVEMENT_STORAGE_PREFIX = 'lotus-engine.achievements'
+const PACK_CHANGELOG_HTML = window.__LOTUS_PACK_CHANGELOG_HTML__ ?? null
+const PACK_CHANGELOG_BOOT =
+  window.__LOTUS_PACK_CHANGELOG_BOOT__ === true || window.__LOTUS_PACK_CHANGELOG_BOOT__ === 'true'
 const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
 const SAVES_ENABLED = window.__LOTUS_SAVES__ === true || window.__LOTUS_SAVES__ === 'true'
 const SAVE_MENU_ENABLED =
   SAVES_ENABLED &&
   (window.__LOTUS_SAVE_MENU__ === true || window.__LOTUS_SAVE_MENU__ === 'true')
 const CLOUD_SAVES_ENABLED = window.__LOTUS_CLOUD_SAVES__ === true || window.__LOTUS_CLOUD_SAVES__ === 'true'
+const CLOUD_SYNC_ENABLED =
+  CLOUD_SAVES_ENABLED && (window.__LOTUS_CLOUD_SYNC__ === true || window.__LOTUS_CLOUD_SYNC__ === 'true')
 const CROSS_LEVEL_SAVES_ENABLED =
   SAVES_ENABLED &&
   (window.__LOTUS_CROSS_LEVEL_SAVES__ === true || window.__LOTUS_CROSS_LEVEL_SAVES__ === 'true')
@@ -780,9 +787,86 @@ function showMiniGameOverlay(kind, title, color) {
   document.body.appendChild(mgOverlay)
 }
 
+let achievementToastEl = null
+let achievementToastTimer = null
+function showAchievementToast(title, subtitle, icon = '🏆') {
+  if (achievementToastTimer) {
+    clearTimeout(achievementToastTimer)
+    achievementToastTimer = null
+  }
+  achievementToastEl?.remove()
+  achievementToastEl = document.createElement('div')
+  achievementToastEl.className = 'lotus-achievement-toast'
+  achievementToastEl.innerHTML = `<div class="lotus-achievement-toast-icon">${icon}</div>
+    <div>
+      <div class="lotus-achievement-toast-title">${title}</div>
+      ${subtitle ? `<div class="lotus-achievement-toast-sub">${subtitle}</div>` : ''}
+    </div>`
+  document.body.appendChild(achievementToastEl)
+  achievementToastTimer = setTimeout(() => {
+    achievementToastEl?.remove()
+    achievementToastEl = null
+    achievementToastTimer = null
+  }, 3200)
+}
+
+function achievementStorageKey(packId) {
+  const safe = String(packId ?? '').trim().toLowerCase().replace(/[^\w.-]+/g, '_').slice(0, 32)
+  return `${ACHIEVEMENT_STORAGE_PREFIX}.${safe || 'pack'}`
+}
+
+function exportAchievementPackId() {
+  return ACHIEVEMENTS_DEF?.packId ?? MINIGAME_PACK ?? MINIGAME_PRESET ?? null
+}
+
+function exportFindAchievement(id) {
+  const q = String(id ?? '').trim()
+  if (!q || !ACHIEVEMENTS_DEF?.achievements) return null
+  return ACHIEVEMENTS_DEF.achievements.find((a) => a.id === q) ?? null
+}
+
+function exportReadUnlockedSet(packId) {
+  try {
+    const raw = localStorage.getItem(achievementStorageKey(packId))
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.map((v) => String(v)))
+  } catch {
+    return new Set()
+  }
+}
+
+function exportWriteUnlockedSet(packId, unlocked) {
+  localStorage.setItem(achievementStorageKey(packId), JSON.stringify([...unlocked]))
+}
+
+function exportListUnlockedAchievements(packId) {
+  const id = packId ?? exportAchievementPackId()
+  if (!id) return []
+  return [...exportReadUnlockedSet(id)]
+}
+
+function exportUnlockAchievement(id) {
+  const packId = exportAchievementPackId()
+  const achievement = exportFindAchievement(id)
+  if (!packId || !achievement) return false
+  const unlocked = exportReadUnlockedSet(packId)
+  if (unlocked.has(achievement.id)) return false
+  unlocked.add(achievement.id)
+  exportWriteUnlockedSet(packId, unlocked)
+  api.emit('achievement_unlock', achievement)
+  return true
+}
+
 function wireExportMiniGameHud() {
   api.on('game_won', () => showMiniGameOverlay('win', 'YOU WIN!', '#46a758'))
   api.on('game_lost', () => showMiniGameOverlay('lose', 'GAME OVER', '#e5484d'))
+  api.on('achievement_unlock', (ach) => {
+    const title = ach?.title ?? 'Achievement Unlocked'
+    const subtitle = ach?.description ?? ''
+    showAchievementToast(title, subtitle, ach?.icon ?? '🏆')
+  })
 }
 
 const _ray = new THREE.Raycaster()
@@ -1945,10 +2029,17 @@ function initExportSaveMenu() {
   saveMenuRoot.className = 'lotus-save-menu-overlay'
   saveMenuRoot.setAttribute('role', 'dialog')
   saveMenuRoot.setAttribute('aria-label', 'Pause — Save / Load')
+  const cloudSyncBlock = CLOUD_SYNC_ENABLED
+    ? `<div class="lotus-save-menu-cloud" data-lotus-cloud-sync-menu>
+      <div class="lotus-save-menu-cloud-hint">Cross-device stub — copy cloud save manifest token for QR / another browser</div>
+      <button type="button" class="lotus-save-menu-cloud-copy" data-copy-cloud-manifest>Copy cloud save manifest</button>
+    </div>`
+    : ''
   saveMenuRoot.innerHTML = `<div class="lotus-save-menu-panel">
     <div class="lotus-save-menu-title">PAUSED</div>
     <div class="lotus-save-menu-sub">Escape to resume · Save or load a checkpoint</div>
     ${rows}
+    ${cloudSyncBlock}
     <button type="button" class="lotus-save-menu-resume" data-save-menu-resume>Resume</button>
   </div>`
   document.body.appendChild(saveMenuRoot)
@@ -1969,6 +2060,14 @@ function initExportSaveMenu() {
   saveMenuRoot.querySelector('[data-save-menu-resume]')?.addEventListener('click', (e) => {
     e.preventDefault()
     hideExportSaveMenu()
+  })
+  saveMenuRoot.querySelector('[data-copy-cloud-manifest]')?.addEventListener('click', (e) => {
+    e.preventDefault()
+    void exportCloudSaveManifest().then((m) => {
+      const hint = m?.crossDeviceHint
+      if (!hint) return
+      void navigator.clipboard?.writeText(hint).catch(() => {})
+    })
   })
   addEventListener('keydown', (e) => {
     if (!SAVES_ENABLED || !SAVE_MENU_ENABLED) return
@@ -2172,6 +2271,51 @@ async function exportListCloudSlots() {
   }
 }
 
+// ---- Wave 84 — cloud save manifest + cross-device hint (mirrors cloudSaveSync.ts) ----
+function exportCloudSyncLevelKey() {
+  return CROSS_LEVEL_SAVES_ENABLED ? GLOBAL_SAVE_LEVEL_KEY : sanitizeSaveLevelName(saveLevelName)
+}
+
+function buildExportCrossDeviceHint(level, slots) {
+  const token = `LOTUS-CLOUD-SYNC:v1|${level}|${(slots ?? [])
+    .map((s) => `${s.slot}@${s.savedAt}`)
+    .join(',')}`
+  return `Cross-device stub — copy this token to another browser (same level) or encode as QR: ${token}`
+}
+
+async function exportListCloudManifest() {
+  if (!CLOUD_SYNC_ENABLED) return []
+  const level = exportCloudSyncLevelKey()
+  try {
+    const db = await openCloudDb()
+    const rows = await new Promise((resolve, reject) => {
+      const tx = db.transaction(CLOUD_STORE, 'readonly')
+      const req = tx.objectStore(CLOUD_STORE).getAll()
+      req.onsuccess = () => resolve(req.result ?? [])
+      req.onerror = () => reject(req.error ?? new Error('IDB getAll failed'))
+    })
+    return rows
+      .filter((r) => r?.level === level && r?.slot)
+      .map((r) => ({ slot: String(r.slot), savedAt: r.savedAt ?? 0 }))
+      .sort((a, b) => a.slot.localeCompare(b.slot))
+  } catch {
+    return []
+  }
+}
+
+async function exportCloudSaveManifest() {
+  if (!CLOUD_SYNC_ENABLED) return null
+  const level = exportCloudSyncLevelKey()
+  const slots = await exportListCloudManifest()
+  return {
+    version: 1,
+    level,
+    generatedAt: Date.now(),
+    slots,
+    crossDeviceHint: buildExportCrossDeviceHint(level, slots),
+  }
+}
+
 // ---- scripts & behaviors ----
 const api = {
   log: (...a) => console.log('[lotus]', ...a),
@@ -2246,6 +2390,7 @@ const api = {
   },
   loadGame: (slot) => exportLoadCheckpoint(slot),
   listSaveSlots: () => exportListSaveSlots(),
+  unlockAchievement: (id) => exportUnlockAchievement(id),
 }
 function compileScripts() {
   ticks = []
@@ -2370,6 +2515,37 @@ async function loadLevelCore(name) {
   }
 }
 
+/** Wave 82 — optional pack changelog panel before first frame. */
+function showPackChangelogBoot() {
+  return new Promise((resolve) => {
+    if (!PACK_CHANGELOG_HTML || !PACK_CHANGELOG_BOOT) {
+      resolve()
+      return
+    }
+    const root = document.createElement('div')
+    root.id = 'lotus-pack-changelog-boot'
+    const inner = document.createElement('div')
+    inner.className = 'lotus-pack-changelog-boot-inner'
+    const panel = document.createElement('div')
+    panel.innerHTML = PACK_CHANGELOG_HTML
+    inner.appendChild(panel)
+    const actions = document.createElement('div')
+    actions.className = 'lotus-pack-changelog-boot-actions'
+    const playBtn = document.createElement('button')
+    playBtn.type = 'button'
+    playBtn.className = 'lotus-pack-changelog-play'
+    playBtn.textContent = 'Play'
+    playBtn.onclick = () => {
+      root.remove()
+      resolve()
+    }
+    actions.appendChild(playBtn)
+    inner.appendChild(actions)
+    root.appendChild(inner)
+    document.body.appendChild(root)
+  })
+}
+
 /** Wave 50 — optional boot main-menu overlay before first level load. */
 function showExportMainMenu() {
   return new Promise((resolve) => {
@@ -2424,6 +2600,10 @@ async function boot() {
   bindPawnInput()
   initExportTouchHud()
   initExportSaveMenu()
+  if (PACK_CHANGELOG_HTML && PACK_CHANGELOG_BOOT) {
+    if (overlay) overlay.textContent = 'Release notes'
+    await showPackChangelogBoot()
+  }
   let bootMenuPick = false
   if (MAIN_MENU_ENABLED) {
     if (overlay) overlay.textContent = 'Select a level'
@@ -2497,6 +2677,22 @@ async function boot() {
       isPaused: () => saveMenuPaused,
     }
   }
+  if (CLOUD_SYNC_ENABLED) {
+    window.__LOTUS_CLOUD_SYNC_API__ = {
+      listCloudManifest: exportListCloudManifest,
+      exportCloudManifest: exportCloudSaveManifest,
+      crossDeviceHint: async () => (await exportCloudSaveManifest())?.crossDeviceHint ?? '',
+      syncEnabled: () => CLOUD_SYNC_ENABLED,
+    }
+  }
+  if (ACHIEVEMENTS_DEF) {
+    window.__LOTUS_ACHIEVEMENTS_API__ = {
+      packId: () => exportAchievementPackId(),
+      list: () => ACHIEVEMENTS_DEF.achievements ?? [],
+      unlocked: () => exportListUnlockedAchievements(),
+      unlock: (id) => exportUnlockAchievement(id),
+    }
+  }
   if (SAVES_ENABLED) {
     window.__LOTUS_SAVE_SLOTS__ = {
       checkpoint: exportSaveCheckpoint,
@@ -2537,6 +2733,10 @@ async function boot() {
       backupToCloud: exportBackupToCloud,
       restoreFromCloud: exportRestoreFromCloud,
       listCloudSlots: exportListCloudSlots,
+      listCloudManifest: exportListCloudManifest,
+      exportCloudManifest: exportCloudSaveManifest,
+      crossDeviceHint: async () => (await exportCloudSaveManifest())?.crossDeviceHint ?? '',
+      syncEnabled: () => CLOUD_SYNC_ENABLED,
     }
   }
   const c = new THREE.Clock()

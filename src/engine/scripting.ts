@@ -11,7 +11,8 @@ import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, init
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
-import { addMpScore, getMpPeerScores, getMpScore } from './mpGameplay'
+import { addMpScore, addMpTeamScore, getMpPeerScores, getMpScore, getMpTeamScores } from './mpGameplay'
+import { mpTeamsAreFriendly, mpTeamsGet } from './mpTeams'
 import {
   mpConnected,
   mpHostPose,
@@ -32,6 +33,7 @@ import {
   mpSpectatorEnable,
   mpSpectatorPeers,
 } from './multiplayer'
+import { unlockAchievement } from '../editor/exportAchievements'
 import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
 
 /**
@@ -210,6 +212,14 @@ export interface ScriptApi {
   getMpPeerScores: () => Record<string, number>
   /** Add MP score delta — host authoritative, clients request via relay */
   addMpScore: (delta: number, peerId?: string) => boolean
+  /** Wave 83 — read team scores from scoreboard */
+  getMpTeamScores: () => { red: number; blue: number }
+  /** Wave 83 — add score to killer's team (host authoritative) */
+  addMpTeamScore: (delta: number, peerId?: string) => boolean
+  /** Wave 83 — local peer team assignment (red/blue) */
+  mpGetTeam: (peerId?: string) => 'red' | 'blue' | undefined
+  /** Wave 83 — friendly fire off when peers share a team */
+  mpTeamsAreFriendly: (peerA: string, peerB: string) => boolean
   /** Wave 78 — report deathmatch kill; host rebroadcasts player_killed relay */
   mpReportPlayerKill: (victimId: string) => boolean
   /** Wave 65 — save checkpoint JSON to a named slot (localStorage) */
@@ -218,6 +228,8 @@ export interface ScriptApi {
   loadGame: (slot: string) => unknown | null
   /** Wave 65 — list slots with saved data for this level */
   listSaveSlots: () => string[]
+  /** Wave 85 — unlock export-pack trophy (localStorage lotus-engine.achievements.{packId}) */
+  unlockAchievement: (id: string) => boolean
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -400,6 +412,21 @@ export function makeScriptApi(
       }
       return addMpScore(actors, delta, peerId, emit)
     },
+    getMpTeamScores: () => getMpTeamScores(actors),
+    addMpTeamScore: (delta, peerId) => {
+      const emit = (signal: string, ...args: unknown[]) => {
+        for (const h of signalHandlers.get(signal) ?? []) {
+          try {
+            h(...args)
+          } catch (err) {
+            logSink('error', `signal "${signal}" handler: ${(err as Error).message}`)
+          }
+        }
+      }
+      return addMpTeamScore(actors, delta, peerId, emit)
+    },
+    mpGetTeam: (peerId) => mpTeamsGet(peerId ?? mpLocalId()),
+    mpTeamsAreFriendly,
     mpReportPlayerKill: (victimId) => mpReportPlayerKill(victimId),
     saveGame: (slot, data) => {
       if (!isSaveEnabled()) return false
@@ -414,6 +441,13 @@ export function makeScriptApi(
     },
     loadGame: (slot) => loadCheckpoint(slot),
     listSaveSlots: () => listSlots(),
+    unlockAchievement: (id) => {
+      const result = unlockAchievement(id)
+      if (result.newlyUnlocked && result.achievement) {
+        api.emit('achievement_unlock', result.achievement)
+      }
+      return result.newlyUnlocked
+    },
   }
   return api
 }

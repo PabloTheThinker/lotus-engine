@@ -3,6 +3,34 @@ import { MINIGAME_MANAGER_NAME } from './starterMiniGames'
 
 const OVERLAY_ID = 'lotus-minigame-overlay'
 
+export const ACHIEVEMENT_TOAST_CSS = `
+  .lotus-achievement-toast {
+    position: fixed; top: 18px; right: 18px; z-index: 30; pointer-events: none;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-radius: 10px;
+    background: rgba(13, 15, 18, 0.92); border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+    font: 600 13px system-ui, sans-serif; color: #e8edf4;
+    animation: lotus-ach-toast-in 0.32s ease-out, lotus-ach-toast-out 0.35s ease-in 2.65s forwards;
+  }
+  .lotus-achievement-toast-icon {
+    font-size: 22px; line-height: 1;
+  }
+  .lotus-achievement-toast-title {
+    font-size: 14px; font-weight: 800; letter-spacing: 0.03em; color: #f6d365;
+  }
+  .lotus-achievement-toast-sub {
+    margin-top: 2px; font-size: 11px; font-weight: 500; color: #9aa4b2;
+  }
+  @keyframes lotus-ach-toast-in {
+    from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes lotus-ach-toast-out {
+    to { opacity: 0; transform: translateY(-6px); }
+  }
+`
+
 export const MINIGAME_OVERLAY_CSS = `
   .lotus-minigame-overlay {
     position: fixed; inset: 0; z-index: 25; pointer-events: none;
@@ -29,7 +57,10 @@ export const MINIGAME_OVERLAY_CSS = `
 `
 
 let overlayRoot: HTMLElement | null = null
+let toastRoot: HTMLElement | null = null
+let toastTimer: ReturnType<typeof setTimeout> | null = null
 let wired = false
+let achievementWired = false
 let hudEnabled = false
 
 function overlayHost(parent?: HTMLElement): HTMLElement {
@@ -64,17 +95,78 @@ export function hideMiniGameHud() {
   overlayRoot = null
 }
 
+function achievementToastHost(parent?: HTMLElement): HTMLElement {
+  return parent ?? document.body
+}
+
+/** Trophy unlock toast during PIE / export play. */
+export function showAchievementToast(
+  title: string,
+  subtitle?: string,
+  icon = '🏆',
+  parent?: HTMLElement,
+) {
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+    toastTimer = null
+  }
+  toastRoot?.remove()
+  const host = achievementToastHost(parent)
+  toastRoot = document.createElement('div')
+  toastRoot.className = 'lotus-achievement-toast'
+  toastRoot.innerHTML = `<div class="lotus-achievement-toast-icon">${icon}</div>
+    <div>
+      <div class="lotus-achievement-toast-title">${title}</div>
+      ${subtitle ? `<div class="lotus-achievement-toast-sub">${subtitle}</div>` : ''}
+    </div>`
+  host.appendChild(toastRoot)
+  toastTimer = setTimeout(() => {
+    toastRoot?.remove()
+    toastRoot = null
+    toastTimer = null
+  }, 3200)
+}
+
+export function hideAchievementToast() {
+  if (toastTimer) {
+    clearTimeout(toastTimer)
+    toastTimer = null
+  }
+  toastRoot?.remove()
+  toastRoot = null
+}
+
+function onAchievementUnlock(payload: unknown) {
+  const ach =
+    payload && typeof payload === 'object'
+      ? (payload as { title?: string; description?: string; icon?: string })
+      : null
+  const title = ach?.title?.trim() || 'Achievement Unlocked'
+  const subtitle = ach?.description?.trim()
+  showAchievementToast(title, subtitle, ach?.icon ?? '🏆')
+}
+
+/** Listen for achievement_unlock and show trophy toast. */
+export function wireAchievementToasts(api: Pick<ScriptApi, 'on'>) {
+  if (achievementWired) return
+  achievementWired = true
+  api.on('achievement_unlock', onAchievementUnlock)
+}
+
 /** Listen for game_won / game_lost and show overlays. */
 export function wireMiniGameHud(api: Pick<ScriptApi, 'on'>) {
   if (wired) return
   wired = true
   api.on('game_won', () => showWinOverlay())
   api.on('game_lost', () => showLoseOverlay())
+  wireAchievementToasts(api)
 }
 
 export function unwireMiniGameHud() {
   wired = false
+  achievementWired = false
   hideMiniGameHud()
+  hideAchievementToast()
 }
 
 export function hasMiniGameManager(actors: Iterable<{ name: string }>): boolean {

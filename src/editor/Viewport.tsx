@@ -78,7 +78,8 @@ import {
   toggleSaveMenu,
   unmountExportSaveMenu,
 } from './exportSaveMenu'
-import { loadCheckpoint, listSlots, saveCheckpoint } from '../engine/saveSystem'
+import { exportCloudSaveManifest } from '../engine/cloudSaveSync'
+import { loadCheckpoint, listSlots, saveCheckpoint, setSaveContext } from '../engine/saveSystem'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
 import { instantiatePrefab, listPrefabs, savePrefab } from './prefabs'
@@ -1681,6 +1682,7 @@ export function Viewport() {
         }
         world.beginPlay()
         if (world.environment.saveSlotsEnabled === true) {
+          const cloudSyncEnabled = world.environment.cloudSaveBackup === true
           mountExportSaveMenu({
             parent: mount,
             enabled: true,
@@ -1697,6 +1699,19 @@ export function Viewport() {
               saveSlot: (slot, data) => saveCheckpoint(slot, data),
               loadSlot: (slot) => loadCheckpoint(slot),
               listSlots: () => listSlots(),
+              cloudSyncEnabled,
+              copyCloudManifest: cloudSyncEnabled
+                ? async () => {
+                    setSaveContext({
+                      levelName: world.levelName,
+                      enabled: true,
+                      cloudBackup: true,
+                      crossLevelSaves: world.environment.crossLevelSaves === true,
+                    })
+                    const manifest = await exportCloudSaveManifest()
+                    return manifest.crossDeviceHint
+                  }
+                : undefined,
             },
           })
         }

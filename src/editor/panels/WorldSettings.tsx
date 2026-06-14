@@ -28,6 +28,8 @@ import {
   lastAOMapBakeError,
 } from '../../engine/lightmapBake'
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
+import { exportCloudSaveManifest } from '../../engine/cloudSaveSync'
+import { setSaveContext } from '../../engine/saveSystem'
 import { sanitizeLevelKey, world } from '../../engine/World'
 import { COLOR_GRADING_PRESET_IDS, COLOR_GRADING_PRESET_THUMBNAILS } from '../../engine/postStackColorGrading'
 import {
@@ -1599,6 +1601,28 @@ export function WorldSettings() {
                 · cloud keys <code>lotus-engine.cloud.{'{level}'}.{'{slot}'}</code>
               </>
             )}
+          </div>
+        )}
+        {env.saveSlotsEnabled && env.cloudSaveBackup && (
+          <div className="panel-empty" style={{ padding: '2px 0' }} data-lotus-cloud-sync-hint>
+            Cross-device cloud sync stub — Escape save menu or copy manifest token for QR / another browser.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setSaveContext({
+                  levelName: world.levelName,
+                  enabled: true,
+                  cloudBackup: true,
+                  crossLevelSaves: env.crossLevelSaves === true,
+                })
+                void exportCloudSaveManifest().then((manifest) => {
+                  void navigator.clipboard?.writeText(manifest.crossDeviceHint).catch(() => {})
+                  useEditor.getState().setStatus('Cloud save manifest copied (cross-device hint)')
+                })
+              }}
+            >
+              Copy cloud save manifest
+            </button>
           </div>
         )}
       </div>

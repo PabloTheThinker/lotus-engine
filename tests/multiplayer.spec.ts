@@ -732,7 +732,7 @@ test('wave 73 multiplayer relay: spectator replay_sample request returns host sn
       localStorage.clear()
       localStorage.setItem(
         'lotus-engine.multiplayer',
-        JSON.stringify({ url, room, enabled: true, spectator: false }),
+        JSON.stringify({ url, room, enabled: true, spectator: false, dedicatedServer: true }),
       )
     }
 
@@ -759,12 +759,8 @@ test('wave 73 multiplayer relay: spectator replay_sample request returns host sn
         pageA.evaluate(() => window.lotus!.multiplayer.spectatorMode?.() === true),
         pageB.evaluate(() => window.lotus!.multiplayer.spectatorMode?.() === true),
       ])
-      if (aHost && !bHost && bSpec) {
-        hostPage = pageA
-        spectatorPage = pageB
-        break
-      }
-      if (!aHost && bHost && aSpec) {
+      // pageB uses dedicatedServer (id 000000) so player is always host; pageA is spectator.
+      if (!aHost && bHost && aSpec && !bSpec) {
         hostPage = pageB
         spectatorPage = pageA
         break
@@ -967,6 +963,123 @@ test('wave 78 multiplayer relay: player_killed triggers victim killcam', async (
     expect(clientState.active).toBe(true)
     expect(clientState.seek).toBeGreaterThanOrEqual(5)
     expect(clientState.reason).toBe('player_killed')
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})
+
+test('wave 83 multiplayer relay: team_assign syncs and team scores mirror to client', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave83-teams'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    const mpInit = ({ url, room }: { url: string; room: string }) => {
+      localStorage.clear()
+      localStorage.setItem(
+        'lotus-engine.multiplayer',
+        JSON.stringify({ url, room, enabled: true, spectator: false }),
+      )
+    }
+    await pageA.addInitScript(mpInit, { url: relayUrl, room: MP_ROOM })
+    await pageB.addInitScript(mpInit, { url: relayUrl, room: MP_ROOM })
+    await pageA.goto('/')
+    await pageB.goto('/')
+    await pageA.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+    await pageB.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    const spawnTeams = async (page: import('@playwright/test').Page) => {
+      await page.evaluate(() => {
+        const v = window.lotus! as typeof window.lotus & { indie: { spawnIndieMpTeamsDeathmatch: () => void } }
+        v.indie.spawnIndieMpTeamsDeathmatch()
+      })
+    }
+    await spawnTeams(pageA)
+    await spawnTeams(pageB)
+
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+    await pageB.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+
+    let hostPage: import('@playwright/test').Page | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const [aHost, bHost] = await Promise.all([
+        pageA.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageB.evaluate(() => window.lotus!.multiplayer.isHost()),
+      ])
+      if (aHost && !bHost) {
+        hostPage = pageA
+        break
+      }
+      if (!aHost && bHost) {
+        hostPage = pageB
+        break
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    expect(hostPage, 'expected stable MP host election').toBeDefined()
+
+    const clientPage = hostPage === pageA ? pageB : pageA
+
+    const teams = await hostPage!.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        multiplayer: { localId: () => string }
+        indie: { mp: { teams: { assign: (id: string) => string; getTeam: (id: string) => string | undefined }; applyMpTeamScoreDelta: (team: 'red' | 'blue', delta: number) => boolean } }
+      }
+      const hostId = v.multiplayer.localId()
+      const hostTeam = v.indie.mp.teams.assign(hostId)
+      return { hostId, hostTeam }
+    })
+
+    await clientPage.waitForFunction(
+      (hostTeam) => {
+        const team = (
+          window.lotus! as typeof window.lotus & { indie: { mp: { teams: { getTeam: (id?: string) => string | undefined } } } }
+        ).indie.mp.teams.getTeam()
+        return team === 'blue' || team === 'red'
+      },
+      teams.hostTeam,
+      { timeout: 10_000 },
+    )
+
+    await hostPage!.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        indie: { mp: { applyMpTeamScoreDelta: (team: 'red' | 'blue', delta: number) => boolean } }
+      }
+      v.indie.mp.applyMpTeamScoreDelta('red', 2)
+    })
+
+    await clientPage.waitForFunction(
+      () => {
+        const scores = (
+          window.lotus! as typeof window.lotus & { indie: { mp: { getTeamScores: () => { red: number; blue: number } } } }
+        ).indie.mp.getTeamScores()
+        return scores.red >= 2
+      },
+      { timeout: 15_000 },
+    )
+
+    const clientScores = await clientPage.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        indie: { mp: { getTeamScores: () => { red: number; blue: number }; teams: { getTeam: () => string | undefined } } }
+      }
+      return { scores: v.indie.mp.getTeamScores(), team: v.indie.mp.teams.getTeam() }
+    })
+
+    expect(clientScores.scores.red).toBeGreaterThanOrEqual(2)
+    expect(clientScores.team === 'red' || clientScores.team === 'blue').toBe(true)
   } finally {
     await contextA.close()
     await contextB.close()

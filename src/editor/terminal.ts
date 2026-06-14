@@ -11,12 +11,18 @@ import type { Actor } from '../engine/Actor'
 import { DEFAULT_MATERIAL, type MaterialProps } from '../engine/types'
 import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
-import { spawnIndieMpDeathmatch, spawnIndieMpLobby, spawnIndieMpSpectator } from './indieMpGameplay'
+import {
+  spawnIndieMpDeathmatch,
+  spawnIndieMpLobby,
+  spawnIndieMpSpectator,
+  spawnIndieMpTeamsDeathmatch,
+} from './indieMpGameplay'
 import { spawnIndieMpTemplate } from './indieMpTemplate'
 import { exportMiniGamePreset } from './exportPlayable'
 import { buildExportPackMeta, type ItchVersionChannel } from './exportPackMeta'
 import { buildButlerPushCommand, storeLastItchZipName } from './itchButlerHint'
 import { buildReleaseNotes } from './itchReleaseNotes'
+import { buildPackChangelogHtml } from './packChangelogHtml'
 import { exportItchUploadPack, itchPackZipFilename } from './itchUploadPack'
 import { exportMiniGamePack } from './miniGameExportPack'
 import { spawnMainMenu } from './mainMenuFlow'
@@ -28,7 +34,12 @@ import {
   DEFAULT_GRID_NAVMESH_LAYER_MASK,
   layerMaskFromIndex,
 } from '../engine/gridNavmeshBake'
-import { clampGridNavLayer, spawnGridNavAgent } from '../engine/gridNavAgents'
+import {
+  clampGridNavLayer,
+  spawnGridNavAgent,
+  spawnGridNavChaseAgent,
+  spawnGridNavPatrolAgent,
+} from '../engine/gridNavAgents'
 import { lastBakeError } from '../engine/nav'
 import { useEditor } from './store'
 
@@ -65,16 +76,19 @@ SLASH COMMANDS
   /minigameexport <mode>  Export playable HTML for platformer|rpg|fps preset
   /exportpack <mode>      Export PWA mini-game pack (platformer|rpg|fps) with manifest + icons + meta
   /exportpackmeta <mode>  Show itch.io pack metadata JSON (platformer|rpg|fps)
-  /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png + RELEASE_NOTES.md)
+  /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png + RELEASE_NOTES.md + CHANGELOG.html)
   /releasenotes <mode>    Print itch.io release notes markdown (platformer|rpg|fps)
+  /packchangelog <mode>   Print itch.io changelog HTML snippet (platformer|rpg|fps)
   /butlerhint <mode> [ch] Print Butler CLI push command + pack meta (ch: html|beta|demo)
   /mpstarter         Greybox indie multiplayer scene (host + client spawns, sync crates)
   /mpdeathmatch      Indie MP deathmatch (targets, scoreboard, first to 3 wins)
   /mplobby           Indie MP lobby (room browser + ready-up before deathmatch)
   /mpspectator       Indie MP spectator arena (orbit host, no pawn spawn)
+  /mpteams           Indie MP teams deathmatch (red vs blue, friendly fire off)
   /mainmenu          Main menu → level select (Platformer, RPG, FPS, MP Deathmatch)
   /gridnavmesh [0-3] Bake Recast navmesh from grid tile layers (mask from foliage or layer arg)
   /gridnavagent [0-3] Spawn test crowd agent on grid navmesh layer (Play to tick)
+  /gridnavai patrol|chase [0-3] Spawn grid nav agent with patrol or chase AI (tag: grid_nav_target)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -358,6 +372,13 @@ function runSlash(parts: string[]): TerminalResult {
       }
       return { output: buildReleaseNotes(mode as 'platformer' | 'rpg' | 'fps'), error: null, level: 'log' }
     }
+    case '/packchangelog': {
+      const mode = (args[0] ?? '').toLowerCase()
+      if (!['platformer', 'rpg', 'fps'].includes(mode)) {
+        return { output: null, error: 'Usage: /packchangelog platformer|rpg|fps', level: 'error' }
+      }
+      return { output: buildPackChangelogHtml(mode as 'platformer' | 'rpg' | 'fps'), error: null, level: 'log' }
+    }
     case '/butlerhint': {
       const mode = (args[0] ?? '').toLowerCase()
       if (!['platformer', 'rpg', 'fps'].includes(mode)) {
@@ -411,6 +432,17 @@ function runSlash(parts: string[]): TerminalResult {
       spawnIndieMpSpectator()
       return {
         output: 'Indie MP spectator — enable Spectator in World Settings, Play to observe',
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/mpteams': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /mpteams', level: 'error' }
+      }
+      spawnIndieMpTeamsDeathmatch()
+      return {
+        output: 'Indie MP teams — red vs blue, first team to 3 wins (friendly fire off)',
         error: null,
         level: 'log',
       }
@@ -470,6 +502,42 @@ function runSlash(parts: string[]): TerminalResult {
       })
       return {
         output: `Grid nav agent spawn started on layer ${layer} (${id} → [8,1,8])`,
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/gridnavai': {
+      const behavior = args[0]?.toLowerCase()
+      if (behavior !== 'patrol' && behavior !== 'chase') {
+        return { output: null, error: 'Usage: /gridnavai patrol|chase [0-3]', level: 'error' }
+      }
+      let layer = 0
+      if (args.length > 2) {
+        return { output: null, error: 'Usage: /gridnavai patrol|chase [0-3]', level: 'error' }
+      }
+      if (args[1] !== undefined) {
+        const parsed = parseInt(args[1], 10)
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 3) {
+          return { output: null, error: 'Usage: /gridnavai patrol|chase [0-3]', level: 'error' }
+        }
+        layer = clampGridNavLayer(parsed)
+      }
+      const id = `grid_nav_ai_${behavior}_L${layer}`
+      const pos: [number, number, number] = [0, 1, 0]
+      const spawn =
+        behavior === 'patrol'
+          ? spawnGridNavPatrolAgent(world.actors, id, layer, pos)
+          : spawnGridNavChaseAgent(world.actors, id, layer, pos)
+      void spawn.then((ok) => {
+        useEditor.getState().setStatus(
+          ok
+            ? `Grid nav AI ${id} (${behavior}) on layer ${layer} — tag chase targets with grid_nav_target`
+            : `Grid nav AI spawn failed: ${lastBakeError ?? 'bake failed'}`,
+        )
+        useEditor.getState().touch()
+      })
+      return {
+        output: `Grid nav AI ${behavior} spawn started on layer ${layer} (${id})`,
         error: null,
         level: 'log',
       }
@@ -594,7 +662,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mainmenu', '/gridnavmesh', '/gridnavagent', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mainmenu', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

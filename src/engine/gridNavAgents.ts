@@ -1,9 +1,19 @@
-/** Wave 76 (v4.19–v4.23) — DetourCrowd agents per grid navmesh layer. */
+/** Wave 76 (v4.19–v4.23) — DetourCrowd agents per grid navmesh layer.
+ *  Wave 81 (v4.44–v4.48) — patrol / chase AI behaviors on grid nav layers. */
 
 import { Crowd, type CrowdAgent, importNavMesh, init, NavMeshQuery, type NavMesh } from 'recast-navigation'
 import type { Actor } from './Actor'
+import {
+  DEFAULT_PATROL_WAYPOINTS,
+  removeAgentBehavior,
+  resetGridNavAi,
+  setAgentBehavior,
+  tickGridNavAi,
+} from './gridNavAi'
 import { collectGridNavMeshes, layerMaskFromIndex } from './gridNavmeshBake'
 import { bakeNavMeshDataFromMeshes } from './nav'
+
+export { getAgentBehavior, setAgentBehavior, type GridNavBehavior } from './gridNavAi'
 
 const GRID_NAV_LAYERS = 4
 
@@ -36,6 +46,15 @@ export function resetGridNavAgents() {
   layerStates.clear()
   agentLayers.clear()
   bakingPromises.clear()
+  resetGridNavAi()
+}
+
+export function snapGridNavPoint(layer: number, pos: [number, number, number]): [number, number, number] {
+  const state = layerStates.get(clampGridNavLayer(layer))
+  if (!state?.ready) return pos
+  const { success, point } = state.navMeshQuery.findClosestPoint({ x: pos[0], y: pos[1], z: pos[2] })
+  if (success && point) return [point.x, point.y, point.z]
+  return pos
 }
 
 /** Bake and install a per-layer navmesh + crowd without touching the global navmesh. */
@@ -157,9 +176,47 @@ export function removeGridNavAgent(id: string) {
   if (agent && state?.crowd) state.crowd.removeAgent(agent)
   state?.agents.delete(id)
   agentLayers.delete(id)
+  removeAgentBehavior(id)
 }
 
-export function tickGridNavAgents(dt: number) {
+export async function spawnGridNavPatrolAgent(
+  actors: Map<string, Actor>,
+  id: string,
+  layer: number,
+  position: [number, number, number],
+  waypoints: [number, number, number][] = DEFAULT_PATROL_WAYPOINTS,
+): Promise<boolean> {
+  const L = clampGridNavLayer(layer)
+  const first = waypoints[0] ?? DEFAULT_PATROL_WAYPOINTS[0]
+  const ok = await spawnGridNavAgent(actors, id, L, position, first)
+  if (!ok) return false
+  setAgentBehavior(id, 'patrol', { waypoints })
+  return true
+}
+
+export async function spawnGridNavChaseAgent(
+  actors: Map<string, Actor>,
+  id: string,
+  layer: number,
+  position: [number, number, number],
+  chaseTag?: string,
+): Promise<boolean> {
+  const L = clampGridNavLayer(layer)
+  const ok = await spawnGridNavAgent(actors, id, L, position)
+  if (!ok) return false
+  setAgentBehavior(id, 'chase', chaseTag ? { chaseTag } : undefined)
+  return true
+}
+
+export function tickGridNavAgents(dt: number, actors?: Map<string, Actor>) {
+  if (actors) {
+    tickGridNavAi(actors, dt, {
+      getPosition: gridNavAgentGetPosition,
+      setTarget: setGridNavAgentTarget,
+      snapToNavmesh: snapGridNavPoint,
+      getLayer: gridNavAgentLayer,
+    })
+  }
   for (const state of layerStates.values()) {
     if (state.ready) state.crowd.update(dt)
   }

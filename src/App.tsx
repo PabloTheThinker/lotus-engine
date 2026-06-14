@@ -19,6 +19,7 @@ import { captureExportScreenshot } from './editor/captureExportScreenshot'
 import { buildExportPackMeta } from './editor/exportPackMeta'
 import { buildButlerPushCommand } from './editor/itchButlerHint'
 import { buildReleaseNotes } from './editor/itchReleaseNotes'
+import { buildPackChangelogHtml, renderReleaseNotesHtml } from './editor/packChangelogHtml'
 import {
   buildItchZipBlob,
   exportItchUploadPack,
@@ -34,8 +35,17 @@ import {
   miniGamePackTitle,
 } from './editor/miniGameExportPack'
 import {
+  achievementsForPack,
+  getAchievementPackId,
+  isAchievementUnlocked,
+  listUnlocked,
+  setAchievementPackId,
+  unlockAchievement,
+} from './editor/exportAchievements'
+import {
   enableMiniGameHud,
   hideMiniGameHud,
+  showAchievementToast,
   showLoseOverlay,
   showWinOverlay,
 } from './editor/miniGameHud'
@@ -71,19 +81,29 @@ import {
 import {
   MP_SCORE_SCRIPT,
   MP_SCOREBOARD_SCRIPT,
+  MP_TEAMS_SCORE_SCRIPT,
+  MP_TEAMS_SCOREBOARD_SCRIPT,
   MP_TAG_TARGET,
   MP_SCORE_WIN,
+  MP_TAG_RED,
+  MP_TAG_BLUE,
   addMpScore,
+  addMpTeamScore,
   applyMpScoreDelta,
+  applyMpTeamScoreDelta,
   getMpScore,
   getMpPeerScores,
+  getMpTeamScores,
   mirrorMpPeerScores,
+  mirrorMpTeamScores,
+  mpTeamsGet,
   MP_LOBBY_SCRIPT,
   MP_SPECTATOR_SCRIPT,
   MP_TAG_SPECTATOR,
   spawnIndieMpDeathmatch,
   spawnIndieMpLobby,
   spawnIndieMpSpectator,
+  spawnIndieMpTeamsDeathmatch,
 } from './editor/indieMpGameplay'
 import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
 import {
@@ -167,11 +187,16 @@ import {
 } from './engine/gridNavmeshBake'
 import {
   clampGridNavLayer,
+  getAgentBehavior,
   gridNavAgentCount,
   gridNavAgentGetPosition,
   gridNavAgentLayer,
+  setAgentBehavior,
   spawnGridNavAgent,
+  spawnGridNavChaseAgent,
+  spawnGridNavPatrolAgent,
   tickGridNavAgents,
+  type GridNavBehavior,
 } from './engine/gridNavAgents'
 import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
 import {
@@ -331,6 +356,8 @@ import {
   mpReplaySampleAt,
   mpReplaySeek,
   mpReportPlayerKill,
+  mpBroadcastTeamAssign,
+  mpBroadcastTeamScores,
 } from './engine/multiplayer'
 import {
   MP_KILLCAM_DURATION_SEC,
@@ -394,6 +421,7 @@ import {
   listCloudSlots,
   restoreFromIndexedDB,
 } from './engine/cloudSaveStub'
+import { exportCloudSaveManifest } from './engine/cloudSaveSync'
 import {
   getSaveLevelName,
   globalCheckpoint,
@@ -971,6 +999,15 @@ const lotusBridge = {
       releaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
       captureScreenshot: () => captureExportScreenshot(),
     },
+    achievements: {
+      list: (packId?: string) => achievementsForPack(packId),
+      unlock: (id: string, packId?: string) => unlockAchievement(id, packId).newlyUnlocked,
+      unlocked: (id?: string, packId?: string) =>
+        id ? isAchievementUnlocked(id, packId) : listUnlocked(packId),
+      packId: (packId?: string) =>
+        packId !== undefined ? setAchievementPackId(packId) : getAchievementPackId(),
+      showToast: (title: string, subtitle?: string, icon?: string) => showAchievementToast(title, subtitle, icon),
+    },
     mp: {
       tagHost: MP_TAG_HOST,
       tagSync: MP_TAG_SYNC,
@@ -979,6 +1016,8 @@ const lotusBridge = {
       syncScript: MP_SYNC_SCRIPT,
       scoreScript: MP_SCORE_SCRIPT,
       scoreboardScript: MP_SCOREBOARD_SCRIPT,
+      teamsScoreScript: MP_TEAMS_SCORE_SCRIPT,
+      teamsScoreboardScript: MP_TEAMS_SCOREBOARD_SCRIPT,
       winScore: MP_SCORE_WIN,
       getScore: (peerId?: string) => getMpScore(world.actors, peerId),
       getPeerScores: () => getMpPeerScores(world.actors),
@@ -989,6 +1028,21 @@ const lotusBridge = {
         delta: number,
         emit?: (signal: string, ...args: unknown[]) => void,
       ) => applyMpScoreDelta(world.actors, peerId, delta, emit),
+      getTeamScores: () => getMpTeamScores(world.actors),
+      mirrorTeamScores: (scores: { red: number; blue: number }) => mirrorMpTeamScores(world.actors, scores),
+      addTeamScore: (delta: number, peerId?: string) => addMpTeamScore(world.actors, delta, peerId),
+      applyMpTeamScoreDelta: (
+        team: 'red' | 'blue',
+        delta: number,
+        emit?: (signal: string, ...args: unknown[]) => void,
+      ) => applyMpTeamScoreDelta(world.actors, team, delta, emit, mpBroadcastTeamScores),
+      teams: {
+        redTag: MP_TAG_RED,
+        blueTag: MP_TAG_BLUE,
+        assign: (peerId: string) => mpBroadcastTeamAssign(peerId),
+        getTeam: (peerId?: string) => mpTeamsGet(peerId ?? mpLocalId()),
+        getTeamScores: () => getMpTeamScores(world.actors),
+      },
       lobbyScript: MP_LOBBY_SCRIPT,
       lobby: {
         setReady: (ready: boolean) => mpLobbySetReady(ready),
@@ -1047,6 +1101,7 @@ const lotusBridge = {
     spawnFpsStarter,
     spawnIndieMpTemplate,
     spawnIndieMpDeathmatch,
+    spawnIndieMpTeamsDeathmatch,
     spawnIndieMpLobby,
     spawnIndieMpSpectator,
     configureIndieMpSettings,
@@ -1161,7 +1216,8 @@ const lotusBridge = {
     collectGridNavMeshes: (mask: number) => collectGridNavMeshes(world.actors, mask).length,
     collectFoliageNavColliderMeshes: (mask: number) =>
       collectFoliageNavColliderMeshes(world.actors, mask).length,
-    /** Wave 76 — DetourCrowd agents on per-layer grid navmesh bakes */
+    /** Wave 76 — DetourCrowd agents on per-layer grid navmesh bakes
+     *  Wave 81 — patrol / chase AI behaviors */
     navAgents: {
       spawn: (
         id: string,
@@ -1169,7 +1225,25 @@ const lotusBridge = {
         pos: [number, number, number],
         target?: [number, number, number],
       ) => spawnGridNavAgent(world.actors, id, layer, pos, target),
-      tick: (dt: number) => tickGridNavAgents(dt),
+      spawnPatrol: (
+        id: string,
+        layer: number,
+        pos: [number, number, number],
+        waypoints?: [number, number, number][],
+      ) => spawnGridNavPatrolAgent(world.actors, id, layer, pos, waypoints),
+      spawnChase: (
+        id: string,
+        layer: number,
+        pos: [number, number, number],
+        chaseTag?: string,
+      ) => spawnGridNavChaseAgent(world.actors, id, layer, pos, chaseTag),
+      setBehavior: (id: string, behavior: GridNavBehavior, opts?: {
+        waypoints?: [number, number, number][]
+        chaseTag?: string
+        chaseRange?: number
+      }) => setAgentBehavior(id, behavior, opts),
+      getBehavior: (id: string) => getAgentBehavior(id),
+      tick: (dt: number) => tickGridNavAgents(dt, world.actors),
       count: (layer?: number) => gridNavAgentCount(layer),
       layer: (id: string) => gridNavAgentLayer(id),
       getPosition: (id: string) => gridNavAgentGetPosition(id),
@@ -1218,10 +1292,12 @@ const lotusBridge = {
     },
     captureScreenshot: () => captureExportScreenshot(),
     buildReleaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
+    renderPackChangelogHtml: (mode: 'platformer' | 'rpg' | 'fps') => buildPackChangelogHtml(mode),
+    renderReleaseNotesHtml: (markdown: string) => renderReleaseNotesHtml(markdown),
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
   },
-  /** Wave 65 — localStorage save slots (PIE + export); Wave 70 — IndexedDB cloud backup; Wave 75 — cross-level; Wave 80 — pause menu */
+  /** Wave 65 — localStorage save slots (PIE + export); Wave 70 — IndexedDB cloud backup; Wave 75 — cross-level; Wave 80 — pause menu; Wave 84 — cloud manifest */
   save: {
     checkpoint: (slot: string, data: unknown) => {
       setSaveContext({
@@ -1309,6 +1385,27 @@ const lotusBridge = {
       })
       return listCloudSlots()
     },
+    cloudManifest: async () => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+        crossLevelSaves: world.environment.crossLevelSaves === true,
+      })
+      return exportCloudSaveManifest()
+    },
+    crossDeviceHint: async () => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+        crossLevelSaves: world.environment.crossLevelSaves === true,
+      })
+      const manifest = await exportCloudSaveManifest()
+      return manifest.crossDeviceHint
+    },
+    syncEnabled: () =>
+      world.environment.saveSlotsEnabled === true && world.environment.cloudSaveBackup === true,
     levelName: () => getSaveLevelName(),
     isActive: () => isSaveEnabled(),
     isCrossLevelActive: () => isCrossLevelSavesEnabled(),

@@ -90,6 +90,31 @@ export async function restoreFromIndexedDB(slot: string): Promise<unknown | null
   }
 }
 
+export interface CloudManifestSlot {
+  slot: string
+  savedAt: number
+}
+
+/** List cloud backup slots with savedAt timestamps for manifest / cross-device hint. */
+export async function listCloudManifestSlots(): Promise<CloudManifestSlot[]> {
+  const level = sanitizeLevelName(levelName)
+  try {
+    const db = await openDb()
+    const rows = await new Promise<{ savedAt?: number; level?: string; slot?: string }[]>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly')
+      const req = tx.objectStore(STORE).getAll()
+      req.onsuccess = () => resolve((req.result ?? []) as { savedAt?: number; level?: string; slot?: string }[])
+      req.onerror = () => reject(req.error ?? new Error('IDB getAll failed'))
+    })
+    return rows
+      .filter((r) => r.level === level && r.slot)
+      .map((r) => ({ slot: String(r.slot), savedAt: r.savedAt ?? 0 }))
+      .sort((a, b) => a.slot.localeCompare(b.slot))
+  } catch {
+    return []
+  }
+}
+
 /** List slot ids with cloud backup data for the active level. */
 export async function listCloudSlots(): Promise<string[]> {
   const prefix = levelPrefix()
