@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
+import { applySSRToTSLNode, type SSRSettings } from './ssrPreset'
 
 /** Wave 14–18 — TSL RenderPipeline (GTAO, SSGI+TRAA/denoise, SSR+denoise, bloom, FXAA). */
 
@@ -20,6 +21,7 @@ export interface TSLPipelineStack {
       bloomRadius: number
     },
     ssgi?: SSGISettings,
+    ssrSettings?: SSRSettings,
   ) => void
   dispose: () => void
 }
@@ -34,6 +36,7 @@ export interface TSLPipelineOptions {
   taa?: boolean
   ssr?: boolean
   ssgi?: SSGISettings
+  ssrSettings?: SSRSettings
 }
 
 const SSGI_SLICE: Record<SSGIPreset, number> = {
@@ -97,6 +100,7 @@ export async function createTSLRenderPipeline(
     let ssrOn = opts.ssr ?? false
     let ssgiOn = opts.ssgi?.enabled ?? false
     let ssgiSettings = opts.ssgi
+    let ssrSettings = opts.ssrSettings
     let activeCam = camera
 
     type TSLNode = unknown
@@ -183,6 +187,7 @@ export async function createTSLRenderPipeline(
             roughnessTex as Parameters<typeof ssr>[4],
             cam,
           ) as { getTextureNode: () => TSLNode }
+          if (ssrSettings?.enabled) applySSRToTSLNode(ssrPass, ssrSettings)
           let ssrTex = ssrPass.getTextureNode()
           if (taaOn && needsVelocity) {
             const vel = scenePass.getTextureNode('velocity') as TSLNode
@@ -243,13 +248,14 @@ export async function createTSLRenderPipeline(
         bloomRadius = r
         rebuildOutput()
       },
-      applyPostFx(fx, bloom, ssgi) {
+      applyPostFx(fx, bloom, ssgi, ssr) {
         ssaoOn = fx.ssao
         fxaaOn = fx.fxaa
         taaOn = fx.taa
         ssrOn = fx.ssr
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
+        ssrSettings = ssr
         bloomOn = bloom.bloomEnabled
         bloomStrength = bloom.bloomStrength
         bloomThreshold = bloom.bloomThreshold

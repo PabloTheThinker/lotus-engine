@@ -98,12 +98,23 @@ export function BTEditor() {
       const target = world.actors.get(actorId)
       if (!target) return false
       const liveGraph = actorId === aid ? graphRef.current : target.btGraph ?? null
-      const node = liveGraph?.nodes.find((n) => n.id === nodeId)
+      let hitId = nodeId
+      let node = liveGraph?.nodes.find((n) => n.id === nodeId)
+      if (!node?.breakpoint && liveGraph) {
+        for (const stash of Object.values(liveGraph.subtrees ?? {})) {
+          const stashed = stash.nodes.find((n) => n.id === nodeId)
+          if (stashed?.breakpoint) {
+            node = stashed
+            hitId = resolveBTEditorHighlightNodeId(liveGraph, nodeId) ?? nodeId
+            break
+          }
+        }
+      }
       if (!node?.breakpoint) return false
       const title = BT_NODE_DEFS[node.type]?.title ?? node.type
       st.setPaused(true)
-      st.setBreakpointHit({ actorId, nodeId })
-      setBreakpointHitNode(nodeId)
+      st.setBreakpointHit({ actorId, nodeId: hitId })
+      setBreakpointHitNode(hitId)
       st.setStatus(`BT breakpoint: ${title} · ${target.name}`)
       return true
     }

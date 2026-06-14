@@ -1001,6 +1001,19 @@ export function WorldSettings() {
           <span>Post SSR (approx)</span>
           <input type="checkbox" checked={!!env.postSsr} onChange={(e) => set('postSsr', e.target.checked)} />
         </label>
+        {env.postSsr && (
+          <label className="field">
+            <span>SSR quality preset</span>
+            <select
+              value={env.postSsrPreset ?? 'medium'}
+              onChange={(e) => set('postSsrPreset', e.target.value as 'off' | 'low' | 'medium' | 'high')}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+        )}
         <label className="field check">
           <span>Post SSGI (WebGPU opt-in)</span>
           <input type="checkbox" checked={!!env.postSsgi} onChange={(e) => set('postSsgi', e.target.checked)} />

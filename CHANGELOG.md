@@ -4,6 +4,28 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 20: v1.39–v1.43
+
+### Added
+- **v1.39** SSR quality presets — `postSsrPreset` (low/medium/high); `getSSRSettings` + WebGL/TSL/export compositor parity
+- **v1.40** GPU ribbon trail buffers — `simBuffers().trail`, `shiftAllRibbonTrails()` on GPU integrate path
+- **v1.41** Export perf regression gate — `__LOTUS_EXPORT_PERF__.perfPass` vs `perfMinFps` (default 24)
+- **v1.42** BT collapsed subtree script compile — `compileBTGraphToScript` merges stashes; breakpoint hits stashed nodes
+- **v1.43** Material Editor wire drag + live Output channel pins; Playwright wave 20 tests (46 passed)
+
+### Changed
+- `window.lotus.ssr.settings()` bridge; viewport stats show `SSR(preset)`
+- Material input ports highlight when wired; Substrate nodes in add menu
+- `particles.qaMatrix` adds `ribbon.trail` check
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 46 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 19: v1.33–v1.38 (UE-inspired parity)
 
 ### Added

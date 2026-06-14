@@ -1296,6 +1296,22 @@ input[type='checkbox'] {
   border-top: 1px solid var(--border);
   line-height: 1.35;
 }
+.mat-channel-pins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 6px 4px;
+}
+.mat-pin {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #2a4a3a;
+  color: #8fd4a8;
+}
+.bp-port.in.wired {
+  color: #6eb5ff;
+}
 .mat-preview-viewport canvas {
   display: block;
   width: 100% !important;

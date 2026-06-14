@@ -1086,6 +1086,106 @@ test('wave 19 GAS stacking + mp replication tier', async ({ page }) => {
   expect(result.transformPriority).toBeGreaterThan(result.gasPriority)
 })
 
+test('wave 20 SSR quality presets bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      ssr: { settings: () => { enabled: boolean; preset: string; maxDistance: number } }
+    }
+    const s = v.ssr.settings()
+    return { preset: s.preset, maxDistance: s.maxDistance, enabled: s.enabled }
+  })
+
+  expect(result.preset).toBe('medium')
+  expect(result.maxDistance).toBeGreaterThan(0)
+})
+
+test('wave 20 GPU ribbon trail buffers + shift', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: {
+        create: (b: 'gpu') => {
+          props: { renderMode: string; ribbonSegments: number }
+          simBuffers: () => { trail?: Float32Array; trailLen?: number }
+          shiftAllRibbonTrails: () => void
+        }
+        qaMatrix: () => { checks: { id: string }[] }
+      }
+    }
+    const ps = v.particles.create('gpu')
+    const buf = ps.simBuffers()
+    ps.shiftAllRibbonTrails()
+    const qa = v.particles.qaMatrix()
+    return {
+      trailLen: buf.trail?.length ?? 0,
+      segments: buf.trailLen,
+      hasRibbonCheck: qa.checks.some((c) => c.id === 'ribbon.trail'),
+    }
+  })
+
+  expect(result.trailLen).toBeGreaterThan(0)
+  expect(result.segments).toBeGreaterThanOrEqual(2)
+  expect(result.hasRibbonCheck).toBe(true)
+})
+
+test('wave 20 BT collapsed subtree compiles to script', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        collapseSubtree: (g: import('../src/engine/btGraph').BTGraph, id: string) => import('../src/engine/btGraph').BTGraph
+        compileScript: (g: import('../src/engine/btGraph').BTGraph) => string | null
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const repeat = { id: 'r20', type: 'Repeat', x: 300, y: 80, props: { count: 2 } }
+    const wait = { id: 'w20', type: 'Wait', x: 500, y: 80, props: { seconds: 0.1 } }
+    graph.nodes.push(repeat, wait)
+    graph.edges = [
+      { from: root.id, to: repeat.id },
+      { from: repeat.id, to: wait.id },
+    ]
+    const beforeCount = graph.nodes.length
+    const collapsed = v.bt.collapseSubtree(graph, repeat.id)
+    const script = v.bt.compileScript(collapsed)
+    return {
+      hasWait: script?.includes('wait') ?? false,
+      hasPaths: script?.includes('__btPaths') ?? false,
+      visibleNodes: collapsed.nodes.length,
+      stashed: !!collapsed.subtrees?.[repeat.id],
+      shrunk: collapsed.nodes.length < beforeCount,
+    }
+  })
+
+  expect(result.hasWait).toBe(true)
+  expect(result.hasPaths).toBe(true)
+  expect(result.stashed).toBe(true)
+  expect(result.shrunk).toBe(true)
+})
+
+test('wave 20 export perf gate surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+    }
+    const html = v.export.buildPlayableHTML()
+    return {
+      hasPerfMin: html.includes('perfMinFps') || html.includes('__LOTUS_EXPORT_PERF__'),
+      hasExportPerf: html.includes('__LOTUS_EXPORT_PERF__'),
+    }
+  })
+
+  expect(result.hasExportPerf).toBe(true)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

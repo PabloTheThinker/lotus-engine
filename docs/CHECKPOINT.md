@@ -238,13 +238,23 @@
 | v1.37 | MP GAS replication — `replicateGAS`, `ga:` deltas, replication tier priority |
 | v1.38 | Playwright wave 19 tests — 42 passed |
 
-## Next up (v1.39+, Wave 20)
+## Shipped (v1.39–v1.43, Wave 20)
 
-1. **TSL post** — SSR quality presets + compositor parity with WebGL tier
-2. **GPU particles** — GPU trail buffer shift for ribbon mode
-3. **Export** — playable particle GPU E2E with perf regression gate
-4. **BT** — collapsed subtree script compile + breakpoint in collapsed child
-5. **Material TSL** — Material Editor per-node wire drag + live channel pins
+| Ver | What |
+|---|---|
+| v1.39 | SSR quality presets — `ssrPreset.ts`, WebGL + TSL + export parity |
+| v1.40 | GPU ribbon trail — `trail` in `simBuffers`, `shiftAllRibbonTrails` on GPU path |
+| v1.41 | Export perf gate — `__LOTUS_EXPORT_PERF__.perfPass` / `perfMinFps` |
+| v1.42 | BT collapsed script compile + stashed-node breakpoints |
+| v1.43 | Material Editor wire drag + channel pins — 46 tests passed |
+
+## Next up (v1.44+, Wave 21)
+
+1. **TSL post** — SSR ground reflector + compositor DOF stub wiring
+2. **GPU particles** — full GPU compute trail shift kernel (ribbon)
+3. **Export** — playable WebGPU particle E2E with perf regression CI gate
+4. **BT** — service nodes in compile-to-script + PIE service highlight
+5. **Material TSL** — per-node live preview on wire connect
 
 ## Remaining gap-list queue (post–wave 7)
 

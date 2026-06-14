@@ -174,6 +174,9 @@ export interface ParticleSimBuffers {
   maxLife: Float32Array
   colors: Float32Array
   sizes: Float32Array
+  /** Wave 20 — ribbon trail history per particle slot */
+  trail?: Float32Array
+  trailLen?: number
 }
 
 export class ParticleSystem {
@@ -323,6 +326,17 @@ export class ParticleSystem {
       maxLife: this.maxLife,
       colors: this.colors,
       sizes: this.sizes,
+      trail: this.trail,
+      trailLen: this.trailLen,
+    }
+  }
+
+  /** Wave 20 — batch ribbon trail shift after GPU position sync. */
+  shiftAllRibbonTrails(): void {
+    if ((this.props.renderMode ?? 'points') !== 'ribbon') return
+    for (let i = 0; i < this.cap; i++) {
+      if (!this.alive[i]) continue
+      this.shiftTrail(i)
     }
   }
 

@@ -47,6 +47,7 @@ import {
 import { getActiveBTPaths } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
+import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
 import { DEFAULT_PARTICLES } from './engine/particles'
 import { createParticleSystem } from './engine/particlesGPU'
@@ -217,6 +218,9 @@ const lotusBridge = {
   },
   ssgi: {
     settings: () => getSSGISettings(world.environment),
+  },
+  ssr: {
+    settings: () => getSSRSettings(world.environment),
   },
   projectSettings: {
     load: loadProjectSettings,

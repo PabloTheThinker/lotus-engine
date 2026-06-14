@@ -430,9 +430,10 @@ export function inferBlackboardTypes(graph: BTGraph): Record<string, BTBlackboar
 
 /** Compile BT graph to per-actor script JS (Wave 16). */
 export function compileBTGraphToScript(graph: BTGraph): string | null {
-  const compiled = compileBTGraph(graph)
+  const merged = graphForBTCompile(graph)
+  const compiled = compileBTGraph(merged)
   if (!compiled) return null
-  const types = inferBlackboardTypes(graph)
+  const types = inferBlackboardTypes(merged)
   const typeLines = Object.entries(types)
     .map(([k, t]) => `// bb ${k}: ${t}`)
     .join('\n')

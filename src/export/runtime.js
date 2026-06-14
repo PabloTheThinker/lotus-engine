@@ -80,6 +80,14 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const fxaaOn = env.postFxaa !== false
     const taaOn = env.postTaa === true
     const ssrOn = env.postSsr === true
+    const ssrPreset = env.postSsrPreset ?? 'medium'
+    const ssrTable = {
+      off: { maxDistance: 0, opacity: 0, thickness: 0 },
+      low: { maxDistance: 50, opacity: 0.28, thickness: 0.018 },
+      medium: { maxDistance: 100, opacity: 0.5, thickness: 0.01 },
+      high: { maxDistance: 200, opacity: 0.82, thickness: 0.005 },
+    }
+    const ssrRow = ssrTable[ssrPreset] ?? ssrTable.medium
     const ssgiPreset = env.postSsgiPreset ?? 'off'
     const ssgiOn = env.postSsgi === true || (ssgiPreset !== 'off' && env.renderBackend === 'webgpu')
     const ssgiTable = {
@@ -133,6 +141,9 @@ async function createExportTSLPipeline(primary, scene, camera) {
           const metal = scenePass.getTextureNode('metalness')
           const rough = scenePass.getTextureNode('roughness')
           const ssrPass = ssr(color, depth, normal, metal, rough, activeCam)
+          if (ssrPass.maxDistance) ssrPass.maxDistance.value = ssrRow.maxDistance
+          if (ssrPass.opacity) ssrPass.opacity.value = ssrRow.opacity
+          if (ssrPass.thickness) ssrPass.thickness.value = ssrRow.thickness
           let ssrTex = ssrPass.getTextureNode()
           if (taaOn && needsVelocity) {
             const vel = scenePass.getTextureNode('velocity')
@@ -1080,7 +1091,15 @@ async function boot() {
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
     `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`
-  window.__LOTUS_EXPORT_PERF__ = { tier: playRenderTier, particleTier, gpuParticleCount }
+  const perfMinFps = EXPORT.perfMinFps ?? 24
+  window.__LOTUS_EXPORT_PERF__ = {
+    tier: playRenderTier,
+    particleTier,
+    gpuParticleCount,
+    perfMinFps,
+    perfPass: null,
+    fps: 0,
+  }
   const c = new THREE.Clock()
   renderer.setAnimationLoop(() => {
     const dt = Math.min(c.getDelta(), 0.1)
@@ -1092,7 +1111,13 @@ async function boot() {
       perfFpsAcc = 0
       perfFpsFrames = 0
       const gpuN = particleSystems.filter((p) => p.gpuTier).length
-      perfBadge.textContent = `${perfFps} fps · ${playRenderTier}${gpuN ? ` · GPU×${gpuN}` : ''}`
+      const perfGate = window.__LOTUS_EXPORT_PERF__
+      if (perfGate) {
+        perfGate.fps = perfFps
+        perfGate.perfPass = perfFps >= perfGate.perfMinFps
+      }
+      const gateOk = perfGate?.perfPass !== false
+      perfBadge.textContent = `${perfFps} fps · ${playRenderTier}${gpuN ? ` · GPU×${gpuN}` : ''}${gateOk ? '' : ' · PERF!'}`
     }
     if (physWorld) {
       physWorld.timestep = Math.min(dt, 1 / 30)

@@ -12,6 +12,7 @@ import {
 } from '../engine/renderBackend'
 import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } from '../engine/lotusRenderer'
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
+import { getSSRSettings, ssrStatusLabel } from '../engine/ssrPreset'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { createTSLRenderPipeline, type TSLPipelineStack } from '../engine/postStackTSLPipeline'
 import { bindWorldGPUParticles } from '../engine/particlesGPU'
@@ -387,6 +388,7 @@ export function Viewport() {
     })
     const postFx = getPostFxSettings(world.environment)
     const ssgiSettings = getSSGISettings(world.environment)
+    const ssrSettings = getSSRSettings(world.environment)
     const postStack = createWebGLPostStack(
       renderer,
       world.scene,
@@ -395,6 +397,7 @@ export function Viewport() {
       mount.clientHeight,
       postFx,
       ssgiSettings,
+      world.environment,
     )
     const composer = postStack.composer
     const renderPass = postStack.renderPass
@@ -416,6 +419,7 @@ export function Viewport() {
           taa: postFx.taa,
           ssr: postFx.ssr,
           ssgi: ssgiSettings,
+          ssrSettings,
         },
       )
       void bindWorldGPUParticles(world.actors.values(), primaryRenderer)
@@ -489,6 +493,7 @@ export function Viewport() {
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
+      postStack.applySSR(getSSRSettings(world.environment))
       tslPipeline?.applyPostFx(
         getPostFxSettings(world.environment),
         {
@@ -498,6 +503,7 @@ export function Viewport() {
           bloomRadius: post.bloomRadius,
         },
         getSSGISettings(world.environment),
+        getSSRSettings(world.environment),
       )
     }
 
@@ -1941,8 +1947,9 @@ export function Viewport() {
         )
         const tslBadge = tsl.tier === 'full' ? 'F' : tsl.tier === 'pipeline' ? 'P' : tsl.tier === 'active' ? '+' : ''
         const ssgi = ssgiStatusLabel(world.environment, webgpuOk)
+        const ssr = ssrStatusLabel(world.environment)
         const tris = rendererTriangleCount(primaryRenderer)
-        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${tris.toLocaleString()} tris · ${backend.toUpperCase()}${webgpuActive ? 'R' : ''}${tslBadge}${ssgi}`
+        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${tris.toLocaleString()} tris · ${backend.toUpperCase()}${webgpuActive ? 'R' : ''}${tslBadge}${ssgi}${ssr}`
         frames = 0
         fpsTimer = 0
       }

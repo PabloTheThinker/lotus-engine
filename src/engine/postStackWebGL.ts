@@ -10,6 +10,8 @@ import { SSRPass } from 'three/addons/postprocessing/SSRPass.js'
 import type { PostFxSettings } from './renderBackend'
 import { createSSGIPass, updateSSGIPass } from './postStackSSGI'
 import type { SSGISettings } from './ssgiPreset'
+import { applySSRToWebGLPass, getSSRSettings, type SSRSettings } from './ssrPreset'
+import type { EnvironmentSettings } from './types'
 
 export interface WebGLPostStack {
   composer: EffectComposer
@@ -21,6 +23,7 @@ export interface WebGLPostStack {
   ssgiPass: ShaderPass | null
   setSize: (w: number, h: number) => void
   applySSGI: (settings: SSGISettings) => void
+  applySSR: (settings: SSRSettings) => void
   applySettings: (post: {
     bloomEnabled: boolean
     bloomStrength: number
@@ -39,6 +42,7 @@ export function createWebGLPostStack(
   height: number,
   fx: PostFxSettings,
   ssgi?: SSGISettings,
+  env?: EnvironmentSettings,
 ): WebGLPostStack {
   const floatOk = renderer.capabilities.isWebGL2 && !!renderer.extensions.get('EXT_color_buffer_float')
   const composerTarget = new THREE.WebGLRenderTarget(width, height, {
@@ -70,6 +74,7 @@ export function createWebGLPostStack(
       groundReflector: null,
     })
     composer.addPass(ssrPass)
+    if (env) applySSRToWebGLPass(ssrPass, getSSRSettings(env))
   }
 
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.6, 0.9)
@@ -96,6 +101,9 @@ export function createWebGLPostStack(
     ssgiPass,
     applySSGI(settings) {
       updateSSGIPass(ssgiPass, settings)
+    },
+    applySSR(settings) {
+      if (ssrPass) applySSRToWebGLPass(ssrPass, settings)
     },
     setSize(w, h) {
       composer.setSize(w, h)

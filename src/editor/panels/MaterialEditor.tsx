@@ -40,6 +40,28 @@ function wirePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
+const PORT_HIT = 10
+
+function portAt(
+  graph: MaterialGraph,
+  x: number,
+  y: number,
+): { nodeId: string; port: string | null } | null {
+  for (const node of graph.nodes) {
+    const def = MAT_NODE_DEFS[node.type]
+    if (!def) continue
+    if (def.hasOutput) {
+      const p = portPos(node, null)
+      if (Math.hypot(p.x - x, p.y - y) <= PORT_HIT) return { nodeId: node.id, port: null }
+    }
+    for (const inp of def.inputs) {
+      const p = portPos(node, inp)
+      if (Math.hypot(p.x - x, p.y - y) <= PORT_HIT) return { nodeId: node.id, port: inp }
+    }
+  }
+  return null
+}
+
 /** Live preview sphere — WebGL or WebGPU (TSL) depending on material backend. */
 function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: MaterialGraphMode }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -259,17 +281,24 @@ export function MaterialEditor() {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top }
   }
 
-  const onPort = (nodeId: string, port: string | null) => {
-    if (port === null) {
-      setPendingFrom(nodeId)
-      return
-    }
-    if (pendingFrom && pendingFrom !== nodeId) {
-      mutate((g) => {
-        g.edges = g.edges.filter((e) => e.to !== `${nodeId}:${port}`)
-        g.edges.push({ from: pendingFrom, to: `${nodeId}:${port}` })
-      })
-      setPendingFrom(null)
+  const connectWire = (fromId: string, toNodeId: string, toPort: string) => {
+    if (fromId === toNodeId) return
+    mutate((g) => {
+      g.edges = g.edges.filter((e) => e.to !== `${toNodeId}:${toPort}`)
+      g.edges.push({ from: fromId, to: `${toNodeId}:${toPort}` })
+    })
+    setPendingFrom(null)
+  }
+
+  const onPortDown = (nodeId: string, port: string | null, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (port === null) setPendingFrom(nodeId)
+  }
+
+  const onPortUp = (nodeId: string, port: string | null, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (port !== null && pendingFrom && pendingFrom !== nodeId) {
+      connectWire(pendingFrom, nodeId, port)
     }
   }
 
@@ -335,7 +364,18 @@ export function MaterialEditor() {
               setDirty(true)
             }
           }}
-          onMouseUp={() => (dragState.current = null)}
+          onMouseUp={(e) => {
+            if (pendingFrom) {
+              const p = canvasPoint(e)
+              const hit = portAt(graph, p.x, p.y)
+              if (hit && hit.port != null && hit.nodeId !== pendingFrom) {
+                connectWire(pendingFrom, hit.nodeId, hit.port)
+              } else {
+                setPendingFrom(null)
+              }
+            }
+            dragState.current = null
+          }}
           onDoubleClick={(e) => {
             if (e.target === canvasRef.current) setAddMenu(canvasPoint(e))
           }}
@@ -400,23 +440,39 @@ export function MaterialEditor() {
                   )}
                 </div>
                 <div className="bp-node-body" style={{ minHeight: Math.max(26, def.inputs.length * PORT_GAP + 4) }}>
-                  {def.inputs.map((inp, i) => (
-                    <div
-                      key={inp}
-                      className="bp-port in"
-                      style={{ top: inPortY(i) - HEADER_H - 4 }}
-                      onClick={() => onPort(node.id, inp)}
-                    >
-                      ●<em>{inp}</em>
-                    </div>
-                  ))}
+                  {def.inputs.map((inp, i) => {
+                    const wired = graph.edges.some((ed) => ed.to === `${node.id}:${inp}`)
+                    return (
+                      <div
+                        key={inp}
+                        className={`bp-port in ${wired ? 'wired' : ''}`}
+                        style={{ top: inPortY(i) - HEADER_H - 4 }}
+                        onMouseDown={(e) => onPortUp(node.id, inp, e)}
+                        onMouseUp={(e) => onPortUp(node.id, inp, e)}
+                        title={wired ? `${inp} (wired)` : inp}
+                      >
+                        ●<em>{inp}</em>
+                      </div>
+                    )
+                  })}
                   {def.hasOutput && (
                     <div
                       className={`bp-port out ${pendingFrom === node.id ? 'pending' : ''}`}
                       style={{ top: 8 }}
-                      onClick={() => onPort(node.id, null)}
+                      onMouseDown={(e) => onPortDown(node.id, null, e)}
                     >
                       ●
+                    </div>
+                  )}
+                  {node.type === 'Output' && (
+                    <div className="mat-channel-pins">
+                      {MAT_NODE_DEFS.Output.inputs
+                        .filter((inp) => graph.edges.some((ed) => ed.to === `${node.id}:${inp}`))
+                        .map((inp) => (
+                          <span key={inp} className="mat-pin">
+                            {inp}
+                          </span>
+                        ))}
                     </div>
                   )}
                   {def.props.map((prop) => (
@@ -501,6 +557,25 @@ export function MaterialEditor() {
                 })}
                 <div className="bp-add-cat">Math</div>
                 {['Multiply', 'Add', 'Lerp'].map((type) => {
+                  const d = MAT_NODE_DEFS[type]
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => {
+                        mutate((g) => {
+                          const props: Record<string, string | number> = {}
+                          for (const p of d.props) props[p.key] = p.default
+                          g.nodes.push({ id: newMatNodeId(), type, x: addMenu.x, y: addMenu.y, props })
+                        })
+                        setAddMenu(null)
+                      }}
+                    >
+                      {d.title}
+                    </button>
+                  )
+                })}
+                <div className="bp-add-cat">Substrate (Wave 19)</div>
+                {['ClearCoat', 'Sheen'].map((type) => {
                   const d = MAT_NODE_DEFS[type]
                   return (
                     <button

@@ -141,6 +141,7 @@ export class GPUParticleSystem extends ParticleSystem {
             skipSpawn: true,
             skipLifeColor: true,
           })
+          if ((p.renderMode ?? 'points') === 'ribbon') this.shiftAllRibbonTrails()
           return
         }
       }

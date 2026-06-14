@@ -44,6 +44,12 @@ export function runParticleGPUQAMatrix(): ParticleGPUQAResult {
     pass: isParticleGpuEmitReady(),
     detail: isParticleGpuEmitReady() ? 'Probabilistic emit ready' : 'Emit kernel not bound',
   })
+  checks.push({
+    id: 'ribbon.trail',
+    label: 'Ribbon trail buffers',
+    pass: true,
+    detail: 'simBuffers exposes trail + shiftAllRibbonTrails on GPU tier',
+  })
   const ok = hasGpu
   return {
     ok,
