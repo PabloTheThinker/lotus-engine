@@ -43,6 +43,20 @@ import {
   mpSpectatorSetLocal,
   mpSpectatorUnmarkPeer,
 } from './mpSpectator'
+import {
+  mpReplayBufferLength,
+  mpReplayGetSeekOffset,
+  mpReplayPackWire,
+  mpReplayRecordEnabled,
+  mpReplayRecordPoses,
+  mpReplayReset,
+  mpReplaySampleAt,
+  mpReplaySeek as mpReplaySeekBuffer,
+  mpReplaySetRecordEnabled,
+  mpReplayUnpackWire,
+  type MpReplayPose,
+  type MpReplayPoseWire,
+} from './mpReplayBuffer'
 
 /**
  * Multiplayer — Godot MultiplayerSynchronizer / MultiplayerSpawner-lite over a
@@ -61,6 +75,8 @@ import {
  *   lobby_ready { t, id, ready }              — peer toggles ready-up
  *   lobby_start { t, id }                     — host starts match when all peers ready
  *   spectator_join { t, id }                  — peer observes without pawn/input uplink
+ *   replay_sample  { t, id, offsetSec? }      — spectator requests host pose ring sample
+ *   replay_sample  { t, id, offsetSec, bufferLength, samples } — host rewind snapshot
  *   list_rooms  { t }                         — query public room registry
  *   rooms       { t, rooms:[{room,peers}] }   — room list snapshot
  *   room_registry { t, rooms }                — broadcast when rooms change
@@ -176,6 +192,21 @@ export function mpSpectatorEnable(enabled: boolean) {
 }
 
 export { mpIsSpectator, mpSpectatorPeers }
+
+export {
+  mpReplayBufferLength,
+  mpReplayGetSeekOffset,
+  mpReplayRecordEnabled,
+  mpReplaySampleAt,
+  type MpReplayPose,
+}
+
+/** Clamp spectator rewind offset; remote spectators request host replay_sample. */
+export function mpReplaySeek(offsetSec: number): number {
+  const clamped = mpReplaySeekBuffer(offsetSec)
+  if (mpSpectatorMode() && mpConnected() && !mpIsHost()) mpReplayRequestSample(clamped)
+  return clamped
+}
 
 export function saveMPSettings(s: MPSettings) {
   localStorage.setItem(KEY, JSON.stringify(s))
@@ -548,6 +579,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   mpMatchmakingReset()
   mpLobbyReset(localId)
   mpSpectatorReset(localId)
+  mpReplayReset()
   mpSpectatorSetLocal(!!cfg.spectator)
   if (cfg.spectator) mpSpectatorMarkPeer(localId)
   mpMatchmakingSetStatusSink(status, formatMpStatusLine)
@@ -583,6 +615,9 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       peerScores?: Record<string, number>
       gameWon?: [string, number]
       ready?: boolean
+      offsetSec?: number
+      bufferLength?: number
+      samples?: MpReplayPoseWire[]
     }
     try {
       msg = JSON.parse(String(ev.data))
@@ -694,6 +729,29 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       peer.target.set(msg.p[0], msg.p[1], msg.p[2])
       peer.ghost.rotation.y = msg.ry ?? 0
       peer.lastSeen = performance.now()
+      return
+    }
+    if (msg.t === 'replay_sample' && mpIsHost() && mpIsSpectator(msg.id) && typeof msg.offsetSec === 'number') {
+      const offsetSec = Math.max(0, Math.min(mpReplayBufferLength(), msg.offsetSec))
+      const samples = mpReplaySampleAt(offsetSec)
+      send({
+        t: 'replay_sample',
+        id: localId,
+        offsetSec,
+        bufferLength: mpReplayBufferLength(),
+        samples: mpReplayPackWire(samples),
+      })
+      return
+    }
+    if (
+      msg.t === 'replay_sample' &&
+      !mpIsHost() &&
+      isFromHost(msg.id) &&
+      Array.isArray(msg.samples) &&
+      typeof msg.offsetSec === 'number'
+    ) {
+      mpReplayUnpackWire(msg.offsetSec, msg.bufferLength ?? 0, msg.samples)
+      return
     }
   }
 }
@@ -711,6 +769,7 @@ export function mpDisconnect() {
   pingAcc = 0
   mpLobbyReset()
   mpSpectatorReset()
+  mpReplayReset()
   if (worldRef) {
     for (const id of [...netSpawned]) {
       if (worldRef.actors.has(id)) worldRef.removeActor(id)
@@ -720,14 +779,31 @@ export function mpDisconnect() {
   worldRef = null
 }
 
+function poseFromReplaySample(samples: MpReplayPose[], peerId: string): { position: THREE.Vector3; yaw: number } | null {
+  const hit = samples.find((s) => s.peerId === peerId)
+  if (!hit) return null
+  return { position: hit.position.clone(), yaw: hit.rotation.y }
+}
+
 /** Host peer pose for spectator orbit camera (null when local peer is host or pose unknown). */
 export function mpHostPose(): { position: THREE.Vector3; yaw: number } | null {
   if (!mpConnected()) return null
   const hid = hostId()
+  const seek = mpReplayGetSeekOffset()
+  if (seek > 0) {
+    const replay = poseFromReplaySample(mpReplaySampleAt(seek), hid)
+    if (replay) return replay
+  }
   if (hid === localId) return null
   const peer = peers.get(hid)
   if (!peer) return null
   return { position: peer.target.clone(), yaw: peer.ghost.rotation.y }
+}
+
+/** Spectator requests a rewind sample from the authoritative host. */
+export function mpReplayRequestSample(offsetSec: number) {
+  if (!mpConnected() || mpIsHost() || !mpSpectatorMode()) return
+  send({ t: 'replay_sample', id: localId, offsetSec })
 }
 
 function peerInterestPositions(pawnPos: THREE.Vector3 | null): THREE.Vector3[] {
@@ -789,6 +865,27 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
   sendAcc += dt
   if (sendAcc < 0.1) return
   sendAcc = 0
+
+  mpReplaySetRecordEnabled(mpIsHost())
+  if (mpIsHost()) {
+    const now = performance.now()
+    const entries: Array<{ peerId: string; position: THREE.Vector3; rotation: THREE.Euler }> = []
+    if (pawnPos && !mpIsDedicatedServer()) {
+      entries.push({
+        peerId: localId,
+        position: pawnPos,
+        rotation: new THREE.Euler(0, pawnYaw, 0),
+      })
+    }
+    for (const p of peers.values()) {
+      entries.push({
+        peerId: p.id,
+        position: p.target,
+        rotation: new THREE.Euler(0, p.ghost.rotation.y, 0),
+      })
+    }
+    if (entries.length) mpReplayRecordPoses(entries, now)
+  }
 
   // pawn co-presence @ 10 Hz (dedicated + spectator skip local pawn uplink)
   if (pawnPos && !mpIsDedicatedServer() && !mpSpectatorMode()) {

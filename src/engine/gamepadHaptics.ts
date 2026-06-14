@@ -1,7 +1,10 @@
 /**
  * Gamepad haptics — Gamepad Haptic Actuators via dual-rumble playEffect.
  * Wave 69 (v3.84–v3.88): guarded vibrationActuator; opt-out via environment.gamepadHaptics.
+ * Wave 74 (v4.09–v4.13): intensity + duration scaled by adaptive hapticScale.
  */
+
+import { scaleHapticDuration, scaleHapticMagnitude } from './adaptiveHaptics'
 
 /** Strong pulse for fire actions (0–1). */
 const FIRE_INTENSITY = 0.85
@@ -42,12 +45,15 @@ export function pulseGamepad(
   intensity: number,
   duration: number,
   envFlag?: boolean,
+  scale = 1,
 ): boolean {
   if (!hapticsEnabled(envFlag)) return false
+  if (scale <= 0) return false
   const actuator = pickActuator(padIndex)
   if (!actuator) return false
-  const mag = Math.max(0, Math.min(1, intensity))
-  const ms = Math.max(0, duration)
+  const mag = scaleHapticMagnitude(intensity, scale)
+  const ms = scaleHapticDuration(duration, scale)
+  if (ms <= 0 || mag <= 0) return false
   try {
     void actuator.playEffect('dual-rumble', {
       startDelay: 0,
@@ -61,12 +67,12 @@ export function pulseGamepad(
   }
 }
 
-export function pulseFire(envFlag?: boolean): boolean {
-  return pulseGamepad(null, FIRE_INTENSITY, FIRE_DURATION, envFlag)
+export function pulseFire(envFlag?: boolean, scale = 1): boolean {
+  return pulseGamepad(null, FIRE_INTENSITY, FIRE_DURATION, envFlag, scale)
 }
 
-export function pulseInteract(envFlag?: boolean): boolean {
-  return pulseGamepad(null, INTERACT_INTENSITY, INTERACT_DURATION, envFlag)
+export function pulseInteract(envFlag?: boolean, scale = 1): boolean {
+  return pulseGamepad(null, INTERACT_INTENSITY, INTERACT_DURATION, envFlag, scale)
 }
 
 function pickActuator(padIndex: number | null): HapticActuator | null {

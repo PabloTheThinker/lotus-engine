@@ -108,6 +108,16 @@
 | 69 | v3.84–v3.88 | **Gamepad haptics** — dual-rumble on actions |
 | 70 | v3.89–v3.93 | **Cloud save stub** — IndexedDB checkpoint backup — **294 tests** |
 
+## Shipped (Waves 71–75, v3.94–v4.18)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 71 | v3.94–v3.98 | **Grid navmesh bake** — Recast walkable mask per grid layer |
+| 72 | v3.99–v4.03 | **itch.io channels** — Butler `:beta` / `:demo` push hints |
+| 73 | v4.04–v4.08 | **MP replay buffer** — 30s pose ring, spectator rewind |
+| 74 | v4.09–v4.13 | **Adaptive haptics** — perf gate + battery saver scaling |
+| 75 | v4.14–v4.18 | **Cross-level saves** — global slots across `changeScene` — **319 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -116,11 +126,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Grid navmesh bake** — Recast walkable mask per collision layer
-2. **itch.io version channels** — butler push `:beta` / `:demo` channel hints
-3. **MP replay buffer** — last 30s pose ring for spectator rewind
-4. **Adaptive haptics** — scale rumble by perf tier / battery saver
-5. **Cross-level persistence** — carry save slots across `changeScene`
+1. **AI navmesh agents** — crowd follow grid navmesh per layer
+2. **itch.io release notes** — auto-generate from CHANGELOG slice per pack
+3. **MP killcam** — replay buffer on death event
+4. **Haptic profiles** — link to input profiles (desktop strong / mobile light)
+5. **Save slot UI** — in-export pause menu for load/save
 
 ## Non-goals (honest skip)
 
@@ -131,5 +141,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **294** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **319** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

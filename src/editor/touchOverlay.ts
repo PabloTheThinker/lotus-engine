@@ -148,7 +148,17 @@ export class TouchOverlay {
     const fireJust = fireBtn.justPressed()
     const interactDown = interactBtn.isDown()
     const interactJust = interactBtn.justPressed()
-    syncTouchInputState(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust, world.environment.touchHaptics)
+    syncTouchInputState(
+      axis,
+      jumpDown,
+      jumpJust,
+      fireDown,
+      fireJust,
+      interactDown,
+      interactJust,
+      world.environment.touchHaptics,
+      world.environment,
+    )
     Input.syncTouchInput(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust)
     jumpBtn.endFrame()
     fireBtn.endFrame()

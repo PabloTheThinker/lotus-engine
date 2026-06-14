@@ -316,7 +316,7 @@ function refreshHud() {
     size: 18,
     color: spec ? '#81b29a' : '#9aa4b2',
   })
-  api.hud.text('mp_spec_hint', 'F toggle follow · Q/E zoom · WASD free fly', {
+  api.hud.text('mp_spec_hint', 'F toggle follow · Q/E zoom · R rewind · WASD free fly', {
     anchor: 'tc',
     x: 0,
     y: 44,
@@ -364,7 +364,7 @@ const MP_SPECTATOR_HUD_WIDGETS: HudWidget[] = [
   {
     id: 'mp_spec_hint',
     type: 'text',
-    text: 'F follow · Q/E zoom',
+    text: 'F follow · Q/E zoom · R rewind',
     anchor: 'tc',
     x: 0,
     y: 44,

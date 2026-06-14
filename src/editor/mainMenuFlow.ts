@@ -1,4 +1,5 @@
 import { world, sanitizeLevelKey } from '../engine/World'
+import { migrateToLevel, setSaveContext } from '../engine/saveSystem'
 import type { HudWidget, SerializedLevel } from '../engine/types'
 import { hud } from '../engine/gameplay'
 import { AddActorCommand, runCommand } from './commands'
@@ -156,6 +157,18 @@ function selectLevelCore(kind: MainMenuLevelKind, opts: SelectLevelOpts = {}) {
   }
 
   if (opts.link !== false) linkStarterLevel(kind)
+
+  const env = world.environment
+  if (env.saveSlotsEnabled && env.crossLevelSaves) {
+    migrateToLevel(world.levelName)
+  }
+  setSaveContext({
+    levelName: world.levelName,
+    enabled: env.saveSlotsEnabled === true,
+    cloudBackup: env.cloudSaveBackup === true,
+    crossLevelSaves: env.crossLevelSaves === true,
+  })
+
   useEditor.getState().setStatus(`Level selected: ${item.label}`)
   useEditor.getState().touch()
 }

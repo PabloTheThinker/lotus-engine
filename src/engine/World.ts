@@ -48,7 +48,7 @@ import { loadProjectSettings } from '../editor/projectSettings'
 import { transitionIn, transitionOut } from '../editor/sceneTransitions'
 import { createWidget3DActor, syncWidget3D } from './widget3d'
 import { PhysicsSim } from './physics'
-import { setSaveContext } from './saveSystem'
+import { migrateToLevel, setSaveContext } from './saveSystem'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
 import { cameraCutAt, emptySequence, eventsBetween, hasAudioTracks, sampleSequence, type Sequence } from './sequencer'
 import { setViewCamera } from './gameplay'
@@ -266,6 +266,7 @@ export class World {
       levelName: this.levelName,
       enabled: this.environment.saveSlotsEnabled === true,
       cloudBackup: this.environment.cloudSaveBackup === true,
+      crossLevelSaves: this.environment.crossLevelSaves === true,
     })
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
     const loadCell = (cx: number, cz: number) => this.loadCellDuringPlay(cx, cz)
@@ -434,6 +435,19 @@ export class World {
     }
 
     await transitionOut('fade', 350)
+
+    const newLevelName = level.name ?? name
+    if (this.environment.saveSlotsEnabled && this.environment.crossLevelSaves) {
+      migrateToLevel(newLevelName)
+    } else {
+      this.levelName = newLevelName
+      setSaveContext({
+        levelName: this.levelName,
+        enabled: this.environment.saveSlotsEnabled === true,
+        cloudBackup: this.environment.cloudSaveBackup === true,
+        crossLevelSaves: this.environment.crossLevelSaves === true,
+      })
+    }
 
     const autoloadIds = new Set([...this.actors.values()].filter((a) => this.isAutoloadActor(a)).map((a) => a.id))
     const autoloadRoots = [...autoloadIds].map((id) => this.actors.get(id)!.root)

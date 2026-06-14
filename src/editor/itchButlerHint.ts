@@ -1,4 +1,4 @@
-import type { ExportPackMeta } from './exportPackMeta'
+import type { ExportPackMeta, ItchVersionChannel } from './exportPackMeta'
 
 /** v3.74 — localStorage key for last itch.io zip filename (Butler CLI hint). */
 export const ITCH_LAST_ZIP_KEY = 'lotus-engine.itch.lastZip'
@@ -9,8 +9,10 @@ export function buildButlerPushCommand(
   zipPath: string,
   user = 'user',
   game = 'game',
+  channel?: ItchVersionChannel,
 ): string {
-  return `butler push ${zipPath} ${user}/${game}:${meta.kind}`
+  const suffix = channel ?? meta.channel ?? meta.kind
+  return `butler push ${zipPath} ${user}/${game}:${suffix}`
 }
 
 export function storeLastItchZipName(zipName: string): void {

@@ -75,6 +75,11 @@ import {
   rebuildFoliageColliders,
   setLayerCollisionGroup,
 } from '../../engine/gridCollisionLayers'
+import {
+  getNavmeshLayerMask,
+  isLayerInNavmeshMask,
+  setNavmeshLayerMask,
+} from '../../engine/gridNavmeshBake'
 import { buildLandscapeMesh, syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
@@ -2757,6 +2762,26 @@ function FoliageSection({ actor }: { actor: Actor }) {
                       </option>
                     ))}
                   </select>
+                </label>
+              ))}
+            </div>
+          </label>
+          <label className="field">
+            <span>Navmesh walkable</span>
+            <div className="paint-layers">
+              {[0, 1, 2, 3].map((i) => (
+                <label key={i} className="paint-layer" title={`Layer ${i} included in navmesh bake`}>
+                  <input
+                    type="checkbox"
+                    checked={isLayerInNavmeshMask(getNavmeshLayerMask(props), i)}
+                    onChange={(e) => {
+                      const cur = getNavmeshLayerMask(props)
+                      const bit = 1 << i
+                      setNavmeshLayerMask(props, e.target.checked ? cur | bit : cur & ~bit)
+                      touch()
+                    }}
+                  />
+                  {i}
                 </label>
               ))}
             </div>

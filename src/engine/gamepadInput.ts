@@ -4,6 +4,7 @@
  * Wave 69 (v3.84): dual-rumble on fire / interact just-pressed via gamepadHaptics.
  */
 
+import { hapticScale, type HapticScaleEnv } from './adaptiveHaptics'
 import { pulseFire, pulseInteract } from './gamepadHaptics'
 import { Input } from './Input'
 import {
@@ -63,7 +64,7 @@ export function isGamepadInteractJustPressed(): boolean {
 }
 
 /** Poll the first active gamepad and inject into Input (call once per frame while playing). */
-export function pollGamepadInput(hapticsEnv?: boolean): boolean {
+export function pollGamepadInput(hapticsEnv?: boolean, hapticScaleEnv?: HapticScaleEnv): boolean {
   const pad = pickGamepad()
   connected = !!pad
   if (!pad) {
@@ -106,8 +107,9 @@ export function pollGamepadInput(hapticsEnv?: boolean): boolean {
   jumpJustPressed = jumpDown && !prevJump
   fireJustPressed = fireDown && !prevFire
   interactJustPressed = interactDown && !prevInteract
-  if (fireJustPressed) pulseFire(hapticsEnv)
-  if (interactJustPressed) pulseInteract(hapticsEnv)
+  const rumbleScale = hapticScaleEnv ? hapticScale(hapticScaleEnv) : 1
+  if (fireJustPressed) pulseFire(hapticsEnv, rumbleScale)
+  if (interactJustPressed) pulseInteract(hapticsEnv, rumbleScale)
   prevJump = jumpDown
   prevFire = fireDown
   prevInteract = interactDown

@@ -5,6 +5,7 @@
  * Wave 64 (v3.59): haptics on just-pressed fire / interact / jump via touchHaptics.
  */
 
+import { hapticScale, type HapticScaleEnv } from './adaptiveHaptics'
 import { vibrateFire, vibrateInteract, vibrateJump } from './touchHaptics'
 
 export interface TouchAxis {
@@ -71,22 +72,24 @@ export function syncTouchInputState(
   interact = false,
   interactJust = false,
   hapticsEnv?: boolean,
+  hapticScaleEnv?: HapticScaleEnv,
 ) {
+  const rumbleScale = hapticScaleEnv ? hapticScale(hapticScaleEnv) : 1
   moveAxis = { x: clamp(axis.x), y: clamp(axis.y) }
   jumpDown = jump
   fireDown = fire
   interactDown = interact
   if (jumpJust) {
     jumpJustPressed = true
-    vibrateJump(hapticsEnv)
+    vibrateJump(hapticsEnv, rumbleScale)
   }
   if (fireJust) {
     fireJustPressed = true
-    vibrateFire(hapticsEnv)
+    vibrateFire(hapticsEnv, rumbleScale)
   }
   if (interactJust) {
     interactJustPressed = true
-    vibrateInteract(hapticsEnv)
+    vibrateInteract(hapticsEnv, rumbleScale)
   }
 }
 

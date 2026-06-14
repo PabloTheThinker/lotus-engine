@@ -51,7 +51,15 @@ import {
   mountMiniGameHudForPlay,
   unmountMiniGameHudForPlay,
 } from './miniGameHud'
-import { mpConnect, mpDisconnect, mpHostPose, mpSpectatorMode, mpTick } from '../engine/multiplayer'
+import {
+  mpConnect,
+  mpDisconnect,
+  mpHostPose,
+  mpReplayGetSeekOffset,
+  mpReplaySeek,
+  mpSpectatorMode,
+  mpTick,
+} from '../engine/multiplayer'
 import { mpSpectatorDefaultSpawn } from '../engine/mpSpectator'
 import { runConstructScript, setScriptLogSink } from '../engine/scripting'
 import { pushSample, latest } from '../engine/profiler'
@@ -1672,7 +1680,10 @@ export function Viewport() {
             const spec = world.spectatorStart()
             const spawn = mpSpectatorDefaultSpawn()
             if (spec) spec.root.getWorldPosition(spawn)
-            pawn.enterSpectator(spawn, () => mpHostPose())
+            pawn.enterSpectator(spawn, () => mpHostPose(), {
+              seek: mpReplaySeek,
+              offset: mpReplayGetSeekOffset,
+            })
           } else {
             pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
           }

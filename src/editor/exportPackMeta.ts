@@ -1,6 +1,9 @@
 import { miniGamePackTitle } from './miniGameExportPack'
 import type { MiniGameMode } from './starterMiniGames'
 
+/** v3.99 — itch.io Butler version channel (html default, beta/demo previews). */
+export type ItchVersionChannel = 'html' | 'beta' | 'demo'
+
 /** v3.24 — itch.io upload sidecar fields embedded as __LOTUS_PACK_META__. */
 export interface ExportPackMeta {
   title: string
@@ -8,6 +11,8 @@ export interface ExportPackMeta {
   /** itch.io classification / genre tags */
   tags: string[]
   kind: 'html'
+  /** optional Butler push channel — omitted when default html */
+  channel?: ItchVersionChannel
   version: string
 }
 
@@ -24,12 +29,13 @@ const PACK_GENRE_TAGS: Record<MiniGameMode, string[]> = {
 }
 
 /** Build itch.io JSON sidecar for a mini-game export pack genre. */
-export function buildExportPackMeta(mode: MiniGameMode): ExportPackMeta {
+export function buildExportPackMeta(mode: MiniGameMode, channel?: ItchVersionChannel): ExportPackMeta {
   return {
     title: miniGamePackTitle(mode),
     description: PACK_DESCRIPTIONS[mode],
     tags: [...PACK_GENRE_TAGS[mode]],
     kind: 'html',
+    ...(channel ? { channel } : {}),
     version: '1.0',
   }
 }

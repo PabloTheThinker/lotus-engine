@@ -147,7 +147,7 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         ...base,
         name: uniqueName('GridMap'),
         type: 'FoliageLayer',
-        foliage: { ...DEFAULT_FOLIAGE, geometry: 'box', color: '#7a8699', density: 1, brushRadius: 0.4, scaleMin: 1, scaleMax: 1, instances: [], snap: true, gridBrushSize: 0 },
+        foliage: { ...DEFAULT_FOLIAGE, geometry: 'box', color: '#7a8699', density: 1, brushRadius: 0.4, scaleMin: 1, scaleMax: 1, instances: [], snap: true, gridBrushSize: 0, gridNavmeshLayerMask: 0b0001 },
         transform: { ...base.transform, position: [0, 0, 0] },
       }
     case 'probe':

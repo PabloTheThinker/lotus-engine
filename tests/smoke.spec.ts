@@ -7179,3 +7179,730 @@ test('wave 68 World Settings documents spectator_join + /mpspectator', async ({ 
   expect(html).toContain('spectator_join')
   expect(html).toContain('/mpspectator')
 })
+
+test('wave 73 indie.mp.replay bridge exposes sampleAt, seek, bufferLength, recordEnabled', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          replay: {
+            sampleAt: (offsetSec: number) => unknown[]
+            seek: (offsetSec: number) => number
+            bufferLength: () => number
+            recordEnabled: () => boolean
+          }
+        }
+      }
+    }
+    const clamped = v.indie.mp.replay.seek(5)
+    const sample = v.indie.mp.replay.sampleAt(0)
+    return {
+      hasSampleAt: typeof v.indie.mp.replay.sampleAt === 'function',
+      hasSeek: typeof v.indie.mp.replay.seek === 'function',
+      hasBufferLength: typeof v.indie.mp.replay.bufferLength === 'function',
+      hasRecordEnabled: typeof v.indie.mp.replay.recordEnabled === 'function',
+      clamped,
+      sampleIsArray: Array.isArray(sample),
+      bufferLength: v.indie.mp.replay.bufferLength(),
+      recordEnabled: v.indie.mp.replay.recordEnabled(),
+    }
+  })
+
+  expect(result.hasSampleAt).toBe(true)
+  expect(result.hasSeek).toBe(true)
+  expect(result.hasBufferLength).toBe(true)
+  expect(result.hasRecordEnabled).toBe(true)
+  expect(result.sampleIsArray).toBe(true)
+  expect(result.clamped).toBe(5)
+  expect(result.bufferLength).toBe(30)
+  expect(result.recordEnabled).toBe(false)
+})
+
+test('wave 73 mpReplayBuffer records 30s ring @ 10Hz and samples at offset', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mp = window.lotus!.multiplayer as {
+      replay: {
+        reset: () => void
+        setRecordEnabled: (on: boolean) => void
+        recordPoses: (
+          entries: Array<{ peerId: string; position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number } }>,
+          now?: number,
+        ) => void
+        bufferLength: () => number
+        sampleAt: (offsetSec: number) => Array<{ peerId: string; position: { x: number; y: number; z: number } }>
+        seek: (offsetSec: number) => number
+        bufferSec: number
+        sampleHz: number
+      }
+    }
+    mp.replay.reset()
+    mp.replay.setRecordEnabled(true)
+    const t0 = 1_000_000
+    const dt = 1000 / mp.replay.sampleHz
+    for (let i = 0; i <= mp.replay.sampleHz * 3; i++) {
+      mp.replay.recordPoses(
+        [
+          {
+            peerId: 'host1',
+            position: { x: i, y: 0, z: 0 },
+            rotation: { x: 0, y: i * 0.1, z: 0 },
+          },
+        ],
+        t0 + i * dt,
+      )
+    }
+    const len = mp.replay.bufferLength()
+    const live = mp.replay.sampleAt(0)
+    const rewind = mp.replay.sampleAt(2)
+    const seek = mp.replay.seek(1.5)
+    return {
+      bufferSec: mp.replay.bufferSec,
+      sampleHz: mp.replay.sampleHz,
+      len,
+      liveX: live[0]?.position.x,
+      rewindX: rewind[0]?.position.x,
+      seek,
+      rewindPeer: rewind[0]?.peerId,
+    }
+  })
+
+  expect(result.bufferSec).toBe(30)
+  expect(result.sampleHz).toBe(10)
+  expect(result.len).toBeGreaterThanOrEqual(2.9)
+  expect(result.liveX).toBe(30)
+  expect(result.rewindX).toBe(10)
+  expect(result.rewindPeer).toBe('host1')
+  expect(result.seek).toBe(1.5)
+})
+
+test('wave 73 spectator script + HUD document R rewind', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { mp: { spectator: { script: string } } }
+    }
+    v.terminal.exec('/mpspectator')
+    const hint = v.world.hudWidgets.find((w) => w.id === 'mp_spec_hint')
+    return {
+      scriptHasR: v.indie.mp.spectator.script.includes('R rewind'),
+      hudHasR: hint?.text?.includes('R rewind') ?? false,
+    }
+  })
+
+  expect(result.scriptHasR).toBe(true)
+  expect(result.hudHasR).toBe(true)
+})
+
+test('wave 73 multiplayer bridge replay dev hooks expose bufferSec and sampleHz', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const replay = (window.lotus!.multiplayer as { replay?: { bufferSec?: number; sampleHz?: number; reset?: () => void } }).replay
+    return {
+      bufferSec: replay?.bufferSec,
+      sampleHz: replay?.sampleHz,
+      hasReset: typeof replay?.reset === 'function',
+    }
+  })
+
+  expect(result.bufferSec).toBe(30)
+  expect(result.sampleHz).toBe(10)
+  expect(result.hasReset).toBe(true)
+})
+
+test('wave 74 adaptiveHaptics hapticScale clamps intensity perf gate and battery saver to 0-1', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      adaptiveHaptics: {
+        hapticScale: (
+          env: { hapticIntensity?: number; hapticBatterySaver?: boolean },
+          perfGate?: { fps?: number; perfMinFps?: number; perfPass?: boolean | null } | null,
+          charging?: boolean,
+        ) => number
+        setBatteryChargingForTest: (charging: boolean | undefined) => void
+      }
+    }
+    v.adaptiveHaptics.setBatteryChargingForTest(false)
+    const full = v.adaptiveHaptics.hapticScale({ hapticIntensity: 1, hapticBatterySaver: false }, {
+      fps: 30,
+      perfMinFps: 24,
+      perfPass: true,
+    })
+    const halfIntensity = v.adaptiveHaptics.hapticScale(
+      { hapticIntensity: 0.5, hapticBatterySaver: false },
+      { fps: 30, perfMinFps: 24, perfPass: true },
+    )
+    const perfLow = v.adaptiveHaptics.hapticScale(
+      { hapticIntensity: 1, hapticBatterySaver: false },
+      { fps: 12, perfMinFps: 24, perfPass: false },
+    )
+    const battery = v.adaptiveHaptics.hapticScale(
+      { hapticIntensity: 1, hapticBatterySaver: true },
+      { fps: 30, perfMinFps: 24, perfPass: true },
+      false,
+    )
+    return { full, halfIntensity, perfLow, battery }
+  })
+
+  expect(result.full).toBe(1)
+  expect(result.halfIntensity).toBe(0.5)
+  expect(result.perfLow).toBe(0.5)
+  expect(result.battery).toBe(0.5)
+})
+
+test('wave 74 touchHaptics vibrateFire scales vibration pattern duration by adaptive scale', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        touch: {
+          setHapticsEnabled: (on: boolean) => boolean
+          vibrateFire: () => boolean
+        }
+      }
+      world: { environment: { hapticIntensity?: number; hapticBatterySaver?: boolean } }
+      adaptiveHaptics: { setBatteryChargingForTest: (charging: boolean | undefined) => void }
+    }
+    v.indie.touch.setHapticsEnabled(true)
+    v.world.environment.hapticIntensity = 0.5
+    v.world.environment.hapticBatterySaver = false
+    v.adaptiveHaptics.setBatteryChargingForTest(true)
+    let pattern: number | number[] = 0
+    const orig = navigator.vibrate
+    navigator.vibrate = (p: number | number[]) => {
+      pattern = p
+      return true
+    }
+    const fired = v.indie.touch.vibrateFire()
+    navigator.vibrate = orig
+    const ms = Array.isArray(pattern) ? pattern[0] : pattern
+    return { fired, ms }
+  })
+
+  expect(result.fired).toBe(true)
+  expect(result.ms).toBe(14)
+})
+
+test('wave 74 gamepadHaptics pulseFire scales dual-rumble duration and magnitude by adaptive scale', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        gamepad: {
+          setHapticsEnabled: (on: boolean) => boolean
+          pulseFire: () => boolean
+        }
+      }
+      world: { environment: { hapticIntensity?: number; hapticBatterySaver?: boolean } }
+      adaptiveHaptics: { setBatteryChargingForTest: (charging: boolean | undefined) => void }
+    }
+    v.indie.gamepad.setHapticsEnabled(true)
+    v.world.environment.hapticIntensity = 0.5
+    v.world.environment.hapticBatterySaver = false
+    v.adaptiveHaptics.setBatteryChargingForTest(true)
+    const effects: Array<{ type: string; params: Record<string, number> }> = []
+    const stubActuator = {
+      playEffect: (type: string, params: Record<string, number>) => {
+        effects.push({ type, params })
+        return Promise.resolve({})
+      },
+    }
+    const stubPad = { connected: true, vibrationActuator: stubActuator }
+    const orig = navigator.getGamepads
+    navigator.getGamepads = () => [stubPad as unknown as Gamepad]
+    const fired = v.indie.gamepad.pulseFire()
+    navigator.getGamepads = orig
+    return {
+      fired,
+      duration: effects[0]?.params.duration,
+      magnitude: effects[0]?.params.strongMagnitude,
+    }
+  })
+
+  expect(result.fired).toBe(true)
+  expect(result.duration).toBe(14)
+  expect(result.magnitude).toBeCloseTo(0.425, 3)
+})
+
+test('wave 74 indie.haptics scale intensity setIntensity batterySaver bridge writes environment', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        haptics: {
+          scale: () => number
+          intensity: () => number
+          setIntensity: (pct: number) => number
+          batterySaver: () => boolean
+        }
+      }
+      world: { environment: { hapticIntensity?: number; hapticBatterySaver?: boolean } }
+      adaptiveHaptics: { setBatteryChargingForTest: (charging: boolean | undefined) => void }
+    }
+    delete v.world.environment.hapticIntensity
+    delete v.world.environment.hapticBatterySaver
+    v.adaptiveHaptics.setBatteryChargingForTest(true)
+    const defaultIntensity = v.indie.haptics.intensity()
+    const defaultSaver = v.indie.haptics.batterySaver()
+    const setVal = v.indie.haptics.setIntensity(40)
+    v.world.environment.hapticBatterySaver = false
+    const scale = v.indie.haptics.scale()
+    return {
+      defaultIntensity,
+      defaultSaver,
+      setVal,
+      envIntensity: v.world.environment.hapticIntensity,
+      scale,
+    }
+  })
+
+  expect(result.defaultIntensity).toBe(1)
+  expect(result.defaultSaver).toBe(true)
+  expect(result.setVal).toBe(0.4)
+  expect(result.envIntensity).toBe(0.4)
+  expect(result.scale).toBe(0.4)
+})
+
+test('wave 74 export runtime applies hapticScaleFromPerfGate on touch and gamepad haptic pulses', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: {
+        environment: {
+          touchControls?: boolean
+          touchHaptics?: boolean
+          gamepadControls?: boolean
+          gamepadHaptics?: boolean
+          hapticIntensity?: number
+          hapticBatterySaver?: boolean
+        }
+      }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.touchControls = true
+    v.world.environment.touchHaptics = true
+    v.world.environment.gamepadControls = true
+    v.world.environment.gamepadHaptics = true
+    v.world.environment.hapticIntensity = 0.8
+    v.world.environment.hapticBatterySaver = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      perfScaleFn: html.includes('hapticScaleFromPerfGate'),
+      perfFpsScale: html.includes('perfFpsHapticScale'),
+      batteryScale: html.includes('batteryHapticScale'),
+      scalePattern: html.includes('scaleHapticPattern'),
+      intensityEnv: html.includes('hapticIntensity'),
+      batteryEnv: html.includes('hapticBatterySaver'),
+    }
+  })
+
+  expect(result.perfScaleFn).toBe(true)
+  expect(result.perfFpsScale).toBe(true)
+  expect(result.batteryScale).toBe(true)
+  expect(result.scalePattern).toBe(true)
+  expect(result.intensityEnv).toBe(true)
+  expect(result.batteryEnv).toBe(true)
+})
+
+test('wave 71 gridMap getNavmeshLayerMask defaults to 0b0001 on gridmap spawn', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: { getNavmeshLayerMask: (props: import('../src/engine/types').FoliageProps) => number }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    return {
+      ok: true,
+      mask: v.gridMap.getNavmeshLayerMask(layer.foliageProps),
+      stored: layer.foliageProps.gridNavmeshLayerMask,
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.mask).toBe(0b0001)
+  expect(result.stored).toBe(0b0001)
+})
+
+test('wave 71 gridMap setNavmeshLayerMask + getNavmeshLayerMask round-trip on foliage props', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        setNavmeshLayerMask: (props: import('../src/engine/types').FoliageProps, mask: number) => void
+        getNavmeshLayerMask: (props: import('../src/engine/types').FoliageProps) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    v.gridMap.setNavmeshLayerMask(props, 0b1010)
+    return {
+      ok: true,
+      read: v.gridMap.getNavmeshLayerMask(props),
+      stored: props.gridNavmeshLayerMask,
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.read).toBe(0b1010)
+  expect(result.stored).toBe(0b1010)
+})
+
+test('wave 71 gridMap collectFoliageNavColliderMeshes filters painted cells by layer mask', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        collectFoliageNavColliderMeshes: (mask: number) => number
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 1, 1, 0, 0)
+    v.gridMap.paintLayer(props, 2, 2, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    return {
+      ok: true,
+      layer0: v.gridMap.collectFoliageNavColliderMeshes(0b0001),
+      layer2: v.gridMap.collectFoliageNavColliderMeshes(0b0100),
+      layers02: v.gridMap.collectFoliageNavColliderMeshes(0b0101),
+      all: v.gridMap.collectFoliageNavColliderMeshes(0b1111),
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.layer0).toBe(1)
+  expect(result.layer2).toBe(1)
+  expect(result.layers02).toBe(2)
+  expect(result.all).toBe(3)
+})
+
+test('wave 71 gridMap bakeNavMeshLayers bakes Recast navmesh from painted grid layer 0', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        bakeNavMeshLayers: (mask: number) => Promise<boolean>
+      }
+      isNavMeshReady: () => boolean
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 0, 1, 0, 0)
+    v.gridMap.paintLayer(props, 0, 2, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    const bakeOk = await v.gridMap.bakeNavMeshLayers(0b0001)
+    return { ok: true, bakeOk, navReady: v.isNavMeshReady() }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.bakeOk).toBe(true)
+  expect(result.navReady).toBe(true)
+})
+
+test('wave 71 gridmap spawn exposes navmesh mask bridge APIs + /gridnavmesh terminal', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { gridNavmeshLayerMask?: number } } | null }
+      gridMap: Record<string, unknown>
+      terminal: { exec: (cmd: string) => { output?: string | null; error?: string | null } }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    if (props) (v.gridMap.getNavmeshLayerMask as (p: typeof props) => number)(props)
+    const out = v.terminal.exec('/gridnavmesh 2')
+    return {
+      storedMask: props?.gridNavmeshLayerMask,
+      hasGet: typeof v.gridMap.getNavmeshLayerMask === 'function',
+      hasSet: typeof v.gridMap.setNavmeshLayerMask === 'function',
+      hasBakeLayers: typeof v.gridMap.bakeNavMeshLayers === 'function',
+      hasBakeLayer: typeof v.gridMap.bakeNavMeshForGridLayer === 'function',
+      hasCollect: typeof v.gridMap.collectGridNavMeshes === 'function',
+      terminalOutput: out.output ?? '',
+      terminalError: out.error,
+    }
+  })
+
+  expect(result.hasGet).toBe(true)
+  expect(result.hasSet).toBe(true)
+  expect(result.hasBakeLayers).toBe(true)
+  expect(result.hasBakeLayer).toBe(true)
+  expect(result.hasCollect).toBe(true)
+  expect(result.storedMask).toBe(0b0001)
+  expect(result.terminalError).toBeNull()
+  expect(result.terminalOutput).toMatch(/Grid navmesh bake started \(0b0100\)/)
+})
+
+test('wave 72 buildButlerPushCommand beta channel suffix on butler target', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const exp = (window.lotus! as typeof window.lotus).export as {
+      butlerPushCommand: (
+        m: 'platformer' | 'rpg' | 'fps',
+        u?: string,
+        g?: string,
+        ch?: 'html' | 'beta' | 'demo',
+      ) => string
+    }
+    return {
+      beta: exp.butlerPushCommand('platformer', 'myuser', 'my-game', 'beta'),
+      demo: exp.butlerPushCommand('rpg', 'vektra', 'lotus-rpg', 'demo'),
+      defaultHtml: exp.butlerPushCommand('fps'),
+    }
+  })
+
+  expect(result.beta).toBe('butler push platformer-lotus-pack.zip myuser/my-game:beta')
+  expect(result.demo).toBe('butler push rpg-lotus-pack.zip vektra/lotus-rpg:demo')
+  expect(result.defaultHtml).toBe('butler push fps-lotus-pack.zip user/game:html')
+})
+
+test('wave 72 indie.minigame.butlerHint accepts channel arg for beta push', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      butlerHint: (
+        m: 'platformer',
+        u?: string,
+        g?: string,
+        ch?: 'html' | 'beta' | 'demo',
+      ) => string
+    }
+    return {
+      hasChannelArg: mg.butlerHint.length >= 4,
+      cmd: mg.butlerHint('platformer', 'myuser', 'my-game', 'beta'),
+    }
+  })
+
+  expect(result.hasChannelArg).toBe(true)
+  expect(result.cmd).toBe('butler push platformer-lotus-pack.zip myuser/my-game:beta')
+})
+
+test('wave 72 /butlerhint platformer beta prints butler push user/game:beta', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const out = (window.lotus! as typeof window.lotus).terminal.exec('/butlerhint platformer beta')
+    const lines = out?.output?.split('\n') ?? []
+    const metaRaw = lines.slice(2).join('\n')
+    const meta = metaRaw ? (JSON.parse(metaRaw) as { channel?: string; kind: string }) : null
+    return {
+      firstLine: lines[0] ?? '',
+      channel: meta?.channel ?? '',
+      kind: meta?.kind ?? '',
+    }
+  })
+
+  expect(result.firstLine).toBe('butler push platformer-lotus-pack.zip user/game:beta')
+  expect(result.channel).toBe('beta')
+  expect(result.kind).toBe('html')
+})
+
+test('wave 72 exportPackMeta embeds optional channel field in pack meta JSON', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      packMeta: (m: 'fps', ch?: 'html' | 'beta' | 'demo') => { channel?: string; kind: string }
+    }
+    const plain = mg.packMeta('fps')
+    const demo = mg.packMeta('fps', 'demo')
+    return {
+      plainHasChannel: 'channel' in plain,
+      demoChannel: demo.channel ?? '',
+      demoKind: demo.kind,
+    }
+  })
+
+  expect(result.plainHasChannel).toBe(false)
+  expect(result.demoChannel).toBe('demo')
+  expect(result.demoKind).toBe('html')
+})
+
+test('wave 72 /butlerhint rpg demo prints demo channel and stores zip name', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    localStorage.removeItem('lotus-engine.itch.lastZip')
+    const out = (window.lotus! as typeof window.lotus).terminal.exec('/butlerhint rpg demo')
+    const lines = out?.output?.split('\n') ?? []
+    return {
+      firstLine: lines[0] ?? '',
+      lastZip: localStorage.getItem('lotus-engine.itch.lastZip'),
+    }
+  })
+
+  expect(result.firstLine).toBe('butler push rpg-lotus-pack.zip user/game:demo')
+  expect(result.lastZip).toBe('rpg-lotus-pack.zip')
+})
+
+test('wave 75 globalCheckpoint round-trip stores lotus-engine.saves.__global__.{slot}', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; crossLevelSaves?: boolean } }
+      save: {
+        globalCheckpoint: (slot: string, data: unknown) => boolean
+        globalLoad: (slot: string) => unknown
+      }
+    }
+    v.world.levelName = 'Wave75Level'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.crossLevelSaves = true
+    const ok = v.save.globalCheckpoint('slot-g', { hp: 99, level: 'dungeon' })
+    const key = 'lotus-engine.saves.__global__.slot-g'
+    const raw = localStorage.getItem(key)
+    const loaded = v.save.globalLoad('slot-g')
+    return { ok, key, hasRaw: !!raw, loaded }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.hasRaw).toBe(true)
+  expect(result.loaded).toEqual({ hp: 99, level: 'dungeon' })
+})
+
+test('wave 75 lotus.save bridge exposes crossLevel, migrateToLevel, globalCheckpoint, globalLoad', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).save as Record<string, unknown>
+    return {
+      crossLevel: typeof s.crossLevel === 'function',
+      migrateToLevel: typeof s.migrateToLevel === 'function',
+      globalCheckpoint: typeof s.globalCheckpoint === 'function',
+      globalLoad: typeof s.globalLoad === 'function',
+    }
+  })
+
+  expect(result.crossLevel).toBe(true)
+  expect(result.migrateToLevel).toBe(true)
+  expect(result.globalCheckpoint).toBe(true)
+  expect(result.globalLoad).toBe(true)
+})
+
+test('wave 75 World Settings crossLevelSaves toggle persists on world.environment', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: {
+        environment: { saveSlotsEnabled?: boolean; crossLevelSaves?: boolean }
+        serialize: () => { environment: { saveSlotsEnabled?: boolean; crossLevelSaves?: boolean } }
+      }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.crossLevelSaves = true
+    const serialized = v.world.serialize()
+    return {
+      live: v.world.environment.crossLevelSaves === true,
+      serialized: serialized.environment.crossLevelSaves === true,
+    }
+  })
+
+  expect(result.live).toBe(true)
+  expect(result.serialized).toBe(true)
+})
+
+test('wave 75 export embeds __LOTUS_CROSS_LEVEL_SAVES__ true when cross-level saves enabled', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; crossLevelSaves?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.crossLevelSaves = true
+    const htmlOn = v.export.buildPlayableHTML()
+    v.world.environment.crossLevelSaves = false
+    const htmlOff = v.export.buildPlayableHTML()
+    return {
+      enabled: htmlOn.includes('__LOTUS_CROSS_LEVEL_SAVES__ = true'),
+      disabled: htmlOff.includes('__LOTUS_CROSS_LEVEL_SAVES__ = false'),
+      globalKey: htmlOn.includes('__global__'),
+    }
+  })
+
+  expect(result.enabled).toBe(true)
+  expect(result.disabled).toBe(true)
+  expect(result.globalKey).toBe(true)
+})
+
+test('wave 75 migrateToLevel copies per-level slot to __global__ on changeScene', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; crossLevelSaves?: boolean } }
+      save: {
+        checkpoint: (slot: string, data: unknown) => boolean
+        migrateToLevel: (name: string) => number
+        globalLoad: (slot: string) => unknown
+        load: (slot: string) => unknown
+      }
+    }
+    v.world.levelName = 'MenuLevel'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.crossLevelSaves = false
+    v.save.checkpoint('carry', { coins: 12 })
+    v.world.environment.crossLevelSaves = true
+    const migrated = v.save.migrateToLevel('DungeonLevel')
+    const globalKey = 'lotus-engine.saves.__global__.carry'
+    const levelKey = 'lotus-engine.saves.MenuLevel.carry'
+    return {
+      migrated,
+      globalHas: !!localStorage.getItem(globalKey),
+      levelHas: !!localStorage.getItem(levelKey),
+      globalLoaded: v.save.globalLoad('carry'),
+      activeLoaded: v.save.load('carry'),
+    }
+  })
+
+  expect(result.migrated).toBe(1)
+  expect(result.globalHas).toBe(true)
+  expect(result.levelHas).toBe(true)
+  expect(result.globalLoaded).toEqual({ coins: 12 })
+  expect(result.activeLoaded).toEqual({ coins: 12 })
+})

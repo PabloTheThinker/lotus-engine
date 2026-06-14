@@ -405,6 +405,8 @@ export interface FoliageProps {
   gridAtlasTileMap?: Record<number, number>
   /** Wave 66 — packed Rapier collision groups per grid layer (0–3) */
   gridLayerCollisionGroups?: number[]
+  /** Wave 71 — bitmask of grid layers (0–3) included in navmesh bake (default 0b0001) */
+  gridNavmeshLayerMask?: number
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {
@@ -656,10 +658,16 @@ export interface EnvironmentSettings {
   touchHaptics?: boolean
   /** Wave 69 — dual-rumble on Fire / Interact (Gamepad Haptic Actuators; default on when unset) */
   gamepadHaptics?: boolean
+  /** Wave 74 — master haptic intensity 0–1 (World Settings slider 0–100%; default 1) */
+  hapticIntensity?: number
+  /** Wave 74 — reduce rumble on battery power via navigator.getBattery (default on when unset) */
+  hapticBatterySaver?: boolean
   /** Wave 65 — localStorage save slots + export __LOTUS_SAVES__ */
   saveSlotsEnabled?: boolean
   /** Wave 70 — IndexedDB cloud backup of checkpoints + export __LOTUS_CLOUD_SAVES__ */
   cloudSaveBackup?: boolean
+  /** Wave 75 — carry save slots across api.changeScene / api.loadLevel */
+  crossLevelSaves?: boolean
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */

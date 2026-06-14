@@ -1516,6 +1516,29 @@ export function WorldSettings() {
             onChange={(e) => set('gamepadHaptics', e.target.checked)}
           />
         </label>
+        <label className="field" title="Master rumble strength for touch + gamepad haptics (Wave 74)">
+          <span>Haptic intensity</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={Math.round((env.hapticIntensity ?? 1) * 100)}
+            onChange={(e) => set('hapticIntensity', parseInt(e.target.value, 10) / 100)}
+          />
+          <em>{Math.round((env.hapticIntensity ?? 1) * 100)}%</em>
+        </label>
+        <label
+          className="field check"
+          title="Halve rumble when navigator.getBattery reports device is not charging"
+        >
+          <span>Haptic battery saver</span>
+          <input
+            type="checkbox"
+            checked={env.hapticBatterySaver !== false}
+            onChange={(e) => set('hapticBatterySaver', e.target.checked)}
+          />
+        </label>
         <label className="field check">
           <span>Export batch static meshes</span>
           <input
@@ -1543,10 +1566,25 @@ export function WorldSettings() {
             onChange={(e) => set('cloudSaveBackup', e.target.checked)}
           />
         </label>
+        <label
+          className="field check"
+          title="Carry save slots across api.changeScene / api.loadLevel (__LOTUS_CROSS_LEVEL_SAVES__)"
+        >
+          <span>Cross-level saves</span>
+          <input
+            type="checkbox"
+            checked={!!env.crossLevelSaves}
+            onChange={(e) => set('crossLevelSaves', e.target.checked)}
+            disabled={!env.saveSlotsEnabled}
+          />
+        </label>
         {env.saveSlotsEnabled && (
           <div className="panel-empty" style={{ padding: '2px 0' }}>
             Scripts: <code>api.saveGame('slot1', data)</code> · <code>api.loadGame('slot1')</code> ·{' '}
-            <code>api.listSaveSlots()</code> — keys <code>lotus-engine.saves.{'{level}'}.{'{slot}'}</code>
+            <code>api.listSaveSlots()</code> — keys{' '}
+            <code>
+              lotus-engine.saves.{env.crossLevelSaves ? '__global__' : '{level}'}.{'{slot}'}
+            </code>
             {env.cloudSaveBackup && (
               <>
                 {' '}

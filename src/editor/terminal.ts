@@ -14,13 +14,20 @@ import { spawnAsset } from './spawn'
 import { spawnIndieMpDeathmatch, spawnIndieMpLobby, spawnIndieMpSpectator } from './indieMpGameplay'
 import { spawnIndieMpTemplate } from './indieMpTemplate'
 import { exportMiniGamePreset } from './exportPlayable'
-import { buildExportPackMeta } from './exportPackMeta'
+import { buildExportPackMeta, type ItchVersionChannel } from './exportPackMeta'
 import { buildButlerPushCommand, storeLastItchZipName } from './itchButlerHint'
 import { exportItchUploadPack, itchPackZipFilename } from './itchUploadPack'
 import { exportMiniGamePack } from './miniGameExportPack'
 import { spawnMainMenu } from './mainMenuFlow'
 import { spawnMiniGame } from './starterMiniGames'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './starterTemplates'
+import {
+  bakeNavMeshLayers,
+  combinedNavmeshLayerMask,
+  DEFAULT_GRID_NAVMESH_LAYER_MASK,
+  layerMaskFromIndex,
+} from '../engine/gridNavmeshBake'
+import { lastBakeError } from '../engine/nav'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -57,12 +64,13 @@ SLASH COMMANDS
   /exportpack <mode>      Export PWA mini-game pack (platformer|rpg|fps) with manifest + icons + meta
   /exportpackmeta <mode>  Show itch.io pack metadata JSON (platformer|rpg|fps)
   /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png)
-  /butlerhint <mode>      Print Butler CLI push command + pack meta (platformer|rpg|fps)
+  /butlerhint <mode> [ch] Print Butler CLI push command + pack meta (ch: html|beta|demo)
   /mpstarter         Greybox indie multiplayer scene (host + client spawns, sync crates)
   /mpdeathmatch      Indie MP deathmatch (targets, scoreboard, first to 3 wins)
   /mplobby           Indie MP lobby (room browser + ready-up before deathmatch)
   /mpspectator       Indie MP spectator arena (orbit host, no pawn spawn)
   /mainmenu          Main menu → level select (Platformer, RPG, FPS, MP Deathmatch)
+  /gridnavmesh [0-3] Bake Recast navmesh from grid tile layers (mask from foliage or layer arg)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -342,12 +350,21 @@ function runSlash(parts: string[]): TerminalResult {
     case '/butlerhint': {
       const mode = (args[0] ?? '').toLowerCase()
       if (!['platformer', 'rpg', 'fps'].includes(mode)) {
-        return { output: null, error: 'Usage: /butlerhint platformer|rpg|fps', level: 'error' }
+        return { output: null, error: 'Usage: /butlerhint platformer|rpg|fps [html|beta|demo]', level: 'error' }
+      }
+      const channelArg = (args[1] ?? '').toLowerCase()
+      const itchChannels = ['html', 'beta', 'demo'] as const
+      let channel: ItchVersionChannel | undefined
+      if (channelArg) {
+        if (!itchChannels.includes(channelArg as ItchVersionChannel)) {
+          return { output: null, error: 'Usage: /butlerhint platformer|rpg|fps [html|beta|demo]', level: 'error' }
+        }
+        channel = channelArg as ItchVersionChannel
       }
       const mgMode = mode as 'platformer' | 'rpg' | 'fps'
-      const meta = buildExportPackMeta(mgMode)
+      const meta = buildExportPackMeta(mgMode, channel)
       const zipName = itchPackZipFilename(mgMode)
-      const cmd = buildButlerPushCommand(meta, zipName)
+      const cmd = buildButlerPushCommand(meta, zipName, 'user', 'game', channel)
       storeLastItchZipName(zipName)
       return {
         output: `${cmd}\n\n${JSON.stringify(meta, null, 2)}`,
@@ -393,6 +410,29 @@ function runSlash(parts: string[]): TerminalResult {
       }
       spawnMainMenu()
       return { output: 'Main menu — Play or indie.flow.selectLevel(kind)', error: null, level: 'log' }
+    }
+    case '/gridnavmesh': {
+      let mask: number
+      if (args.length > 1) {
+        return { output: null, error: 'Usage: /gridnavmesh [0-3]', level: 'error' }
+      }
+      if (args[0] !== undefined) {
+        const layer = parseInt(args[0], 10)
+        if (!Number.isFinite(layer) || layer < 0 || layer > 3) {
+          return { output: null, error: 'Usage: /gridnavmesh [0-3]', level: 'error' }
+        }
+        mask = layerMaskFromIndex(layer)
+      } else {
+        mask = combinedNavmeshLayerMask(world.actors) || DEFAULT_GRID_NAVMESH_LAYER_MASK
+      }
+      const maskLabel = `0b${mask.toString(2).padStart(4, '0')}`
+      void bakeNavMeshLayers(world.actors, mask).then((ok) => {
+        useEditor.getState().setStatus(
+          ok ? `Grid navmesh baked (${maskLabel})` : `Grid navmesh bake failed: ${lastBakeError ?? 'unknown'}`,
+        )
+        useEditor.getState().touch()
+      })
+      return { output: `Grid navmesh bake started (${maskLabel})`, error: null, level: 'log' }
     }
     case '/undo':
       undo()
@@ -514,7 +554,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mainmenu', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mainmenu', '/gridnavmesh', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

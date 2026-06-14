@@ -1,7 +1,10 @@
 /**
  * Touch haptics — PWA Vibration API pulses on Fire / Interact / Jump.
  * Wave 64 (v3.59–v3.63): guarded navigator.vibrate; opt-out via environment.touchHaptics.
+ * Wave 74 (v4.09–v4.13): duration scaled by adaptive hapticScale.
  */
+
+import { scaleHapticPattern } from './adaptiveHaptics'
 
 /** Short punch for fire actions (ms). */
 const FIRE_PATTERN = [28]
@@ -27,24 +30,25 @@ export function setTouchHapticsEnabled(on: boolean): void {
   forcedEnabled = on
 }
 
-function tryVibrate(pattern: number | number[], envFlag?: boolean): boolean {
+function tryVibrate(pattern: number | number[], envFlag?: boolean, scale = 1): boolean {
   if (!hapticsEnabled(envFlag)) return false
   if (!isVibrationSupported()) return false
+  if (scale <= 0) return false
   try {
-    return navigator.vibrate(pattern)
+    return navigator.vibrate(scaleHapticPattern(pattern, scale))
   } catch {
     return false
   }
 }
 
-export function vibrateFire(envFlag?: boolean): boolean {
-  return tryVibrate(FIRE_PATTERN, envFlag)
+export function vibrateFire(envFlag?: boolean, scale = 1): boolean {
+  return tryVibrate(FIRE_PATTERN, envFlag, scale)
 }
 
-export function vibrateInteract(envFlag?: boolean): boolean {
-  return tryVibrate(INTERACT_PATTERN, envFlag)
+export function vibrateInteract(envFlag?: boolean, scale = 1): boolean {
+  return tryVibrate(INTERACT_PATTERN, envFlag, scale)
 }
 
-export function vibrateJump(envFlag?: boolean): boolean {
-  return tryVibrate(JUMP_PATTERN, envFlag)
+export function vibrateJump(envFlag?: boolean, scale = 1): boolean {
+  return tryVibrate(JUMP_PATTERN, envFlag, scale)
 }

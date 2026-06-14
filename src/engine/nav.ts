@@ -70,7 +70,8 @@ function isNavGeometryActor(actor: Actor): boolean {
   return actor.mobility === 'static' || actor.type === 'Landscape'
 }
 
-function collectNavMeshes(actors: Map<string, Actor>): THREE.Mesh[] {
+/** Static + landscape meshes used as the base Recast bake input. */
+export function collectNavMeshes(actors: Map<string, Actor>): THREE.Mesh[] {
   const meshes: THREE.Mesh[] = []
   for (const a of actors.values()) {
     if (!isNavGeometryActor(a)) continue
@@ -186,17 +187,16 @@ function bakeInWorker(positions: Float32Array, indices: Uint32Array): Promise<Ui
   })
 }
 
-/** Bake a Recast polygon navmesh from static / landscape geometry. */
-export async function bakeNavMesh(actors: Map<string, Actor>): Promise<boolean> {
+/** Bake a Recast polygon navmesh from an explicit mesh list. */
+export async function bakeNavMeshFromMeshes(meshes: THREE.Mesh[]): Promise<boolean> {
   if (bakePromise) return bakePromise
 
   bakePromise = (async () => {
     navMeshBaking = true
     lastBakeError = null
     try {
-      const meshes = collectNavMeshes(actors)
       if (meshes.length === 0) {
-        lastBakeError = 'No static or landscape geometry to bake'
+        lastBakeError = 'No geometry to bake'
         return false
       }
 
@@ -228,6 +228,11 @@ export async function bakeNavMesh(actors: Map<string, Actor>): Promise<boolean> 
   })()
 
   return bakePromise
+}
+
+/** Bake a Recast polygon navmesh from static / landscape geometry. */
+export async function bakeNavMesh(actors: Map<string, Actor>): Promise<boolean> {
+  return bakeNavMeshFromMeshes(collectNavMeshes(actors))
 }
 
 function findRecastPath(

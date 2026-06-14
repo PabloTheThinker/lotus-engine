@@ -19,6 +19,41 @@ const STREAMING_ENABLED = window.__LOTUS_STREAMING__ === true || window.__LOTUS_
 const STREAM_PROGRESS_ID = 'lotus-stream-progress'
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
 const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
+/** Wave 74 — adaptive haptics scale from perf gate fps + battery + env intensity. */
+let hapticBatteryCharging = true
+function refreshHapticBattery() {
+  const getBattery = navigator.getBattery?.bind(navigator)
+  if (!getBattery) return
+  void getBattery().then((b) => { hapticBatteryCharging = !!b.charging }).catch(() => {})
+}
+refreshHapticBattery()
+if (typeof setInterval === 'function') setInterval(refreshHapticBattery, 30000)
+function perfFpsHapticScale() {
+  const gate = window.__LOTUS_EXPORT_PERF__
+  if (!gate?.fps || gate.fps <= 0) return 1
+  const min = gate.perfMinFps ?? 24
+  if (gate.perfPass === true) return 1
+  return Math.max(0, Math.min(1, gate.fps / min))
+}
+function hapticIntensityFactor() {
+  const v = LEVEL.environment?.hapticIntensity
+  if (v == null) return 1
+  return Math.max(0, Math.min(1, v))
+}
+function batteryHapticScale() {
+  if (LEVEL.environment?.hapticBatterySaver === false) return 1
+  return hapticBatteryCharging ? 1 : 0.5
+}
+function hapticScaleFromPerfGate() {
+  return Math.max(0, Math.min(1, hapticIntensityFactor() * perfFpsHapticScale() * batteryHapticScale()))
+}
+function scaleHapticPattern(pattern) {
+  const s = hapticScaleFromPerfGate()
+  if (s >= 1) return pattern
+  if (s <= 0) return [0]
+  const arr = Array.isArray(pattern) ? pattern : [pattern]
+  return arr.map((ms) => Math.max(1, Math.round(ms * s)))
+}
 /** Wave 64 — touch haptics (PWA Vibration API). */
 function touchHapticsEnabled() {
   const flag = LEVEL.environment?.touchHaptics
@@ -28,7 +63,9 @@ function touchHapticsEnabled() {
 function tryTouchVibrate(pattern) {
   if (!touchHapticsEnabled()) return false
   if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return false
-  try { return navigator.vibrate(pattern) } catch { return false }
+  const scaled = scaleHapticPattern(pattern)
+  if (!scaled || (Array.isArray(scaled) && scaled[0] <= 0)) return false
+  try { return navigator.vibrate(scaled) } catch { return false }
 }
 function vibrateTouchFire() { return tryTouchVibrate([28]) }
 function vibrateTouchInteract() { return tryTouchVibrate([14]) }
@@ -57,8 +94,11 @@ function pulseGamepad(padIndex, intensity, duration) {
   if (!GAMEPAD_ENABLED || !gamepadHapticsEnabled()) return false
   const act = pickGamepadActuator(padIndex)
   if (!act) return false
-  const mag = Math.max(0, Math.min(1, intensity))
-  const ms = Math.max(0, duration)
+  const s = hapticScaleFromPerfGate()
+  if (s <= 0) return false
+  const mag = Math.max(0, Math.min(1, intensity * s))
+  const ms = Math.max(0, Math.round(duration * s))
+  if (ms <= 0 || mag <= 0) return false
   try {
     void act.playEffect('dual-rumble', { startDelay: 0, duration: ms, weakMagnitude: mag, strongMagnitude: mag })
     return true
@@ -85,6 +125,10 @@ const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
 const SAVES_ENABLED = window.__LOTUS_SAVES__ === true || window.__LOTUS_SAVES__ === 'true'
 const CLOUD_SAVES_ENABLED = window.__LOTUS_CLOUD_SAVES__ === true || window.__LOTUS_CLOUD_SAVES__ === 'true'
+const CROSS_LEVEL_SAVES_ENABLED =
+  SAVES_ENABLED &&
+  (window.__LOTUS_CROSS_LEVEL_SAVES__ === true || window.__LOTUS_CROSS_LEVEL_SAVES__ === 'true')
+const GLOBAL_SAVE_LEVEL_KEY = '__global__'
 const MAIN_MENU_ITEMS = [
   { label: 'Platformer', key: 'platformer' },
   { label: 'RPG', key: 'rpg' },
@@ -1842,8 +1886,42 @@ function sanitizeSaveSlot(slot) {
   return t.replace(/[^\w.-]+/g, '_').slice(0, 32)
 }
 
+function globalSaveStorageKey(slot) {
+  return `${SAVE_STORAGE_PREFIX}.${GLOBAL_SAVE_LEVEL_KEY}.${sanitizeSaveSlot(slot)}`
+}
+
 function saveStorageKey(slot) {
+  if (CROSS_LEVEL_SAVES_ENABLED) return globalSaveStorageKey(slot)
   return `${SAVE_STORAGE_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.${sanitizeSaveSlot(slot)}`
+}
+
+function exportMigrateToLevel(newLevelName) {
+  const fromLevel = sanitizeSaveLevelName(saveLevelName)
+  let migrated = 0
+  if (SAVES_ENABLED && CROSS_LEVEL_SAVES_ENABLED) {
+    const fromPrefix = `${SAVE_STORAGE_PREFIX}.${fromLevel}.`
+    try {
+      const slots = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key?.startsWith(fromPrefix)) continue
+        const slot = key.slice(fromPrefix.length)
+        if (slot) slots.push(slot)
+      }
+      for (const slot of slots) {
+        const globalKey = globalSaveStorageKey(slot)
+        if (localStorage.getItem(globalKey)) continue
+        const raw = localStorage.getItem(`${fromPrefix}${slot}`)
+        if (!raw) continue
+        localStorage.setItem(globalKey, raw)
+        migrated++
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  saveLevelName = newLevelName
+  return migrated
 }
 
 function exportSaveCheckpoint(slot, data) {
@@ -1851,7 +1929,7 @@ function exportSaveCheckpoint(slot, data) {
   try {
     const payload = {
       savedAt: Date.now(),
-      level: sanitizeSaveLevelName(saveLevelName),
+      level: CROSS_LEVEL_SAVES_ENABLED ? GLOBAL_SAVE_LEVEL_KEY : sanitizeSaveLevelName(saveLevelName),
       slot: sanitizeSaveSlot(slot),
       data,
     }
@@ -1877,7 +1955,9 @@ function exportLoadCheckpoint(slot) {
 
 function exportListSaveSlots() {
   if (!SAVES_ENABLED) return []
-  const prefix = `${SAVE_STORAGE_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.`
+  const prefix = CROSS_LEVEL_SAVES_ENABLED
+    ? `${SAVE_STORAGE_PREFIX}.${GLOBAL_SAVE_LEVEL_KEY}.`
+    : `${SAVE_STORAGE_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.`
   const out = []
   try {
     for (let i = 0; i < localStorage.length; i++) {
@@ -1899,11 +1979,13 @@ const CLOUD_KEY_PREFIX = 'lotus-engine.cloud'
 let cloudDbPromise = null
 
 function cloudSaveKey(slot) {
-  return `${CLOUD_KEY_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.${sanitizeSaveSlot(slot)}`
+  const levelKey = CROSS_LEVEL_SAVES_ENABLED ? GLOBAL_SAVE_LEVEL_KEY : sanitizeSaveLevelName(saveLevelName)
+  return `${CLOUD_KEY_PREFIX}.${levelKey}.${sanitizeSaveSlot(slot)}`
 }
 
 function cloudLevelPrefix() {
-  return `${CLOUD_KEY_PREFIX}.${sanitizeSaveLevelName(saveLevelName)}.`
+  const levelKey = CROSS_LEVEL_SAVES_ENABLED ? GLOBAL_SAVE_LEVEL_KEY : sanitizeSaveLevelName(saveLevelName)
+  return `${CLOUD_KEY_PREFIX}.${levelKey}.`
 }
 
 function openCloudDb() {
@@ -2162,7 +2244,9 @@ async function loadLevelCore(name) {
   try {
     teardownActors()
     LEVEL = resolved
-    saveLevelName = LEVEL?.name ?? saveLevelName
+    const nextLevelName = LEVEL?.name ?? saveLevelName
+    if (CROSS_LEVEL_SAVES_ENABLED) exportMigrateToLevel(nextLevelName)
+    else saveLevelName = nextLevelName
     applyEnvironment()
     await loadAssets(LEVEL)
     await loadSounds(LEVEL)
@@ -2304,6 +2388,35 @@ async function boot() {
       listSlots: exportListSaveSlots,
       enabled: () => SAVES_ENABLED,
       levelName: () => saveLevelName,
+      crossLevel: () => CROSS_LEVEL_SAVES_ENABLED,
+      migrateToLevel: exportMigrateToLevel,
+      globalCheckpoint: (slot, data) => {
+        if (!SAVES_ENABLED) return false
+        try {
+          const payload = {
+            savedAt: Date.now(),
+            level: GLOBAL_SAVE_LEVEL_KEY,
+            slot: sanitizeSaveSlot(slot),
+            data,
+          }
+          localStorage.setItem(globalSaveStorageKey(slot), JSON.stringify(payload))
+          if (CLOUD_SAVES_ENABLED) void exportBackupToCloud(slot, data).catch(() => {})
+          return true
+        } catch {
+          return false
+        }
+      },
+      globalLoad: (slot) => {
+        if (!SAVES_ENABLED) return null
+        try {
+          const raw = localStorage.getItem(globalSaveStorageKey(slot))
+          if (!raw) return null
+          const parsed = JSON.parse(raw)
+          return parsed?.data ?? null
+        } catch {
+          return null
+        }
+      },
       cloudBackup: () => CLOUD_SAVES_ENABLED,
       backupToCloud: exportBackupToCloud,
       restoreFromCloud: exportRestoreFromCloud,

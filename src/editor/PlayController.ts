@@ -17,6 +17,8 @@ import type { EnvironmentSettings } from '../engine/types'
  *  - thirdperson:  same character physics + visible body and a camera boom
  */
 export type SpectatorHostPose = () => { position: THREE.Vector3; yaw: number } | null
+export type SpectatorReplaySeek = (offsetSec: number) => number
+export type SpectatorReplayOffset = () => number
 
 export class PlayController {
   camera = new THREE.PerspectiveCamera(75, 16 / 9, 0.05, 5000)
@@ -51,6 +53,8 @@ export class PlayController {
   gamepadControls = true
   /** Wave 69 — dual-rumble env flag (default on when unset). */
   private gamepadHapticsEnv?: boolean
+  /** Wave 74 — adaptive haptic scale env slice. */
+  private hapticScaleEnv?: import('../engine/adaptiveHaptics').HapticScaleEnv
   private spawnPoint = new THREE.Vector3()
   private readonly eyeHeight = 1.65
   private readonly boomLength = 4.5
@@ -58,6 +62,8 @@ export class PlayController {
   private orbitRadius = 10
   private orbitTarget = new THREE.Vector3()
   private hostPose: SpectatorHostPose | null = null
+  private replaySeek: SpectatorReplaySeek | null = null
+  private replayOffset: SpectatorReplayOffset | null = null
 
   /** visible body for third person */
   body: THREE.Group
@@ -105,11 +111,17 @@ export class PlayController {
   }
 
   /** MP spectator — free-fly or orbit around host pose; no pawn spawn. */
-  enterSpectator(spawn: THREE.Vector3, hostPose?: SpectatorHostPose) {
+  enterSpectator(
+    spawn: THREE.Vector3,
+    hostPose?: SpectatorHostPose,
+    replay?: { seek: SpectatorReplaySeek; offset: SpectatorReplayOffset },
+  ) {
     this.spectator = true
     this.active = true
     this.mode = 'fly'
     this.hostPose = hostPose ?? null
+    this.replaySeek = replay?.seek ?? null
+    this.replayOffset = replay?.offset ?? null
     this.body.visible = false
     this.keys.clear()
     this.yaw = 0
@@ -124,11 +136,15 @@ export class PlayController {
   exitSpectator() {
     this.spectator = false
     this.hostPose = null
+    this.replaySeek = null
+    this.replayOffset = null
   }
 
   possess(start: Actor | undefined, spawnOverride?: [number, number, number]) {
     this.spectator = false
     this.hostPose = null
+    this.replaySeek = null
+    this.replayOffset = null
     this.active = true
     this.mode = start?.pawnMode ?? 'fly'
     const pos = new THREE.Vector3()
@@ -167,6 +183,8 @@ export class PlayController {
     this.active = false
     this.spectator = false
     this.hostPose = null
+    this.replaySeek = null
+    this.replayOffset = null
     this.keys.clear()
     this.body.visible = false
     if (document.pointerLockElement === this.dom) document.exitPointerLock()
@@ -272,6 +290,14 @@ export class PlayController {
     if (this.keys.has('KeyQ')) this.orbitRadius = Math.max(3, this.orbitRadius - 10 * dt)
     if (this.keys.has('KeyE')) this.orbitRadius = Math.min(40, this.orbitRadius + 10 * dt)
     if (this.keys.has('KeyF')) this.spectatorFollowHost = !this.spectatorFollowHost
+    if (this.replaySeek) {
+      if (this.keys.has('KeyR')) {
+        const cur = this.replayOffset?.() ?? 0
+        this.replaySeek(cur + 4 * dt)
+      } else if ((this.replayOffset?.() ?? 0) > 0) {
+        this.replaySeek(0)
+      }
+    }
 
     const host = this.spectatorFollowHost ? this.hostPose?.() : null
     if (host) {
@@ -324,6 +350,7 @@ export class PlayController {
   setGamepadControls(env: EnvironmentSettings) {
     this.gamepadControls = shouldEnableGamepadControls(env.gamepadControls)
     this.gamepadHapticsEnv = env.gamepadHaptics
+    this.hapticScaleEnv = env
   }
 
   private mergedMoveAxis() {
@@ -347,7 +374,7 @@ export class PlayController {
       return
     }
 
-    if (this.gamepadControls) pollGamepadInput(this.gamepadHapticsEnv)
+    if (this.gamepadControls) pollGamepadInput(this.gamepadHapticsEnv, this.hapticScaleEnv)
 
     const move = new THREE.Vector3()
     if (this.keys.has('KeyW')) move.z -= 1

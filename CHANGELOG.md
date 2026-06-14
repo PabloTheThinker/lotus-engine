@@ -4,6 +4,31 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 71–75: v3.94–v4.18 (indie swarm)
+
+### Wave 71 (v3.94–v3.98) — Grid navmesh bake
+- `gridNavmeshBake.ts` — Recast bake per grid layer mask; `/gridnavmesh`
+
+### Wave 72 (v3.99–v4.03) — itch.io version channels
+- Butler `:html` / `:beta` / `:demo` channel suffixes; `/butlerhint platformer beta`
+
+### Wave 73 (v4.04–v4.08) — MP replay buffer
+- 30s pose ring @ 10 Hz; spectator **R** rewind; `replay_sample` relay
+
+### Wave 74 (v4.09–v4.13) — Adaptive haptics
+- `adaptiveHaptics.ts` — scale by perf gate, battery saver, intensity slider
+
+### Wave 75 (v4.14–v4.18) — Cross-level saves
+- `__global__` save namespace; `migrateToLevel` on `changeScene`; `__LOTUS_CROSS_LEVEL_SAVES__`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 319 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 66–70: v3.69–v3.93 (indie swarm)
 
 ### Wave 66 (v3.69–v3.73) — Tile collision layers

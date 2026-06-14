@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v3.93 (waves 66–70).** v0.33–v3.93 shipped; **build clean**, **`npm run test` — 294 passed**.
+- **Last clean commit: v4.18 (waves 71–75).** v0.33–v4.18 shipped; **build clean**, **`npm run test` — 319 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -469,12 +469,22 @@
 | 69 | v3.84–v3.88 | Gamepad haptics — `dual-rumble` on Fire/Interact |
 | 70 | v3.89–v3.93 | Cloud save stub — IndexedDB checkpoint backup — 294 tests |
 
+## Shipped (v3.94–v4.18, Waves 71–75 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 71 | v3.94–v3.98 | Grid navmesh bake — per-layer walkable mask, `/gridnavmesh` |
+| 72 | v3.99–v4.03 | itch.io channels — Butler `:beta` / `:demo` hints |
+| 73 | v4.04–v4.08 | MP replay buffer — 30s pose ring, spectator R rewind |
+| 74 | v4.09–v4.13 | Adaptive haptics — perf/battery/intensity scaling |
+| 75 | v4.14–v4.18 | Cross-level saves — `__global__` namespace — 319 tests |
+
 ## Next up (indie roadmap)
 
-1. **Grid navmesh bake** — Recast walkable mask per collision layer
-2. **itch.io version channels** — butler push `:beta` / `:demo` channel hints
-3. **MP replay buffer** — last 30s pose ring for spectator rewind
-4. **Adaptive haptics** — scale rumble by export perf tier / battery saver
+1. **AI navmesh agents** — crowd follow grid navmesh per layer
+2. **itch.io release notes** — auto-generate from CHANGELOG slice per pack
+3. **MP killcam** — replay buffer on death event
+4. **Haptic profiles** — link to input profiles (desktop strong / mobile light)
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward
