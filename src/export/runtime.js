@@ -54,6 +54,48 @@ async function createPlayRenderer() {
 
 let renderer
 let playRenderTier = 'webgl'
+/** @type {{ render: () => void, setCamera: (cam: import('three').Camera) => void } | null} */
+let exportTslPipeline = null
+
+/** Wave 15 — TSL bloom RenderPipeline for WebGPU export tier. */
+async function createExportTSLPipeline(primary, scene, camera) {
+  if (playRenderTier !== 'webgpu') return null
+  try {
+    const webgpu = await import('three/webgpu')
+    const tsl = await import('three/tsl')
+    const { bloom } = await import('three/addons/tsl/display/BloomNode.js')
+    const { pass, add } = tsl
+    const env = LEVEL.environment ?? {}
+    const bloomOn = env.bloomEnabled !== false
+    const strength = env.bloomStrength ?? 0.35
+    const threshold = env.bloomThreshold ?? 0.9
+    const radius = env.bloomRadius ?? 0.6
+    let activeCam = camera
+    const pipeline = new webgpu.RenderPipeline(primary)
+    const rebuild = () => {
+      const scenePass = pass(scene, activeCam)
+      const color = scenePass.getTextureNode('output')
+      if (bloomOn) {
+        const bp = bloom(color, strength, radius, threshold)
+        pipeline.outputNode = add(color, bp)
+      } else {
+        pipeline.outputNode = color
+      }
+      pipeline.needsUpdate = true
+    }
+    rebuild()
+    return {
+      render: () => pipeline.render(),
+      setCamera(cam) {
+        if (activeCam === cam) return
+        activeCam = cam
+        rebuild()
+      },
+    }
+  } catch {
+    return null
+  }
+}
 
 const scene = new THREE.Scene()
 const actors = new Map()
@@ -844,8 +886,9 @@ async function boot() {
   resetPawnFromStart()
   await startPhysics()
   compileScripts()
+  exportTslPipeline = await createExportTSLPipeline(renderer, scene, pawnCam)
   overlay.textContent =
-    (playRenderTier === 'webgpu' ? 'WebGPU · ' : '') +
+    (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
     'Click to play — WASD + mouse · Space jump · Shift sprint'
   const c = new THREE.Clock()
   renderer.setAnimationLoop(() => {
@@ -908,7 +951,12 @@ async function boot() {
       a.mesh.quaternion.copy(invQ).multiply(lookQ)
     }
     pressed.clear()
-    renderer.render(scene, pawnCam)
+    if (exportTslPipeline) {
+      exportTslPipeline.setCamera(pawnCam)
+      exportTslPipeline.render()
+    } else {
+      renderer.render(scene, pawnCam)
+    }
   })
 }
 addEventListener('resize', () => {

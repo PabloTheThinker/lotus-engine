@@ -6,14 +6,37 @@ const toVec = (v: MatValue): [number, number, number] => (typeof v === 'number' 
 const toNum = (v: MatValue): number => (typeof v === 'number' ? v : (v[0] + v[1] + v[2]) / 3)
 
 /**
- * TSL material backend (preview stub) — parallel to materialShader.ts GLSL path.
- * Uses MeshPhysicalNodeMaterial when WebGPU/TSL is available; falls back to CPU eval.
+ * TSL material backend (Wave 11–15) — parallel to materialShader.ts GLSL path.
+ * Wave 15: dynamic import from three/webgpu (no static MeshPhysicalNodeMaterial on THREE).
  */
 
 export type MaterialBackend = 'glsl' | 'tsl'
 
+type NodeMatCtor = new () => THREE.Material
+let cachedNodeMat: NodeMatCtor | null | undefined
+
+async function resolveNodeMaterialCtor(): Promise<NodeMatCtor | null> {
+  if (cachedNodeMat !== undefined) return cachedNodeMat
+  try {
+    const m = await import('three/webgpu')
+    const Ctor = (m as unknown as { MeshPhysicalNodeMaterial?: NodeMatCtor }).MeshPhysicalNodeMaterial
+    cachedNodeMat = Ctor ?? null
+  } catch {
+    cachedNodeMat = null
+  }
+  return cachedNodeMat
+}
+
+void resolveNodeMaterialCtor()
+
+/** Sync probe — true after async webgpu module resolves with NodeMaterial. */
 export function isTSLPreviewAvailable(): boolean {
-  return typeof (THREE as unknown as { MeshPhysicalNodeMaterial?: unknown }).MeshPhysicalNodeMaterial === 'function'
+  return cachedNodeMat != null
+}
+
+/** Async capability check for editor / tests. */
+export async function isTSLPreviewAvailableAsync(): Promise<boolean> {
+  return (await resolveNodeMaterialCtor()) != null
 }
 
 /** Apply material instance overrides as TSL uniform targets (Wave 10.7 stub). */
@@ -82,11 +105,10 @@ export function compileMaterialGraphTSL(
   t: number,
   instanceOverrides?: { color?: string; roughness?: number; metalness?: number; emissive?: string },
 ): THREE.Material | null {
-  if (!isTSLPreviewAvailable()) return null
+  const NodeMaterial = cachedNodeMat
+  if (!NodeMaterial) return null
   try {
-    const NodeMaterial = (THREE as unknown as { MeshPhysicalNodeMaterial: new () => THREE.MeshPhysicalMaterial })
-      .MeshPhysicalNodeMaterial
-    const mat = new NodeMaterial()
+    const mat = new NodeMaterial() as THREE.MeshPhysicalMaterial
     const out = evaluateMaterialGraph(graph, t)
     if (out.baseColor !== undefined) {
       const [cr, cg, cb] = toVec(out.baseColor)

@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { world } from '../../engine/World'
 import { getActiveBTGraphNodeId } from '../../engine/behaviorTree'
 import {
+  BT_DECORATOR_TYPES,
+  BT_MAX_DECORATOR_DEPTH,
   BT_NODE_DEFS,
   compileBTGraph,
   emptyBTGraph,
   newBTNodeId,
+  summarizeBTTree,
+  validateBTGraph,
   type BTGraph,
   type BTGraphNode,
 } from '../../engine/btGraph'
@@ -148,7 +152,17 @@ export function BTEditor() {
       useEditor.getState().setStatus(`${parent.type} already has max children`)
       return
     }
-    commit({ ...graph, edges: [...graph.edges, { from, to }] })
+    if (BT_DECORATOR_TYPES.has(child.type) && BT_DECORATOR_TYPES.has(parent.type)) {
+      useEditor.getState().setStatus(`Decorator nesting limit: max ${BT_MAX_DECORATOR_DEPTH} deep`)
+      return
+    }
+    const next = { ...graph, edges: [...graph.edges, { from, to }] }
+    const err = validateBTGraph(next).find((i) => i.level === 'error')
+    if (err) {
+      useEditor.getState().setStatus(err.message)
+      return
+    }
+    commit(next)
   }
 
   const portAt = (x: number, y: number): { nodeId: string; kind: 'in' | 'out' } | null => {
@@ -183,12 +197,20 @@ export function BTEditor() {
 
   const node = selectedNode ? graph.nodes.find((n) => n.id === selectedNode) : null
   const bb = { ...(actor.scriptVars ?? {}) }
+  const validation = validateBTGraph(graph)
+  const compiledPreview = compileBTGraph(graph)
+  const treePreview = compiledPreview ? summarizeBTTree(compiledPreview.tree) : ''
+  const validationErrors = validation.filter((v) => v.level === 'error')
 
   return (
     <div className="bt-editor">
       <div className="bt-toolbar">
         <button
           onClick={() => {
+            if (validationErrors.length) {
+              useEditor.getState().setStatus(validationErrors[0]!.message)
+              return
+            }
             const compiled = compileBTGraph(graph)
             if (!compiled) {
               useEditor.getState().setStatus('BT compile failed — need a Root node')
@@ -361,6 +383,21 @@ export function BTEditor() {
           )}
         </div>
         <div className="bt-side">
+          <details className="details-section" open>
+            <summary>Validation</summary>
+            <div className="bt-validation">
+              {validation.length === 0 && <div className="panel-empty">Graph OK</div>}
+              {validation.map((v, i) => (
+                <div key={i} className={`bt-val-${v.level}`}>
+                  {v.level === 'error' ? '✕' : '⚠'} {v.message}
+                </div>
+              ))}
+            </div>
+          </details>
+          <details className="details-section" open={!!treePreview}>
+            <summary>Compile preview</summary>
+            <pre className="bt-preview">{treePreview || 'Wire nodes from Root to preview tree'}</pre>
+          </details>
           <details className="details-section" open>
             <summary>Blackboard</summary>
             <div className="details-grid">

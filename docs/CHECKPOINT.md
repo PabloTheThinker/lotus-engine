@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 14)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 15)
 
-> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.08.
+> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.14.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.08 (wave 14).** v0.33–v1.08 shipped; **build clean**, **`npm run test` — 27 passed**.
+- **Last clean commit: v1.14 (wave 15).** v0.33–v1.14 shipped; **build clean**, **`npm run test` — 29 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -183,13 +183,24 @@
 | v1.07 | BT editor drag-to-connect wires + Repeat/Cooldown decorator nodes |
 | v1.08 | Export runtime boot fixes — deferred pawn input, guarded env apply, `loadSounds` skip |
 
-## Next up (v1.09+, Wave 15)
+## Shipped wave 15 (v1.09 → v1.14)
 
-1. **TSL post stack** — SSAO/FXAA migration off EffectComposer (full WebGPU path)
-2. **GPU particles** — wire `ComputeNode` sim into position buffers (protected accessors)
-3. **Export runtime** — TSL bloom pipeline in standalone HTML when `renderBackend: webgpu`
-4. **BT editor** — wire validation UI, decorator nesting limits, compile preview
-5. **Material TSL** — fix `MeshPhysicalNodeMaterial` import warnings in build
+| Ver | What |
+|---|---|
+| v1.09 | TSL GTAO + FXAA + bloom RenderPipeline (`postStackTSLPipeline.ts`, stats `F` badge) |
+| v1.10 | Particle `simBuffers()` + compute-tier `integrateParticleBuffers` / `skipForces` |
+| v1.11 | Export runtime TSL bloom pipeline (`createExportTSLPipeline` in `runtime.js`) |
+| v1.12 | BT `validateBTGraph` + editor validation/compile preview panels |
+| v1.13 | Material TSL dynamic `three/webgpu` import (no build warnings) |
+| v1.14 | Playwright wave 15 tests — 29 passed |
+
+## Next up (v1.15+, Wave 16)
+
+1. **TSL post stack** — SSGI/SSR nodes on WebGPU path (retire WebGL composer aux on WebGPU tier)
+2. **GPU particles** — full TSL compute shader writing position buffers (not CPU integrate stub)
+3. **Export runtime** — GTAO + FXAA in standalone HTML when tier is webgpu
+4. **BT editor** — compile-to-script, blackboard type hints, PIE breakpoint on node
+5. **Material TSL** — live node graph preview on WebGPU viewport sphere
 
 ## Remaining gap-list queue (post–wave 7)
 

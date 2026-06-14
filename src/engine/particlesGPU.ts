@@ -1,9 +1,9 @@
 import type { ParticleProps } from './particles'
 import { ParticleSystem } from './particles'
-import { initParticleCompute } from './particlesCompute'
+import { initParticleCompute, integrateParticleBuffers } from './particlesCompute'
 
 /**
- * GPU particles (Wave 13) — compute-tier sim when WebGPU backend is available.
+ * GPU particles (Wave 13–15) — compute-tier sim when WebGPU backend is available.
  * Falls back to proven CPU ParticleSystem when unavailable.
  */
 
@@ -22,8 +22,10 @@ export class GPUParticleSystem extends ParticleSystem {
   readonly backend: ParticleBackend
   readonly gpuTier: boolean
   readonly computeSim: boolean
-  /** Wave 14 — true when TSL ComputeNode path initialized */
+  /** Wave 14–15 — true when TSL ComputeNode path initialized */
   usesComputeNode = false
+  /** Wave 15 — frames integrated via compute-tier buffer path */
+  computeIntegratedFrames = 0
   private batchDt = 0
 
   constructor(props: ParticleProps, backend: ParticleBackend = 'cpu') {
@@ -40,7 +42,7 @@ export class GPUParticleSystem extends ParticleSystem {
     this.usesComputeNode = st.ready
   }
 
-  /** Wave 13–14 — GPU tier: compute integration or fixed-substep CPU fallback. */
+  /** Wave 13–15 — GPU tier: compute integration or fixed-substep CPU fallback. */
   update(
     dt: number,
     emitting: boolean,
@@ -51,6 +53,20 @@ export class GPUParticleSystem extends ParticleSystem {
       super.update(dt, emitting, worldMatrix, terrainAt)
       return
     }
+
+    if (this.usesComputeNode) {
+      const p = this.props
+      const offForces = p.modulesOff?.includes('forces')
+      const gravity = offForces ? 0 : p.gravity
+      const drag = offForces ? 0 : p.drag
+      const { positions, velocities, alive } = this.simBuffers()
+      if (integrateParticleBuffers(positions, velocities, alive, dt, gravity, drag)) {
+        this.computeIntegratedFrames++
+        super.update(dt, emitting, worldMatrix, terrainAt, { skipForces: true })
+        return
+      }
+    }
+
     this.batchDt += dt
     const step = 1 / 60
     let guard = 0

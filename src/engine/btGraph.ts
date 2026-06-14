@@ -158,3 +158,100 @@ export function compileBTGraph(graph: BTGraph): CompiledBTGraph | null {
   const tree = compileNode(graph, root.id, 'root', pathIndex)
   return { tree, pathIndex }
 }
+
+/** Wave 15 — decorator nodes that wrap a single child */
+export const BT_DECORATOR_TYPES = new Set(['Invert', 'Repeat', 'Cooldown'])
+export const BT_MAX_DECORATOR_DEPTH = 4
+
+export interface BTValidationIssue {
+  level: 'error' | 'warn'
+  message: string
+  nodeId?: string
+}
+
+function parentsOf(graph: BTGraph, childId: string): string[] {
+  return graph.edges.filter((e) => e.to === childId).map((e) => e.from)
+}
+
+function decoratorDepth(graph: BTGraph, nodeId: string, memo = new Map<string, number>()): number {
+  if (memo.has(nodeId)) return memo.get(nodeId)!
+  const node = graph.nodes.find((n) => n.id === nodeId)
+  if (!node || !BT_DECORATOR_TYPES.has(node.type)) {
+    memo.set(nodeId, 0)
+    return 0
+  }
+  const parents = parentsOf(graph, nodeId)
+  const parentDepth = parents.length
+    ? Math.max(...parents.map((pid) => decoratorDepth(graph, pid, memo)))
+    : 0
+  const depth = parentDepth + 1
+  memo.set(nodeId, depth)
+  return depth
+}
+
+/** Validate BT graph structure before compile / PIE. */
+export function validateBTGraph(graph: BTGraph): BTValidationIssue[] {
+  const issues: BTValidationIssue[] = []
+  const root = graph.nodes.find((n) => n.type === 'Root')
+  if (!root) issues.push({ level: 'error', message: 'Missing Root node' })
+
+  for (const n of graph.nodes) {
+    const parents = parentsOf(graph, n.id)
+    if (n.type !== 'Root' && parents.length === 0) {
+      issues.push({ level: 'warn', message: `${n.type} is not wired to Root`, nodeId: n.id })
+    }
+    if (parents.length > 1) {
+      issues.push({ level: 'error', message: `${n.type} has multiple parents`, nodeId: n.id })
+    }
+    const def = BT_NODE_DEFS[n.type] ?? { maxChildren: 0 }
+    const childCount = graph.edges.filter((e) => e.from === n.id).length
+    if (childCount > def.maxChildren) {
+      issues.push({
+        level: 'error',
+        message: `${n.type} exceeds max children (${def.maxChildren})`,
+        nodeId: n.id,
+      })
+    }
+    if (BT_DECORATOR_TYPES.has(n.type) && decoratorDepth(graph, n.id) > BT_MAX_DECORATOR_DEPTH) {
+      issues.push({
+        level: 'error',
+        message: `Decorator nesting exceeds ${BT_MAX_DECORATOR_DEPTH}`,
+        nodeId: n.id,
+      })
+    }
+  }
+
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  const dfs = (id: string): boolean => {
+    if (visiting.has(id)) return true
+    if (visited.has(id)) return false
+    visiting.add(id)
+    for (const e of graph.edges.filter((x) => x.from === id)) {
+      if (dfs(e.to)) return true
+    }
+    visiting.delete(id)
+    visited.add(id)
+    return false
+  }
+  if (root && dfs(root.id)) {
+    issues.push({ level: 'error', message: 'Cycle detected in graph wires' })
+  }
+
+  return issues
+}
+
+/** Summarize compiled tree for BT editor preview. */
+export function summarizeBTTree(tree: BTNode, depth = 0): string {
+  const pad = '  '.repeat(depth)
+  if ('sequence' in tree && tree.sequence) {
+    return `${pad}Sequence\n${tree.sequence.map((c) => summarizeBTTree(c, depth + 1)).join('\n')}`
+  }
+  if ('selector' in tree && tree.selector) {
+    return `${pad}Selector\n${tree.selector.map((c) => summarizeBTTree(c, depth + 1)).join('\n')}`
+  }
+  if ('invert' in tree && tree.invert) return `${pad}Invert\n${summarizeBTTree(tree.invert, depth + 1)}`
+  if ('condition' in tree && tree.condition) return `${pad}Condition: ${tree.condition}`
+  if ('task' in tree && tree.task) return `${pad}Task: ${tree.task}`
+  return `${pad}?`
+}

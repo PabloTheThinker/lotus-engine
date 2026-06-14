@@ -139,6 +139,17 @@ export function sampleSizeCurve(stops: [number, number, number, number], t: numb
 
 export type TerrainHeightFn = (worldX: number, worldZ: number) => number | null
 
+export interface ParticleUpdateOpts {
+  /** Skip gravity/drag integration — used when GPU compute tier already integrated motion */
+  skipForces?: boolean
+}
+
+export interface ParticleSimBuffers {
+  positions: Float32Array
+  velocities: Float32Array
+  alive: boolean[]
+}
+
 export class ParticleSystem {
   points: THREE.Points
   ribbon: THREE.Mesh
@@ -271,6 +282,11 @@ export class ParticleSystem {
 
   burst(count: number) {
     for (let i = 0; i < count; i++) this.spawn()
+  }
+
+  /** Wave 15 — sim buffer accessors for GPU compute integration */
+  simBuffers(): ParticleSimBuffers {
+    return { positions: this.positions, velocities: this.vel, alive: this.alive }
   }
 
   private sizeAt(t: number, offSize: boolean) {
@@ -478,7 +494,13 @@ export class ParticleSystem {
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true
   }
 
-  update(dt: number, emitting: boolean, worldMatrix?: THREE.Matrix4, terrainAt?: TerrainHeightFn) {
+  update(
+    dt: number,
+    emitting: boolean,
+    worldMatrix?: THREE.Matrix4,
+    terrainAt?: TerrainHeightFn,
+    opts?: ParticleUpdateOpts,
+  ) {
     const p = this.props
     const off = (m: string) => p.modulesOff?.includes(m)
     if (emitting && !off('spawn')) {
@@ -513,13 +535,15 @@ export class ParticleSystem {
         continue
       }
       const i3 = i * 3
-      this.vel[i3 + 1] += gravity * dt
-      this.vel[i3] *= dragMul
-      this.vel[i3 + 1] *= dragMul
-      this.vel[i3 + 2] *= dragMul
-      this.positions[i3] += this.vel[i3] * dt
-      this.positions[i3 + 1] += this.vel[i3 + 1] * dt
-      this.positions[i3 + 2] += this.vel[i3 + 2] * dt
+      if (!opts?.skipForces) {
+        this.vel[i3 + 1] += gravity * dt
+        this.vel[i3] *= dragMul
+        this.vel[i3 + 1] *= dragMul
+        this.vel[i3 + 2] *= dragMul
+        this.positions[i3] += this.vel[i3] * dt
+        this.positions[i3 + 1] += this.vel[i3 + 1] * dt
+        this.positions[i3 + 2] += this.vel[i3 + 2] * dt
+      }
 
       if (bounceOn) {
         this.worldPos.set(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2]).applyMatrix4(m)

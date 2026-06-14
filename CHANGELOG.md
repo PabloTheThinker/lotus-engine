@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 15: v1.09–v1.14
+
+### Added
+- **v1.09** TSL post stack GTAO + FXAA on WebGPURenderer — `postStackTSLPipeline.ts` MRT + `applyPostFx`; stats `F` badge when full stack active
+- **v1.10** GPU particle `simBuffers()` accessors + `skipForces` update path; `integrateParticleBuffers` wired when `usesComputeNode`
+- **v1.11** Export runtime TSL bloom `RenderPipeline` when `renderBackend: webgpu` — overlay shows `WebGPU TSL ·`
+- **v1.12** BT `validateBTGraph` — cycle/multi-parent/decorator depth checks; editor validation + compile preview panels
+- **v1.13** Material TSL dynamic `three/webgpu` import — removes static `MeshPhysicalNodeMaterial` build warnings
+- **v1.14** Playwright wave 15 tests — BT validate bridge, `simBuffers`, material TSL serialize (29 tests)
+
+### Changed
+- `getTSLPostState` adds `full` tier for GTAO + bloom + FXAA pipeline
+- `window.lotus.bt` bridge: `validate`, `summarize`
+- BT wire connect rejects invalid decorator nesting before commit
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 29 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 14: v1.03–v1.08
 
 ### Added

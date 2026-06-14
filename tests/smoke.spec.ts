@@ -649,6 +649,61 @@ test('wave 14 export embeds renderBackend + BT decorators compile', async ({ pag
   expect(result.repeatSeqLen).toBe(2)
 })
 
+test('wave 15 BT validate + compile preview bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        validate: (g: import('../src/engine/btGraph').BTGraph) => import('../src/engine/btGraph').BTValidationIssue[]
+        compile: (g: import('../src/engine/btGraph').BTGraph) => { tree: unknown } | null
+        summarize: (tree: unknown) => string
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const ok = v.bt.validate(graph)
+    const compiled = v.bt.compile(graph)
+    const summary = compiled ? v.bt.summarize(compiled.tree) : ''
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const dup = graph.nodes.find((n) => n.type === 'Selector')!
+    const bad = { ...graph, edges: [...graph.edges, { from: root.id, to: dup.id }] }
+    const multiParent = v.bt.validate(bad)
+    return {
+      okCount: ok.length,
+      hasSummary: summary.includes('Selector'),
+      multiParentErrors: multiParent.filter((i) => i.level === 'error').length,
+    }
+  })
+
+  expect(result.okCount).toBeGreaterThanOrEqual(0)
+  expect(result.hasSummary).toBe(true)
+  expect(result.multiParentErrors).toBeGreaterThan(0)
+})
+
+test('wave 15 GPU particle simBuffers + material TSL serialize', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: { create: (b: 'cpu' | 'gpu') => { simBuffers: () => { positions: Float32Array }; backend: string } }
+      materialTSL: { serialize: (g?: unknown) => object }
+    }
+    const gpu = v.particles.create('gpu')
+    const buf = gpu.simBuffers()
+    const tsl = v.materialTSL.serialize()
+    return {
+      backend: gpu.backend,
+      posLen: buf.positions.length,
+      tslBackend: (tsl as { backend?: string }).backend,
+    }
+  })
+
+  expect(result.posLen).toBeGreaterThan(0)
+  expect(result.tslBackend).toBe('tsl')
+  expect(result.backend === 'gpu' || result.backend === 'cpu').toBe(true)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

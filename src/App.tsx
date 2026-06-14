@@ -32,7 +32,7 @@ import { PreferencesModal } from './editor/Preferences'
 import { ProjectSettingsModal } from './editor/ProjectSettingsModal'
 import { loadProjectSettings } from './editor/projectSettings'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
-import { compileBTGraph, emptyBTGraph } from './engine/btGraph'
+import { compileBTGraph, emptyBTGraph, summarizeBTTree, validateBTGraph } from './engine/btGraph'
 import { getActiveBTPaths } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
@@ -170,6 +170,8 @@ const lotusBridge = {
   bt: {
     emptyGraph: emptyBTGraph,
     compile: compileBTGraph,
+    validate: validateBTGraph,
+    summarize: summarizeBTTree,
     activePaths: getActiveBTPaths,
   },
   curve: {

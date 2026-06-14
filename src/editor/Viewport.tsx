@@ -410,6 +410,8 @@ export function Viewport() {
           bloomStrength: world.environment.bloomStrength,
           bloomThreshold: world.environment.bloomThreshold,
           bloomRadius: world.environment.bloomRadius,
+          ssao: postFx.ssao,
+          fxaa: postFx.fxaa,
         },
       )
     }
@@ -482,12 +484,12 @@ export function Viewport() {
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
-      tslPipeline?.applyBloom(
-        post.bloomEnabled,
-        post.bloomStrength,
-        post.bloomThreshold,
-        post.bloomRadius,
-      )
+      tslPipeline?.applyPostFx(getPostFxSettings(world.environment), {
+        bloomEnabled: post.bloomEnabled,
+        bloomStrength: post.bloomStrength,
+        bloomThreshold: post.bloomThreshold,
+        bloomRadius: post.bloomRadius,
+      })
     }
 
     // editor-only chrome
@@ -1916,8 +1918,10 @@ export function Viewport() {
       if (fpsTimer >= 0.5 && statsRef.current) {
         const fps = Math.round(frames / fpsTimer)
         const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
-        const tsl = getTSLPostState(backend === 'webgpu', webgpuOk, tslPipeline?.active ?? false)
-        const tslBadge = tsl.tier === 'pipeline' ? 'P' : tsl.tier === 'active' ? '+' : ''
+        const fx = getPostFxSettings(world.environment)
+        const tslFull = (tslPipeline?.active ?? false) && fx.ssao && fx.fxaa
+        const tsl = getTSLPostState(backend === 'webgpu', webgpuOk, tslPipeline?.active ?? false, tslFull)
+        const tslBadge = tsl.tier === 'full' ? 'F' : tsl.tier === 'pipeline' ? 'P' : tsl.tier === 'active' ? '+' : ''
         const ssgi = ssgiStatusLabel(world.environment, webgpuOk)
         const tris = rendererTriangleCount(primaryRenderer)
         statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${tris.toLocaleString()} tris · ${backend.toUpperCase()}${webgpuActive ? 'R' : ''}${tslBadge}${ssgi}`
