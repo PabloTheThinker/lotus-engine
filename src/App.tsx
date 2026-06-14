@@ -51,8 +51,11 @@ import {
   resolveBTScriptDiffGutterSelection,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
+  getBTBreakpointCondition,
   getBTServiceDecoratorHostId,
   getBTServiceHostNodeId,
+  registerBTBreakpointStepOver,
+  shouldBTBreakpointFire,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
@@ -70,7 +73,7 @@ import {
   getColorGradingSettings,
   blendColorGradingSettings,
 } from './engine/postStackColorGrading'
-import { createIdentityLUTTexture, getGradingLUTStub } from './engine/postColorGradingLut'
+import { createIdentityLUTTexture, getColorGradingLUTState, getGradingLUTStub } from './engine/postColorGradingLut'
 import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
@@ -262,6 +265,13 @@ const lotusBridge = {
       getBTServiceHostNodeId(graph, serviceNodeId),
     serviceDecoratorHost: (graph = emptyBTGraph(), serviceNodeId = '') =>
       getBTServiceDecoratorHostId(graph, serviceNodeId),
+    breakpointCondition: (graph = emptyBTGraph(), nodeId = '') => {
+      const n = graph.nodes.find((x) => x.id === nodeId)
+      return n ? getBTBreakpointCondition(n) : 'always'
+    },
+    shouldBreakpointFire: (graph = emptyBTGraph(), nodeId = '', activeServices: string[] = []) =>
+      shouldBTBreakpointFire(graph, nodeId, activeServices),
+    stepOverBreakpoint: (nodeId = '') => registerBTBreakpointStepOver(nodeId),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
@@ -305,6 +315,7 @@ const lotusBridge = {
       t: number,
     ) => blendColorGradingSettings(a, b, t),
     lutStub: () => getGradingLUTStub(world.environment),
+    lutApply: () => getColorGradingLUTState(world.environment),
     identityLut: () => !!createIdentityLUTTexture(),
   },
   projectSettings: {

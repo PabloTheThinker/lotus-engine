@@ -1929,6 +1929,125 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 30 LUT apply in grading pass', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        lutApply: () => { enabled: boolean; strength: number; size: number }
+      }
+    }
+    v.world.environment.postGradingLutName = 'test.cube'
+    v.world.environment.postGradingLutStrength = 0.75
+    const lut = v.colorGrading.lutApply()
+    return { enabled: lut.enabled, strength: lut.strength, size: lut.size }
+  })
+
+  expect(result.enabled).toBe(true)
+  expect(result.strength).toBe(0.75)
+  expect(result.size).toBe(16)
+})
+
+test('wave 30 GPU sub-emitter burst uniforms', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const ps = v.particles.create('gpu') as {
+      props: { subEmitter?: { count: number } }
+      gpuSubEmitterUniforms: { on: boolean; count: number; speed: number; life: number; rate: number }
+      getGPUSubEmitterUniforms: () => { count: number; speed: number; life: number; rate: number }
+    }
+    ps.props.subEmitter = { enabled: true, onDeath: true, onCollision: false, count: 6, speed: 2, lifetime: 0.5 }
+    ps.gpuSubEmitterUniforms = { on: true, count: 6, speed: 2, life: 0.5, rate: 0.8 }
+    return ps.getGPUSubEmitterUniforms()
+  })
+
+  expect(result.count).toBe(6)
+  expect(result.speed).toBe(2)
+  expect(result.rate).toBe(0.8)
+})
+
+test('wave 30 export grading thumbnails + compare blend', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    return v.export.buildPlayableHTML()
+  })
+
+  expect(html).toContain('presetThumbnails')
+  expect(html).toContain('blendGradingCompare')
+  expect(html).toContain('postGradingLutStrength')
+})
+
+test('wave 30 BT step-over + conditional breakpoint', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        breakpointCondition: (g: import('../src/engine/btGraph').BTGraph, id: string) => string
+        shouldBreakpointFire: (g: import('../src/engine/btGraph').BTGraph, id: string, active: string[]) => boolean
+        stepOverBreakpoint: (id: string) => void
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const svc = {
+      id: 'svc30',
+      type: 'SvcPlayerNear',
+      x: 200,
+      y: 200,
+      props: { radius: 5, breakpointCondition: 'service-active' },
+      breakpoint: true,
+    }
+    graph.nodes.push(svc)
+    const inactive = v.bt.shouldBreakpointFire(graph, 'svc30', [])
+    v.bt.stepOverBreakpoint('svc30')
+    const afterStep = v.bt.shouldBreakpointFire(graph, 'svc30', ['svc30'])
+    return {
+      cond: v.bt.breakpointCondition(graph, 'svc30'),
+      inactive,
+      afterStep,
+    }
+  })
+
+  expect(result.cond).toBe('service-active')
+  expect(result.inactive).toBe(false)
+  expect(result.afterStep).toBe(false)
+})
+
+test('wave 30 material legend pin bidirectional sync', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+      ],
+      edges: [{ from: 'c1', to: 'out:baseColor' }],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  const chip = page.locator('.mat-legend-chip', { hasText: 'baseColor' })
+  await chip.click({ modifiers: ['Shift'] })
+  await expect(chip).toHaveClass(/pinned/)
+  await expect(chip).toHaveClass(/active/)
+  const pin = page.locator('.mat-pin', { hasText: 'baseColor' })
+  await expect(pin).toHaveClass(/mat-pin-pinned/)
+  await expect(pin).toHaveClass(/mat-pin-active/)
+})
+
 test('wave 29 color grading LUT stub + compare blend', async ({ page }) => {
   await bootEditor(page)
 

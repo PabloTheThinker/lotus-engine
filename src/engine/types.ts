@@ -501,6 +501,8 @@ export interface EnvironmentSettings {
   postPresetAces?: Partial<Record<'neutral' | 'cinematic' | 'highContrast', boolean>>
   /** Wave 29 — LUT upload stub (stores filename; identity LUT applied) */
   postGradingLutName?: string
+  /** Wave 30 — LUT blend strength when uploaded (0–1) */
+  postGradingLutStrength?: number
   /** Wave 29 — A/B preset compare blend (0 = A, 1 = B) */
   postGradingCompareT?: number
   postGradingCompareA?: 'neutral' | 'cinematic' | 'highContrast'

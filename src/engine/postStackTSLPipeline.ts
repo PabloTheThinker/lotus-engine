@@ -3,6 +3,7 @@ import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
 import { DEFAULT_TSL_DOF, type TSLDOFSettings } from './postStackDOF'
+import type { ColorGradingLUTState } from './postColorGradingLut'
 import { applyColorGradingTSL, type ColorGradingSettings } from './postStackColorGrading'
 import { applySSRToTSLNode, type SSRSettings } from './ssrPreset'
 import { syncTSLSSRGround, type TSLSSRGroundHandle } from './ssrGround'
@@ -28,6 +29,7 @@ export interface TSLPipelineStack {
     dofSettings?: TSLDOFSettings,
     colorGrading?: ColorGradingSettings,
     aces?: { enabled: boolean; exposure: number },
+    lut?: ColorGradingLUTState,
   ) => void
   dispose: () => void
 }
@@ -99,6 +101,8 @@ export async function createTSLRenderPipeline(
     const float = (tsl as { float: (n: number) => unknown }).float
     const max = (tsl as { max: (a: unknown, b: unknown) => unknown }).max
     const pow = (tsl as { pow: (a: unknown, b: unknown) => unknown }).pow
+    const mix = (tsl as { mix: (a: unknown, b: unknown, t: unknown) => unknown }).mix
+    const texture = (tsl as { texture: (t: THREE.Texture, uv: unknown) => { rgb: unknown } }).texture
     const acesFilmicToneMapping = (tsl as {
       acesFilmicToneMapping: (c: unknown, e: unknown) => unknown
     }).acesFilmicToneMapping
@@ -130,6 +134,7 @@ export async function createTSLRenderPipeline(
     }
     let acesOn = false
     let acesExposure = 0.75
+    let lutState: ColorGradingLUTState | null = null
     let activeCam = camera
 
     type TSLNode = unknown
@@ -242,7 +247,7 @@ export async function createTSLRenderPipeline(
         }
       }
 
-      if (colorGradingSettings.enabled || acesOn) {
+      if (colorGradingSettings.enabled || acesOn || lutState?.enabled) {
         colorNode = applyColorGradingTSL(colorNode, colorGradingSettings, {
           vec3: (x, y, z) => vec3(vec2(x, y), z),
           vec4,
@@ -252,7 +257,14 @@ export async function createTSLRenderPipeline(
           max,
           pow,
           acesFilmicToneMapping,
-        }, { aces: acesOn, exposure: acesExposure })
+        }, {
+          aces: acesOn,
+          exposure: acesExposure,
+          lut: lutState ?? undefined,
+          lutOps: lutState?.enabled
+            ? { float, vec3: (x, y, z) => vec3(vec2(x, y), z), mix, mul, add, texture, vec2 }
+            : undefined,
+        })
       }
 
       if (bloomOn) {
@@ -307,7 +319,7 @@ export async function createTSLRenderPipeline(
         bloomRadius = r
         rebuildOutput()
       },
-      applyPostFx(fx, bloom, ssgi, ssr, dof, colorGrading, aces) {
+      applyPostFx(fx, bloom, ssgi, ssr, dof, colorGrading, aces, lut) {
         ssaoOn = fx.ssao
         fxaaOn = fx.fxaa
         taaOn = fx.taa
@@ -319,6 +331,7 @@ export async function createTSLRenderPipeline(
           acesOn = aces.enabled
           acesExposure = aces.exposure
         }
+        lutState = lut ?? null
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
         ssrSettings = ssr

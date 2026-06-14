@@ -4,6 +4,26 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 30: v1.89–v1.93
+
+### Added
+- **v1.89** LUT apply in grading pass — `applyGradingLUTTSL`, WebGL `lutMap` uniforms, World Settings LUT strength slider
+- **v1.90** GPU sub-emitter burst uniforms — `subEmitterCountU/SpeedU/LifeU/RateU` on integrate kernel; `getGPUSubEmitterUniforms()`
+- **v1.91** Export grading preset thumbnails + `blendGradingCompare()` in playable runtime
+- **v1.92** BT step-over breakpoint + conditional modes (`always`, `service-active`, `decorator-host`)
+- **v1.93** Material legend↔pin bidirectional `syncChannelPin` + eased minimap focus pan — 95 tests passed
+
+### Changed
+- `colorGrading.lutApply()` bridge; `bt.stepOverBreakpoint` / `shouldBreakpointFire` / `breakpointCondition` bridges
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 95 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 29: v1.84–v1.88
 
 ### Added

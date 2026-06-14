@@ -244,6 +244,60 @@ export function getBTServiceHostNodeId(graph: BTGraph, serviceNodeId: string): s
 }
 
 /** Wave 29 — nearest decorator ancestor hosting a service (for PIE breakpoint polish). */
+/** Wave 30 — conditional breakpoint modes for service/decorator polish. */
+export type BTBreakpointCondition = 'always' | 'service-active' | 'decorator-host'
+
+const btBreakpointSkipOnce = new Set<string>()
+
+export function registerBTBreakpointStepOver(nodeId: string) {
+  btBreakpointSkipOnce.add(nodeId)
+}
+
+export function consumeBTBreakpointStepOver(nodeId: string): boolean {
+  if (!btBreakpointSkipOnce.has(nodeId)) return false
+  btBreakpointSkipOnce.delete(nodeId)
+  return true
+}
+
+export function clearBTBreakpointStepOvers() {
+  btBreakpointSkipOnce.clear()
+}
+
+function findBTGraphNode(graph: BTGraph, nodeId: string): BTGraphNode | null {
+  const direct = graph.nodes.find((n) => n.id === nodeId)
+  if (direct) return direct
+  for (const stash of Object.values(graph.subtrees ?? {})) {
+    const hit = stash.nodes.find((n) => n.id === nodeId)
+    if (hit) return hit
+  }
+  return null
+}
+
+export function getBTBreakpointCondition(node: BTGraphNode): BTBreakpointCondition {
+  const raw = node.props.breakpointCondition
+  if (raw === 'service-active' || raw === 'decorator-host') return raw
+  return 'always'
+}
+
+export function shouldBTBreakpointFire(
+  graph: BTGraph,
+  nodeId: string,
+  activeServiceIds: string[] = [],
+): boolean {
+  if (consumeBTBreakpointStepOver(nodeId)) return false
+  const node = findBTGraphNode(graph, nodeId)
+  if (!node?.breakpoint) return false
+  const cond = getBTBreakpointCondition(node)
+  if (cond === 'always') return true
+  if (cond === 'service-active') {
+    return BT_SERVICE_TYPES.has(node.type) && activeServiceIds.includes(nodeId)
+  }
+  if (cond === 'decorator-host') {
+    return BT_DECORATOR_TYPES.has(node.type) || BT_COMPOSITE_TYPES.has(node.type)
+  }
+  return true
+}
+
 export function getBTServiceDecoratorHostId(graph: BTGraph, serviceNodeId: string): string | null {
   let hostId = getBTServiceHostNodeId(graph, serviceNodeId)
   const seen = new Set<string>()

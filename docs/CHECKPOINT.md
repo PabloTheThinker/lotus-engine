@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.88 (wave 29).** v0.33–v1.88 shipped; **build clean**, **`npm run test` — 90 passed**.
+- **Last clean commit: v1.93 (wave 30).** v0.33–v1.93 shipped; **build clean**, **`npm run test` — 95 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -338,13 +338,23 @@
 | v1.87 | BT service decorator PIE breakpoint polish — `getBTServiceHostNodeId`, gutter host highlight + auto-scroll |
 | v1.88 | Material minimap click-to-focus + wire channel pin sync — `syncChannelPin`, focused node stroke, pin z-index — 90 tests passed |
 
-## Next up (v1.89+, Wave 30)
+## Shipped (v1.89–v1.93, Wave 30)
 
-1. **TSL post** — apply uploaded LUT texture in grading pass (beyond stub registration)
-2. **GPU particles** — sub-emitter burst rate/count uniforms on GPU path
-3. **Export** — grading preset thumbnails + A/B compare blend in runtime
-4. **BT** — service decorator step-over + conditional breakpoint polish
-5. **Material TSL** — legend↔pin bidirectional sync + focused-node pan easing
+| Ver | What |
+|---|---|
+| v1.89 | TSL post LUT apply in grading pass — WebGL shader + TSL `applyGradingLUTTSL`, `postGradingLutStrength` |
+| v1.90 | GPU sub-emitter burst uniforms — `subEmitterCountU/SpeedU/LifeU/RateU` on integrate kernel + CPU death bursts |
+| v1.91 | Export grading preset thumbnails + `blendGradingCompare` in playable runtime |
+| v1.92 | BT step-over (F10) + conditional breakpoints (`service-active`, `decorator-host`) |
+| v1.93 | Material legend↔pin bidirectional sync + eased minimap focus pan — 95 tests passed |
+
+## Next up (v1.94+, Wave 31)
+
+1. **TSL post** — real `.cube`/`.3dl` LUT decode (replace identity strip)
+2. **GPU particles** — GPU-side sub-emitter burst spawn kernel (beyond CPU death detect)
+3. **Export** — LUT apply parity in playable runtime shader path
+4. **BT** — conditional breakpoint on blackboard key/value + service step-into
+5. **Material TSL** — focused-node keyboard nav (Tab cycle) + legend drag pin preview
 
 ## Remaining gap-list queue (post–wave 7)
 

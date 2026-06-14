@@ -14,6 +14,7 @@ import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } 
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getSSRSettings, ssrStatusLabel } from '../engine/ssrPreset'
 import { getDOFSettings } from '../engine/postStackDOF'
+import { getColorGradingLUTState } from '../engine/postColorGradingLut'
 import { getACESExposure, getACESPostEnabled, getColorGradingSettings } from '../engine/postStackColorGrading'
 import { syncSSRGroundReflector } from '../engine/ssrGround'
 import { getTSLPostState } from '../engine/postStackTSL'
@@ -512,8 +513,9 @@ export function Viewport() {
       }
       const dof = getDOFSettings(world.environment, frameCameraDof, frameFocusPullT)
       const colorGrading = getColorGradingSettings(world.environment)
+      const gradingLut = getColorGradingLUTState(world.environment)
       postStack.applyDOF(dof.webgl)
-      postStack.applyColorGrading(colorGrading)
+      postStack.applyColorGrading(colorGrading, gradingLut)
       tslPipeline?.applyPostFx(
         getPostFxSettings(world.environment),
         {
@@ -527,6 +529,7 @@ export function Viewport() {
         dof.tsl,
         colorGrading,
         { enabled: getACESPostEnabled(world.environment), exposure: getACESExposure(world.environment) },
+        gradingLut,
       )
     }
 

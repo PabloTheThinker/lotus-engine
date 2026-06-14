@@ -1181,6 +1181,20 @@ export function WorldSettings() {
           />
           {env.postGradingLutName && <em>{env.postGradingLutName}</em>}
         </label>
+        {env.postGradingLutName && (
+          <label className="field">
+            <span>LUT strength</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={env.postGradingLutStrength ?? 1}
+              onChange={(e) => set('postGradingLutStrength', parseFloat(e.target.value))}
+            />
+            <em>{((env.postGradingLutStrength ?? 1) * 100).toFixed(0)}%</em>
+          </label>
+        )}
         <div className="field grading-compare-field">
           <span>Preset A/B compare</span>
           <div className="grading-compare-row">

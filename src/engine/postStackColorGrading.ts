@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
+import { applyGradingLUTTSL, type ColorGradingLUTState, type GradingLUTTslOps } from './postColorGradingLut'
 import type { EnvironmentSettings } from './types'
 
 /** Wave 25 — lift/gamma/gain color grading stub (UE post-process analog). */
@@ -17,6 +18,10 @@ const ColorGradingShader = {
     lift: { value: new THREE.Vector3(0, 0, 0) },
     gamma: { value: new THREE.Vector3(1, 1, 1) },
     gain: { value: new THREE.Vector3(1, 1, 1) },
+    lutMap: { value: null as THREE.Texture | null },
+    lutSize: { value: 16 },
+    lutEnabled: { value: 0 },
+    lutStrength: { value: 1 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -27,14 +32,25 @@ const ColorGradingShader = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
+    uniform sampler2D lutMap;
     uniform vec3 lift;
     uniform vec3 gamma;
     uniform vec3 gain;
+    uniform float lutSize;
+    uniform float lutEnabled;
+    uniform float lutStrength;
     varying vec2 vUv;
     void main() {
       vec3 c = texture2D(tDiffuse, vUv).rgb;
       c = pow(max(c + lift, vec3(0.0)), max(gamma, vec3(0.01)));
       c *= gain;
+      if (lutEnabled > 0.5) {
+        float grid = lutSize * lutSize;
+        float idx = (c.r * (lutSize - 1.0) + c.g * (lutSize - 1.0) * lutSize);
+        vec2 lutUv = vec2((idx + 0.5) / grid, 0.5);
+        vec3 lutC = texture2D(lutMap, lutUv).rgb;
+        c = mix(c, lutC, clamp(lutStrength, 0.0, 1.0));
+      }
       gl_FragColor = vec4(c, 1.0);
     }
   `,
@@ -169,12 +185,22 @@ export function createColorGradingPass(settings: ColorGradingSettings = { enable
   return pass
 }
 
-export function updateColorGradingPass(pass: ShaderPass | null, settings: ColorGradingSettings) {
+export function updateColorGradingPass(
+  pass: ShaderPass | null,
+  settings: ColorGradingSettings,
+  lut?: ColorGradingLUTState,
+) {
   if (!pass) return
-  pass.enabled = settings.enabled
+  pass.enabled = settings.enabled || (lut?.enabled ?? false)
   pass.material.uniforms.lift.value.set(...settings.lift)
   pass.material.uniforms.gamma.value.set(...settings.gamma)
   pass.material.uniforms.gain.value.set(...settings.gain)
+  if (lut) {
+    pass.material.uniforms.lutMap.value = lut.texture
+    pass.material.uniforms.lutSize.value = lut.size
+    pass.material.uniforms.lutEnabled.value = lut.enabled ? 1 : 0
+    pass.material.uniforms.lutStrength.value = lut.strength
+  }
 }
 
 /** Wave 26 — TSL lift/gamma/gain + optional ACES filmic tonemap stub. */
@@ -193,7 +219,7 @@ export function applyColorGradingTSL(
   colorNode: unknown,
   settings: ColorGradingSettings,
   tsl: TSLColorGradingOps,
-  opts: { aces?: boolean; exposure?: number } = {},
+  opts: { aces?: boolean; exposure?: number; lut?: ColorGradingLUTState; lutOps?: GradingLUTTslOps } = {},
 ): unknown {
   if (!settings.enabled && !opts.aces) return colorNode
   const node = colorNode as { rgb?: unknown; a?: unknown }
@@ -206,6 +232,9 @@ export function applyColorGradingTSL(
     const gain = tsl.vec3(settings.gain[0], settings.gain[1], settings.gain[2])
     rgb = tsl.pow(tsl.max(tsl.add(rgb, lift), zero), tsl.max(gamma, minGamma))
     rgb = tsl.mul(rgb, gain)
+  }
+  if (opts.lut?.enabled && opts.lutOps) {
+    rgb = applyGradingLUTTSL(rgb, opts.lut, opts.lutOps)
   }
   if (opts.aces) {
     const exp = Math.max(0.35, opts.exposure ?? 0.75)

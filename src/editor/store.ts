@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { registerBTBreakpointStepOver } from '../engine/btGraph'
 import { loadPrefs } from './Preferences'
 import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
 
@@ -88,6 +89,7 @@ interface EditorState {
   breakpointHit: { actorId: string; nodeId: string } | null
   setBreakpointHit: (h: { actorId: string; nodeId: string } | null) => void
   continueFromBreakpoint: () => void
+  stepOverFromBreakpoint: () => void
   stepFrames: number
   requestStep: () => void
   setPlaying: (p: boolean) => void
@@ -237,7 +239,7 @@ interface EditorState {
 
 const viewportPrefs = loadViewportPrefs()
 
-export const useEditor = create<EditorState>((set) => ({
+export const useEditor = create<EditorState>((set, get) => ({
   selectedId: null,
   selectedIds: [],
   select: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
@@ -274,6 +276,11 @@ export const useEditor = create<EditorState>((set) => ({
   breakpointHit: null,
   setBreakpointHit: (h) => set({ breakpointHit: h }),
   continueFromBreakpoint: () => set({ paused: false, breakpointHit: null }),
+  stepOverFromBreakpoint: () => {
+    const hit = get().breakpointHit
+    if (hit) registerBTBreakpointStepOver(hit.nodeId)
+    set({ paused: false, breakpointHit: null })
+  },
   stepFrames: 0,
   requestStep: () => set((st) => ({ stepFrames: st.stepFrames + 1 })),
   setPlaying: (p) => set(p ? { playing: true, simulate: false, ejected: false } : { playing: false, simulate: false, ejected: false }),

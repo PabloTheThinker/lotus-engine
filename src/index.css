@@ -1445,6 +1445,11 @@ input[type='checkbox'] {
 .mat-pin-pinned {
   box-shadow: 0 0 0 1px #c9a8ff;
 }
+.bt-step-over {
+  font-size: 11px;
+  padding: 2px 8px;
+  margin-left: 4px;
+}
 .bt-wire-service.bt-service-bp-active {
   stroke: #ff8866;
   stroke-width: 2;

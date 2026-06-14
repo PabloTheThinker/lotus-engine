@@ -46,6 +46,11 @@ interface IntegrateKernel {
   colorEndRU: UniformSlot
   colorEndGU: UniformSlot
   colorEndBU: UniformSlot
+  subEmitterOnU: UniformSlot
+  subEmitterCountU: UniformSlot
+  subEmitterSpeedU: UniformSlot
+  subEmitterLifeU: UniformSlot
+  subEmitterRateU: UniformSlot
 }
 
 interface EmitKernel {
@@ -178,6 +183,11 @@ export async function bindParticleIntegrateKernel(
     const colorEndRU = t.uniform(t.float(0.9))
     const colorEndGU = t.uniform(t.float(0.28))
     const colorEndBU = t.uniform(t.float(0.3))
+    const subEmitterOnU = t.uniform(t.float(0))
+    const subEmitterCountU = t.uniform(t.float(8))
+    const subEmitterSpeedU = t.uniform(t.float(1.5))
+    const subEmitterLifeU = t.uniform(t.float(0.4))
+    const subEmitterRateU = t.uniform(t.float(1))
 
     const computeNode = t.Fn(() => {
       const alive = aliveBuf.element(t.instanceIndex)
@@ -320,6 +330,11 @@ export async function bindParticleIntegrateKernel(
       colorEndRU,
       colorEndGU,
       colorEndBU,
+      subEmitterOnU,
+      subEmitterCountU,
+      subEmitterSpeedU,
+      subEmitterLifeU,
+      subEmitterRateU,
     }
     emitKernel = { computeNode: emitNode, spawnProbU, speedU, seedU, defaultLifeU }
     kernelCap = cap
@@ -414,6 +429,11 @@ export interface ParticleGPUModules {
   groundBounce?: boolean
   groundY?: number
   bounceFactor?: number
+  subEmitterOn?: boolean
+  subEmitterCount?: number
+  subEmitterSpeed?: number
+  subEmitterLife?: number
+  subEmitterRate?: number
 }
 
 export function runParticleGPUIntegrate(
@@ -443,6 +463,11 @@ export function runParticleGPUIntegrate(
     kernel.groundYOffU.value = modules?.groundBounce ? 0 : 1
     kernel.groundYU.value = modules?.groundY ?? -9999
     kernel.groundBounceU.value = modules?.bounceFactor ?? 0.45
+    kernel.subEmitterOnU.value = modules?.subEmitterOn ? 1 : 0
+    kernel.subEmitterCountU.value = modules?.subEmitterCount ?? 8
+    kernel.subEmitterSpeedU.value = modules?.subEmitterSpeed ?? 1.5
+    kernel.subEmitterLifeU.value = modules?.subEmitterLife ?? 0.4
+    kernel.subEmitterRateU.value = modules?.subEmitterRate ?? 1
     if (style) {
       kernel.sizeStartU.value = style.sizeStart
       kernel.sizeEndU.value = style.sizeEnd

@@ -465,6 +465,7 @@ export function MaterialEditor() {
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
   const panState = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
+  const panAnim = useRef<number | null>(null)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
@@ -614,7 +615,26 @@ export function MaterialEditor() {
     const n = graph?.nodes.find((x) => x.id === nodeId)
     if (!n) return
     setFocusedNodeId(nodeId)
-    panToGraph(n.x + NODE_W / 2, n.y + 36)
+    const z = Math.max(zoom, 0.05)
+    const target = {
+      x: viewportSize.w / 2 - (n.x + NODE_W / 2) * z,
+      y: viewportSize.h / 2 - (n.y + 36) * z,
+    }
+    const start = { ...panOffset }
+    const t0 = performance.now()
+    const duration = 220
+    const tick = (now: number) => {
+      const u = Math.min(1, (now - t0) / duration)
+      const ease = 1 - (1 - u) ** 3
+      setPanOffset({
+        x: start.x + (target.x - start.x) * ease,
+        y: start.y + (target.y - start.y) * ease,
+      })
+      if (u < 1) panAnim.current = requestAnimationFrame(tick)
+      else panAnim.current = null
+    }
+    if (panAnim.current) cancelAnimationFrame(panAnim.current)
+    panAnim.current = requestAnimationFrame(tick)
   }
 
   const syncChannelPin = (ch: string) => {
@@ -744,12 +764,19 @@ export function MaterialEditor() {
                 title={`Solo ${ch} (Alt+${orderedChannels.indexOf(ch) + 1}) · Shift+click pin minimap · drag to reorder`}
                 onClick={(e) => {
                   if (e.shiftKey) {
-                    setPinnedMinimapChannel((prev) => (prev === ch ? null : ch))
-                    if (isolateChannel === ch) setIsolateChannel(null)
+                    if (isolateChannel === ch && pinnedMinimapChannel === ch) {
+                      setIsolateChannel(null)
+                      setPinnedMinimapChannel(null)
+                    } else {
+                      syncChannelPin(ch)
+                    }
                     return
                   }
-                  setIsolateChannel((prev) => (prev === ch ? null : ch))
-                  if (pinnedMinimapChannel === ch) setPinnedMinimapChannel(null)
+                  if (isolateChannel === ch && !pinnedMinimapChannel) {
+                    setIsolateChannel(null)
+                    return
+                  }
+                  syncChannelPin(ch)
                 }}
                 onDragStart={() => {
                   legendDrag.current = ch

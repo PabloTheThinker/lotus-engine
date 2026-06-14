@@ -13,6 +13,7 @@ import type { SSGISettings } from './ssgiPreset'
 import { applySSRToWebGLPass, getSSRSettings, type SSRSettings } from './ssrPreset'
 import type { EnvironmentSettings } from './types'
 import { createDOFStubPass, updateDOFStubPass, type DOFStubSettings } from './postStackDOF'
+import type { ColorGradingLUTState } from './postColorGradingLut'
 import { createColorGradingPass, updateColorGradingPass, type ColorGradingSettings } from './postStackColorGrading'
 import { createSSRGroundReflector, type SSRGroundHandle } from './ssrGround'
 
@@ -31,7 +32,7 @@ export interface WebGLPostStack {
   applySSGI: (settings: SSGISettings) => void
   applySSR: (settings: SSRSettings) => void
   applyDOF: (settings: DOFStubSettings) => void
-  applyColorGrading: (settings: ColorGradingSettings) => void
+  applyColorGrading: (settings: ColorGradingSettings, lut?: ColorGradingLUTState) => void
   applySettings: (post: {
     bloomEnabled: boolean
     bloomStrength: number
@@ -131,8 +132,8 @@ export function createWebGLPostStack(
     applyDOF(settings) {
       updateDOFStubPass(dofPass, settings)
     },
-    applyColorGrading(settings) {
-      updateColorGradingPass(colorGradingPass, settings)
+    applyColorGrading(settings, lut?: ColorGradingLUTState) {
+      updateColorGradingPass(colorGradingPass, settings, lut)
     },
     setSize(w, h) {
       composer.setSize(w, h)

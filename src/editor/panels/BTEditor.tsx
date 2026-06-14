@@ -23,8 +23,11 @@ import {
   resolveBTScriptDiffGutterSelection,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
+  getBTBreakpointCondition,
   getBTServiceDecoratorHostId,
   getBTServiceHostNodeId,
+  shouldBTBreakpointFire,
+  type BTBreakpointCondition,
   validateBTGraph,
   type BTGraph,
   type BTGraphNode,
@@ -151,6 +154,10 @@ export function BTEditor() {
         }
       }
       if (!node?.breakpoint) return false
+      const activeServices = getActiveBTServiceNodeIds(actorId)
+      if (!shouldBTBreakpointFire(liveGraph ?? { nodes: [], edges: [] }, hitId, activeServices)) {
+        return false
+      }
       const title = BT_NODE_DEFS[node.type]?.title ?? node.type
       st.setPaused(true)
       st.setBreakpointHit({ actorId, nodeId: hitId })
@@ -461,12 +468,21 @@ export function BTEditor() {
           </>
         )}
         {breakpointHit && breakpointHit.actorId === actor.id && (
-          <button
-            onClick={() => useEditor.getState().continueFromBreakpoint()}
-            title="Continue from breakpoint (F5)"
-          >
-            ▶ Continue
-          </button>
+          <>
+            <button
+              onClick={() => useEditor.getState().continueFromBreakpoint()}
+              title="Continue from breakpoint (F5)"
+            >
+              ▶ Continue
+            </button>
+            <button
+              className="bt-step-over"
+              onClick={() => useEditor.getState().stepOverFromBreakpoint()}
+              title="Step over — skip this breakpoint once (F10)"
+            >
+              ↷ Step over
+            </button>
+          </>
         )}
         <label className="field check bt-auto">
           <span>Auto-run on Play</span>
@@ -843,6 +859,22 @@ export function BTEditor() {
                     }}
                   />
                 </label>
+                {node.breakpoint && (
+                  <label className="field">
+                    <span>Breakpoint when</span>
+                    <select
+                      value={getBTBreakpointCondition(node)}
+                      onChange={(e) => {
+                        const v = e.target.value as BTBreakpointCondition
+                        updateNodeProp(node.id, 'breakpointCondition', v)
+                      }}
+                    >
+                      <option value="always">Always</option>
+                      <option value="service-active">Service active</option>
+                      <option value="decorator-host">Decorator / composite host</option>
+                    </select>
+                  </label>
+                )}
                 {Object.entries(node.props).map(([k, v]) => (
                   <label className="field" key={k}>
                     <span>{k}</span>

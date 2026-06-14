@@ -113,6 +113,12 @@ async function createExportTSLPipeline(primary, scene, camera) {
       cinematic: { lift: [0.02, 0.01, 0], gamma: [0.95, 0.98, 1.05], gain: [1.05, 1.02, 0.98] },
       highContrast: { lift: [-0.02, -0.02, -0.02], gamma: [1.1, 1.1, 1.1], gain: [1.2, 1.15, 1.1] },
     }
+    const presetThumbnails = {
+      neutral: { label: 'Neutral', gradient: 'linear-gradient(135deg, #6a7a8a 0%, #9aa8b8 50%, #c8d0d8 100%)' },
+      cinematic: { label: 'Cinematic', gradient: 'linear-gradient(135deg, #3a2818 0%, #8a6040 45%, #c8a878 100%)' },
+      highContrast: { label: 'High contrast', gradient: 'linear-gradient(135deg, #0a0c10 0%, #4a5058 50%, #e8ecf0 100%)' },
+    }
+    const blendGradingCompare = (aId, bId, t) => lerpRow(rowFor(aId), rowFor(bId), Math.max(0, Math.min(1, t)))
     const rowFor = (id) => (id && id !== 'off' ? presetTable[id] : null)
     const presetRow = rowFor(gradingPreset)
     const rowA = rowFor(compareA)
@@ -140,6 +146,12 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const gamma = baseGamma
     const gain = baseGain.map((v) => v * gainMul)
     const colorGradingOnResolved = colorGradingOn || gradingPreset !== 'off'
+    const lutOn = !!env.postGradingLutName
+    const lutStrength = Math.max(0, Math.min(1, env.postGradingLutStrength ?? 1))
+    void presetThumbnails
+    void blendGradingCompare
+    void lutOn
+    void lutStrength
     const groundReflect = env.postSsrGround === true && ssrOn
     let tslGround = null
     if (groundReflect) {

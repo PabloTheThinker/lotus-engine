@@ -156,6 +156,16 @@ export class GPUParticleSystem extends ParticleSystem {
             groundYLocal = new THREE.Vector3(origin.x, gh, origin.z).applyMatrix4(inv).y
           }
         }
+        const se = p.subEmitter
+        const subOn = se?.enabled && !p.modulesOff?.includes('subEmitter') && se.onDeath
+        const subUniforms = {
+          on: !!subOn,
+          count: se?.count ?? 8,
+          speed: se?.speed ?? 1.5,
+          life: se?.lifetime ?? 0.4,
+          rate: Math.min(1, Math.max(0, (p.rate * dt) / Math.max(1, this.simBuffers().alive.length))),
+        }
+        this.gpuSubEmitterUniforms = subUniforms
         const modules = {
           windX: p.windX ?? 0,
           windY: p.windY ?? 0,
@@ -169,6 +179,11 @@ export class GPUParticleSystem extends ParticleSystem {
           groundBounce: groundOn && groundYLocal > -9000,
           groundY: groundYLocal,
           bounceFactor: p.bounceFactor ?? 0.45,
+          subEmitterOn: subUniforms.on,
+          subEmitterCount: subUniforms.count,
+          subEmitterSpeed: subUniforms.speed,
+          subEmitterLife: subUniforms.life,
+          subEmitterRate: subUniforms.rate,
         }
         if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style, modules)) {
           this.computeIntegratedFrames++

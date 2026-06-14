@@ -375,6 +375,8 @@ export class ParticleSystem {
   /** Wave 29 — snapshot alive mask before GPU integrate (sub-emitter death detect). */
   private prevAliveSnapshot: boolean[] = []
   gpuSubEmitterBursts = 0
+  /** Wave 30 — last sub-emitter uniforms passed to GPU integrate kernel. */
+  gpuSubEmitterUniforms = { on: false, count: 8, speed: 1.5, life: 0.4, rate: 1 }
 
   snapshotAliveForGPU() {
     this.prevAliveSnapshot = this.alive.slice()
@@ -387,16 +389,28 @@ export class ParticleSystem {
     const se = p.subEmitter
     const subOn = se?.enabled && !off('subEmitter') && se.onDeath
     if (!subOn || !this.prevAliveSnapshot.length) return 0
+    const rate = Math.max(0, Math.min(1, this.gpuSubEmitterUniforms.rate))
     let bursts = 0
     for (let i = 0; i < this.cap; i++) {
       if (this.prevAliveSnapshot[i] && !this.alive[i]) {
+        if (rate < 1 && Math.random() > rate) continue
         const i3 = i * 3
-        this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
+        const burstSe = {
+          ...se!,
+          count: Math.max(1, Math.round(this.gpuSubEmitterUniforms.count)),
+          speed: this.gpuSubEmitterUniforms.speed,
+          lifetime: this.gpuSubEmitterUniforms.life,
+        }
+        this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], burstSe)
         bursts++
       }
     }
     this.gpuSubEmitterBursts += bursts
     return bursts
+  }
+
+  getGPUSubEmitterUniforms() {
+    return { ...this.gpuSubEmitterUniforms }
   }
 
   /** Spawn a radial burst at a world-local position (sub-emitter). */
