@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 34: v2.09–v2.13 (indie / Godot focus)
+
+### Added
+- **v2.09** `@export_range` — `// @export_range speed 0 10 0.5 = 2` → clamped slider in Details
+- **v2.10** `@export_enum` — `// @export_enum mode walk,run,fly = run` → dropdown in Details
+- **v2.11** Area3D actor — overlap volume, `body_entered:` / `body_exited:` signals, optional group filter
+- **v2.12** Prefab instance polish — override summary, Revert All, 📦 outliner badge on prefab children
+- **v2.13** Character starter — `/starter thirdperson|firstperson|fly` greybox scene — 115 tests passed
+
+### Changed
+- `parseExports` returns `kind: plain|range|enum` with min/max/step/options metadata
+- `window.lotus.indie` bridge: `exports`, `prefab`, `areaOverlaps`, `spawnCharacterStarter`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 115 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 33: v2.04–v2.08 (indie / Godot focus)
 
 ### Added

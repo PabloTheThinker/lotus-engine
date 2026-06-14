@@ -18,6 +18,16 @@
 | v2.07 | **Groups** (`groups[]` + `api.getActorsInGroup`), **Project Settings** autoload names + main scene key |
 | v2.08 | `api.changeScene` alias, export `__LOTUS_MAIN__` from main scene key, docs + tests |
 
+## Shipped (Wave 34, v2.09–v2.13)
+
+| Ver | Feature |
+|---|---|
+| v2.09 | **@export_range** — slider widgets in Details (`// @export_range speed 0 10 0.5 = 2`) |
+| v2.10 | **@export_enum** — dropdown widgets (`// @export_enum mode walk,run,fly = run`) |
+| v2.11 | **Area3D** actor — `body_entered:` / `body_exited:` for any overlapping actors |
+| v2.12 | **Prefab instance polish** — override summary, Revert All, 📦 outliner badge on instance children |
+| v2.13 | **Character starter** — `/starter thirdperson` greybox (floor + PlayerStart + sun) |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -26,11 +36,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Scene instancing polish** — editable children, property override UX (prefab deltas)
-2. **@export range/enum** — slider and dropdown widgets in Details from script annotations
-3. **Area3D** — overlap signals beyond pawn-only TriggerVolume (physics layers)
-4. **CharacterBody3D template** — first-person / third-person starter scenes
-5. **AnimationPlayer tracks** — expand sequencer ↔ property keying for any `@export` field
+1. **Editable children UX** — open prefab subtree in-place, per-field override diff gutter
+2. **AnimationPlayer tracks** — expand sequencer ↔ property keying for any `@export` field
+3. **Resource (.tres) files** — shared JSON materials, curves, shapes by UUID
+4. **TileMap / GridMap UX** — grid paint improvements (GridMap foliage exists)
+5. **Starter game templates** — platformer, top-down RPG, FPS greybox packs
 6. **Resource (.tres) files** — shared JSON materials, curves, shapes by UUID
 7. **TileMap / GridMap UX** — grid paint improvements (GridMap foliage exists)
 8. **Multiplayer indie template** — host + 2 clients relay smoke game

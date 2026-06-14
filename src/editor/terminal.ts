@@ -11,6 +11,7 @@ import type { Actor } from '../engine/Actor'
 import { DEFAULT_MATERIAL, type MaterialProps } from '../engine/types'
 import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
+import { spawnCharacterStarter } from './starterTemplates'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -38,6 +39,7 @@ SLASH COMMANDS
   /undo  /redo       Undo / redo last editor action
   /pos <name>        Print actor world position
   /tag <name> <tag>  Add tag to actor
+  /starter [mode]    Greybox CharacterBody scene (thirdperson|firstperson|fly)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -243,6 +245,14 @@ function runSlash(parts: string[]): TerminalResult {
     case '/simulate':
       useEditor.getState().startPlay('simulate')
       return { output: '≡ Simulating', error: null, level: 'log' }
+    case '/starter': {
+      const mode = (args[0] ?? 'thirdperson').toLowerCase()
+      if (!['thirdperson', 'firstperson', 'fly'].includes(mode)) {
+        return { output: null, error: 'Usage: /starter thirdperson|firstperson|fly', level: 'error' }
+      }
+      spawnCharacterStarter(mode as 'thirdperson' | 'firstperson' | 'fly')
+      return { output: `Character starter: ${mode}`, error: null, level: 'log' }
+    }
     case '/undo':
       undo()
       return { output: 'Undo', error: null, level: 'log' }

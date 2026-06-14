@@ -13,6 +13,7 @@ import {
   DEFAULT_SOUND_EMITTER,
   DEFAULT_TIMER,
   DEFAULT_PATH_FOLLOW,
+  DEFAULT_AREA3D,
 } from './types'
 import { DEFAULT_PATH3D, rebuildPath3DVisual } from './path3d'
 import type { FoliageProps } from './types'
@@ -511,6 +512,21 @@ export function createPathFollowActor(name: string, id = nextActorId()): Actor {
   marker.userData.isEditorOnly = true
   actor.mesh = marker
   actor.root.add(marker)
+  return actor
+}
+
+/** Area3D — sensor box emitting body_entered:/body_exited: for overlapping actors. */
+export function createArea3DActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'Area3D')
+  actor.area3DProps = { ...DEFAULT_AREA3D }
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({ color: 0x3dd68c, wireframe: true, transparent: true, opacity: 0.45, depthWrite: false }),
+  )
+  box.userData.actorId = id
+  box.userData.isEditorOnly = true
+  actor.mesh = box
+  actor.root.add(box)
   return actor
 }
 

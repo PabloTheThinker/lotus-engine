@@ -40,6 +40,7 @@ import {
   createPath3DActor,
   createPathFollowActor,
   rebuildRayCastVisual,
+  createArea3DActor,
 } from './factory'
 import { rebuildPath3DVisual } from './path3d'
 import { loadProjectSettings } from '../editor/projectSettings'
@@ -234,6 +235,7 @@ export class World {
     this.timerActive.clear()
     this.rayCastState.clear()
     this.pathFollowActive.clear()
+    this.area3DState.clear()
     this.activeReverb = ''
     setReverbZone('')
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
@@ -288,6 +290,7 @@ export class World {
   private timerActive = new Map<string, boolean>()
   private rayCastState = new Map<string, string>()
   private pathFollowActive = new Map<string, boolean>()
+  private area3DState = new Map<string, Set<string>>()
 
   /** Godot autoload — tag or Project Settings autoloadActorNames */
   isAutoloadActor(a: Actor): boolean {
@@ -303,6 +306,18 @@ export class World {
   /** E2E — RayCast3D last hit actor id (empty = no hit). */
   getRayCastHitId(rayActorId: string): string {
     return this.rayCastState.get(rayActorId) ?? ''
+  }
+
+  /** E2E — Area3D actor ids currently overlapping. */
+  getArea3DOverlaps(areaId: string): string[] {
+    return [...(this.area3DState.get(areaId) ?? [])]
+  }
+
+  /** Unit-box local test — actor root position inside area volume. */
+  private actorInsideUnitBox(area: Actor, other: Actor, local: THREE.Vector3): boolean {
+    local.copy(other.root.position)
+    area.root.worldToLocal(local)
+    return Math.abs(local.x) <= 0.5 && Math.abs(local.y) <= 0.5 && Math.abs(local.z) <= 0.5
   }
 
   endPlay() {
@@ -376,6 +391,7 @@ export class World {
     this.timerActive.clear()
     this.rayCastState.clear()
     this.pathFollowActive.clear()
+    this.area3DState.clear()
     hud.clear()
 
     for (const id of [...this.actors.keys()]) {
@@ -582,6 +598,38 @@ export class World {
       }
     }
     this.tickIndieNodes(dt)
+    this.tickArea3D()
+  }
+
+  /** Godot Area3D — body_entered / body_exited for actors inside the volume. */
+  private tickArea3D() {
+    if (!this.playApi) return
+    const emit = this.playApi.emit
+    const local = new THREE.Vector3()
+    for (const area of this.actors.values()) {
+      if (area.type !== 'Area3D' || !area.area3DProps?.enabled) continue
+      const groups = area.area3DProps.monitorGroups.map((g) => g.toLowerCase())
+      const inside = new Set<string>()
+      for (const a of this.actors.values()) {
+        if (a.id === area.id || a.type === 'Area3D') continue
+        if (groups.length && !a.groups.some((g) => groups.includes(g.toLowerCase()))) continue
+        if (this.actorInsideUnitBox(area, a, local)) inside.add(a.id)
+      }
+      const was = this.area3DState.get(area.id) ?? new Set<string>()
+      for (const id of inside) {
+        if (!was.has(id)) {
+          const name = this.actors.get(id)?.name ?? id
+          emit(`body_entered:${area.name}`, name)
+        }
+      }
+      for (const id of was) {
+        if (!inside.has(id)) {
+          const name = this.actors.get(id)?.name ?? id
+          emit(`body_exited:${area.name}`, name)
+        }
+      }
+      this.area3DState.set(area.id, inside)
+    }
   }
 
   /** Godot indie node pack — Timer, RayCast3D, PathFollow3D (Wave 33). */
@@ -957,6 +1005,12 @@ export class World {
       case 'PathFollow3D':
         actor = createPathFollowActor(sa.name, sa.id)
         if (sa.pathFollow) actor.pathFollowProps = { ...sa.pathFollow }
+        break
+      case 'Area3D':
+        actor = createArea3DActor(sa.name, sa.id)
+        if (sa.area3D) {
+          actor.area3DProps = { enabled: sa.area3D.enabled, monitorGroups: [...sa.area3D.monitorGroups] }
+        }
         break
       default:
         actor = createEmptyActor(sa.name, sa.id)

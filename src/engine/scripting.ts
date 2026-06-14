@@ -296,21 +296,75 @@ export function makeScriptApi(
 }
 
 // ---- @export script variables (Godot's killer bridge) ----
+export type ExportVarKind = 'plain' | 'range' | 'enum'
+
 export interface ExportVar {
   name: string
   value: unknown
+  kind: ExportVarKind
+  /** @export_range min (inclusive) */
+  min?: number
+  /** @export_range max (inclusive) */
+  max?: number
+  /** @export_range step */
+  step?: number
+  /** @export_enum option labels */
+  options?: string[]
 }
 
-/** parse `// @export name = <json>` annotations from a script */
+function parseExportValue(raw: string): unknown {
+  const t = raw.trim()
+  try {
+    return JSON.parse(t)
+  } catch {
+    return t.replace(/^["']|["']$/g, '')
+  }
+}
+
+/** Clamp a ranged export value to [min, max]. */
+export function clampExportRange(v: ExportVar, value: number): number {
+  const min = v.min ?? 0
+  const max = v.max ?? 100
+  return Math.min(max, Math.max(min, value))
+}
+
+/** parse `// @export`, `@export_range`, `@export_enum` annotations from a script */
 export function parseExports(source: string): ExportVar[] {
   const out: ExportVar[] = []
-  const re = /^\s*\/\/\s*@export\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)\s*$/gm
-  let m: RegExpExecArray | null
-  while ((m = re.exec(source))) {
-    try {
-      out.push({ name: m[1], value: JSON.parse(m[2]) })
-    } catch {
-      out.push({ name: m[1], value: m[2].trim() })
+  for (const line of source.split('\n')) {
+    let m = line.match(
+      /^\s*\/\/\s*@export_range\s+([A-Za-z_$][\w$]*)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*=\s*(.+)\s*$/,
+    )
+    if (m) {
+      const value = Number(parseExportValue(m[5]))
+      out.push({
+        name: m[1],
+        kind: 'range',
+        min: parseFloat(m[2]),
+        max: parseFloat(m[3]),
+        step: parseFloat(m[4]),
+        value: Number.isFinite(value) ? value : 0,
+      })
+      continue
+    }
+    m = line.match(/^\s*\/\/\s*@export_enum\s+([A-Za-z_$][\w$]*)\s+([^=]+?)\s*=\s*(.+)\s*$/)
+    if (m) {
+      const options = m[2]
+        .split(',')
+        .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean)
+      const value = String(parseExportValue(m[3]))
+      out.push({
+        name: m[1],
+        kind: 'enum',
+        options,
+        value: options.includes(value) ? value : (options[0] ?? value),
+      })
+      continue
+    }
+    m = line.match(/^\s*\/\/\s*@export\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)\s*$/)
+    if (m) {
+      out.push({ name: m[1], kind: 'plain', value: parseExportValue(m[2]) })
     }
   }
   return out

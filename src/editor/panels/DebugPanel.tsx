@@ -23,6 +23,7 @@ const TYPE_ICONS: Record<string, string> = {
   RayCast3D: '↯',
   Path3D: '〰',
   PathFollow3D: '●',
+  Area3D: '◈',
   SoundEmitter: '♪',
   ReflectionProbe: '🔮',
   Water: '🌊',

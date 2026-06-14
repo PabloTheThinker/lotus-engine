@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.08 (wave 33).** v0.33–v2.08 shipped; **build clean**, **`npm run test` — 110 passed**.
+- **Last clean commit: v2.13 (wave 34).** v0.33–v2.13 shipped; **build clean**, **`npm run test` — 115 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -379,12 +379,22 @@
 | v2.07 | Godot groups (`groups[]`, `api.getActorsInGroup`), Project Settings autoload + main scene key |
 | v2.08 | `api.changeScene`, export `__LOTUS_MAIN__`, `docs/INDIE-GAME-ROADMAP.md` — 110 tests passed |
 
+## Shipped (v2.09–v2.13, Wave 34 — indie focus)
+
+| Ver | What |
+|---|---|
+| v2.09 | `@export_range` — clamped slider widgets in Details from script annotations |
+| v2.10 | `@export_enum` — dropdown widgets for enumerated script vars |
+| v2.11 | Area3D actor — `body_entered:` / `body_exited:` overlap signals (group filter optional) |
+| v2.12 | Prefab polish — override summary panel, Revert All, 📦 outliner badge on instance children |
+| v2.13 | Character starter template — `/starter thirdperson|firstperson|fly` — 115 tests passed |
+
 ## Next up (indie roadmap)
 
-1. **Scene instancing** — editable children + property override UX (prefab deltas)
-2. **@export range/enum** — slider/dropdown Details widgets from script annotations
-3. **Area3D** — physics overlap signals beyond pawn TriggerVolume
-4. **CharacterBody starter scenes** — FPS / third-person greybox templates
+1. **Editable children UX** — in-place prefab subtree editing + override diff gutter
+2. **AnimationPlayer / sequencer** — key any `@export` field on timeline
+3. **Resource (.tres) files** — shared JSON assets by UUID
+4. **Starter game templates** — platformer / top-down / FPS packs
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

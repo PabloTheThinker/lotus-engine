@@ -26,6 +26,7 @@ const TYPE_ICONS: Record<string, string> = {
   RayCast3D: '↯',
   Path3D: '〰',
   PathFollow3D: '●',
+  Area3D: '◈',
   SoundEmitter: '♪',
   ReflectionProbe: '🔮',
   Water: '🌊',
@@ -118,7 +119,9 @@ function OutlinerRow({
         ) : (
           <span className="outliner-fold-spacer" />
         )}
-        <span className="outliner-icon">{TYPE_ICONS[actor.type] ?? '◇'}</span>
+        <span className="outliner-icon">
+          {actor.prefabActorId ? '📦' : (TYPE_ICONS[actor.type] ?? '◇')}
+        </span>
         {renaming ? (
           <input
             autoFocus

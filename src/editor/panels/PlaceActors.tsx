@@ -19,6 +19,7 @@ const ITEMS: PlaceItem[] = [
   { label: 'RayCast3D', icon: '↯', category: 'Basic', payload: { kind: 'raycast' } },
   { label: 'Path3D', icon: '〰', category: 'Basic', payload: { kind: 'path3d' } },
   { label: 'Path Follow', icon: '●', category: 'Basic', payload: { kind: 'pathfollow' } },
+  { label: 'Area3D', icon: '◈', category: 'Basic', payload: { kind: 'area3d' } },
   // Lights
   { label: 'Directional Light', icon: '☀', category: 'Lights', payload: { kind: 'light', type: 'DirectionalLight' } },
   { label: 'Point Light', icon: '✦', category: 'Lights', payload: { kind: 'light', type: 'PointLight' } },

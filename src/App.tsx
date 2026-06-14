@@ -33,7 +33,16 @@ import { PreferencesModal } from './editor/Preferences'
 import { ProjectSettingsModal } from './editor/ProjectSettingsModal'
 import { loadProjectSettings, saveProjectSettings } from './editor/projectSettings'
 import { samplePathAt } from './engine/path3d'
-import { makeScriptApi } from './engine/scripting'
+import { clampExportRange, makeScriptApi, parseExports } from './engine/scripting'
+import {
+  getPrefabByName,
+  instantiatePrefab,
+  recordPrefabOverride,
+  revertAllPrefabOverrides,
+  savePrefab,
+  summarizePrefabOverrides,
+} from './editor/prefabs'
+import { spawnCharacterStarter } from './editor/starterTemplates'
 import { DEFAULT_RAY_CAST, DEFAULT_TIMER } from './engine/types'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import {
@@ -387,6 +396,22 @@ const lotusBridge = {
     },
     timerActive: (actorId: string) => world.isTimerActive(actorId),
     rayCastHitId: (rayActorId: string) => world.getRayCastHitId(rayActorId),
+    areaOverlaps: (areaId: string) => world.getArea3DOverlaps(areaId),
+    exports: {
+      parse: parseExports,
+      clampRange: clampExportRange,
+    },
+    prefab: {
+      summarizeOverrides: summarizePrefabOverrides,
+      revertAllOverrides: revertAllPrefabOverrides,
+      save: (rootId: string) => savePrefab(rootId),
+      instantiate: (name: string, position: [number, number, number] = [0, 0.5, 0]) => {
+        const prefab = getPrefabByName(name)
+        if (prefab) instantiatePrefab(prefab, position)
+      },
+      recordOverride: (actorId: string, fieldPath: string) => recordPrefabOverride(actorId, fieldPath),
+    },
+    spawnCharacterStarter,
   },
   renderer: {
     runQA: runWebGPUQAMatrix,

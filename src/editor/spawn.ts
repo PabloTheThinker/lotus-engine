@@ -10,6 +10,7 @@ import {
   DEFAULT_TIMER,
   DEFAULT_RAY_CAST,
   DEFAULT_PATH_FOLLOW,
+  DEFAULT_AREA3D,
 } from '../engine/types'
 import { DEFAULT_PATH3D } from '../engine/path3d'
 import { DEFAULT_LANDSCAPE } from '../engine/landscape'
@@ -42,6 +43,7 @@ export type AssetPayload =
   | { kind: 'raycast' }
   | { kind: 'path3d' }
   | { kind: 'pathfollow' }
+  | { kind: 'area3d' }
   | { kind: 'imported'; assetId: string; name: string }
   | { kind: 'plugin-node'; nodeType: string }
 
@@ -246,6 +248,14 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         type: 'PathFollow3D',
         pathFollow: { ...DEFAULT_PATH_FOLLOW },
         transform: { ...base.transform, position: [position[0], Math.max(position[1], 0.5), position[2]] },
+      }
+    case 'area3d':
+      return {
+        ...base,
+        name: uniqueName('Area3D'),
+        type: 'Area3D',
+        area3D: { ...DEFAULT_AREA3D },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]], scale: [4, 3, 4] },
       }
     case 'imported':
       return { ...base, name: uniqueName(payload.name), type: 'ImportedMesh', assetId: payload.assetId }

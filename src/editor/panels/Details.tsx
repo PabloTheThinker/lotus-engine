@@ -24,6 +24,7 @@ import type {
   PathFollowProps,
   PostProcessProps,
   RayCastProps,
+  Area3DProps,
   ReverbPreset,
   SoundEmitterProps,
   TimerProps,
@@ -35,7 +36,14 @@ import { AttenuationFields } from './AttenuationFields'
 import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
 import { patchMaterialOverrides, revertMaterialOverride } from '../materialCommands'
-import { getPrefabDefaultValue, isPrefabInstanceActor, runPrefabAwareCommand } from '../prefabs'
+import {
+  getPrefabDefaultValue,
+  getPrefabInstanceRoot,
+  isPrefabInstanceActor,
+  revertAllPrefabOverrides,
+  runPrefabAwareCommand,
+  summarizePrefabOverrides,
+} from '../prefabs'
 import { buildFoliageMesh } from '../../engine/factory'
 import { buildLandscapeMesh, syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
@@ -44,7 +52,7 @@ import { collectAnimParams } from '../../engine/animStateMachine'
 import { getChainBoneLabels, hasActorSkeleton } from '../../engine/ik'
 import { getActorActiveEffects, getActorAttributes, listAbilities, listAttributeSets } from '../../engine/gameplayAbilities'
 import { mpConnected, mpEnabled, mpIsHost, mpKnownPeerIds, mpLocalId, mpNotifyOwnership } from '../../engine/multiplayer'
-import { parseExports } from '../../engine/scripting'
+import { clampExportRange, parseExports } from '../../engine/scripting'
 import { savePrefab } from '../prefabs'
 import { useEditor } from '../store'
 import { WorldSettings } from './WorldSettings'
@@ -1325,6 +1333,76 @@ function PathFollowSection({ actor }: { actor: Actor }) {
   )
 }
 
+function Area3DSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.area3DProps) actor.area3DProps = { enabled: true, monitorGroups: [] }
+  const props = actor.area3DProps
+  const set = <K extends keyof Area3DProps>(key: K, value: Area3DProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Area3D ${String(key)}`,
+        () => (props[key] = value),
+        () => (props[key] = prev),
+      ),
+    )
+    touch()
+  }
+  const raw = props.monitorGroups.join(', ')
+  return (
+    <Section title="Area3D">
+      <Check label="Enabled" value={props.enabled} onToggle={(v) => set('enabled', v)} />
+      <label className="field">
+        <span>Monitor Groups</span>
+        <input
+          type="text"
+          placeholder="empty = all actors"
+          defaultValue={raw}
+          onBlur={(e) => {
+            const next = e.target.value
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+            if (next.join(',') === props.monitorGroups.join(',')) return
+            set('monitorGroups', next)
+          }}
+        />
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Emits <code>body_entered:{actor.name}</code> / <code>body_exited:{actor.name}</code> for overlapping actors.
+      </div>
+    </Section>
+  )
+}
+
+function PrefabOverridesSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.prefabSource) return null
+  const summary = summarizePrefabOverrides(actor.id)
+  if (summary.length === 0) {
+    return (
+      <Section title="Prefab Instance">
+        <div className="panel-empty">Source: {actor.prefabSource} — no property overrides.</div>
+      </Section>
+    )
+  }
+  return (
+    <Section title="Prefab Instance">
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Source: {actor.prefabSource} · {summary.length} actor(s) with overrides
+      </div>
+      {summary.map((s) => (
+        <div key={s.prefabActorId} className="panel-empty" style={{ padding: '2px 0', fontSize: 12 }}>
+          {s.actorName}: {s.keys.join(', ')}
+        </div>
+      ))}
+      <button type="button" onClick={() => { revertAllPrefabOverrides(actor.id); touch() }}>
+        Revert All Overrides
+      </button>
+    </Section>
+  )
+}
+
 function GroupsSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const raw = actor.groups.join(', ')
@@ -1517,9 +1595,9 @@ function ActorSection({ actor }: { actor: Actor }) {
           touch()
         }}
       />
-      {actor.prefabSource && (
+      {actor.prefabActorId && !actor.prefabSource && (
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Prefab instance: {actor.prefabSource}
+          Prefab child · root: {getPrefabInstanceRoot(actor.id)?.name ?? '—'}
         </div>
       )}
     </Section>
@@ -2523,6 +2601,35 @@ function ScriptVarsSection({ actor }: { actor: Actor }) {
           actor.scriptVars = { ...(actor.scriptVars ?? {}), [ev.name]: v }
           touch()
         }
+        if (ev.kind === 'range') {
+          const num = clampExportRange(ev, Number(current))
+          return (
+            <Num
+              key={ev.name}
+              label={ev.name}
+              value={num}
+              step={ev.step ?? 0.1}
+              min={ev.min}
+              max={ev.max}
+              onLive={(v) => setVar(clampExportRange(ev, v))}
+              onCommit={() => {}}
+            />
+          )
+        }
+        if (ev.kind === 'enum' && ev.options?.length) {
+          return (
+            <label className="field" key={ev.name}>
+              <span>{ev.name}</span>
+              <select value={String(current)} onChange={(e) => setVar(e.target.value)}>
+                {ev.options.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )
+        }
         if (typeof ev.value === 'boolean') {
           return <Check key={ev.name} label={ev.name} value={Boolean(current)} onToggle={setVar} />
         }
@@ -2548,7 +2655,9 @@ function ScriptVarsSection({ actor }: { actor: Actor }) {
           </label>
         )
       })}
-      <div className="panel-empty" style={{ padding: '2px 0' }}>From // @export lines — available as vars.name in the script.</div>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        From // @export, @export_range, @export_enum — available as vars.name in the script.
+      </div>
     </Section>
   )
 }
@@ -2689,6 +2798,8 @@ export function Details() {
         {actor.type === 'RayCast3D' && <RayCastSection actor={actor} />}
         {actor.type === 'Path3D' && <Path3DSection actor={actor} />}
         {actor.type === 'PathFollow3D' && <PathFollowSection actor={actor} />}
+        {actor.type === 'Area3D' && <Area3DSection actor={actor} />}
+        {actor.prefabSource && <PrefabOverridesSection actor={actor} />}
         {actor.type === 'SoundEmitter' && <SoundEmitterSection actor={actor} />}
         {actor.type === 'Label3D' && <Label3DSection actor={actor} />}
         {actor.type === 'Widget3D' && <Widget3DSection actor={actor} />}

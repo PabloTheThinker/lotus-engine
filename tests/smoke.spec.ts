@@ -1929,6 +1929,138 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 34 @export_range parse + clamp', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        exports: {
+          parse: (s: string) => { name: string; kind: string; min?: number; max?: number; value: unknown }[]
+          clampRange: (ev: { min?: number; max?: number }, n: number) => number
+        }
+      }
+    }
+    const script = `// @export_range speed 0 10 0.5 = 2\n`
+    const ev = v.indie.exports.parse(script)[0]
+    return {
+      kind: ev?.kind,
+      min: ev?.min,
+      max: ev?.max,
+      clamped: ev ? v.indie.exports.clampRange(ev, 99) : null,
+    }
+  })
+
+  expect(result.kind).toBe('range')
+  expect(result.min).toBe(0)
+  expect(result.max).toBe(10)
+  expect(result.clamped).toBe(10)
+})
+
+test('wave 34 @export_enum parse + options', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { exports: { parse: (s: string) => { name: string; kind: string; options?: string[]; value: unknown }[] } }
+    }
+    const script = `// @export_enum mode walk,run,fly = run\n`
+    const ev = v.indie.exports.parse(script)[0]
+    return { kind: ev?.kind, options: ev?.options, value: ev?.value }
+  })
+
+  expect(result.kind).toBe('enum')
+  expect(result.options).toEqual(['walk', 'run', 'fly'])
+  expect(result.value).toBe('run')
+})
+
+test('wave 34 Area3D body_entered overlap', async ({ page }) => {
+  await bootEditor(page)
+
+  const areaId = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'area3d' | 'empty' }, pos: [number, number, number]) => { id: string } | null }
+    }
+    const area = v.indie.spawn({ kind: 'area3d' }, [0, 0, 0])
+    const body = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (area) area.name = 'TestArea'
+    if (body) body.name = 'TestBody'
+    return area?.id ?? ''
+  })
+
+  const overlaps = await page.evaluate(async (id) => {
+    const v = window.lotus! as typeof window.lotus & { indie: { areaOverlaps: (id: string) => string[] } }
+    v.terminal.exec('/simulate')
+    await new Promise((r) => setTimeout(r, 150))
+    const ids = v.indie.areaOverlaps(id)
+    v.terminal.exec('/stop')
+    return ids.length
+  }, areaId)
+
+  expect(overlaps).toBeGreaterThan(0)
+})
+
+test('wave 34 prefab override summarize + revert all', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'mesh'; geometry: 'box' }, pos: [number, number, number]) => { id: string; name: string } | null
+        prefab: {
+          save: (id: string) => unknown
+          instantiate: (name: string, pos: [number, number, number]) => void
+          recordOverride: (actorId: string, field: string) => void
+          summarizeOverrides: (id: string) => { keys: string[] }[]
+          revertAllOverrides: (id: string) => void
+        }
+      }
+    }
+    const box = v.indie.spawn({ kind: 'mesh', geometry: 'box' }, [0, 0.5, 0])
+    if (!box) return { ok: false }
+    box.name = 'PrefabRoot'
+    v.indie.prefab.save(box.id)
+    v.indie.prefab.instantiate('PrefabRoot', [5, 0.5, 0])
+    const inst = [...v.world.actors.values()].find((a) => a.prefabSource === 'PrefabRoot')
+    if (!inst) return { ok: false }
+    inst.name = 'OverriddenName'
+    v.indie.prefab.recordOverride(inst.id, 'name')
+    const before = v.indie.prefab.summarizeOverrides(inst.id).length
+    v.indie.prefab.revertAllOverrides(inst.id)
+    const after = v.indie.prefab.summarizeOverrides(inst.id).length
+    return { ok: true, before, after, name: inst.name }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.before).toBeGreaterThan(0)
+  expect(result.after).toBe(0)
+})
+
+test('wave 34 character starter template', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnCharacterStarter: (mode: 'thirdperson') => void }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnCharacterStarter('thirdperson')
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'StarterFloor')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'StarterPlayerStart')
+    return {
+      added: v.world.actors.size > before,
+      floor: !!floor,
+      startPawn: start?.pawnMode,
+      rapier: v.world.environment.useRapierCharacter,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.floor).toBe(true)
+  expect(result.startPawn).toBe('thirdperson')
+  expect(result.rapier).toBe(true)
+})
+
 test('wave 33 Timer actor timeout signal', async ({ page }) => {
   await bootEditor(page)
 

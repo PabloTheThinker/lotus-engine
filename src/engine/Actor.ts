@@ -128,6 +128,8 @@ export class Actor {
   path3DProps?: import('./types').Path3DProps
   /** PathFollow3D — slides along Path3D */
   pathFollowProps?: import('./types').PathFollowProps
+  /** Area3D — overlap sensor volume */
+  area3DProps?: import('./types').Area3DProps
   /** SoundEmitter — procedural/imported sound playback */
   soundEmitterProps?: import('./types').SoundEmitterProps
   /** Godot MultiplayerSynchronizer-lite — replicated property checklist */
@@ -370,6 +372,9 @@ export class Actor {
         ? { closed: this.path3DProps.closed, waypoints: this.path3DProps.waypoints.map((w) => [...w] as [number, number, number]) }
         : undefined,
       pathFollow: this.pathFollowProps ? { ...this.pathFollowProps } : undefined,
+      area3D: this.area3DProps
+        ? { enabled: this.area3DProps.enabled, monitorGroups: [...this.area3DProps.monitorGroups] }
+        : undefined,
       soundEmitter: this.soundEmitterProps ? { ...this.soundEmitterProps } : undefined,
       label3D: this.label3DProps ? { ...this.label3DProps } : undefined,
       widget3D: this.widget3DProps ? { ...this.widget3DProps } : undefined,

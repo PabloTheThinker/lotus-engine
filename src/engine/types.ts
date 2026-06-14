@@ -28,6 +28,7 @@ export type ActorType =
   | 'RayCast3D'
   | 'Path3D'
   | 'PathFollow3D'
+  | 'Area3D'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -60,6 +61,7 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   RayCast3D: 'movable',
   Path3D: 'movable',
   PathFollow3D: 'movable',
+  Area3D: 'movable',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -278,6 +280,8 @@ export interface SerializedActor {
   path3D?: Path3DProps
   /** PathFollow3D only — slides along a Path3D actor */
   pathFollow?: PathFollowProps
+  /** Area3D only — overlap volume for any actors (Godot Area3D) */
+  area3D?: Area3DProps
   /** MultiplayerSynchronizer-lite: property names to replicate (position, rotation, visible, script var names) */
   syncProperties?: string[]
   replicateGAS?: boolean
@@ -463,6 +467,18 @@ export const DEFAULT_PATH_FOLLOW: PathFollowProps = {
   loop: false,
   autoplay: false,
   rotateToPath: true,
+}
+
+/** Area3D — non-solid overlap volume (Godot body_entered / body_exited). */
+export interface Area3DProps {
+  enabled: boolean
+  /** Only actors in these groups (empty = monitor all) */
+  monitorGroups: string[]
+}
+
+export const DEFAULT_AREA3D: Area3DProps = {
+  enabled: true,
+  monitorGroups: [],
 }
 
 /** Distance attenuation curve — normalized distance 0 (min) → 1 (max). */

@@ -398,6 +398,42 @@ function expandPrefabRefs(actors: SerializedActor[], parentId: string | null, po
   return out
 }
 
+export interface PrefabOverrideSummary {
+  prefabActorId: string
+  actorName: string
+  keys: string[]
+}
+
+/** List stored override keys per actor in a prefab instance subtree. */
+export function summarizePrefabOverrides(instanceRootId: string): PrefabOverrideSummary[] {
+  const root = world.actors.get(instanceRootId)
+  if (!root?.prefabOverrides) return []
+  return Object.entries(root.prefabOverrides).map(([prefabActorId, override]) => {
+    const actor = collectSubtree(root.id).find((a) => a.prefabActorId === prefabActorId)
+    return {
+      prefabActorId,
+      actorName: actor?.name ?? prefabActorId,
+      keys: Object.keys(override),
+    }
+  })
+}
+
+/** Revert every override on a prefab instance root back to source prefab values. */
+export function revertAllPrefabOverrides(instanceRootId: string) {
+  const root = world.actors.get(instanceRootId)
+  if (!root?.prefabSource) return
+  const prefab = getPrefabByName(root.prefabSource)
+  if (!prefab) return
+  for (const actor of collectSubtree(root.id)) {
+    if (!actor.prefabActorId) continue
+    const base = getPrefabSourceActor(prefab, actor.prefabActorId)
+    if (base) applyFieldsToActor(actor, base)
+  }
+  root.prefabOverrides = {}
+  useEditor.getState().setStatus(`Reverted all overrides on ${root.name}`)
+  useEditor.getState().touch()
+}
+
 /** Instance a prefab at a position — ids remapped, hierarchy preserved. */
 export function instantiatePrefab(prefab: Prefab, position: [number, number, number]) {
   const idMap = new Map<string, string>()
