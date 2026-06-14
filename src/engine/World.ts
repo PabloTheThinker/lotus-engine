@@ -24,7 +24,7 @@ import { syncPropsFromGraph } from './pcgGraph'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
 import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
 import { resetBTs, tickBTs } from './behaviorTree'
-import { resetNav } from './nav'
+import { resetCrowd, tickCrowd } from './navCrowd'
 import { playMetaSound, registerSound, setReverbZone, setSoundAttenuationDefaults, stopAllSounds, type ReverbPreset } from './audio'
 import {
   createTriggerVolumeActor,
@@ -97,6 +97,9 @@ export class World {
 
   /** linked levels for multi-level export + api.loadLevel during PIE */
   levelLinks: LevelLink[] = []
+
+  /** Rapier impulse joints (Wave 11) */
+  physicsJoints: import('./types').PhysicsJointDef[] = []
 
   /** per-cell actor lists for lazy streaming (rebuilt on serialize when exportByCell) */
   cellManifest: Record<string, SerializedActor[]> = {}
@@ -212,7 +215,7 @@ export class World {
     resetGameplay()
     resetAbilities()
     resetBTs()
-    resetNav()
+    resetCrowd()
     this.lastCameraCut = null
     this.lastSeqTime = 0
     setDataStore(this.dataTables)
@@ -243,7 +246,7 @@ export class World {
         })
       }
     }
-    this.physics.start(this.actors.values())
+    this.physics.start(this.actors.values(), this.physicsJoints)
     // authored HUD widgets (UMG designer)
     syncAuthoredHud(this.hudWidgets, (signal) => this.playApi?.emit(signal))
   }
@@ -307,7 +310,7 @@ export class World {
     resetGameplay()
     resetAbilities()
     resetBTs()
-    resetNav()
+    resetCrowd()
     this.triggerState.clear()
     hud.clear()
 
@@ -436,6 +439,7 @@ export class World {
       for (const a of this.actors.values()) a.physicsTick(physDt)
       this.physicsAccumulator -= physDt
     }
+    tickCrowd(dt)
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
       const st = this.playClock % this.sequence.duration
@@ -583,6 +587,7 @@ export class World {
       cameraBookmarks: this.cameraBookmarks.some((b) => b !== null)
         ? this.cameraBookmarks.map((b) => (b ? { position: [...b.position], quaternion: [...b.quaternion] } : null))
         : undefined,
+      physicsJoints: this.physicsJoints.length ? JSON.parse(JSON.stringify(this.physicsJoints)) : undefined,
     }
   }
 
@@ -610,6 +615,7 @@ export class World {
     this.hudWidgets = level.hud ? JSON.parse(JSON.stringify(level.hud)) : []
     this.hdri = level.hdri ?? null
     this.levelLinks = level.levelLinks ? JSON.parse(JSON.stringify(level.levelLinks)) : []
+    this.physicsJoints = level.physicsJoints ? JSON.parse(JSON.stringify(level.physicsJoints)) : []
     if (level.cameraBookmarks?.length) {
       this.cameraBookmarks = level.cameraBookmarks.map((b) =>
         b ? { position: [...b.position], quaternion: [...b.quaternion] } : null,

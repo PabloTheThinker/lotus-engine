@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { Actor, nextActorId } from './Actor'
 import type { LandscapeProps, SculptTool } from './types'
+import { createLandscapeSplatMaterial, refreshLandscapeSplatMaterial } from './landscapeSplat'
 
 /**
  * Landscape — UE heightmap terrain. A subdivided plane whose vertex heights
@@ -43,7 +44,9 @@ export function buildLandscapeMesh(actor: Actor) {
     for (let i = 0; i < vcount; i++) props.weights[i * 4] = 1
   }
   geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(vcount * 3), 3))
-  const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92, metalness: 0, vertexColors: true })
+  const mat = props.useSplatMap
+    ? createLandscapeSplatMaterial(props)
+    : new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92, metalness: 0, vertexColors: true })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.rotation.x = -Math.PI / 2
   mesh.receiveShadow = true
@@ -59,7 +62,12 @@ export function buildLandscapeMesh(actor: Actor) {
 /** blend layer colors by per-vertex weights into the color attribute */
 export function syncLandscapeColors(actor: Actor) {
   const props = actor.landscapeProps!
-  const colorAttr = actor.mesh!.geometry.attributes.color
+  const mesh = actor.mesh!
+  if (props.useSplatMap && mesh.material instanceof THREE.ShaderMaterial) {
+    refreshLandscapeSplatMaterial(mesh.material, props)
+    return
+  }
+  const colorAttr = mesh.geometry.attributes.color
   if (!colorAttr || !props.weights || !props.layerColors) return
   const cols = props.layerColors.map((c) => new THREE.Color(c))
   for (let i = 0; i < colorAttr.count; i++) {

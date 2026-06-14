@@ -277,6 +277,22 @@ export interface LandscapeProps {
   layerColors?: [string, string, string, string]
   /** per-vertex layer weights, 4 per vertex */
   weights?: number[]
+  /** Wave 11 — splat texture paint instead of vertex colors */
+  useSplatMap?: boolean
+  splatResolution?: number
+}
+
+/** Rapier impulse joint (Wave 11 physics joints editor). */
+export type PhysicsJointType = 'fixed' | 'revolute' | 'prismatic' | 'spherical'
+
+export interface PhysicsJointDef {
+  id: string
+  type: PhysicsJointType
+  bodyA: string
+  bodyB: string
+  anchorA: [number, number, number]
+  anchorB: [number, number, number]
+  axis?: [number, number, number]
 }
 
 export type SculptTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'paint'
@@ -431,8 +447,14 @@ export interface EnvironmentSettings {
   postDof?: boolean
   /** Temporal AA — WebGPU tier only */
   postTaa?: boolean
+  /** Screen-space reflections (Wave 11, honest Lumen skip) */
+  postSsr?: boolean
+  /** LightProbeGrid interior GI approx (Wave 11) */
+  lightProbeGrid?: boolean
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
+  /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */
+  useRaycastVehicle?: boolean
   /** Merge static meshes at export via BatchedMesh payloads */
   exportBatchStatic?: boolean
 }
@@ -476,7 +498,10 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   postSsao: false,
   postDof: false,
   postTaa: false,
+  postSsr: false,
+  lightProbeGrid: false,
   useRapierCharacter: true,
+  useRaycastVehicle: false,
   exportBatchStatic: false,
 }
 
@@ -567,6 +592,8 @@ export interface SerializedLevel {
   streaming?: StreamingSettings
   /** per-level editor camera bookmarks (slots 0–9) */
   cameraBookmarks?: (CameraBookmark | null)[]
+  /** Rapier impulse joints (Wave 11) */
+  physicsJoints?: PhysicsJointDef[]
 }
 
 /** CSS properties keyable on authored HUD widgets (sequencer tracks). */

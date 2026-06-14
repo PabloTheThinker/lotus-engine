@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { Actor } from './Actor'
 import { clearMaterialShader, installMaterialShader, updateMaterialShaderTime } from './materialShader'
+import { compileMaterialGraphTSL, isTSLPreviewAvailable } from './materialGraphTSL'
 
 /**
  * Material graph — UE Material Editor analog (v1 CPU / v2 GPU):
@@ -336,7 +337,24 @@ export function applyMaterialGraphToMaterial(
   graph: MaterialGraph,
   t: number,
   mode?: MaterialGraphMode,
+  materialBackend: 'glsl' | 'tsl' = 'glsl',
 ) {
+  if (materialBackend === 'tsl' && isTSLPreviewAvailable()) {
+    const tslMat = compileMaterialGraphTSL(graph, t)
+    if (tslMat) {
+      const src = tslMat as THREE.MeshPhysicalMaterial
+      mat.color.copy(src.color)
+      mat.emissive.copy(src.emissive)
+      mat.emissiveIntensity = src.emissiveIntensity
+      mat.roughness = src.roughness
+      mat.metalness = src.metalness
+      mat.opacity = src.opacity
+      mat.transparent = src.transparent
+      mat.userData.lotusMaterialBackend = 'tsl'
+      tslMat.dispose()
+      return
+    }
+  }
   const tagged = mat as THREE.MeshStandardMaterial & { [MAT_APPLY_MODE]?: MaterialGraphMode }
   const m = getMaterialGraphMode(graph, mode)
   if (m === 'gpu') {

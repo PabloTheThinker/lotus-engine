@@ -78,7 +78,7 @@ function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: Material
       const t = performance.now() / 1000
       mesh.rotation.y = t * 0.35
       mesh.rotation.x = 0.15
-      applyMaterialGraphToMaterial(mat, graph, t, mode)
+      applyMaterialGraphToMaterial(mat, graph, t, mode, world.environment.materialBackend ?? 'glsl')
       renderer.render(scene, camera)
       raf = requestAnimationFrame(loop)
     }

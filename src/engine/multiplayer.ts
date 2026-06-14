@@ -1,6 +1,16 @@
 import * as THREE from 'three'
 import type { World } from './World'
 import type { SerializedActor } from './types'
+import {
+  DEFAULT_MP_NET,
+  mpActorInInterest,
+  mpExpandDelta,
+  mpNetReset,
+  mpPackDelta,
+  mpRecordTransformHistory,
+  mpSampleHistory,
+  type MPNetSettings,
+} from './mpNet'
 
 /**
  * Multiplayer — Godot MultiplayerSynchronizer / MultiplayerSpawner-lite over a
@@ -51,16 +61,48 @@ export interface MPSettings {
   url: string
   room: string
   enabled: boolean
+  /** Headless authoritative relay client (no local pawn uplink) */
+  dedicatedServer?: boolean
+  lagCompensationMs?: number
+  interestRadius?: number
+  deltaCompression?: boolean
 }
 
 const KEY = 'lotus-engine.multiplayer'
 export function loadMPSettings(): MPSettings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}')
-    return { url: raw.url ?? 'ws://localhost:24690', room: raw.room ?? 'default', enabled: !!raw.enabled }
+    return {
+      url: raw.url ?? 'ws://localhost:24690',
+      room: raw.room ?? 'default',
+      enabled: !!raw.enabled,
+      dedicatedServer: !!raw.dedicatedServer,
+      lagCompensationMs: raw.lagCompensationMs ?? DEFAULT_MP_NET.lagCompensationMs,
+      interestRadius: raw.interestRadius ?? DEFAULT_MP_NET.interestRadius,
+      deltaCompression: raw.deltaCompression !== false,
+    }
   } catch {
-    return { url: 'ws://localhost:24690', room: 'default', enabled: false }
+    return {
+      url: 'ws://localhost:24690',
+      room: 'default',
+      enabled: false,
+      dedicatedServer: false,
+      ...DEFAULT_MP_NET,
+    }
   }
+}
+
+export function mpNetSettings(): MPNetSettings {
+  const s = loadMPSettings()
+  return {
+    lagCompensationMs: s.lagCompensationMs ?? DEFAULT_MP_NET.lagCompensationMs,
+    interestRadius: s.interestRadius ?? DEFAULT_MP_NET.interestRadius,
+    deltaCompression: s.deltaCompression !== false,
+  }
+}
+
+export function mpIsDedicatedServer(): boolean {
+  return loadMPSettings().dedicatedServer === true
 }
 export function saveMPSettings(s: MPSettings) {
   localStorage.setItem(KEY, JSON.stringify(s))
@@ -273,13 +315,14 @@ export function mpNotifyDespawn(aid: string) {
 
 /** Optional client input uplink (host may consume later). */
 export function mpSendInput(pawnPos: THREE.Vector3 | null, pawnYaw: number, actions?: string[]) {
-  if (!mpConnected() || mpIsHost()) return
+  if (!mpConnected() || mpIsHost() || mpIsDedicatedServer()) return
   send({
     t: 'input',
     id: localId,
     p: pawnPos ? [pawnPos.x, pawnPos.y, pawnPos.z] : undefined,
     ry: pawnYaw,
     actions,
+    ts: performance.now(),
   })
 }
 
@@ -291,6 +334,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   knownPeerIds.clear()
   remoteSync.clear()
   netSpawned.clear()
+  mpNetReset()
   try {
     ws = new WebSocket(cfg.url)
   } catch (err) {
@@ -299,7 +343,8 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   }
   ws.onopen = () => {
     send({ t: 'join', room: cfg.room, id: localId })
-    status(`MP connected: ${cfg.room} as ${localId}${mpIsHost() ? ' (host)' : ''}`)
+    const mode = cfg.dedicatedServer ? ' dedicated' : ''
+    status(`MP connected: ${cfg.room} as ${localId}${mpIsHost() ? ' (host)' : ''}${mode}`)
   }
   ws.onerror = () => status('MP: relay unreachable')
   ws.onmessage = (ev) => {
@@ -314,6 +359,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       actor?: SerializedActor
       actions?: string[]
       ownerId?: string
+      ts?: number
     }
     try {
       msg = JSON.parse(String(ev.data))
@@ -349,7 +395,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       return
     }
     if (msg.t === 'sync' && msg.aid && msg.props && !mpIsHost() && isFromHost(msg.id)) {
-      applySyncProps(msg.aid, msg.props)
+      applySyncProps(msg.aid, mpExpandDelta(msg.props))
       return
     }
     if (msg.t === 'spawn' && msg.actor) {
@@ -386,6 +432,7 @@ export function mpDisconnect() {
   peers = new Map()
   knownPeerIds.clear()
   remoteSync.clear()
+  mpNetReset()
   if (worldRef) {
     for (const id of [...netSpawned]) {
       if (worldRef.actors.has(id)) worldRef.removeActor(id)
@@ -395,8 +442,27 @@ export function mpDisconnect() {
   worldRef = null
 }
 
+function peerInterestPositions(pawnPos: THREE.Vector3 | null): THREE.Vector3[] {
+  const out: THREE.Vector3[] = []
+  if (pawnPos && !mpIsDedicatedServer()) out.push(pawnPos)
+  for (const p of peers.values()) out.push(p.target)
+  return out
+}
+
+/** Lag-compensated actor transform sample for host hit tests. */
+export function mpLagCompensatedTransform(
+  aid: string,
+  clientTs: number,
+): { position: THREE.Vector3; rotation: THREE.Euler } | null {
+  if (!mpIsHost()) return null
+  const net = mpNetSettings()
+  return mpSampleHistory(aid, clientTs - net.lagCompensationMs)
+}
+
 export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: number) {
   if (!ws || ws.readyState !== 1 || !worldRef) return
+  const net = mpNetSettings()
+  const interestPeers = peerInterestPositions(pawnPos)
 
   // smooth peer ghosts toward their network targets
   for (const p of peers.values()) {
@@ -430,10 +496,10 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
   if (sendAcc < 0.1) return
   sendAcc = 0
 
-  // pawn co-presence @ 10 Hz
-  if (pawnPos) {
+  // pawn co-presence @ 10 Hz (dedicated server skips local pawn uplink)
+  if (pawnPos && !mpIsDedicatedServer()) {
     if (mpIsHost()) {
-      send({ t: 'pose', id: localId, p: [pawnPos.x, pawnPos.y, pawnPos.z], ry: pawnYaw })
+      send({ t: 'pose', id: localId, p: [pawnPos.x, pawnPos.y, pawnPos.z], ry: pawnYaw, ts: performance.now() })
     } else {
       mpSendInput(pawnPos, pawnYaw)
     }
@@ -441,11 +507,15 @@ export function mpTick(dt: number, pawnPos: THREE.Vector3 | null, pawnYaw: numbe
 
   // host broadcasts property deltas for actors with syncProperties
   if (!mpIsHost()) return
+  const now = performance.now()
   for (const actor of worldRef.actors.values()) {
     const keys = actor.syncProperties
     if (!keys?.length) continue
+    if (!mpActorInInterest(actor.root.position, interestPeers, net.interestRadius)) continue
+    mpRecordTransformHistory(actor.id, actor.root.position, actor.root.rotation, now)
     const props = packSyncProps(actor, keys)
-    if (Object.keys(props).length) send({ t: 'sync', id: localId, aid: actor.id, props })
+    const delta = mpPackDelta(actor.id, props, net.deltaCompression)
+    if (delta && Object.keys(delta).length) send({ t: 'sync', id: localId, aid: actor.id, props: delta, ts: now })
   }
 }
 

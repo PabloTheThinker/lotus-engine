@@ -5,6 +5,7 @@ import { activateAbility, applyEffect, getAttribute, removeEffect, setAttribute 
 import { cameraShake, canSeePoint, hud, queryBestPoint, raycastActors, setTimer, setViewCamera } from './gameplay'
 import { runBT, type BTNode } from './behaviorTree'
 import { findPath } from './nav'
+import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, initCrowd } from './navCrowd'
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
@@ -61,6 +62,11 @@ export interface ScriptApi {
   canSeePlayer: (actor: Actor, fovDeg?: number, maxDist?: number) => boolean
   /** Recast navmesh waypoints when baked; grid A* fallback otherwise */
   findPath: (from: [number, number, number], to: [number, number, number]) => [number, number, number][] | null
+  /** DetourCrowd agent with local avoidance (requires baked navmesh) */
+  crowdSpawn: (id: string, position: [number, number, number], target?: [number, number, number]) => boolean
+  crowdSetTarget: (id: string, target: [number, number, number]) => boolean
+  crowdGetPosition: (id: string) => [number, number, number] | null
+  crowdDespawn: (id: string) => void
   /** data assets (UE DataTable analog) */
   getData: (name: string) => unknown
   /** crossfade an actor to a named animation clip */
@@ -199,6 +205,13 @@ export function makeScriptApi(
     runBT: (actor, tree) => runBT(actor, tree as BTNode, blackboardFor(actor)),
     blackboard: (actor) => blackboardFor(actor),
     findPath: (from, to) => findPath(actors, from, to),
+    crowdSpawn: (id, position, target) => {
+      initCrowd()
+      return crowdAddAgent(id, position, target)
+    },
+    crowdSetTarget: (id, target) => crowdSetTarget(id, target),
+    crowdGetPosition: (id) => crowdGetPosition(id),
+    crowdDespawn: (id) => crowdRemoveAgent(id),
     queryBestPoint: (opts) => queryBestPoint(pawnPosition, opts),
     canSeePlayer: (actor, fovDeg, maxDist) => {
       const p = pawnPosition()

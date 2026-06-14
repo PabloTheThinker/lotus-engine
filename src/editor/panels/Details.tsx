@@ -18,7 +18,7 @@ import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runComm
 import { patchMaterialOverrides, revertMaterialOverride } from '../materialCommands'
 import { getPrefabDefaultValue, isPrefabInstanceActor, runPrefabAwareCommand } from '../prefabs'
 import { buildFoliageMesh } from '../../engine/factory'
-import { syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
+import { buildLandscapeMesh, syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
 import { collectAnimParams } from '../../engine/animStateMachine'
@@ -2130,6 +2130,18 @@ function LandscapeSection({ actor }: { actor: Actor }) {
   const props = actor.landscapeProps!
   return (
     <Section title="Landscape">
+      <label className="field check">
+        <span>Splat texture paint (Wave 11)</span>
+        <input
+          type="checkbox"
+          checked={!!props.useSplatMap}
+          onChange={(e) => {
+            props.useSplatMap = e.target.checked
+            buildLandscapeMesh(actor)
+            touch()
+          }}
+        />
+      </label>
       <label className="field check">
         <span>Sculpt Mode</span>
         <input type="checkbox" checked={sculptActive} onChange={(e) => setSculptActive(e.target.checked)} />

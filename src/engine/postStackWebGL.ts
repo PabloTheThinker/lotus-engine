@@ -6,6 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
+import { SSRPass } from 'three/addons/postprocessing/SSRPass.js'
 import type { PostFxSettings } from './renderBackend'
 
 export interface WebGLPostStack {
@@ -13,6 +14,7 @@ export interface WebGLPostStack {
   renderPass: RenderPass
   bloomPass: UnrealBloomPass
   ssaoPass: SSAOPass | null
+  ssrPass: SSRPass | null
   fxaaPass: ShaderPass | null
   setSize: (w: number, h: number) => void
   applySettings: (post: {
@@ -50,6 +52,21 @@ export function createWebGLPostStack(
     composer.addPass(ssaoPass)
   }
 
+  let ssrPass: SSRPass | null = null
+  if (fx.ssr) {
+    ssrPass = new SSRPass({
+      renderer,
+      scene,
+      camera,
+      width,
+      height,
+      selects: null,
+      isBouncing: false,
+      groundReflector: null,
+    })
+    composer.addPass(ssrPass)
+  }
+
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.6, 0.9)
   composer.addPass(bloomPass)
 
@@ -66,11 +83,13 @@ export function createWebGLPostStack(
     renderPass,
     bloomPass,
     ssaoPass,
+    ssrPass,
     fxaaPass,
     setSize(w, h) {
       composer.setSize(w, h)
       bloomPass.resolution.set(w, h)
       if (ssaoPass) ssaoPass.setSize(w, h)
+      if (ssrPass) ssrPass.setSize(w, h)
       if (fxaaPass) {
         const pr = renderer.getPixelRatio()
         fxaaPass.material.uniforms.resolution.value.x = 1 / (w * pr)

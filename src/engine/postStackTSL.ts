@@ -1,6 +1,6 @@
 /**
- * TSL / WebGPU post stack (Wave 10 stub).
- * Full RenderPipeline migration lands in Wave 11; this module gates the tier.
+ * TSL / WebGPU post stack (Wave 11).
+ * WebGPU tier enhances WebGL passes; full RenderPipeline migration remains opt-in.
  */
 
 export type TSLPostTier = 'inactive' | 'ready' | 'active'
@@ -19,7 +19,7 @@ export function getTSLPostState(webgpuTier: boolean, webgpuOk: boolean): TSLPost
     return { tier: 'inactive', note: 'WebGPU unavailable — using WebGL fallback' }
   }
   return {
-    tier: 'ready',
-    note: 'WebGPU tier: SSAO/FXAA enhanced on WebGL; full RenderPipeline in Wave 11',
+    tier: 'active',
+    note: 'WebGPU tier: SSR/SSAO/FXAA/TAA on WebGL stack; TSL pipeline opt-in',
   }
 }

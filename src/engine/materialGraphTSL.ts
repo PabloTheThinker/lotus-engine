@@ -17,6 +17,54 @@ export function isTSLPreviewAvailable(): boolean {
 }
 
 /** Apply material instance overrides as TSL uniform targets (Wave 10.7 stub). */
+/** Serialize TSL material graph preview state for export / roundtrip. */
+export function serializeMaterialGraphTSL(graph: MaterialGraph, t: number): object {
+  const out = evaluateMaterialGraph(graph, t)
+  return {
+    backend: 'tsl',
+    version: 1,
+    preview: {
+      baseColor: out.baseColor,
+      emissive: out.emissive,
+      emissiveInt: out.emissiveInt,
+      roughness: out.roughness,
+      metalness: out.metalness,
+      opacity: out.opacity,
+    },
+    nodeCount: graph.nodes.length,
+    edgeCount: graph.edges.length,
+  }
+}
+
+/** Restore TSL preview from serialized blob (preview channels only). */
+export function deserializeMaterialGraphTSL(
+  blob: { preview?: Record<string, MatValue> },
+  graph: MaterialGraph,
+  t: number,
+): THREE.Material | null {
+  const mat = compileMaterialGraphTSL(graph, t)
+  if (!mat || !blob.preview) return mat
+  const std = mat as THREE.MeshPhysicalMaterial
+  const p = blob.preview
+  if (p.baseColor !== undefined) {
+    const [cr, cg, cb] = toVec(p.baseColor)
+    std.color.setRGB(cr, cg, cb)
+  }
+  if (p.emissive !== undefined) {
+    const [er, eg, eb] = toVec(p.emissive)
+    std.emissive.setRGB(er, eg, eb)
+  }
+  if (p.emissiveInt !== undefined) std.emissiveIntensity = Math.max(0, toNum(p.emissiveInt))
+  if (p.roughness !== undefined) std.roughness = Math.max(0, Math.min(1, toNum(p.roughness)))
+  if (p.metalness !== undefined) std.metalness = Math.max(0, Math.min(1, toNum(p.metalness)))
+  if (p.opacity !== undefined) {
+    const op = Math.max(0, Math.min(1, toNum(p.opacity)))
+    std.opacity = op
+    std.transparent = op < 0.999
+  }
+  return mat
+}
+
 export function applyMaterialInstanceTSL(
   mat: THREE.MeshPhysicalMaterial,
   overrides: { color?: string; roughness?: number; metalness?: number; emissive?: string },

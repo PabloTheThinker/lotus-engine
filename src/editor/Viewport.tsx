@@ -11,6 +11,7 @@ import {
   isWebGPUAvailable,
 } from '../engine/renderBackend'
 import { getTSLPostState } from '../engine/postStackTSL'
+import { ensureLightProbeGrid } from '../engine/ssrProbeGI'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
 import { world } from '../engine/World'
@@ -437,6 +438,7 @@ export function Viewport() {
         bloomRadius: env.bloomRadius,
         exposure: env.exposure ?? 0.75,
       })
+      ensureLightProbeGrid(world.scene, env)
     }
 
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
@@ -1381,6 +1383,7 @@ export function Viewport() {
         mpConnect(world, (m) => useEditor.getState().setStatus(m))
         if (!s.simulate) {
           pawn.useRapierCharacter = world.environment.useRapierCharacter !== false
+          pawn.useRaycastVehicle = world.environment.useRaycastVehicle === true
           pawn.possess(world.playerStart(), s.pendingSpawn ?? undefined)
           s.setPendingSpawn(null)
           s.select(null)
@@ -1849,7 +1852,7 @@ export function Viewport() {
         const fps = Math.round(frames / fpsTimer)
         const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
         const tsl = getTSLPostState(backend === 'webgpu', webgpuOk)
-        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris · ${backend.toUpperCase()}${tsl.tier === 'ready' ? '+' : ''}`
+        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris · ${backend.toUpperCase()}${tsl.tier === 'active' ? '+' : ''}`
         frames = 0
         fpsTimer = 0
       }

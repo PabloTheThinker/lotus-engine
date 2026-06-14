@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import type { Actor } from '../engine/Actor'
 import type { PawnMode } from '../engine/types'
 import { isCharacterControllerReady, moveAndSlide } from '../engine/characterController'
-import { physicsReady } from '../engine/physics'
+import { getRapier, physicsReady } from '../engine/physics'
+import { world } from '../engine/World'
+import { ensurePlayVehicle, isRaycastVehicleReady, updateRaycastVehicle } from '../engine/physicsVehicle'
 
 /**
  * PlayController — the pawn possessed during Play-In-Editor.
@@ -36,6 +38,7 @@ export class PlayController {
   private grounded = false
   /** When true, use Rapier move_and_slide instead of raycast character (World Settings). */
   useRapierCharacter = true
+  useRaycastVehicle = false
   private spawnPoint = new THREE.Vector3()
   private readonly eyeHeight = 1.65
   private readonly boomLength = 4.5
@@ -233,6 +236,26 @@ export class PlayController {
     if (this.keys.has('KeyD')) move.x += 1
 
     if (this.mode === 'vehicle') {
+      if (this.useRaycastVehicle && physicsReady()) {
+        const rapier = getRapier()
+        const rapierWorld = world.physics.getRapierWorld()
+        if (rapier && rapierWorld) ensurePlayVehicle(rapier, rapierWorld, this.feet)
+      }
+      if (this.useRaycastVehicle && isRaycastVehicleReady()) {
+        const throttle = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 0.6 : 0)
+        const steer = (this.keys.has('KeyA') ? 1 : 0) - (this.keys.has('KeyD') ? 1 : 0)
+        const brake = this.keys.has('Space') ? 1 : 0
+        const res = updateRaycastVehicle(dt, throttle, steer, brake)
+        if (res) {
+          this.feet.copy(res.position)
+          this.carHeading = new THREE.Euler().setFromQuaternion(res.quaternion).y
+          this.carSpeed = res.speed
+          this.body.position.copy(this.feet)
+          this.body.rotation.y = this.carHeading
+          this.syncCamera()
+          return
+        }
+      }
       // arcade car: throttle/brake + speed-scaled steering, ground-following
       const accel = 14
       const maxSpeed = this.keys.has('ShiftLeft') ? 28 : 16

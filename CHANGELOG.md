@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 11: v0.85–v0.90
+
+### Added
+- **v0.85** SSR + LightProbeGrid — `SSRPass` opt-in, `LightProbeGrid` interior GI approx (`ssrProbeGI.ts`)
+- **v0.86** MP dedicated server mode + lag compensation history (`mpNet.ts`, `mpLagCompensatedTransform`)
+- **v0.87** MP delta compression + interest-radius culling for sync @ 10 Hz
+- **v0.88** Rapier impulse joints + raycast vehicle controller (`physicsJoints.ts`, `physicsVehicle.ts`)
+- **v0.89** TSL material editor path — serialize/deserialize preview, Material Editor uses `materialBackend: tsl`
+- **v0.90** DetourCrowd avoidance (`navCrowd.ts`, `api.crowdSpawn`) + landscape splat texture paint (`landscapeSplat.ts`)
+
+### Changed
+- Baked navmesh persists into PIE (crowd + `findPath` during play)
+- WebGPU tier badge shows `+` when TSL post tier is active
+- `window.lotus` bridge: `crowd`, `mpNet`, `materialTSL`, `bakeGIProbes`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 20 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 10: v0.79–v0.84
 
 ### Added

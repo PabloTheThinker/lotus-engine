@@ -40,6 +40,11 @@ import {
   isCharacterControllerReady,
   moveAndSlide as characterMoveAndSlide,
 } from './engine/characterController'
+import { crowdAddAgent, crowdAgentCount, crowdGetPosition, initCrowd } from './engine/navCrowd'
+import { mpIsDedicatedServer, mpLagCompensatedTransform, mpNetSettings } from './engine/multiplayer'
+import { serializeMaterialGraphTSL } from './engine/materialGraphTSL'
+import { emptyMaterialGraph } from './engine/materialGraph'
+import { bakeLightProbeGrid } from './engine/ssrProbeGI'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 const lotusBridge = {
@@ -112,6 +117,28 @@ const lotusBridge = {
     peerCount: () => mpKnownPeerIds().length,
   },
   /** Rapier kinematic character — E2E + devtools (Wave 10) */
+  crowd: {
+    init: initCrowd,
+    addAgent: (id: string, pos: [number, number, number], target?: [number, number, number]) =>
+      crowdAddAgent(id, pos, target),
+    getPosition: (id: string) => crowdGetPosition(id),
+    count: crowdAgentCount,
+  },
+  mpNet: {
+    settings: mpNetSettings,
+    isDedicatedServer: mpIsDedicatedServer,
+    lagCompensatedTransform: mpLagCompensatedTransform,
+  },
+  materialTSL: {
+    serialize: (graph = emptyMaterialGraph()) => serializeMaterialGraphTSL(graph, 0),
+  },
+  bakeGIProbes: async () => {
+    const gfx = (window as unknown as { lotusGfx?: { renderer?: THREE.WebGLRenderer } }).lotusGfx
+    if (!gfx?.renderer) return { ok: false, error: 'renderer unavailable (dev viewport only)' }
+    const ok = await bakeLightProbeGrid(gfx.renderer, world.scene, world.environment)
+    useEditor.getState().setStatus(ok ? 'LightProbeGrid baked (approx)' : 'GI probe bake failed')
+    return { ok }
+  },
   character: {
     ready: isCharacterControllerReady,
     isOnFloor: characterIsOnFloor,

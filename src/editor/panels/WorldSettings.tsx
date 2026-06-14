@@ -98,6 +98,42 @@ function MultiplayerSection() {
           <span>Enabled</span>
           <input type="checkbox" checked={cfg.enabled} onChange={(e) => update({ enabled: e.target.checked })} />
         </label>
+        <label className="field check">
+          <span>Dedicated server mode</span>
+          <input
+            type="checkbox"
+            checked={!!cfg.dedicatedServer}
+            onChange={(e) => update({ dedicatedServer: e.target.checked })}
+          />
+        </label>
+        <label className="field">
+          <span>Lag compensation (ms)</span>
+          <input
+            type="number"
+            min={0}
+            max={500}
+            value={cfg.lagCompensationMs ?? 120}
+            onChange={(e) => update({ lagCompensationMs: parseInt(e.target.value, 10) || 0 })}
+          />
+        </label>
+        <label className="field">
+          <span>Interest radius (m)</span>
+          <input
+            type="number"
+            min={0}
+            max={500}
+            value={cfg.interestRadius ?? 80}
+            onChange={(e) => update({ interestRadius: parseFloat(e.target.value) || 0 })}
+          />
+        </label>
+        <label className="field check">
+          <span>Delta compression</span>
+          <input
+            type="checkbox"
+            checked={cfg.deltaCompression !== false}
+            onChange={(e) => update({ deltaCompression: e.target.checked })}
+          />
+        </label>
         <label className="field">
           <span>Relay URL</span>
           <input value={cfg.url} onChange={(e) => update({ url: e.target.value })} spellCheck={false} />
@@ -454,6 +490,9 @@ function NavigationSection() {
     <details className="details-section">
       <summary>Navigation</summary>
       <div className="details-grid">
+        <div className="panel-empty" style={{ padding: '2px 0', gridColumn: '1 / -1' }}>
+          DetourCrowd avoidance (Wave 11): bake navmesh, then <code>api.crowdSpawn(id, pos, target)</code> during Play.
+        </div>
         <label className="field check">
           <span>Show NavMesh</span>
           <input
@@ -959,11 +998,35 @@ export function WorldSettings() {
           <input type="checkbox" checked={!!env.postSsao} onChange={(e) => set('postSsao', e.target.checked)} />
         </label>
         <label className="field check">
+          <span>Post SSR (approx)</span>
+          <input type="checkbox" checked={!!env.postSsr} onChange={(e) => set('postSsr', e.target.checked)} />
+        </label>
+        <label className="field check">
+          <span>LightProbeGrid GI (approx)</span>
+          <input type="checkbox" checked={!!env.lightProbeGrid} onChange={(e) => set('lightProbeGrid', e.target.checked)} />
+        </label>
+        <label className="field check">
+          <span>Post TAA (WebGPU tier)</span>
+          <input type="checkbox" checked={!!env.postTaa} onChange={(e) => set('postTaa', e.target.checked)} />
+        </label>
+        <label className="field check">
+          <span>Post DOF (stub)</span>
+          <input type="checkbox" checked={!!env.postDof} onChange={(e) => set('postDof', e.target.checked)} />
+        </label>
+        <label className="field check">
           <span>Rapier move_and_slide pawn</span>
           <input
             type="checkbox"
             checked={env.useRapierCharacter !== false}
             onChange={(e) => set('useRapierCharacter', e.target.checked)}
+          />
+        </label>
+        <label className="field check">
+          <span>Rapier raycast vehicle</span>
+          <input
+            type="checkbox"
+            checked={!!env.useRaycastVehicle}
+            onChange={(e) => set('useRaycastVehicle', e.target.checked)}
           />
         </label>
         <label className="field check">

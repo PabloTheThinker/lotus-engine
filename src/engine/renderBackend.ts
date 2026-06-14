@@ -7,8 +7,10 @@ export interface PostFxSettings {
   fxaa: boolean
   ssao: boolean
   dof: boolean
-  /** Temporal AA — WebGPU tier only (stub until full TSL stack) */
+  /** Temporal AA — WebGPU tier only */
   taa: boolean
+  /** Screen-space reflections (Wave 11) */
+  ssr: boolean
 }
 
 /** Returns true when WebGPU is available in this browser. */
@@ -32,6 +34,7 @@ export function getPostFxSettings(env: EnvironmentSettings): PostFxSettings {
     ssao: env.postSsao === true || webgpuTier,
     dof: env.postDof === true,
     taa: env.postTaa === true && webgpuTier,
+    ssr: env.postSsr === true,
   }
 }
 

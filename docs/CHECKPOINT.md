@@ -139,16 +139,29 @@
 | v0.83 | BatchedMesh export merge for playable HTML |
 | v0.84 | Rapier `moveAndSlide` character controller + script API |
 
-## Next up (v0.85+, Wave 11)
+## Shipped wave 11 (v0.85 → v0.90)
 
-1. **SSR + LightProbeGrid** — interior GI approx (Lumen honest-skip)
-2. **MP polish** — dedicated server mode, lag compensation, delta compression
-3. **Full TSL post stack** — migrate bloom/SSAO/DOF/TAA to `PostProcessing`
-4. **WebGPURenderer swap** — opt-in backend after QA matrix (tier toggle shipped v0.79)
-5. **GPU particles compute** — full TSL `ComputeNode` sim (stub shipped v0.75)
-6. **xatlas-three integration** — replace box-projection UV2 fallback
-7. **Toolbar reorder** — exact UE5 main toolbar order
-8. **Expanded E2E** — export playable roundtrip, PIE physics scenes
+| Ver | What |
+|---|---|
+| v0.85 | SSR + LightProbeGrid interior GI approx |
+| v0.86 | MP dedicated server + lag compensation |
+| v0.87 | MP delta compression + interest management |
+| v0.88 | Rapier joints + raycast vehicle |
+| v0.89 | TSL material editor serialize path |
+| v0.90 | DetourCrowd + landscape splat textures |
+
+## Next up (v0.91+, Wave 12)
+
+1. **Behavior Tree editor** — visual graph + live highlight
+2. **Data table grid editor + curve assets**
+3. **Project Settings modal** (global, not just World Settings)
+4. **Nested prefab-in-prefab**
+5. **Voronoi fracture + strain**
+6. **SSGI quality preset** (desktop WebGPU opt-in)
+7. **Command palette asset search**
+8. **Full WebGPURenderer swap** — after QA matrix
+9. **GPU particles compute** — full TSL `ComputeNode` sim
+10. **Expanded E2E** — export playable roundtrip
 
 ## Remaining gap-list queue (post–wave 7)
 

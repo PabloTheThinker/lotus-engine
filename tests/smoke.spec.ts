@@ -46,6 +46,16 @@ interface LotusBridge {
       dt: number,
     ) => { position: [number, number, number]; onFloor: boolean } | null
   }
+  crowd: {
+    init: () => boolean
+    addAgent: (id: string, pos: [number, number, number], target?: [number, number, number]) => boolean
+    count: () => number
+  }
+  mpNet: {
+    settings: () => { lagCompensationMs: number; interestRadius: number; deltaCompression: boolean }
+    isDedicatedServer: () => boolean
+  }
+  materialTSL: { serialize: (graph?: unknown) => object }
 }
 
 declare global {
@@ -427,4 +437,57 @@ test('moveAndSlide after play (Rapier character controller)', async ({ page }) =
   expect(result.moved!.position.length).toBe(3)
 
   await page.evaluate(() => window.lotus!.terminal.exec('/stop'))
+})
+
+test('wave 11 environment defaults (SSR, GI, vehicle)', async ({ page }) => {
+  await bootEditor(page)
+
+  const env = await page.evaluate(() => {
+    const e = window.lotus!.world.environment as Record<string, unknown>
+    return {
+      postSsr: e.postSsr,
+      lightProbeGrid: e.lightProbeGrid,
+      useRaycastVehicle: e.useRaycastVehicle,
+    }
+  })
+
+  expect(env.postSsr).toBe(false)
+  expect(env.lightProbeGrid).toBe(false)
+  expect(env.useRaycastVehicle).toBe(false)
+})
+
+test('wave 11 mp net settings surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const mp = await page.evaluate(() => {
+    const v = window.lotus!
+    return {
+      settings: v.mpNet.settings(),
+      dedicated: v.mpNet.isDedicatedServer(),
+    }
+  })
+
+  expect(mp.settings.lagCompensationMs).toBe(120)
+  expect(mp.settings.interestRadius).toBe(80)
+  expect(mp.settings.deltaCompression).toBe(true)
+  expect(mp.dedicated).toBe(false)
+})
+
+test('wave 11 TSL material serialize + crowd after nav bake', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus!
+    const tsl = v.materialTSL.serialize()
+    const baked = await v.bakeNavMesh()
+    const crowdOk = baked ? v.crowd.init() : false
+    const agentOk = crowdOk ? v.crowd.addAgent('e2e-1', [0, 0, 0], [4, 0, 4]) : false
+    return { tsl, baked, crowdOk, agentOk, count: v.crowd.count() }
+  })
+
+  expect(result.tsl).toMatchObject({ backend: 'tsl', version: 1 })
+  expect(result.baked).toBe(true)
+  expect(result.crowdOk).toBe(true)
+  expect(result.agentOk).toBe(true)
+  expect(result.count).toBe(1)
 })

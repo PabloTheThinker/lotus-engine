@@ -2,6 +2,9 @@ import * as THREE from 'three'
 import type RAPIER_NS from '@dimforge/rapier3d-compat'
 import type { Actor } from './Actor'
 import { disposeCharacterController, initCharacterController } from './characterController'
+import { createPhysicsJoints } from './physicsJoints'
+import { disposeRaycastVehicle } from './physicsVehicle'
+import type { PhysicsJointDef } from './types'
 
 /**
  * Physics — the Chaos analog, backed by Rapier (WASM). The simulation only
@@ -28,6 +31,10 @@ export function physicsReady(): boolean {
   return RAPIER !== null
 }
 
+export function getRapier(): typeof RAPIER_NS | null {
+  return RAPIER
+}
+
 interface BodyBinding {
   actor: Actor
   body: RAPIER_NS.RigidBody
@@ -43,8 +50,9 @@ export class PhysicsSim {
   private world: RAPIER_NS.World | null = null
   private bindings: BodyBinding[] = []
   private fragments: Fragment[] = []
+  private bodyByActor = new Map<string, RAPIER_NS.RigidBody>()
 
-  start(actors: Iterable<Actor>) {
+  start(actors: Iterable<Actor>, jointDefs: PhysicsJointDef[] = []) {
     if (!RAPIER) return
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
     initCharacterController(RAPIER, this.world)
@@ -79,8 +87,18 @@ export class PhysicsSim {
       const mask = props.collidesWith ?? 0xffff
       collider.setCollisionGroups(((1 << layer) << 16) | mask)
       this.world.createCollider(collider, body)
+      this.bodyByActor.set(actor.id, body)
       if (props.mode === 'dynamic') this.bindings.push({ actor, body })
     }
+    if (jointDefs.length) createPhysicsJoints(RAPIER, this.world, jointDefs, this.bodyByActor)
+  }
+
+  getBodyForActor(actorId: string): RAPIER_NS.RigidBody | null {
+    return this.bodyByActor.get(actorId) ?? null
+  }
+
+  getRapierWorld(): RAPIER_NS.World | null {
+    return this.world
   }
 
   /** Build a collider matched to the actor's geometry kind and world scale. */
@@ -202,6 +220,7 @@ export class PhysicsSim {
 
   stop() {
     disposeCharacterController()
+    disposeRaycastVehicle()
     for (const f of this.fragments) {
       f.mesh.removeFromParent()
       f.mesh.geometry.dispose()
@@ -211,5 +230,6 @@ export class PhysicsSim {
     this.world?.free()
     this.world = null
     this.bindings = []
+    this.bodyByActor.clear()
   }
 }
