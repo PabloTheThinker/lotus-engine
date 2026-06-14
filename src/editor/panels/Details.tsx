@@ -11,7 +11,7 @@ import {
 } from '../../engine/materialAssets'
 import { applyLightProps, world } from '../../engine/World'
 import { listMetaSounds } from '../../engine/metaSoundAssets'
-import type { Behavior, IKChain, IKTarget, Label3DProps, LookAtTarget, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps, Widget3DProps } from '../../engine/types'
+import type { Behavior, CameraProps, IKChain, IKTarget, Label3DProps, LookAtTarget, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps, Widget3DProps } from '../../engine/types'
 import { AttenuationFields } from './AttenuationFields'
 import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
@@ -1644,11 +1644,81 @@ function CameraSection({ actor }: { actor: Actor }) {
     actor.camera!.updateProjectionMatrix()
     touch()
   }
+  const setCam = <K extends keyof CameraProps>(key: K, value: CameraProps[K]) => {
+    props[key] = value
+    touch()
+  }
   return (
     <Section title="Camera">
       <Num label="FOV" value={props.fov} step={1} min={1} max={170} onLive={(v) => { props.fov = v; apply() }} onCommit={() => {}} />
       <Num label="Near" value={props.near} step={0.05} min={0.01} onLive={(v) => { props.near = v; apply() }} onCommit={() => {}} />
       <Num label="Far" value={props.far} step={10} min={1} onLive={(v) => { props.far = v; apply() }} onCommit={() => {}} />
+      <Check
+        label="DOF Override (CineCamera)"
+        value={!!props.dofOverride}
+        onToggle={(v) => setCam('dofOverride', v)}
+      />
+      {props.dofOverride && (
+        <>
+          <Num
+            label="Focus Distance"
+            value={props.dofFocusDistance ?? 5}
+            step={0.5}
+            min={0.5}
+            onLive={(v) => setCam('dofFocusDistance', v)}
+            onCommit={() => {}}
+          />
+          <Num
+            label="Focal Length"
+            value={props.dofFocalLength ?? 2}
+            step={0.1}
+            min={0.1}
+            onLive={(v) => setCam('dofFocalLength', v)}
+            onCommit={() => {}}
+          />
+          <Num
+            label="Bokeh Scale"
+            value={props.dofBokehScale ?? 1.2}
+            step={0.1}
+            min={0.1}
+            onLive={(v) => setCam('dofBokehScale', v)}
+            onCommit={() => {}}
+          />
+          <Check
+            label="Focus Pull (on Play)"
+            value={!!props.dofFocusPull}
+            onToggle={(v) => setCam('dofFocusPull', v)}
+          />
+          {props.dofFocusPull && (
+            <>
+              <Num
+                label="Pull From"
+                value={props.dofFocusPullFrom ?? 8}
+                step={0.5}
+                min={0.5}
+                onLive={(v) => setCam('dofFocusPullFrom', v)}
+                onCommit={() => {}}
+              />
+              <Num
+                label="Pull To"
+                value={props.dofFocusPullTo ?? 2}
+                step={0.5}
+                min={0.5}
+                onLive={(v) => setCam('dofFocusPullTo', v)}
+                onCommit={() => {}}
+              />
+              <Num
+                label="Pull Duration"
+                value={props.dofFocusPullDuration ?? 2}
+                step={0.1}
+                min={0.1}
+                onLive={(v) => setCam('dofFocusPullDuration', v)}
+                onCommit={() => {}}
+              />
+            </>
+          )}
+        </>
+      )}
     </Section>
   )
 }

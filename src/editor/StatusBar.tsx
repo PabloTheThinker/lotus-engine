@@ -18,6 +18,8 @@ export function StatusBar() {
   const contentOpen = useEditor((s) => s.contentBrowserOpen)
   const bottomTab = useEditor((s) => s.bottomTab)
   const toggleDrawer = useEditor((s) => s.toggleContentDrawer)
+  const exportPerfGate = useEditor((s) => s.exportPerfGate)
+  const exportPerfFps = useEditor((s) => s.exportPerfFps)
   useEditor((s) => s.sceneVersion)
   const selected = selectedId ? world.actors.get(selectedId) : null
   const drawerActive = drawerDocked ? contentOpen && bottomTab === 'content' : drawerOpen
@@ -26,6 +28,15 @@ export function StatusBar() {
 
   const saveLabel =
     saveStatus === 'saving' ? 'Saving…' : saveStatus === 'dirty' ? '● Unsaved' : '✓ Saved'
+
+  const perfGateLabel =
+    exportPerfGate === 'probing'
+      ? 'Export perf…'
+      : exportPerfGate === 'pass'
+        ? `Export perf ✓ ${exportPerfFps}fps`
+        : exportPerfGate === 'fail'
+          ? `Export perf ✗ ${exportPerfFps}fps`
+          : null
 
   return (
     <div className="statusbar">
@@ -43,6 +54,14 @@ export function StatusBar() {
       {showAutosaveToast && (
         <span className="status-autosave-toast" title="Autosave countdown">
           Autosaving in {autosaveCountdownSec}s
+        </span>
+      )}
+      {perfGateLabel && (
+        <span
+          className={`status-perf-gate status-perf-gate--${exportPerfGate}`}
+          title="Export playable perf gate (__LOTUS_EXPORT_PERF__.perfPass)"
+        >
+          {perfGateLabel}
         </span>
       )}
       <span className="status-message">

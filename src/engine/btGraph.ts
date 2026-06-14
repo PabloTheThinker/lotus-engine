@@ -224,6 +224,51 @@ export function resolveBTEditorHighlightNodeId(graph: BTGraph, runtimeNodeId: st
   return runtimeNodeId
 }
 
+function parseBTServicesFromScript(script: string | undefined): { serviceNodeId: string }[] {
+  if (!script) return []
+  const m = script.match(/const __btServices = (\[[\s\S]*?\]|undefined)/)
+  if (!m || m[1] === 'undefined') return []
+  try {
+    const parsed = JSON.parse(m[1]!) as { serviceNodeId: string }[]
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+/** Wave 24 — node ids that differ between actor script and compile preview (service gutter markers). */
+export function getBTScriptDiffGutterNodeIds(
+  existingScript: string | undefined,
+  graph: BTGraph,
+): string[] {
+  const preview = compileBTGraphToScript(graph)
+  if (!preview) return []
+  const prev = (existingScript ?? '').trim()
+  if (prev === preview.trim()) return []
+  const ids = new Set<string>()
+  const prevSvc = parseBTServicesFromScript(prev)
+  const nextSvc = parseBTServicesFromScript(preview)
+  const prevIds = new Set(prevSvc.map((s) => s.serviceNodeId))
+  const nextIds = new Set(nextSvc.map((s) => s.serviceNodeId))
+  for (const id of nextIds) {
+    if (!prevIds.has(id)) ids.add(id)
+  }
+  for (const id of prevIds) {
+    if (!nextIds.has(id)) ids.add(id)
+  }
+  if (prevSvc.length !== nextSvc.length) {
+    for (const s of nextSvc) ids.add(s.serviceNodeId)
+  }
+  const prevTree = prev.match(/const __btTree = ([\s\S]*?)\nconst __btPaths/)
+  const nextTree = preview.match(/const __btTree = ([\s\S]*?)\nconst __btPaths/)
+  if (prevTree?.[1] !== nextTree?.[1]) {
+    for (const n of graph.nodes) {
+      if (BT_SERVICE_TYPES.has(n.type) || BT_COMPOSITE_TYPES.has(n.type)) ids.add(n.id)
+    }
+  }
+  return [...ids]
+}
+
 /** Wave 23 — diff actor script vs compile-to-script preview (services-aware). */
 export function diffBTScriptPreview(
   existingScript: string | undefined,

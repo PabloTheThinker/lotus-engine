@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.58 (wave 23).** v0.33–v1.58 shipped; **build clean**, **`npm run test` — 59 passed**.
+- **Last clean commit: v1.63 (wave 24).** v0.33–v1.63 shipped; **build clean**, **`npm run test` — 64 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -278,13 +278,23 @@
 | v1.57 | BT script compile diff panel + `diffBTScriptPreview` |
 | v1.58 | Material minimap + Alt+1–9 solo channel — 59 tests passed |
 
-## Next up (v1.59+, Wave 24)
+## Shipped (v1.59–v1.63, Wave 24)
 
-1. **TSL post** — DOF per-camera override + cinematic focus pull
-2. **GPU particles** — export ribbon E2E boot with trail visual assert
-3. **Export** — perf gate badge in editor status bar
-4. **BT** — service compile diff inline gutter markers
-5. **Material TSL** — minimap pan/zoom sync with canvas viewport
+| Ver | What |
+|---|---|
+| v1.59 | DOF per-camera override + cinematic focus pull — CineCamera Details, `getDOFSettings(env, camera)` |
+| v1.60 | Export ribbon E2E boot — `__LOTUS_EXPORT_RIBBON_QA__` trail tri assert |
+| v1.61 | Export perf gate badge — status bar iframe probe via `probeExportPerfGate()` |
+| v1.62 | BT script diff gutter markers — `getBTScriptDiffGutterNodeIds`, `≠` gutter on changed nodes |
+| v1.63 | Material minimap pan/zoom viewport sync — layer transform + minimap viewport rect — 64 tests passed |
+
+## Next up (v1.64+, Wave 25)
+
+1. **TSL post** — DOF focus pull sequencer track + color grading LUT stub
+2. **GPU particles** — Niagara module GPU path polish + sub-emitter export parity
+3. **Export** — perf gate re-probe on level save/export
+4. **BT** — gutter diff click-to-jump + service compile inline preview
+5. **Material TSL** — minimap zoom wheel hint + solo channel minimap highlight
 
 ## Remaining gap-list queue (post–wave 7)
 

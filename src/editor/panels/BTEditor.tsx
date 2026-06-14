@@ -18,6 +18,7 @@ import {
   summarizeBTTree,
   summarizeBTServices,
   diffBTScriptPreview,
+  getBTScriptDiffGutterNodeIds,
   validateBTGraph,
   type BTGraph,
   type BTGraphNode,
@@ -295,6 +296,7 @@ export function BTEditor() {
   const treePreview = compiledPreview ? summarizeBTTree(compiledPreview.tree) : ''
   const servicesPreview = summarizeBTServices(graph)
   const scriptDiff = diffBTScriptPreview(actor.script, graph)
+  const diffGutterIds = new Set(getBTScriptDiffGutterNodeIds(actor.script, graph))
   const validationErrors = validation.filter((v) => v.level === 'error')
   const bbTypes = inferBlackboardTypes(graph)
 
@@ -508,6 +510,11 @@ export function BTEditor() {
                 >
                   {n.breakpoint && (
                     <circle cx={-8} cy={HEADER_H / 2} r={5} fill={isBpHit ? '#ff4466' : '#e5484d'} />
+                  )}
+                  {diffGutterIds.has(n.id) && (
+                    <text x={-10} y={HEADER_H / 2 + 14} fill="#f0c080" fontSize={10} textAnchor="middle">
+                      ≠
+                    </text>
                   )}
                   <rect
                     width={NODE_W}

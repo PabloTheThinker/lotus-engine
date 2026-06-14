@@ -492,6 +492,9 @@ export function Viewport() {
       ensureLightProbeGrid(world.scene, env)
     }
 
+    let frameCameraDof: import('../engine/types').CameraProps | null = null
+    let frameFocusPullT: number | undefined
+
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
@@ -506,7 +509,7 @@ export function Viewport() {
         postStack.ssrPass.groundReflector = postStack.ssrGround?.reflector ?? null
         postStack.ssrPass.bouncing = !!postStack.ssrGround
       }
-      const dof = getDOFSettings(world.environment)
+      const dof = getDOFSettings(world.environment, frameCameraDof, frameFocusPullT)
       postStack.applyDOF(dof.webgl)
       tslPipeline?.applyPostFx(
         getPostFxSettings(world.environment),
@@ -1531,11 +1534,23 @@ export function Viewport() {
         world.sky.visible = world.environment.skyEnabled && s.viewProjection === 'perspective'
       }
       let activeCam: THREE.PerspectiveCamera = possessed ? pawn.camera : editorCamera
+      let activeCamActor: import('../engine/Actor').Actor | null = null
       // api.setViewCamera('Name') cuts to a Camera actor during play (CineCamera)
       const viewCamName = s.playing ? getViewCamera() : null
       if (viewCamName) {
         const camActor = [...world.actors.values()].find((a) => a.name === viewCamName && a.camera)
-        if (camActor?.camera) activeCam = camActor.camera
+        if (camActor?.camera) {
+          activeCam = camActor.camera
+          activeCamActor = camActor
+        }
+      }
+      frameCameraDof =
+        activeCamActor?.cameraProps?.dofOverride ? activeCamActor.cameraProps : null
+      if (frameCameraDof?.dofFocusPull && s.playing) {
+        const dur = Math.max(0.05, frameCameraDof.dofFocusPullDuration ?? 2)
+        frameFocusPullT = Math.min(1, world.playClock / dur)
+      } else {
+        frameFocusPullT = undefined
       }
       const camPos = new THREE.Vector3()
       activeCam.getWorldPosition(camPos)

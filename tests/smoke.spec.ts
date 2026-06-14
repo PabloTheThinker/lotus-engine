@@ -1485,6 +1485,183 @@ test('wave 23 export ribbon particle runtime surface', async ({ page }) => {
   expect(result.hasTrailShift || result.hasRibbon).toBe(true)
 })
 
+test('wave 24 DOF per-camera override + focus pull', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      dof: {
+        settings: (
+          cam: { dofOverride: boolean; dofFocusDistance: number; dofFocusPull: boolean; dofFocusPullFrom: number; dofFocusPullTo: number },
+          t?: number,
+        ) => { tsl: { focusDistance: number }; focusPullActive: boolean }
+        resolveFocusPull: (cam: { dofFocusPullFrom: number; dofFocusPullTo: number }, t: number) => number
+      }
+    }
+    const cam = {
+      dofOverride: true,
+      dofFocusDistance: 12,
+      dofFocusPull: true,
+      dofFocusPullFrom: 10,
+      dofFocusPullTo: 2,
+      dofFocusPullDuration: 2,
+    }
+    v.world.environment.postDof = false
+    const s0 = v.dof.settings(cam, 0)
+    const s1 = v.dof.settings(cam, 0.5)
+    const pulled = v.dof.resolveFocusPull(cam, 0.5)
+    return {
+      overrideFocus: s0.tsl.focusDistance,
+      midFocus: s1.tsl.focusDistance,
+      pulled,
+      pullActive: s0.focusPullActive,
+    }
+  })
+
+  expect(result.overrideFocus).toBe(10)
+  expect(result.midFocus).toBe(6)
+  expect(result.pulled).toBe(6)
+  expect(result.pullActive).toBe(true)
+})
+
+test('wave 24 BT script diff gutter node ids', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        diffGutter: (g: import('../src/engine/btGraph').BTGraph, script: string) => string[]
+        compileScript: (g: import('../src/engine/btGraph').BTGraph) => string | null
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const svc = { id: 'svc24', type: 'SvcPlayerNear', x: 200, y: 200, props: { radius: 5 } }
+    const sel = { id: 'sel24', type: 'Selector', x: 300, y: 80, props: {} }
+    graph.nodes.push(svc, sel)
+    graph.edges = [
+      { from: root.id, to: sel.id },
+      { from: sel.id, to: svc.id, kind: 'service' },
+    ]
+    const compiled = v.bt.compileScript(graph) ?? ''
+    const gutter = v.bt.diffGutter(graph, '// stale script')
+    const gutterMatch = v.bt.diffGutter(graph, compiled)
+    return { gutterLen: gutter.length, matchEmpty: gutterMatch.length === 0, hasSvc: gutter.includes('svc24') }
+  })
+
+  expect(result.gutterLen).toBeGreaterThan(0)
+  expect(result.hasSvc).toBe(true)
+  expect(result.matchEmpty).toBe(true)
+})
+
+test('wave 24 export perf gate probe bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const hasBridge = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { probePerfGate?: () => void } }
+    return typeof v.export.probePerfGate === 'function'
+  })
+  expect(hasBridge).toBe(true)
+
+  await page.evaluate(() => window.lotus!.export.probePerfGate())
+  await page.waitForSelector('.status-perf-gate', { timeout: 20_000 })
+  const badge = await page.locator('.status-perf-gate').textContent()
+  expect(badge).toMatch(/Export perf/)
+})
+
+test('wave 24 material minimap viewport sync', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+        { id: 'c2', type: 'Scalar', x: 100, y: 200, props: { value: 0.5 } },
+      ],
+      edges: [
+        { from: 'c1', to: 'out:baseColor' },
+        { from: 'c2', to: 'out:roughness' },
+      ],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  await expect(page.locator('.mat-minimap')).toBeVisible()
+  await expect(page.locator('.mat-canvas-layer')).toBeVisible()
+  const hasViewportRect = await page.locator('.mat-minimap-viewport').count()
+  expect(hasViewportRect).toBeGreaterThan(0)
+})
+
+test('wave 24 export ribbon E2E boot trail assert', async ({ page }) => {
+  test.setTimeout(120_000)
+  await bootEditor(page)
+
+  const html = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+      world: { serialize: () => { name: string; actors: unknown[]; environment: Record<string, unknown> }; load: (l: unknown) => Promise<void> }
+    }
+    const level = v.world.serialize()
+    level.actors.push({
+      id: 'ribbon_e2e',
+      name: 'RibbonFX',
+      type: 'ParticleEmitter',
+      parentId: null,
+      visible: true,
+      transform: { position: [0, 2, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
+      particles: {
+        rate: 120,
+        lifetime: 2.5,
+        speed: 4,
+        renderMode: 'ribbon',
+        ribbonSegments: 8,
+        ribbonWidth: 0.15,
+        maxParticles: 48,
+        colorStart: '#66ccff',
+        colorEnd: '#3366ff',
+        additive: true,
+      },
+      behaviors: [],
+    })
+    await v.world.load(level)
+    return v.export.buildPlayableHTML()
+  })
+
+  const exportPath = path.join(root, 'dist', 'e2e-wave24-ribbon.play.html')
+  fs.writeFileSync(exportPath, html, 'utf8')
+
+  await page.goto('/e2e-wave24-ribbon.play.html', { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.waitForSelector('canvas', { timeout: 90_000 })
+  await page.waitForFunction(
+    () => document.getElementById('overlay')?.textContent?.includes('Click to play') ?? false,
+    { timeout: 90_000 },
+  )
+  await page.waitForFunction(
+    () => {
+      const qa = (window as unknown as { __LOTUS_EXPORT_RIBBON_QA__?: { trailTris: number } }).__LOTUS_EXPORT_RIBBON_QA__
+      return (qa?.trailTris ?? 0) > 0
+    },
+    { timeout: 30_000 },
+  )
+
+  const ribbonQa = await page.evaluate(() => {
+    const qa = (window as unknown as { __LOTUS_EXPORT_RIBBON_QA__?: { trailTris: number; ribbonSystems: number } })
+      .__LOTUS_EXPORT_RIBBON_QA__
+    return { trailTris: qa?.trailTris ?? 0, ribbonSystems: qa?.ribbonSystems ?? 0 }
+  })
+
+  expect(ribbonQa.ribbonSystems).toBeGreaterThan(0)
+  expect(ribbonQa.trailTris).toBeGreaterThan(0)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

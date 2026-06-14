@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 24: v1.59–v1.63
+
+### Added
+- **v1.59** DOF per-camera override + cinematic focus pull — `CameraProps.dofOverride`, `dofFocusPull*`; `getDOFSettings(env, camera, focusPullT)`; CineCamera Details panel
+- **v1.60** Export ribbon E2E — playable boot + `__LOTUS_EXPORT_RIBBON_QA__.trailTris` trail assert
+- **v1.61** Export perf gate status bar badge — `probeExportPerfGate()` iframe probe, `exportPerfGate` store
+- **v1.62** BT script diff gutter markers — `getBTScriptDiffGutterNodeIds`, inline `≠` on changed service/composite nodes
+- **v1.63** Material minimap pan/zoom viewport sync — canvas layer transform, minimap viewport rect + click-to-pan — 64 tests passed
+
+### Changed
+- `window.lotus.dof.settings(camera, focusPullT)` + `dof.resolveFocusPull` bridges
+- `window.lotus.bt.diffGutter` + `export.probePerfGate` bridges
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 64 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 23: v1.54–v1.58
 
 ### Added

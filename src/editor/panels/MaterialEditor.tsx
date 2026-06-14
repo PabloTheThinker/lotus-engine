@@ -63,13 +63,23 @@ function portAt(
   return null
 }
 
-/** Wave 23 — scaled overview of node graph layout. */
+/** Wave 23 — scaled overview; Wave 24 — viewport rect + click-to-pan sync. */
 function MaterialGraphMinimap({
   graph,
   isolateChannel,
+  panOffset,
+  zoom,
+  viewportW,
+  viewportH,
+  onPanTo,
 }: {
   graph: MaterialGraph
   isolateChannel: string | null
+  panOffset: { x: number; y: number }
+  zoom: number
+  viewportW: number
+  viewportH: number
+  onPanTo: (gx: number, gy: number) => void
 }) {
   if (graph.nodes.length < 2) return null
   let minX = Infinity
@@ -90,8 +100,25 @@ function MaterialGraphMinimap({
   const sx = mw / Math.max(gw, 1)
   const sy = mh / Math.max(gh, 1)
   const out = graph.nodes.find((n) => n.type === 'Output')
+  const vw = Math.max(viewportW, 320)
+  const vh = Math.max(viewportH, 200)
+  const viewGx = -panOffset.x / Math.max(zoom, 0.05)
+  const viewGy = -panOffset.y / Math.max(zoom, 0.05)
+  const viewGw = vw / Math.max(zoom, 0.05)
+  const viewGh = vh / Math.max(zoom, 0.05)
   return (
-    <svg className="mat-minimap" width={mw} height={mh} aria-label="Material graph minimap">
+    <svg
+      className="mat-minimap"
+      width={mw}
+      height={mh}
+      aria-label="Material graph minimap"
+      onClick={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect()
+        const mx = e.clientX - rect.left
+        const my = e.clientY - rect.top
+        onPanTo(mx / sx + minX - pad, my / sy + minY - pad)
+      }}
+    >
       {graph.edges.map((edge, i) => {
         const a = graph.nodes.find((n) => n.id === edge.from)
         const [tn, tp] = edge.to.split(':')
@@ -130,6 +157,17 @@ function MaterialGraphMinimap({
           />
         )
       })}
+      <rect
+          className="mat-minimap-viewport"
+          x={(viewGx - minX + pad) * sx}
+          y={(viewGy - minY + pad) * sy}
+          width={Math.max(4, viewGw * sx)}
+          height={Math.max(4, viewGh * sy)}
+          fill="none"
+          stroke="#6eb5ff"
+          strokeWidth={1.5}
+          rx={1}
+        />
     </svg>
   )
 }
@@ -304,6 +342,21 @@ export function MaterialEditor() {
   const lastActor = useRef<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
+  const panState = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 })
+
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      setViewportSize({ w: el.clientWidth, h: el.clientHeight })
+    })
+    ro.observe(el)
+    setViewportSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [actor?.id])
 
   useEffect(() => {
     if (actor && actor.id !== lastActor.current) {
@@ -393,7 +446,19 @@ export function MaterialEditor() {
 
   const canvasPoint = (e: React.MouseEvent) => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const z = Math.max(zoom, 0.05)
+    return {
+      x: (e.clientX - rect.left - panOffset.x) / z,
+      y: (e.clientY - rect.top - panOffset.y) / z,
+    }
+  }
+
+  const panToGraph = (gx: number, gy: number) => {
+    const z = Math.max(zoom, 0.05)
+    setPanOffset({
+      x: viewportSize.w / 2 - gx * z,
+      y: viewportSize.h / 2 - gy * z,
+    })
   }
 
   const connectWire = (fromId: string, toNodeId: string, toPort: string) => {
@@ -467,12 +532,35 @@ export function MaterialEditor() {
         </button>
       </div>
       <div className="mat-editor-body">
-        <MaterialGraphMinimap graph={graph} isolateChannel={isolateChannel} />
+        <MaterialGraphMinimap
+          graph={graph}
+          isolateChannel={isolateChannel}
+          panOffset={panOffset}
+          zoom={zoom}
+          viewportW={viewportSize.w}
+          viewportH={viewportSize.h}
+          onPanTo={panToGraph}
+        />
         <div
-          className="bp-canvas"
+          className="bp-canvas mat-canvas-pan"
           ref={canvasRef}
+          onWheel={(e) => {
+            if (!e.ctrlKey && !e.metaKey) return
+            e.preventDefault()
+            const rect = canvasRef.current!.getBoundingClientRect()
+            const mx = e.clientX - rect.left
+            const my = e.clientY - rect.top
+            const factor = e.deltaY < 0 ? 1.1 : 0.9
+            const nextZoom = Math.max(0.25, Math.min(2.5, zoom * factor))
+            const z0 = Math.max(zoom, 0.05)
+            const gx = (mx - panOffset.x) / z0
+            const gy = (my - panOffset.y) / z0
+            setZoom(nextZoom)
+            setPanOffset({ x: mx - gx * nextZoom, y: my - gy * nextZoom })
+          }}
           onMouseDown={(e) => {
             if (e.target === canvasRef.current) {
+              panState.current = { startX: e.clientX, startY: e.clientY, ox: panOffset.x, oy: panOffset.y }
               setAddMenu(null)
               setPendingFrom(null)
             }
@@ -480,6 +568,12 @@ export function MaterialEditor() {
           onMouseMove={(e) => {
             const p = canvasPoint(e)
             setMouse(p)
+            if (panState.current) {
+              setPanOffset({
+                x: panState.current.ox + e.clientX - panState.current.startX,
+                y: panState.current.oy + e.clientY - panState.current.startY,
+              })
+            }
             if (dragState.current) {
               const { nodeId, dx, dy } = dragState.current
               setGraph((g) =>
@@ -499,11 +593,19 @@ export function MaterialEditor() {
               }
             }
             dragState.current = null
+            panState.current = null
           }}
           onDoubleClick={(e) => {
             if (e.target === canvasRef.current) setAddMenu(canvasPoint(e))
           }}
         >
+          <div
+            className="mat-canvas-layer"
+            style={{
+              transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+              transformOrigin: '0 0',
+            }}
+          >
           <svg className="bp-wires">
             {graph.edges.map((edge, i) => {
               const a = graph.nodes.find((n) => n.id === edge.from)
@@ -767,6 +869,7 @@ export function MaterialEditor() {
               </div>
             </div>
           )}
+          </div>
         </div>
         <aside className="mat-preview-panel">
           <div className="mat-preview-label">

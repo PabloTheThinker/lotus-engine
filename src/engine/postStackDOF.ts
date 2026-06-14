@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
-import type { EnvironmentSettings } from './types'
+import type { CameraProps, EnvironmentSettings } from './types'
 
 /** Wave 21 — honest DOF stub (radial vignette blur, not full bokeh). */
 
@@ -59,23 +59,69 @@ export const DEFAULT_TSL_DOF: TSLDOFSettings = {
   bokehScale: 1.2,
 }
 
+/** Wave 24 — optional per-camera override + cinematic focus pull (0–1 lerp). */
+export function resolveCameraDOFFocusDistance(
+  camera: Pick<
+    CameraProps,
+    'dofFocusDistance' | 'dofFocusPull' | 'dofFocusPullFrom' | 'dofFocusPullTo' | 'dofFocusPullDuration'
+  >,
+  envFocusDistance: number,
+  focusPullT?: number,
+): number {
+  const base = camera.dofFocusDistance ?? envFocusDistance
+  if (!camera.dofFocusPull || focusPullT == null) return base
+  const from = camera.dofFocusPullFrom ?? base
+  const to = camera.dofFocusPullTo ?? base
+  const t = Math.max(0, Math.min(1, focusPullT))
+  return from + (to - from) * t
+}
+
 /** Wave 23 — DOF settings from environment (WebGL stub + TSL bokeh parity). */
-export function getDOFSettings(env: EnvironmentSettings): {
+export function getDOFSettings(
+  env: EnvironmentSettings,
+  camera?: Pick<
+    CameraProps,
+    | 'dofOverride'
+    | 'dofFocusDistance'
+    | 'dofFocalLength'
+    | 'dofBokehScale'
+    | 'dofFocus'
+    | 'dofAperture'
+    | 'dofFocusPull'
+    | 'dofFocusPullFrom'
+    | 'dofFocusPullTo'
+    | 'dofFocusPullDuration'
+  > | null,
+  focusPullT?: number,
+): {
   webgl: DOFStubSettings
   tsl: TSLDOFSettings
+  focusPullActive: boolean
 } {
-  const enabled = env.postDof === true
+  const envEnabled = env.postDof === true
+  const camOverride = camera?.dofOverride === true
+  const enabled = camOverride ? true : envEnabled
+  const envFocusDistance = env.postDofFocusDistance ?? 5
+  const focusDistance = camera
+    ? resolveCameraDOFFocusDistance(camera, envFocusDistance, focusPullT)
+    : envFocusDistance
+  const focusPullActive = !!(camera?.dofFocusPull && focusPullT != null && focusPullT < 1)
   return {
+    focusPullActive,
     webgl: {
       enabled,
-      focus: env.postDofFocus ?? 0.45,
-      aperture: env.postDofAperture ?? 0.035,
+      focus: camOverride ? (camera!.dofFocus ?? env.postDofFocus ?? 0.45) : (env.postDofFocus ?? 0.45),
+      aperture: camOverride ? (camera!.dofAperture ?? env.postDofAperture ?? 0.035) : (env.postDofAperture ?? 0.035),
     },
     tsl: {
       enabled,
-      focusDistance: env.postDofFocusDistance ?? 5,
-      focalLength: env.postDofFocalLength ?? 2,
-      bokehScale: env.postDofBokehScale ?? 1.2,
+      focusDistance,
+      focalLength: camOverride
+        ? (camera!.dofFocalLength ?? env.postDofFocalLength ?? 2)
+        : (env.postDofFocalLength ?? 2),
+      bokehScale: camOverride
+        ? (camera!.dofBokehScale ?? env.postDofBokehScale ?? 1.2)
+        : (env.postDofBokehScale ?? 1.2),
     },
   }
 }

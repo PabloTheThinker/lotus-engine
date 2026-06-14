@@ -1333,6 +1333,33 @@ input[type='checkbox'] {
   border: 1px solid var(--border);
   border-radius: 4px;
   background: #12151a;
+  cursor: crosshair;
+}
+.mat-minimap-viewport {
+  pointer-events: none;
+}
+.mat-canvas-pan {
+  overflow: hidden;
+}
+.mat-canvas-layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+.status-perf-gate {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+.status-perf-gate--probing {
+  color: #9ec8ff;
+}
+.status-perf-gate--pass {
+  color: #6ec9b8;
+}
+.status-perf-gate--fail {
+  color: #f0a060;
 }
 .bt-script-diff.changed {
   color: #f0c080;

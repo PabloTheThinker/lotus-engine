@@ -1299,6 +1299,14 @@ async function boot() {
       if (hasAudio) updateSeqAudio(t)
     }
     for (const ps of particleSystems) ps.update(dt)
+    if (particleSystems.some((p) => p.trailLen > 0)) {
+      let trailTris = 0
+      for (const ps of particleSystems) {
+        if (!ps.trailLen || !ps.display?.geometry) continue
+        trailTris = Math.max(trailTris, ps.display.geometry.drawRange?.count ?? 0)
+      }
+      if (trailTris > 0) window.__LOTUS_EXPORT_RIBBON_QA__ = { trailTris, ribbonSystems: particleSystems.filter((p) => p.trailLen > 0).length }
+    }
     updatePawn(dt)
     if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
     applyStreamingVisibility(pawnCam.position)

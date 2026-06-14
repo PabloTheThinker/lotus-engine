@@ -44,12 +44,14 @@ import {
   summarizeBTTree,
   summarizeBTServices,
   diffBTScriptPreview,
+  getBTScriptDiffGutterNodeIds,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
-import { getDOFSettings } from './engine/postStackDOF'
+import { getDOFSettings, resolveCameraDOFFocusDistance } from './engine/postStackDOF'
+import { probeExportPerfGate } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
 import { DEFAULT_PARTICLES } from './engine/particles'
@@ -223,6 +225,7 @@ const lotusBridge = {
     summarize: summarizeBTTree,
     summarizeServices: summarizeBTServices,
     diffScript: (graph = emptyBTGraph(), script = '') => diffBTScriptPreview(script, graph),
+    diffGutter: (graph = emptyBTGraph(), script = '') => getBTScriptDiffGutterNodeIds(script, graph),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
     activeServiceNodeIds: getActiveBTServiceNodeIds,
@@ -238,7 +241,12 @@ const lotusBridge = {
     settings: () => getSSRSettings(world.environment),
   },
   dof: {
-    settings: () => getDOFSettings(world.environment),
+    settings: (camera = null as import('./engine/types').CameraProps | null, focusPullT?: number) =>
+      getDOFSettings(world.environment, camera, focusPullT),
+    resolveFocusPull: (
+      camera: import('./engine/types').CameraProps,
+      focusPullT: number,
+    ) => resolveCameraDOFFocusDistance(camera, world.environment.postDofFocusDistance ?? 5, focusPullT),
   },
   projectSettings: {
     load: loadProjectSettings,
@@ -253,6 +261,7 @@ const lotusBridge = {
   },
   export: {
     buildPlayableHTML,
+    probePerfGate: probeExportPerfGate,
   },
 }
 const win = window as unknown as Record<string, unknown>
@@ -270,6 +279,7 @@ export default function App() {
       loadUserPlugins()
       restoreAutosave().then((ok) => {
         if (!ok) newLevel()
+        window.setTimeout(() => probeExportPerfGate(), 4000)
       })
     }
     useEditor.getState().resetAutosaveCountdown()

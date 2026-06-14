@@ -3,6 +3,8 @@ import { loadPrefs } from './Preferences'
 import { loadViewportPrefs, saveViewportPrefs, type ViewportLayout, type ViewportPane } from './viewportLayout'
 
 export type SaveStatus = 'saved' | 'dirty' | 'saving'
+/** Wave 24 — export playable perf gate probe for status bar badge */
+export type ExportPerfGateStatus = 'idle' | 'probing' | 'pass' | 'fail'
 
 export type GizmoMode = 'select' | 'translate' | 'rotate' | 'scale'
 /** UE main-toolbar Modes: Select / Landscape / Foliage / Paint */
@@ -226,6 +228,11 @@ interface EditorState {
   // external CLI bridge (dev WebSocket)
   bridgeConnected: boolean
   setBridgeConnected: (v: boolean) => void
+
+  /** Wave 24 — last export perf gate probe (iframe boot of playable HTML) */
+  exportPerfGate: ExportPerfGateStatus
+  exportPerfFps: number
+  setExportPerfGate: (status: ExportPerfGateStatus, fps?: number) => void
 }
 
 const viewportPrefs = loadViewportPrefs()
@@ -456,4 +463,8 @@ export const useEditor = create<EditorState>((set) => ({
 
   bridgeConnected: false,
   setBridgeConnected: (v) => set({ bridgeConnected: v }),
+
+  exportPerfGate: 'idle',
+  exportPerfFps: 0,
+  setExportPerfGate: (status, fps = 0) => set({ exportPerfGate: status, exportPerfFps: fps }),
 }))

@@ -119,6 +119,18 @@ export interface CameraProps {
   fov: number
   near: number
   far: number
+  /** Wave 24 — CineCamera DOF overrides (when dofOverride, ignores world post stack defaults). */
+  dofOverride?: boolean
+  dofFocusDistance?: number
+  dofFocalLength?: number
+  dofBokehScale?: number
+  dofFocus?: number
+  dofAperture?: number
+  /** Cinematic focus pull during play — lerps focus distance over duration from play start. */
+  dofFocusPull?: boolean
+  dofFocusPullFrom?: number
+  dofFocusPullTo?: number
+  dofFocusPullDuration?: number
 }
 
 // Physics — the Chaos analog, backed by Rapier. Runs only during Play.
