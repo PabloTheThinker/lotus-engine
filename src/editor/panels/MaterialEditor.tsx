@@ -64,6 +64,28 @@ function portAt(
 }
 
 /** Wave 23 — scaled overview; Wave 24 — viewport rect + click-to-pan sync. */
+function nodesInSoloChannel(graph: MaterialGraph, channel: string | null): Set<string> {
+  const ids = new Set<string>()
+  if (!channel) return ids
+  const out = graph.nodes.find((n) => n.type === 'Output')
+  if (!out) return ids
+  const stack = [out.id]
+  ids.add(out.id)
+  while (stack.length) {
+    const nodeId = stack.pop()!
+    for (const edge of graph.edges) {
+      const [toNode, toPort] = edge.to.split(':')
+      if (toNode !== nodeId) continue
+      if (nodeId === out.id && toPort !== channel) continue
+      if (!ids.has(edge.from)) {
+        ids.add(edge.from)
+        stack.push(edge.from)
+      }
+    }
+  }
+  return ids
+}
+
 function MaterialGraphMinimap({
   graph,
   isolateChannel,
@@ -99,7 +121,7 @@ function MaterialGraphMinimap({
   const mh = 76
   const sx = mw / Math.max(gw, 1)
   const sy = mh / Math.max(gh, 1)
-  const out = graph.nodes.find((n) => n.type === 'Output')
+  const soloNodes = nodesInSoloChannel(graph, isolateChannel)
   const vw = Math.max(viewportW, 320)
   const vh = Math.max(viewportH, 200)
   const viewGx = -panOffset.x / Math.max(zoom, 0.05)
@@ -140,10 +162,7 @@ function MaterialGraphMinimap({
       })}
       {graph.nodes.map((n) => {
         const def = MAT_NODE_DEFS[n.type]
-        const wiredOut =
-          n.type === 'Output' &&
-          isolateChannel &&
-          graph.edges.some((e) => e.to === `${out?.id}:${isolateChannel}`)
+        const soloHit = isolateChannel && soloNodes.has(n.id)
         return (
           <rect
             key={n.id}
@@ -152,8 +171,10 @@ function MaterialGraphMinimap({
             width={Math.max(8, NODE_W * sx)}
             height={10}
             rx={2}
-            fill={def?.color ?? '#444'}
-            opacity={wiredOut ? 1 : 0.7}
+            fill={soloHit ? '#9ec8ff' : (def?.color ?? '#444')}
+            opacity={soloHit ? 1 : 0.7}
+            stroke={soloHit ? '#6eb5ff' : undefined}
+            strokeWidth={soloHit ? 1 : 0}
           />
         )
       })}
@@ -530,6 +551,9 @@ export function MaterialEditor() {
         <button className="apply" onClick={apply}>
           ✓ Apply
         </button>
+        <span className="mat-zoom-hint" title="Pan canvas background · Ctrl+wheel zoom">
+          Ctrl+wheel zoom
+        </span>
       </div>
       <div className="mat-editor-body">
         <MaterialGraphMinimap

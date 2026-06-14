@@ -1113,6 +1113,36 @@ export function WorldSettings() {
           </>
         )}
         <label className="field check">
+          <span>Color grading (lift/gamma/gain)</span>
+          <input type="checkbox" checked={!!env.postColorGrading} onChange={(e) => set('postColorGrading', e.target.checked)} />
+        </label>
+        {env.postColorGrading && (
+          <>
+            <label className="field">
+              <span>Gain R</span>
+              <input
+                type="range"
+                min={0.5}
+                max={1.5}
+                step={0.05}
+                value={env.postGain?.[0] ?? 1}
+                onChange={(e) => set('postGain', [parseFloat(e.target.value), env.postGain?.[1] ?? 1, env.postGain?.[2] ?? 1])}
+              />
+            </label>
+            <label className="field">
+              <span>Lift R</span>
+              <input
+                type="range"
+                min={-0.2}
+                max={0.2}
+                step={0.01}
+                value={env.postLift?.[0] ?? 0}
+                onChange={(e) => set('postLift', [parseFloat(e.target.value), env.postLift?.[1] ?? 0, env.postLift?.[2] ?? 0])}
+              />
+            </label>
+          </>
+        )}
+        <label className="field check">
           <span>Rapier move_and_slide pawn</span>
           <input
             type="checkbox"

@@ -2,6 +2,16 @@ import { buildPlayableHTML } from './exportPlayable'
 import { useEditor } from './store'
 
 const PROBE_WAIT_MS = 6000
+let scheduleTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Wave 25 — debounced re-probe after save/export. */
+export function scheduleExportPerfProbe(delayMs = 2500) {
+  if (scheduleTimer) clearTimeout(scheduleTimer)
+  scheduleTimer = setTimeout(() => {
+    scheduleTimer = null
+    probeExportPerfGate()
+  }, delayMs)
+}
 
 /** Wave 24 — boot playable export in hidden iframe and read __LOTUS_EXPORT_PERF__. */
 export function probeExportPerfGate(): void {

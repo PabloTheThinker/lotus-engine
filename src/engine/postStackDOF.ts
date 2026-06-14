@@ -100,7 +100,8 @@ export function getDOFSettings(
 } {
   const envEnabled = env.postDof === true
   const camOverride = camera?.dofOverride === true
-  const enabled = camOverride ? true : envEnabled
+  const camSeqFocus = camera?.dofFocusDistance != null && !camOverride
+  const enabled = camOverride || camSeqFocus ? true : envEnabled
   const envFocusDistance = env.postDofFocusDistance ?? 5
   const focusDistance = camera
     ? resolveCameraDOFFocusDistance(camera, envFocusDistance, focusPullT)

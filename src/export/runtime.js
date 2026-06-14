@@ -583,6 +583,32 @@ function makeParticles(props) {
     idxAttr.needsUpdate = true
     geo.setDrawRange(0, tri)
   }
+  const se = props.subEmitter
+  const subOn = se?.enabled && !(props.modulesOff ?? []).includes('subEmitter')
+  function spawnBurstAt(wx, wy, wz) {
+    if (!subOn || !se) return
+    const n = Math.max(1, Math.min(se.count ?? 8, 24))
+    for (let k = 0; k < n; k++) {
+      const i = life.findIndex((l) => l <= 0)
+      if (i < 0) break
+      maxLife[i] = Math.max(0.05, (se.lifetime ?? 0.4) * (0.7 + Math.random() * 0.6))
+      life[i] = maxLife[i]
+      const i3 = i * 3
+      pos[i3] = wx; pos[i3 + 1] = wy; pos[i3 + 2] = wz
+      const sp = (se.speed ?? 1.5) * (0.5 + Math.random())
+      const a = Math.random() * Math.PI * 2
+      const incl = Math.random() * Math.PI * 0.5
+      vel[i3] = Math.cos(a) * Math.sin(incl) * sp
+      vel[i3 + 1] = Math.cos(incl) * sp
+      vel[i3 + 2] = Math.sin(a) * Math.sin(incl) * sp
+      if (trail) {
+        const tb = i * trailLen * 3
+        for (let s = 0; s < trailLen; s++) {
+          trail[tb + s * 3] = wx; trail[tb + s * 3 + 1] = wy; trail[tb + s * 3 + 2] = wz
+        }
+      }
+    }
+  }
   function spawn() {
     const i = life.findIndex((l) => l <= 0)
     if (i < 0) return
@@ -606,6 +632,7 @@ function makeParticles(props) {
   return {
     points: display,
     display,
+    subEmitterOn: subOn,
     cap,
     pos,
     vel,
@@ -650,6 +677,7 @@ function makeParticles(props) {
         if (life[i] <= 0) continue
         life[i] -= dt
         const i3 = i * 3
+        if (life[i] <= 0 && subOn && se.onDeath) spawnBurstAt(pos[i3], pos[i3 + 1], pos[i3 + 2])
         if (!this.gpuTier) {
           vel[i3 + 1] += (props.gravity ?? -1) * dt
           vel[i3] *= drag; vel[i3 + 1] *= drag; vel[i3 + 2] *= drag
@@ -1307,6 +1335,8 @@ async function boot() {
       }
       if (trailTris > 0) window.__LOTUS_EXPORT_RIBBON_QA__ = { trailTris, ribbonSystems: particleSystems.filter((p) => p.trailLen > 0).length }
     }
+    const subSystems = particleSystems.filter((p) => p.subEmitterOn)
+    if (subSystems.length) window.__LOTUS_EXPORT_SUB_EMITTER_QA__ = { systems: subSystems.length }
     updatePawn(dt)
     if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
     applyStreamingVisibility(pawnCam.position)

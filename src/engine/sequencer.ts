@@ -21,6 +21,7 @@ export type SeqProperty =
   | 'emissiveIntensity'
   | 'intensity'
   | 'fov'
+  | 'dofFocusDistance'
 
 export type { SeqHudProperty } from './types'
 export type SeqInterp = 'linear' | 'smooth' | 'step' | 'bezier'
@@ -98,7 +99,9 @@ export function keyableProperties(actor: { mesh?: unknown; light?: unknown; came
   const out: SeqProperty[] = ['visible']
   if (actor.materialProps) out.push('color', 'opacity', 'emissiveIntensity')
   if (actor.light) out.push('intensity', 'color')
-  if (actor.camera) out.push('fov')
+  if (actor.camera) {
+    out.push('fov', 'dofFocusDistance')
+  }
   return [...new Set(out)]
 }
 
@@ -372,6 +375,13 @@ export function sampleSequence(world: World, seq: Sequence, t: number, withAudio
         if (actor.camera && typeof v === 'number') {
           actor.camera.fov = v
           actor.camera.updateProjectionMatrix()
+          if (actor.cameraProps) actor.cameraProps.fov = v
+        }
+        break
+      case 'dofFocusDistance':
+        if (actor.camera && typeof v === 'number') {
+          actor.cameraProps = actor.cameraProps ?? { fov: actor.camera.fov, near: actor.camera.near, far: actor.camera.far }
+          actor.cameraProps.dofFocusDistance = v
         }
         break
     }

@@ -236,6 +236,17 @@ function parseBTServicesFromScript(script: string | undefined): { serviceNodeId:
   }
 }
 
+/** Wave 25 — inline service compile hint for gutter diff marker tooltip. */
+export function getBTNodeServiceCompileHint(graph: BTGraph, nodeId: string): string | null {
+  const compiled = compileBTGraph(graph)
+  if (!compiled?.services?.length) return null
+  const svc = compiled.services.find((s) => s.serviceNodeId === nodeId)
+  if (!svc) return null
+  const host = graph.nodes.find((n) => n.id === nodeId)
+  const title = host ? (BT_NODE_DEFS[host.type]?.title ?? host.type) : nodeId
+  return `${svc.hostPath} ← ${title} (${svc.service.service})`
+}
+
 /** Wave 24 — node ids that differ between actor script and compile preview (service gutter markers). */
 export function getBTScriptDiffGutterNodeIds(
   existingScript: string | undefined,

@@ -14,6 +14,7 @@ import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } 
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getSSRSettings, ssrStatusLabel } from '../engine/ssrPreset'
 import { getDOFSettings } from '../engine/postStackDOF'
+import { getColorGradingSettings } from '../engine/postStackColorGrading'
 import { syncSSRGroundReflector } from '../engine/ssrGround'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { createTSLRenderPipeline, type TSLPipelineStack } from '../engine/postStackTSLPipeline'
@@ -510,7 +511,9 @@ export function Viewport() {
         postStack.ssrPass.bouncing = !!postStack.ssrGround
       }
       const dof = getDOFSettings(world.environment, frameCameraDof, frameFocusPullT)
+      const colorGrading = getColorGradingSettings(world.environment)
       postStack.applyDOF(dof.webgl)
+      postStack.applyColorGrading(colorGrading)
       tslPipeline?.applyPostFx(
         getPostFxSettings(world.environment),
         {
@@ -522,6 +525,7 @@ export function Viewport() {
         getSSGISettings(world.environment),
         getSSRSettings(world.environment),
         dof.tsl,
+        colorGrading,
       )
     }
 
@@ -1544,8 +1548,9 @@ export function Viewport() {
           activeCamActor = camActor
         }
       }
+      const camProps = activeCamActor?.cameraProps
       frameCameraDof =
-        activeCamActor?.cameraProps?.dofOverride ? activeCamActor.cameraProps : null
+        camProps && (camProps.dofOverride || camProps.dofFocusDistance != null) ? camProps : null
       if (frameCameraDof?.dofFocusPull && s.playing) {
         const dur = Math.max(0.05, frameCameraDof.dofFocusPullDuration ?? 2)
         frameFocusPullT = Math.min(1, world.playClock / dur)

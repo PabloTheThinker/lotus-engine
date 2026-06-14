@@ -19,6 +19,7 @@ import {
   summarizeBTServices,
   diffBTScriptPreview,
   getBTScriptDiffGutterNodeIds,
+  getBTNodeServiceCompileHint,
   validateBTGraph,
   type BTGraph,
   type BTGraphNode,
@@ -512,7 +513,21 @@ export function BTEditor() {
                     <circle cx={-8} cy={HEADER_H / 2} r={5} fill={isBpHit ? '#ff4466' : '#e5484d'} />
                   )}
                   {diffGutterIds.has(n.id) && (
-                    <text x={-10} y={HEADER_H / 2 + 14} fill="#f0c080" fontSize={10} textAnchor="middle">
+                    <text
+                      x={-10}
+                      y={HEADER_H / 2 + 14}
+                      fill="#f0c080"
+                      fontSize={10}
+                      textAnchor="middle"
+                      className="bt-gutter-diff"
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedNode(n.id)
+                        const hint = getBTNodeServiceCompileHint(graph, n.id)
+                        useEditor.getState().setStatus(hint ?? `Script diff at ${def.title}`)
+                      }}
+                    >
                       ≠
                     </text>
                   )}

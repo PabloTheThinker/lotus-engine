@@ -164,6 +164,7 @@ export function Sequencer() {
       case 'emissiveIntensity': return actor.materialProps?.emissiveIntensity ?? 1
       case 'intensity': return actor.light?.intensity ?? 1
       case 'fov': return actor.camera?.fov ?? 60
+      case 'dofFocusDistance': return actor.cameraProps?.dofFocusDistance ?? world.environment.postDofFocusDistance ?? 5
       default: return null
     }
   }

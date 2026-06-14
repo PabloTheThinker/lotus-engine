@@ -1662,6 +1662,108 @@ test('wave 24 export ribbon E2E boot trail assert', async ({ page }) => {
   expect(ribbonQa.trailTris).toBeGreaterThan(0)
 })
 
+test('wave 25 DOF sequencer track + color grading', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: { settings: () => { enabled: boolean; gain: number[] } }
+      world: { sequence: { tracks: unknown[] }; actors: { values: () => IterableIterator<{ id: string; type: string; camera?: unknown; cameraProps?: { dofFocusDistance?: number } }> } }
+    }
+    v.world.environment.postColorGrading = true
+    v.world.environment.postGain = [1.2, 1, 1]
+    const cg = v.colorGrading.settings()
+    const seq = v.world.sequence
+    seq.tracks.push({
+      actorId: 'cam_seq25',
+      property: 'dofFocusDistance',
+      keys: [{ t: 0, v: 3 }, { t: 2, v: 8 }],
+    })
+    return { hasCg: cg.enabled, gain: cg.gain[0], keyed: seq.tracks.some((t: { property?: string }) => t.property === 'dofFocusDistance') }
+  })
+
+  expect(result.hasCg).toBe(true)
+  expect(result.gain).toBe(1.2)
+  expect(result.keyed).toBe(true)
+})
+
+test('wave 25 BT gutter service compile hint', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        diffGutter: (g: import('../src/engine/btGraph').BTGraph, script: string) => string[]
+        serviceCompileHint: (g: import('../src/engine/btGraph').BTGraph, nodeId: string) => string | null
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const svc = { id: 'svc25', type: 'SvcPlayerNear', x: 200, y: 200, props: { radius: 5 } }
+    const sel = { id: 'sel25', type: 'Selector', x: 300, y: 80, props: {} }
+    graph.nodes.push(svc, sel)
+    graph.edges = [
+      { from: root.id, to: sel.id },
+      { from: sel.id, to: svc.id, kind: 'service' },
+    ]
+    const gutter = v.bt.diffGutter(graph, '// stale')
+    const hint = v.bt.serviceCompileHint(graph, 'svc25')
+    return { hasGutter: gutter.includes('svc25'), hint: hint ?? '' }
+  })
+
+  expect(result.hasGutter).toBe(true)
+  expect(result.hint).toMatch(/SvcPlayerNear|PlayerNear/i)
+})
+
+test('wave 25 export schedule perf probe bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const hasBridge = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { schedulePerfProbe?: (ms?: number) => void } }
+    return typeof v.export.schedulePerfProbe === 'function'
+  })
+  expect(hasBridge).toBe(true)
+})
+
+test('wave 25 export sub-emitter runtime surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    const html = v.export.buildPlayableHTML()
+    return {
+      hasSpawnBurst: html.includes('spawnBurstAt'),
+      hasSubEmitterOn: html.includes('subEmitterOn'),
+    }
+  })
+
+  expect(result.hasSpawnBurst || result.hasSubEmitterOn).toBe(true)
+})
+
+test('wave 25 material minimap zoom hint', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+      ],
+      edges: [{ from: 'c1', to: 'out:baseColor' }],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  await expect(page.locator('.mat-zoom-hint')).toBeVisible()
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

@@ -1338,6 +1338,15 @@ input[type='checkbox'] {
 .mat-minimap-viewport {
   pointer-events: none;
 }
+.mat-zoom-hint {
+  font-size: 10px;
+  color: var(--text-dim, #79828f);
+  margin-left: 8px;
+}
+.bt-gutter-diff {
+  pointer-events: all;
+  cursor: pointer;
+}
 .mat-canvas-pan {
   overflow: hidden;
 }

@@ -45,13 +45,15 @@ import {
   summarizeBTServices,
   diffBTScriptPreview,
   getBTScriptDiffGutterNodeIds,
+  getBTNodeServiceCompileHint,
   validateBTGraph,
 } from './engine/btGraph'
 import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
 import { getDOFSettings, resolveCameraDOFFocusDistance } from './engine/postStackDOF'
-import { probeExportPerfGate } from './editor/exportPerfProbe'
+import { getColorGradingSettings } from './engine/postStackColorGrading'
+import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
 import { DEFAULT_PARTICLES } from './engine/particles'
@@ -226,6 +228,7 @@ const lotusBridge = {
     summarizeServices: summarizeBTServices,
     diffScript: (graph = emptyBTGraph(), script = '') => diffBTScriptPreview(script, graph),
     diffGutter: (graph = emptyBTGraph(), script = '') => getBTScriptDiffGutterNodeIds(script, graph),
+    serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
     activeServiceNodeIds: getActiveBTServiceNodeIds,
@@ -248,6 +251,9 @@ const lotusBridge = {
       focusPullT: number,
     ) => resolveCameraDOFFocusDistance(camera, world.environment.postDofFocusDistance ?? 5, focusPullT),
   },
+  colorGrading: {
+    settings: () => getColorGradingSettings(world.environment),
+  },
   projectSettings: {
     load: loadProjectSettings,
   },
@@ -262,6 +268,7 @@ const lotusBridge = {
   export: {
     buildPlayableHTML,
     probePerfGate: probeExportPerfGate,
+    schedulePerfProbe: scheduleExportPerfProbe,
   },
 }
 const win = window as unknown as Record<string, unknown>

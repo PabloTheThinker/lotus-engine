@@ -3,6 +3,7 @@ import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
 import { DEFAULT_TSL_DOF, type TSLDOFSettings } from './postStackDOF'
+import type { ColorGradingSettings } from './postStackColorGrading'
 import { applySSRToTSLNode, type SSRSettings } from './ssrPreset'
 import { syncTSLSSRGround, type TSLSSRGroundHandle } from './ssrGround'
 
@@ -25,6 +26,7 @@ export interface TSLPipelineStack {
     ssgi?: SSGISettings,
     ssrSettings?: SSRSettings,
     dofSettings?: TSLDOFSettings,
+    colorGrading?: ColorGradingSettings,
   ) => void
   dispose: () => void
 }
@@ -113,6 +115,12 @@ export async function createTSLRenderPipeline(
     let ssrSettings = opts.ssrSettings
     let dofOn = false
     let dofSettings: TSLDOFSettings = { ...DEFAULT_TSL_DOF }
+    let colorGradingSettings: ColorGradingSettings = {
+      enabled: false,
+      lift: [0, 0, 0],
+      gamma: [1, 1, 1],
+      gain: [1, 1, 1],
+    }
     let activeCam = camera
 
     type TSLNode = unknown
@@ -225,6 +233,12 @@ export async function createTSLRenderPipeline(
         }
       }
 
+      if (colorGradingSettings.enabled) {
+        const g = colorGradingSettings.gain
+        const gainAvg = (g[0] + g[1] + g[2]) / 3
+        colorNode = mul(colorNode, float(gainAvg))
+      }
+
       if (bloomOn) {
         const bloomPass = bloom(
           colorNode as Parameters<typeof bloom>[0],
@@ -277,13 +291,14 @@ export async function createTSLRenderPipeline(
         bloomRadius = r
         rebuildOutput()
       },
-      applyPostFx(fx, bloom, ssgi, ssr, dof) {
+      applyPostFx(fx, bloom, ssgi, ssr, dof, colorGrading) {
         ssaoOn = fx.ssao
         fxaaOn = fx.fxaa
         taaOn = fx.taa
         ssrOn = fx.ssr
         dofOn = fx.dof
         if (dof) dofSettings = dof
+        if (colorGrading) colorGradingSettings = colorGrading
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi
         ssrSettings = ssr

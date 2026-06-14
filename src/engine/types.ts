@@ -488,6 +488,11 @@ export interface EnvironmentSettings {
   /** Screen-space global illumination approx (Wave 12, WebGPU opt-in) */
   postSsgi?: boolean
   postSsgiPreset?: 'off' | 'low' | 'medium' | 'high'
+  /** Wave 25 — lift/gamma/gain color grading stub */
+  postColorGrading?: boolean
+  postLift?: [number, number, number]
+  postGamma?: [number, number, number]
+  postGain?: [number, number, number]
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
   /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */
@@ -546,6 +551,10 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   lightProbeGrid: false,
   postSsgi: false,
   postSsgiPreset: 'off',
+  postColorGrading: false,
+  postLift: [0, 0, 0],
+  postGamma: [1, 1, 1],
+  postGain: [1, 1, 1],
   useRapierCharacter: true,
   useRaycastVehicle: false,
   exportBatchStatic: false,

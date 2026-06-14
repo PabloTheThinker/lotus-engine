@@ -5,6 +5,7 @@ import type { SerializedLevel } from '../engine/types'
 import { loadPrefs, type ExportQuality } from './Preferences'
 import { loadProjectSettings } from './projectSettings'
 import { useEditor } from './store'
+import { scheduleExportPerfProbe } from './exportPerfProbe'
 
 export interface ExportOptions {
   /** add PWA manifest + service worker stub for offline single-file play */
@@ -162,6 +163,7 @@ function downloadHtml(filename: string, html: string) {
   a.click()
   URL.revokeObjectURL(a.href)
   useEditor.getState().setStatus(`Exported playable: ${a.download}`)
+  scheduleExportPerfProbe()
 }
 
 export function exportPlayable(opts: ExportOptions = {}) {

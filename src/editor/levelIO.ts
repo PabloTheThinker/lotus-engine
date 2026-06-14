@@ -3,6 +3,7 @@ import type { SerializedLevel } from '../engine/types'
 import { buildSerializedActor } from './spawn'
 import { clearHistory } from './commands'
 import { useEditor } from './store'
+import { scheduleExportPerfProbe } from './exportPerfProbe'
 
 const AUTOSAVE_KEY = 'lotus-engine.autosave'
 
@@ -105,6 +106,7 @@ export function saveLevelToFile() {
   URL.revokeObjectURL(a.href)
   markLevelSaved()
   s.setStatus(`Saved ${a.download}`)
+  scheduleExportPerfProbe()
 }
 
 export function openLevelFromFile() {
@@ -133,6 +135,7 @@ export function autosave() {
     world.levelName = s.levelName
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(world.serialize()))
     markLevelSaved()
+    scheduleExportPerfProbe()
   } catch {
     // storage full or unavailable — autosave is best-effort
     s.markDirty()

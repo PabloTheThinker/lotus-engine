@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.63 (wave 24).** v0.33–v1.63 shipped; **build clean**, **`npm run test` — 64 passed**.
+- **Last clean commit: v1.68 (wave 25).** v0.33–v1.68 shipped; **build clean**, **`npm run test` — 69 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -288,13 +288,23 @@
 | v1.62 | BT script diff gutter markers — `getBTScriptDiffGutterNodeIds`, `≠` gutter on changed nodes |
 | v1.63 | Material minimap pan/zoom viewport sync — layer transform + minimap viewport rect — 64 tests passed |
 
-## Next up (v1.64+, Wave 25)
+## Shipped (v1.64–v1.68, Wave 25)
 
-1. **TSL post** — DOF focus pull sequencer track + color grading LUT stub
-2. **GPU particles** — Niagara module GPU path polish + sub-emitter export parity
-3. **Export** — perf gate re-probe on level save/export
-4. **BT** — gutter diff click-to-jump + service compile inline preview
-5. **Material TSL** — minimap zoom wheel hint + solo channel minimap highlight
+| Ver | What |
+|---|---|
+| v1.64 | DOF focus pull sequencer track — `dofFocusDistance` on Camera actors |
+| v1.65 | Color grading LUT stub — lift/gamma/gain WebGL + TSL gain pass |
+| v1.66 | Export sub-emitter parity — `spawnBurstAt` + `__LOTUS_EXPORT_SUB_EMITTER_QA__` |
+| v1.67 | Perf gate re-probe — `scheduleExportPerfProbe` on save/export |
+| v1.68 | BT gutter click-to-jump; material minimap solo highlight + zoom hint — 69 tests passed |
+
+## Next up (v1.69+, Wave 26)
+
+1. **TSL post** — full lift/gamma/gain on WebGPU + ACES tonemap stub
+2. **GPU particles** — Niagara wind/rotation modules on GPU path
+3. **Export** — color grading + DOF in export TSL pipeline parity
+4. **BT** — gutter diff scroll-into-view + compile diff line jump
+5. **Material TSL** — minimap drag-pan + channel legend overlay
 
 ## Remaining gap-list queue (post–wave 7)
 

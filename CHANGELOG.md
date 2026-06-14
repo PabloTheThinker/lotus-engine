@@ -4,6 +4,26 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 25: v1.64–v1.68
+
+### Added
+- **v1.64** DOF focus pull sequencer track — `dofFocusDistance` keyable on Camera actors; drives `cameraProps` during scrub/PIE
+- **v1.65** Color grading LUT stub — `postStackColorGrading.ts` lift/gamma/gain WebGL pass + TSL gain; World Settings toggle
+- **v1.66** Export sub-emitter parity — `spawnBurstAt` on death in playable `runtime.js`; `__LOTUS_EXPORT_SUB_EMITTER_QA__`
+- **v1.67** Perf gate re-probe — `scheduleExportPerfProbe()` on save/autosave/export
+- **v1.68** BT gutter click-to-jump + service compile hint; material minimap solo highlight + zoom hint — 69 tests passed
+
+### Changed
+- `window.lotus.colorGrading.settings()` + `bt.serviceCompileHint` + `export.schedulePerfProbe` bridges
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 69 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 24: v1.59–v1.63
 
 ### Added

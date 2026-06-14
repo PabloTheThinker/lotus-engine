@@ -13,6 +13,7 @@ import type { SSGISettings } from './ssgiPreset'
 import { applySSRToWebGLPass, getSSRSettings, type SSRSettings } from './ssrPreset'
 import type { EnvironmentSettings } from './types'
 import { createDOFStubPass, updateDOFStubPass, type DOFStubSettings } from './postStackDOF'
+import { createColorGradingPass, updateColorGradingPass, type ColorGradingSettings } from './postStackColorGrading'
 import { createSSRGroundReflector, type SSRGroundHandle } from './ssrGround'
 
 export interface WebGLPostStack {
@@ -24,11 +25,13 @@ export interface WebGLPostStack {
   fxaaPass: ShaderPass | null
   ssgiPass: ShaderPass | null
   dofPass: ShaderPass | null
+  colorGradingPass: ShaderPass | null
   ssrGround: SSRGroundHandle | null
   setSize: (w: number, h: number) => void
   applySSGI: (settings: SSGISettings) => void
   applySSR: (settings: SSRSettings) => void
   applyDOF: (settings: DOFStubSettings) => void
+  applyColorGrading: (settings: ColorGradingSettings) => void
   applySettings: (post: {
     bloomEnabled: boolean
     bloomStrength: number
@@ -91,6 +94,9 @@ export function createWebGLPostStack(
   const dofPass = createDOFStubPass({ enabled: fx.dof })
   if (dofPass) composer.addPass(dofPass)
 
+  const colorGradingPass = createColorGradingPass({ enabled: false, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] })
+  if (colorGradingPass) composer.addPass(colorGradingPass)
+
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.35, 0.6, 0.9)
   composer.addPass(bloomPass)
 
@@ -114,6 +120,7 @@ export function createWebGLPostStack(
     fxaaPass,
     ssgiPass,
     dofPass,
+    colorGradingPass,
     ssrGround,
     applySSGI(settings) {
       updateSSGIPass(ssgiPass, settings)
@@ -123,6 +130,9 @@ export function createWebGLPostStack(
     },
     applyDOF(settings) {
       updateDOFStubPass(dofPass, settings)
+    },
+    applyColorGrading(settings) {
+      updateColorGradingPass(colorGradingPass, settings)
     },
     setSize(w, h) {
       composer.setSize(w, h)
