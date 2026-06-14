@@ -39,7 +39,9 @@ import { patchMaterialOverrides, revertMaterialOverride } from '../materialComma
 import {
   getPrefabDefaultValue,
   getPrefabInstanceRoot,
+  getPrefabOverrideDiff,
   isPrefabInstanceActor,
+  listPrefabSubtree,
   revertAllPrefabOverrides,
   runPrefabAwareCommand,
   summarizePrefabOverrides,
@@ -1375,6 +1377,32 @@ function Area3DSection({ actor }: { actor: Actor }) {
   )
 }
 
+function PrefabSubtreeSection({ actor }: { actor: Actor }) {
+  const select = useEditor((s) => s.select)
+  if (!actor.prefabSource) return null
+  const subtree = listPrefabSubtree(actor.id)
+  return (
+    <Section title="Prefab Subtree">
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Source: {actor.prefabSource} · {subtree.length} editable child(ren) in-place
+      </div>
+      {subtree.map((entry) => (
+        <button
+          key={entry.actorId}
+          type="button"
+          className="prefab-subtree-row"
+          style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 12, marginBottom: 2 }}
+          onClick={() => select(entry.actorId)}
+        >
+          {entry.overrideCount > 0 ? '≠ ' : ''}
+          {entry.actorName} <span style={{ opacity: 0.65 }}>({entry.type})</span>
+          {entry.overrideCount > 0 ? ` · ${entry.overrideCount} override(s)` : ''}
+        </button>
+      ))}
+    </Section>
+  )
+}
+
 function PrefabOverridesSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   if (!actor.prefabSource) return null
@@ -1399,6 +1427,21 @@ function PrefabOverridesSection({ actor }: { actor: Actor }) {
       <button type="button" onClick={() => { revertAllPrefabOverrides(actor.id); touch() }}>
         Revert All Overrides
       </button>
+    </Section>
+  )
+}
+
+function PrefabOverrideDiffSection({ actor }: { actor: Actor }) {
+  if (!actor.prefabActorId) return null
+  const diff = getPrefabOverrideDiff(actor.id)
+  if (diff.length === 0) return null
+  return (
+    <Section title="Override Diff">
+      {diff.map((d) => (
+        <div key={d.fieldPath} className="panel-empty" style={{ padding: '2px 0', fontSize: 12 }}>
+          <span title="Differs from prefab source">≠</span> {d.fieldPath}: {String(d.current)} ← {String(d.source)}
+        </div>
+      ))}
     </Section>
   )
 }
@@ -2799,7 +2842,9 @@ export function Details() {
         {actor.type === 'Path3D' && <Path3DSection actor={actor} />}
         {actor.type === 'PathFollow3D' && <PathFollowSection actor={actor} />}
         {actor.type === 'Area3D' && <Area3DSection actor={actor} />}
+        {actor.prefabSource && <PrefabSubtreeSection actor={actor} />}
         {actor.prefabSource && <PrefabOverridesSection actor={actor} />}
+        <PrefabOverrideDiffSection actor={actor} />
         {actor.type === 'SoundEmitter' && <SoundEmitterSection actor={actor} />}
         {actor.type === 'Label3D' && <Label3DSection actor={actor} />}
         {actor.type === 'Widget3D' && <Widget3DSection actor={actor} />}

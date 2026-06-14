@@ -6,8 +6,10 @@ import {
   ensureBezierTangents,
   isAudioTrack,
   isHudTrack,
+  isScriptVarTrack,
   keyableHudProperties,
   keyableProperties,
+  keyableScriptExports,
   sampleSequence,
   setKey,
   type SeqHudProperty,
@@ -233,6 +235,48 @@ export function Sequencer() {
     )
   }
 
+  const currentScriptVarValueOf = (actorId: string, varName: string): SeqKey['v'] | null => {
+    const actor = world.actors.get(actorId)
+    if (!actor) return null
+    const ev = keyableScriptExports(actor).find((e) => e.name === varName)
+    if (!ev) return null
+    const cur = actor.scriptVars?.[varName] ?? ev.value
+    if (typeof cur === 'boolean') return cur
+    if (typeof cur === 'number') return cur
+    if (typeof cur === 'string') return cur
+    return null
+  }
+
+  const addScriptVarTrack = (actorId: string, varName: string) => {
+    const existing = seq.tracks.find(
+      (tr) => isScriptVarTrack(tr) && tr.actorId === actorId && tr.property === varName,
+    )
+    if (existing) {
+      setCurveTrack(existing)
+      setCurveOpen(true)
+      return
+    }
+    const v = currentScriptVarValueOf(actorId, varName)
+    if (v === null) return
+    const actor = world.actors.get(actorId)
+    const label = actor?.name ?? actorId
+    const before = JSON.stringify(seq.tracks)
+    setKey(seq, actorId, varName, seqTime, v, 'scriptVar')
+    const after = JSON.stringify(seq.tracks)
+    const track = seq.tracks.find((tr) => isScriptVarTrack(tr) && tr.actorId === actorId && tr.property === varName)
+    if (track) {
+      setCurveTrack(track)
+      setCurveOpen(true)
+    }
+    runCommand(
+      new PropertyCommand(
+        `Script var ${label} · ${varName}`,
+        () => (seq.tracks = JSON.parse(after)),
+        () => (seq.tracks = JSON.parse(before)),
+      ),
+    )
+  }
+
   const addHudTrack = (widgetId: string, property: SeqHudProperty) => {
     const existing = seq.tracks.find(
       (tr) => isHudTrack(tr) && tr.actorId === widgetId && tr.property === property,
@@ -264,9 +308,11 @@ export function Sequencer() {
 
   const keyCurveTrack = () => {
     if (!curveTrack) return
-    const v = isHudTrack(curveTrack)
-      ? currentHudValueOf(curveTrack.actorId, curveTrack.property as SeqHudProperty)
-      : currentValueOf(curveTrack.property as SeqProperty)
+    const v = isScriptVarTrack(curveTrack)
+      ? currentScriptVarValueOf(curveTrack.actorId, curveTrack.property)
+      : isHudTrack(curveTrack)
+        ? currentHudValueOf(curveTrack.actorId, curveTrack.property as SeqHudProperty)
+        : currentValueOf(curveTrack.property as SeqProperty)
     if (v === null) return
     const before = JSON.stringify(seq.tracks)
     setKey(
@@ -377,6 +423,7 @@ export function Sequencer() {
   const byActor = new Map<string, SeqTrack[]>()
   const byWidget = new Map<string, SeqTrack[]>()
   const byAudio = new Map<string, SeqTrack[]>()
+  const byScriptVar = new Map<string, SeqTrack[]>()
   for (const tr of seq.tracks) {
     if (isAudioTrack(tr)) {
       if (!byAudio.has(tr.actorId)) byAudio.set(tr.actorId, [])
@@ -384,11 +431,16 @@ export function Sequencer() {
     } else if (isHudTrack(tr)) {
       if (!byWidget.has(tr.actorId)) byWidget.set(tr.actorId, [])
       byWidget.get(tr.actorId)!.push(tr)
+    } else if (isScriptVarTrack(tr)) {
+      if (!byScriptVar.has(tr.actorId)) byScriptVar.set(tr.actorId, [])
+      byScriptVar.get(tr.actorId)!.push(tr)
     } else {
       if (!byActor.has(tr.actorId)) byActor.set(tr.actorId, [])
       byActor.get(tr.actorId)!.push(tr)
     }
   }
+
+  const selectedExports = selectedId ? keyableScriptExports(world.actors.get(selectedId) ?? {}) : []
 
   const widgetLabel = (widgetId: string) =>
     world.hudWidgets.find((w) => w.id === widgetId)?.text || widgetId
@@ -461,6 +513,23 @@ export function Sequencer() {
           <option value="">+ Property…</option>
           {(selectedId ? keyableProperties(world.actors.get(selectedId) ?? {}) : []).map((p) => (
             <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+        <select
+          className="snap-size"
+          value=""
+          title="Key an @export script variable on the selected actor"
+          disabled={!selectedId || selectedExports.length === 0}
+          onChange={(e) => {
+            if (e.target.value && selectedId) addScriptVarTrack(selectedId, e.target.value)
+            e.target.value = ''
+          }}
+        >
+          <option value="">+ Script Var…</option>
+          {selectedExports.map((ev) => (
+            <option key={ev.name} value={ev.name}>
+              {ev.name}
+            </option>
           ))}
         </select>
         <select
@@ -591,8 +660,25 @@ export function Sequencer() {
               ))}
             </div>
           ))}
-          {byActor.size === 0 && byWidget.size === 0 && byAudio.size === 0 && (
-            <div className="panel-empty">Select an actor or add a HUD/audio track, move the playhead, hit ◆ Key.</div>
+          {[...byScriptVar.entries()].map(([actorId, tracks]) => (
+            <div key={`script-${actorId}`}>
+              <div className="seq-actor-row seq-script-row" title="@export script variable tracks" onClick={() => select(actorId)}>
+                📜 {world.actors.get(actorId)?.name ?? actorId}
+              </div>
+              {tracks.map((tr) => (
+                <div
+                  key={tr.property}
+                  className={`seq-track-name ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                  title="Click to open curve editor"
+                >
+                  {tr.property}
+                </div>
+              ))}
+            </div>
+          ))}
+          {byActor.size === 0 && byWidget.size === 0 && byAudio.size === 0 && byScriptVar.size === 0 && (
+            <div className="panel-empty">Select an actor or add a HUD/audio/script track, move the playhead, hit ◆ Key.</div>
           )}
         </div>
         <div
@@ -797,6 +883,44 @@ export function Sequencer() {
             </div>
             )
           })}
+          {[...byScriptVar.entries()].map(([actorId, tracks]) => (
+            <div key={`script-lane-${actorId}`}>
+              <div className="seq-actor-lane seq-script-lane" />
+              {tracks.map((tr) => (
+                <div
+                  key={tr.property}
+                  className={`seq-lane ${curveTrack === tr ? 'selected' : ''}`}
+                  onClick={() => selectTrack(tr)}
+                >
+                  {tr.keys.map((k, i) => (
+                    <span
+                      key={i}
+                      className="seq-keyframe"
+                      style={{ left: pct(k.t) }}
+                      title={`${tr.property} @ ${k.t.toFixed(2)}s — click jumps · Shift+click cycles interp · right-click deletes`}
+                      onContextMenu={(e) => {
+                        e.preventDefault()
+                        deleteKey(tr, i)
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        selectTrack(tr)
+                        if (e.shiftKey) {
+                          cycleInterp(k, tr, i)
+                          return
+                        }
+                        setSeqTime(k.t)
+                        applyAtTime(k.t, true)
+                        touch()
+                      }}
+                    >
+                      {interpIcon(k.interp)}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
           <div className="seq-playhead" style={{ left: pct(seqTime) }} />
         </div>
       </div>
@@ -808,7 +932,9 @@ export function Sequencer() {
                 ? `♫ ${curveTrack.actorId}`
                 : isHudTrack(curveTrack)
                   ? `🖥 ${widgetLabel(curveTrack.actorId)}`
-                  : (world.actors.get(curveTrack.actorId)?.name ?? '(deleted)')}{' '}
+                  : isScriptVarTrack(curveTrack)
+                    ? `📜 ${world.actors.get(curveTrack.actorId)?.name ?? curveTrack.actorId}`
+                    : (world.actors.get(curveTrack.actorId)?.name ?? '(deleted)')}{' '}
               · {curveTrack.property}
             </span>
             {isVectorTrack(curveTrack) && (

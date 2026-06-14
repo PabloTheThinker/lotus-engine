@@ -36,13 +36,17 @@ import { samplePathAt } from './engine/path3d'
 import { clampExportRange, makeScriptApi, parseExports } from './engine/scripting'
 import {
   getPrefabByName,
+  getPrefabOverrideDiff,
   instantiatePrefab,
+  listPrefabSubtree,
   recordPrefabOverride,
   revertAllPrefabOverrides,
   savePrefab,
   summarizePrefabOverrides,
 } from './editor/prefabs'
-import { spawnCharacterStarter } from './editor/starterTemplates'
+import { spawnCharacterStarter, spawnPlatformerStarter } from './editor/starterTemplates'
+import { createResource, getResource, listResources, saveResource } from './engine/resources'
+import { keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
 import { DEFAULT_RAY_CAST, DEFAULT_TIMER } from './engine/types'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import {
@@ -410,8 +414,26 @@ const lotusBridge = {
         if (prefab) instantiatePrefab(prefab, position)
       },
       recordOverride: (actorId: string, fieldPath: string) => recordPrefabOverride(actorId, fieldPath),
+      subtree: listPrefabSubtree,
+      overrideDiff: getPrefabOverrideDiff,
+    },
+    sequencer: {
+      keyableScriptExports,
+      sampleScriptVar: (actorId: string, varName: string, t: number, keys: { t: number; v: number }[]) => {
+        const seq = { duration: 10, autoPlay: false, tracks: [], cameraCuts: [], events: [] }
+        for (const k of keys) setKey(seq, actorId, varName, k.t, k.v, 'scriptVar')
+        sampleSequence(world, seq, t)
+        return world.actors.get(actorId)?.scriptVars?.[varName]
+      },
+    },
+    resources: {
+      create: createResource,
+      get: getResource,
+      list: listResources,
+      save: saveResource,
     },
     spawnCharacterStarter,
+    spawnPlatformerStarter,
   },
   renderer: {
     runQA: runWebGPUQAMatrix,

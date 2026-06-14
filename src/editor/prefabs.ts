@@ -404,6 +404,68 @@ export interface PrefabOverrideSummary {
   keys: string[]
 }
 
+export interface PrefabSubtreeEntry {
+  actorId: string
+  actorName: string
+  type: string
+  prefabActorId: string
+  overrideCount: number
+}
+
+export interface PrefabOverrideDiff {
+  fieldPath: string
+  source: unknown
+  current: unknown
+}
+
+const PREFAB_DIFF_FIELDS = [
+  'name',
+  'visible',
+  'transform.position.0',
+  'transform.position.1',
+  'transform.position.2',
+  'transform.rotation.0',
+  'transform.rotation.1',
+  'transform.rotation.2',
+  'transform.scale.0',
+  'transform.scale.1',
+  'transform.scale.2',
+  'material.color',
+  'material.opacity',
+  'material.roughness',
+  'material.metalness',
+  'material.emissiveIntensity',
+] as const
+
+/** List editable prefab instance children in-place (Godot-style subtree). */
+export function listPrefabSubtree(instanceRootId: string): PrefabSubtreeEntry[] {
+  const root = world.actors.get(instanceRootId)
+  if (!root?.prefabSource) return []
+  return collectSubtree(root.id)
+    .filter((a) => a.prefabActorId)
+    .map((a) => ({
+      actorId: a.id,
+      actorName: a.name,
+      type: a.type,
+      prefabActorId: a.prefabActorId!,
+      overrideCount: getPrefabOverrideDiff(a.id).length,
+    }))
+}
+
+/** Per-field override diff gutter — source vs live value for prefab children. */
+export function getPrefabOverrideDiff(actorId: string): PrefabOverrideDiff[] {
+  const actor = world.actors.get(actorId)
+  if (!actor?.prefabActorId) return []
+  const out: PrefabOverrideDiff[] = []
+  for (const fieldPath of PREFAB_DIFF_FIELDS) {
+    if (!isPrefabFieldOverridden(actorId, fieldPath)) continue
+    const source = getPrefabDefaultValue(actorId, fieldPath)
+    const current = getActorFieldValue(actor, fieldPath)
+    out.push({ fieldPath, source, current })
+  }
+  return out
+}
+
 /** List stored override keys per actor in a prefab instance subtree. */
 export function summarizePrefabOverrides(instanceRootId: string): PrefabOverrideSummary[] {
   const root = world.actors.get(instanceRootId)

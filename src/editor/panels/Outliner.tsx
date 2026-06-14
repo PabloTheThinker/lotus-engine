@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { Actor } from '../../engine/Actor'
 import { world } from '../../engine/World'
 import { AddActorCommand, DeleteActorCommand, PropertyCommand, ReparentCommand, runCommand } from '../commands'
-import { isPrefabInstanceActor, runPrefabAwareCommand } from '../prefabs'
+import { getPrefabOverrideDiff, isPrefabInstanceActor, runPrefabAwareCommand } from '../prefabs'
 import { buildSerializedActor } from '../spawn'
 import { useEditor } from '../store'
 
@@ -168,7 +168,10 @@ function OutlinerRow({
             }}
           />
         ) : (
-          <span className="outliner-name">{actor.name}</span>
+          <span className="outliner-name">
+            {actor.prefabActorId && getPrefabOverrideDiff(actor.id).length > 0 ? '≠ ' : ''}
+            {actor.name}
+          </span>
         )}
         <span className="outliner-type">{actor.type}</span>
         {actor.tags.length > 0 && <span className="outliner-tag" title={actor.tags.join(', ')}>🏷</span>}

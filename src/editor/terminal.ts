@@ -11,7 +11,7 @@ import type { Actor } from '../engine/Actor'
 import { DEFAULT_MATERIAL, type MaterialProps } from '../engine/types'
 import { assignMaterialAsset, patchMaterialOverrides } from './materialCommands'
 import { spawnAsset } from './spawn'
-import { spawnCharacterStarter } from './starterTemplates'
+import { spawnCharacterStarter, spawnPlatformerStarter } from './starterTemplates'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -40,6 +40,7 @@ SLASH COMMANDS
   /pos <name>        Print actor world position
   /tag <name> <tag>  Add tag to actor
   /starter [mode]    Greybox CharacterBody scene (thirdperson|firstperson|fly)
+  /platformer [mode] Greybox platformer scene (side|wide)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -252,6 +253,14 @@ function runSlash(parts: string[]): TerminalResult {
       }
       spawnCharacterStarter(mode as 'thirdperson' | 'firstperson' | 'fly')
       return { output: `Character starter: ${mode}`, error: null, level: 'log' }
+    }
+    case '/platformer': {
+      const mode = (args[0] ?? 'side').toLowerCase()
+      if (!['side', 'wide'].includes(mode)) {
+        return { output: null, error: 'Usage: /platformer side|wide', level: 'error' }
+      }
+      spawnPlatformerStarter(mode as 'side' | 'wide')
+      return { output: `Platformer starter: ${mode}`, error: null, level: 'log' }
     }
     case '/undo':
       undo()

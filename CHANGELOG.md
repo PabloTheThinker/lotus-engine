@@ -4,6 +4,26 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 35: v2.14–v2.18 (indie / Godot focus)
+
+### Added
+- **v2.14** Editable children UX — prefab subtree panel in Details, ≠ override diff gutter in Details + Outliner
+- **v2.15** Sequencer ↔ `@export` — `scriptVar` tracks sample into `actor.scriptVars` during scrub/play
+- **v2.16** Resource (.tres) lite — `resources.ts` with UUID JSON assets (material/curve/shape kinds)
+- **v2.17** Platformer starter — `/platformer side|wide` greybox (floor + stepping platforms + PlayerStart)
+- **v2.18** Docs sync + 5 smoke tests — 120 tests passed
+
+### Changed
+- `window.lotus.indie` bridge: `prefab.subtree`, `prefab.overrideDiff`, `sequencer`, `resources`, `spawnPlatformerStarter`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 120 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 34: v2.09–v2.13 (indie / Godot focus)
 
 ### Added

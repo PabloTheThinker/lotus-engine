@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.13 (wave 34).** v0.33–v2.13 shipped; **build clean**, **`npm run test` — 115 passed**.
+- **Last clean commit: v2.18 (wave 35).** v0.33–v2.18 shipped; **build clean**, **`npm run test` — 120 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -389,13 +389,22 @@
 | v2.12 | Prefab polish — override summary panel, Revert All, 📦 outliner badge on instance children |
 | v2.13 | Character starter template — `/starter thirdperson|firstperson|fly` — 115 tests passed |
 
+## Shipped (v2.14–v2.18, Wave 35 — indie focus)
+
+| Ver | What |
+|---|---|
+| v2.14 | Editable children UX — prefab subtree panel, ≠ override diff gutter (Details + Outliner) |
+| v2.15 | Sequencer script var tracks — key any `@export` field on timeline |
+| v2.16 | Resource (.tres) lite — `resources.ts` JSON assets by UUID in localStorage |
+| v2.17 | Platformer starter — `/platformer side|wide` greybox scene |
+| v2.18 | Docs + smoke tests — 120 tests passed |
+
 ## Next up (indie roadmap)
 
-1. **Editable children UX** — in-place prefab subtree editing + override diff gutter
-2. **AnimationPlayer / sequencer** — key any `@export` field on timeline
-3. **Resource (.tres) files** — shared JSON assets by UUID
-4. **Starter game templates** — platformer / top-down / FPS packs
-5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
+1. **TileMap / GridMap UX** — grid paint improvements
+2. **Starter game templates** — top-down RPG, FPS greybox packs
+3. **Multiplayer indie template** — host + 2 clients relay smoke game
+4. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward
 

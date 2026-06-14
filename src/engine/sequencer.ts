@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { getSoundBuffer, playSound, stopScrubAudio } from './audio'
 import { applyHudCssProperty } from './gameplay'
+import { clampExportRange, parseExports, type ExportVar } from './scripting'
 import type { HudWidget, SeqHudProperty } from './types'
 import type { World } from './World'
 
@@ -43,10 +44,10 @@ export interface SeqKey {
 export type SeqAudioProperty = 'volume'
 
 export interface SeqTrack {
-  /** 'hud' for DOM widget tracks; 'audio' for imported sound clips; omitted or 'actor' for scene actors */
-  trackType?: 'actor' | 'hud' | 'audio'
+  /** 'hud' for DOM widget tracks; 'audio' for imported sound clips; 'scriptVar' for @export fields */
+  trackType?: 'actor' | 'hud' | 'audio' | 'scriptVar'
   actorId: string
-  property: SeqProperty | SeqHudProperty | SeqAudioProperty
+  property: SeqProperty | SeqHudProperty | SeqAudioProperty | string
   keys: SeqKey[]
   /** audio only — loop region start in seconds within the clip buffer */
   loopIn?: number
@@ -87,6 +88,10 @@ export function isAudioTrack(track: SeqTrack): boolean {
   return track.trackType === 'audio'
 }
 
+export function isScriptVarTrack(track: SeqTrack): boolean {
+  return track.trackType === 'scriptVar'
+}
+
 export function hasHudTracks(seq: Sequence): boolean {
   return seq.tracks.some(isHudTrack)
 }
@@ -110,11 +115,16 @@ export function keyableHudProperties(_widget: HudWidget): SeqHudProperty[] {
   return HUD_PROPERTIES
 }
 
+/** @export script variables keyable on an actor (AnimationPlayer analog). */
+export function keyableScriptExports(actor: { script?: string }): ExportVar[] {
+  return parseExports(actor.script ?? '')
+}
+
 export function findTrack(
   seq: Sequence,
   id: string,
-  property: SeqProperty | SeqHudProperty | SeqAudioProperty,
-  trackType: 'actor' | 'hud' | 'audio' = 'actor',
+  property: SeqProperty | SeqHudProperty | SeqAudioProperty | string,
+  trackType: 'actor' | 'hud' | 'audio' | 'scriptVar' = 'actor',
 ): SeqTrack | undefined {
   return seq.tracks.find((tr) => (tr.trackType ?? 'actor') === trackType && tr.actorId === id && tr.property === property)
 }
@@ -123,10 +133,10 @@ export function findTrack(
 export function setKey(
   seq: Sequence,
   id: string,
-  property: SeqProperty | SeqHudProperty | SeqAudioProperty,
+  property: SeqProperty | SeqHudProperty | SeqAudioProperty | string,
   t: number,
   v: SeqKey['v'],
-  trackType: 'actor' | 'hud' | 'audio' = 'actor',
+  trackType: 'actor' | 'hud' | 'audio' | 'scriptVar' = 'actor',
 ) {
   let track = findTrack(seq, id, property, trackType)
   if (!track) {
@@ -322,6 +332,16 @@ export function scrubSequenceAudio(seq: Sequence, t: number) {
   }
 }
 
+function applyScriptVarValue(actor: { scriptVars?: Record<string, unknown> }, name: string, v: SeqKey['v'], ev?: ExportVar) {
+  let next: unknown = v
+  if (ev?.kind === 'range' && typeof v === 'number') next = clampExportRange(ev, v)
+  if (ev?.kind === 'enum' && ev.options?.length) {
+    const s = String(v)
+    next = ev.options.includes(s) ? s : ev.options[0]
+  }
+  actor.scriptVars = { ...(actor.scriptVars ?? {}), [name]: next }
+}
+
 /** apply the sequence at time t to the world's actors and HUD widgets */
 export function sampleSequence(world: World, seq: Sequence, t: number, withAudio = false) {
   for (const track of seq.tracks) {
@@ -334,6 +354,12 @@ export function sampleSequence(world: World, seq: Sequence, t: number, withAudio
     }
     const actor = world.actors.get(track.actorId)
     if (!actor) continue
+    if (isScriptVarTrack(track)) {
+      const exports = keyableScriptExports(actor)
+      const ev = exports.find((e) => e.name === track.property)
+      applyScriptVarValue(actor, track.property, v, ev)
+      continue
+    }
     switch (track.property) {
       case 'position':
         if (Array.isArray(v)) actor.root.position.set(v[0], v[1], v[2])

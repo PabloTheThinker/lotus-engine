@@ -28,6 +28,16 @@
 | v2.12 | **Prefab instance polish** — override summary, Revert All, 📦 outliner badge on instance children |
 | v2.13 | **Character starter** — `/starter thirdperson` greybox (floor + PlayerStart + sun) |
 
+## Shipped (Wave 35, v2.14–v2.18)
+
+| Ver | Feature |
+|---|---|
+| v2.14 | **Editable children UX** — prefab subtree panel, ≠ override diff gutter in Details + Outliner |
+| v2.15 | **Sequencer ↔ @export** — script var tracks on timeline (`trackType: scriptVar`) |
+| v2.16 | **Resource (.tres) lite** — JSON resources by UUID (`resources.ts`, localStorage) |
+| v2.17 | **Platformer starter** — `/platformer side|wide` greybox (floor + stepping platforms) |
+| v2.18 | Docs, smoke tests, CHECKPOINT — 120 tests passed |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -36,16 +46,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Editable children UX** — open prefab subtree in-place, per-field override diff gutter
-2. **AnimationPlayer tracks** — expand sequencer ↔ property keying for any `@export` field
-3. **Resource (.tres) files** — shared JSON materials, curves, shapes by UUID
-4. **TileMap / GridMap UX** — grid paint improvements (GridMap foliage exists)
-5. **Starter game templates** — platformer, top-down RPG, FPS greybox packs
-6. **Resource (.tres) files** — shared JSON materials, curves, shapes by UUID
-7. **TileMap / GridMap UX** — grid paint improvements (GridMap foliage exists)
-8. **Multiplayer indie template** — host + 2 clients relay smoke game
-9. **Mobile touch input map** — on-screen sticks for exported PWA
-10. **Starter game templates** — platformer, top-down RPG, FPS greybox
+1. **TileMap / GridMap UX** — grid paint improvements (GridMap foliage exists)
+2. **Starter game templates** — top-down RPG, FPS greybox packs
+3. **Multiplayer indie template** — host + 2 clients relay smoke game
+4. **Mobile touch input map** — on-screen sticks for exported PWA
+5. **AnimationPlayer polish** — blend trees + script var curve presets
 
 ## Non-goals (honest skip)
 

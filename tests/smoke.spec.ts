@@ -1929,6 +1929,158 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 35 prefab subtree + override diff', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'mesh'; geometry: 'box' }, pos: [number, number, number]) => { id: string; name: string } | null
+        prefab: {
+          save: (id: string) => unknown
+          instantiate: (name: string, pos: [number, number, number]) => void
+          recordOverride: (actorId: string, field: string) => void
+          subtree: (id: string) => { actorId: string; overrideCount: number }[]
+          overrideDiff: (id: string) => { fieldPath: string }[]
+        }
+      }
+    }
+    const box = v.indie.spawn({ kind: 'mesh', geometry: 'box' }, [0, 0.5, 0])
+    if (!box) return { ok: false }
+    box.name = 'SubtreeRoot'
+    v.indie.prefab.save(box.id)
+    v.indie.prefab.instantiate('SubtreeRoot', [4, 0.5, 0])
+    const inst = [...v.world.actors.values()].find((a) => a.prefabSource === 'SubtreeRoot')
+    if (!inst) return { ok: false }
+    inst.name = 'ChangedRoot'
+    v.indie.prefab.recordOverride(inst.id, 'name')
+    const subtree = v.indie.prefab.subtree(inst.id)
+    const diff = v.indie.prefab.overrideDiff(inst.id)
+    return { ok: true, subtreeLen: subtree.length, diffLen: diff.length, diffField: diff[0]?.fieldPath }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.subtreeLen).toBeGreaterThan(0)
+  expect(result.diffLen).toBeGreaterThan(0)
+  expect(result.diffField).toBe('name')
+})
+
+test('wave 35 sequencer script var track sample', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => { id: string; script?: string; scriptVars?: Record<string, unknown> } | null
+        sequencer: {
+          keyableScriptExports: (a: { script?: string }) => { name: string }[]
+          sampleScriptVar: (actorId: string, varName: string, t: number, keys: { t: number; v: number }[]) => unknown
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (!actor) return { ok: false }
+    actor.script = '// @export_range speed 0 10 1 = 0\n'
+    const exports = v.indie.sequencer.keyableScriptExports(actor)
+    const sampled = v.indie.sequencer.sampleScriptVar(actor.id, 'speed', 0.5, [
+      { t: 0, v: 0 },
+      { t: 1, v: 10 },
+    ])
+    return { ok: true, exportName: exports[0]?.name, sampled }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.exportName).toBe('speed')
+  expect(result.sampled).toBe(5)
+})
+
+test('wave 35 resource .tres lite create + get', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        resources: {
+          create: (name: string, kind: 'curve', data: Record<string, unknown>) => { id: string; name: string; kind: string }
+          get: (id: string) => { id: string; name: string } | undefined
+          list: (kind?: string) => { id: string }[]
+        }
+      }
+    }
+    const res = v.indie.resources.create('JumpCurve', 'curve', { keys: [{ t: 0, v: 0 }, { t: 1, v: 1 }] })
+    const fetched = v.indie.resources.get(res.id)
+    const listed = v.indie.resources.list('curve')
+    return { ok: !!fetched, id: res.id, name: fetched?.name, count: listed.length }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.name).toBe('JumpCurve')
+  expect(result.count).toBeGreaterThan(0)
+})
+
+test('wave 35 platformer starter template', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnPlatformerStarter: (mode: 'side') => void }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnPlatformerStarter('side')
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'PlatformerFloor')
+    const platB = [...v.world.actors.values()].find((a) => a.name === 'PlatB')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'PlatformerPlayerStart')
+    return {
+      added: v.world.actors.size > before,
+      floor: !!floor,
+      platB: !!platB,
+      startPawn: start?.pawnMode,
+      rapier: v.world.environment.useRapierCharacter,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.floor).toBe(true)
+  expect(result.platB).toBe(true)
+  expect(result.startPawn).toBe('thirdperson')
+  expect(result.rapier).toBe(true)
+})
+
+test('wave 35 prefab child override diff gutter', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawn: (p: { kind: 'mesh'; geometry: 'box' }, pos: [number, number, number]) => { id: string } | null
+        prefab: {
+          save: (id: string) => unknown
+          instantiate: (name: string, pos: [number, number, number]) => void
+          recordOverride: (actorId: string, field: string) => void
+          overrideDiff: (id: string) => { fieldPath: string; source: unknown; current: unknown }[]
+        }
+      }
+    }
+    const box = v.indie.spawn({ kind: 'mesh', geometry: 'box' }, [0, 0.5, 0])
+    if (!box) return { ok: false }
+    box.name = 'GutterPrefab'
+    v.indie.prefab.save(box.id)
+    v.indie.prefab.instantiate('GutterPrefab', [2, 0.5, 0])
+    const inst = [...v.world.actors.values()].find((a) => a.prefabSource === 'GutterPrefab')
+    if (!inst) return { ok: false }
+    const mat = inst.materialProps
+    if (mat) mat.color = '#ff0000'
+    v.indie.prefab.recordOverride(inst.id, 'material.color')
+    const diff = v.indie.prefab.overrideDiff(inst.id)
+    const colorDiff = diff.find((d) => d.fieldPath === 'material.color')
+    return { ok: true, hasColorDiff: !!colorDiff, current: colorDiff?.current }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.hasColorDiff).toBe(true)
+  expect(String(result.current).toLowerCase()).toContain('ff0000')
+})
+
 test('wave 34 @export_range parse + clamp', async ({ page }) => {
   await bootEditor(page)
 
