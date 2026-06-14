@@ -144,6 +144,8 @@ export interface ParticleUpdateOpts {
   skipForces?: boolean
   /** Skip CPU spawn accumulator — GPU emit kernel already ran */
   skipSpawn?: boolean
+  /** Skip CPU life/color/size — Wave 18 GPU buffers own those channels */
+  skipLifeColor?: boolean
 }
 
 export interface ParticleSimBuffers {
@@ -152,6 +154,11 @@ export interface ParticleSimBuffers {
   alive: boolean[]
   /** Wave 17 — GPU storage buffer mask (1 = alive, 0 = dead) */
   aliveF: Float32Array
+  /** Wave 18 — GPU life/color/size buffers */
+  life: Float32Array
+  maxLife: Float32Array
+  colors: Float32Array
+  sizes: Float32Array
 }
 
 export class ParticleSystem {
@@ -292,7 +299,16 @@ export class ParticleSystem {
 
   /** Wave 15 — sim buffer accessors for GPU compute integration */
   simBuffers(): ParticleSimBuffers {
-    return { positions: this.positions, velocities: this.vel, alive: this.alive, aliveF: this.aliveF }
+    return {
+      positions: this.positions,
+      velocities: this.vel,
+      alive: this.alive,
+      aliveF: this.aliveF,
+      life: this.life,
+      maxLife: this.maxLife,
+      colors: this.colors,
+      sizes: this.sizes,
+    }
   }
 
   /** Sync float alive mask from boolean slots (Wave 17 GPU path). */
@@ -300,15 +316,22 @@ export class ParticleSystem {
     for (let i = 0; i < this.cap; i++) this.aliveF[i] = this.alive[i] ? 1 : 0
   }
 
-  /** Promote GPU-emitted slots (aliveF) into CPU sim state for color/size/trail. */
+  /** Promote GPU-emitted slots (aliveF) into CPU sim state for trail/sub-emitters. */
   applyGPUAliveMask(defaultLife: number): void {
     for (let i = 0; i < this.cap; i++) {
       if (this.aliveF[i] > 0.5 && !this.alive[i]) {
         this.alive[i] = true
-        this.life[i] = defaultLife
-        this.maxLife[i] = defaultLife
+        if (this.life[i] <= 0) {
+          this.life[i] = defaultLife
+          this.maxLife[i] = defaultLife
+        }
       }
     }
+  }
+
+  /** Sync boolean alive[] from GPU mask after integrate (Wave 18). */
+  syncGPUAliveFromBuffers(): void {
+    for (let i = 0; i < this.cap; i++) this.alive[i] = this.aliveF[i] > 0.5
   }
 
   private sizeAt(t: number, offSize: boolean) {
@@ -545,11 +568,22 @@ export class ParticleSystem {
 
     for (let i = 0; i < this.cap; i++) {
       if (!this.alive[i]) {
-        this.sizes[i] = 0
+        if (!opts?.skipLifeColor) this.sizes[i] = 0
         continue
       }
-      this.life[i] -= dt
-      if (this.life[i] <= 0) {
+      if (!opts?.skipLifeColor) {
+        this.life[i] -= dt
+        if (this.life[i] <= 0) {
+          if (subOn && se!.onDeath) {
+            const i3 = i * 3
+            this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
+          }
+          this.alive[i] = false
+          this.aliveF[i] = 0
+          this.sizes[i] = 0
+          continue
+        }
+      } else if (this.life[i] <= 0 || this.aliveF[i] < 0.5) {
         if (subOn && se!.onDeath) {
           const i3 = i * 3
           this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
@@ -589,14 +623,16 @@ export class ParticleSystem {
 
       if (p.renderMode === 'ribbon') this.shiftTrail(i)
 
-      const t = 1 - this.life[i] / this.maxLife[i]
-      this.colorAt(t, !!off('colorOverLife'))
-      const i4 = i * 4
-      this.colors[i4] = this.tmp.r
-      this.colors[i4 + 1] = this.tmp.g
-      this.colors[i4 + 2] = this.tmp.b
-      this.colors[i4 + 3] = off('sizeOverLife') ? 1 : THREE.MathUtils.lerp(1, p.opacityEnd, t)
-      this.sizes[i] = this.sizeAt(t, !!off('sizeOverLife'))
+      if (!opts?.skipLifeColor) {
+        const t = 1 - this.life[i] / this.maxLife[i]
+        this.colorAt(t, !!off('colorOverLife'))
+        const i4 = i * 4
+        this.colors[i4] = this.tmp.r
+        this.colors[i4 + 1] = this.tmp.g
+        this.colors[i4 + 2] = this.tmp.b
+        this.colors[i4 + 3] = off('sizeOverLife') ? 1 : THREE.MathUtils.lerp(1, p.opacityEnd, t)
+        this.sizes[i] = this.sizeAt(t, !!off('sizeOverLife'))
+      }
     }
 
     const geo = this.points.geometry

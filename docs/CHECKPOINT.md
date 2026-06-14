@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 17)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 18)
 
 > Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.14.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.26 (wave 17).** v0.33–v1.26 shipped; **build clean**, **`npm run test` — 35 passed**.
+- **Last clean commit: v1.32 (wave 18).** v0.33–v1.32 shipped; **build clean**, **`npm run test` — 38 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -216,13 +216,24 @@
 | v1.25 | Material TSL per-node graph compile — `compileMaterialGraphTSLNodes`, serialize v2 + `nodeGraph` |
 | v1.26 | Playwright wave 17 tests — 35 passed |
 
-## Next up (v1.27+, Wave 18)
+## Shipped wave 18 (v1.27 → v1.32)
 
-1. **TSL post** — full temporal denoise chain on SSR + motion-vector polish
-2. **GPU particles** — GPU life/color/trail buffers (reduce CPU `super.update` sync)
-3. **Export** — particle GPU tier QA matrix + playable perf badge
-4. **BT** — collapsed subtree PIE tick + expand-in-place editor UX
-5. **Material TSL** — Material Editor live node-graph preview (not just compile probe)
+| Ver | What |
+|---|---|
+| v1.27 | TSL post SSR temporal denoise — velocity MRT + TRAA/denoise on SSR pass (editor + export) |
+| v1.28 | GPU particle life/color/size buffers — integrate kernel + `skipLifeColor` reduces CPU sync |
+| v1.29 | Export particle GPU QA + perf badge — `particles.qaMatrix`, fps HUD, `__LOTUS_EXPORT_PERF__` |
+| v1.30 | BT collapsed subtree PIE — `graphForBTCompile`, highlight maps to collapsed decorator |
+| v1.31 | Material Editor TSL node-graph preview badge — `previewChannels`, live channel overlay |
+| v1.32 | Playwright wave 18 tests — 38 passed |
+
+## Next up (v1.33+, Wave 19)
+
+1. **TSL post** — SSR quality presets + compositor parity with WebGL tier
+2. **GPU particles** — GPU trail buffer shift for ribbon mode
+3. **Export** — playable particle GPU E2E with perf regression gate
+4. **BT** — collapsed subtree script compile + breakpoint in collapsed child
+5. **Material TSL** — Material Editor per-node wire drag + live channel pins
 
 ## Remaining gap-list queue (post–wave 7)
 

@@ -3,7 +3,7 @@ import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
 
-/** Wave 14–17 — TSL RenderPipeline (GTAO, SSGI+TRAA/denoise, SSR, bloom, FXAA). */
+/** Wave 14–18 — TSL RenderPipeline (GTAO, SSGI+TRAA/denoise, SSR+denoise, bloom, FXAA). */
 
 export interface TSLPipelineStack {
   active: boolean
@@ -103,9 +103,10 @@ export async function createTSLRenderPipeline(
     const rebuildOutput = () => {
       const scenePass = pass(scene, activeCam)
       const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn
+      const needsVelocity = taaOn || ssgiOn || ssrOn
       if (needsMRT) {
         const mrtOut: Record<string, unknown> = { output, normal: normalView }
-        if (taaOn || ssgiOn) mrtOut.velocity = velocity
+        if (needsVelocity) mrtOut.velocity = velocity
         if (ssrOn) {
           mrtOut.metalness = metalness
           mrtOut.roughness = roughness
@@ -182,7 +183,24 @@ export async function createTSLRenderPipeline(
             roughnessTex as Parameters<typeof ssr>[4],
             cam,
           ) as { getTextureNode: () => TSLNode }
-          colorNode = add(colorNode, ssrPass.getTextureNode())
+          let ssrTex = ssrPass.getTextureNode()
+          if (taaOn && needsVelocity) {
+            const vel = scenePass.getTextureNode('velocity') as TSLNode
+            const ssrTraa = traa(
+              ssrTex as Parameters<typeof traa>[0],
+              depth as Parameters<typeof traa>[1],
+              vel as Parameters<typeof traa>[2],
+              cam,
+            ) as unknown as { getTextureNode: () => TSLNode }
+            ssrTex = ssrTraa.getTextureNode()
+          }
+          ssrTex = denoise(
+            ssrTex as Parameters<typeof denoise>[0],
+            depth as Parameters<typeof denoise>[1],
+            normal as Parameters<typeof denoise>[2],
+            cam,
+          ) as TSLNode
+          colorNode = add(colorNode, ssrTex)
         }
       }
 

@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import type { Actor } from './Actor'
 import type { ParticleProps } from './particles'
 import { ParticleSystem } from './particles'
@@ -71,8 +72,18 @@ export class GPUParticleSystem extends ParticleSystem {
       return
     }
     this.syncAliveMask()
-    const { positions, velocities, aliveF, alive } = this.simBuffers()
-    const ok = await bindParticleIntegrateKernel(renderer, positions, velocities, aliveF, alive.length)
+    const { positions, velocities, aliveF, life, maxLife, colors, sizes, alive } = this.simBuffers()
+    const ok = await bindParticleIntegrateKernel(
+      renderer,
+      positions,
+      velocities,
+      aliveF,
+      life,
+      maxLife,
+      colors,
+      sizes,
+      alive.length,
+    )
     this.gpuKernelActive = ok
     this.gpuEmitActive = ok && isParticleGpuEmitReady()
   }
@@ -97,7 +108,10 @@ export class GPUParticleSystem extends ParticleSystem {
 
       if (emitting && !offSpawn && isParticleGpuEmitReady()) {
         const prob = Math.min(1, (p.rate * dt) / Math.max(1, this.simBuffers().alive.length))
-        if (prob > 0 && runParticleGPUEmit(this.computeRenderer, prob, p.speed, this.emitSeed++)) {
+        if (
+          prob > 0 &&
+          runParticleGPUEmit(this.computeRenderer, prob, p.speed, this.emitSeed++, p.lifetime)
+        ) {
           this.gpuEmitFrames++
           this.applyGPUAliveMask(p.lifetime)
         }
@@ -106,11 +120,27 @@ export class GPUParticleSystem extends ParticleSystem {
       this.syncAliveMask()
 
       if (isParticleGpuKernelReady()) {
-        if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag)) {
+        const c0 = new THREE.Color(p.colorStart)
+        const c1 = new THREE.Color(p.modulesOff?.includes('colorOverLife') ? p.colorStart : p.colorEnd)
+        const style = {
+          sizeStart: p.sizeStart,
+          sizeEnd: p.sizeEnd,
+          opacityEnd: p.opacityEnd,
+          colorStart: [c0.r, c0.g, c0.b] as [number, number, number],
+          colorEnd: [c1.r, c1.g, c1.b] as [number, number, number],
+        }
+        if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style)) {
           this.computeIntegratedFrames++
-          const posAttr = this.points.geometry.getAttribute('position')
-          if (posAttr) posAttr.needsUpdate = true
-          super.update(dt, emitting, worldMatrix, terrainAt, { skipForces: true, skipSpawn: true })
+          this.syncGPUAliveFromBuffers()
+          const geo = this.points.geometry
+          geo.attributes.position.needsUpdate = true
+          geo.attributes.aColor.needsUpdate = true
+          geo.attributes.aSize.needsUpdate = true
+          super.update(dt, emitting, worldMatrix, terrainAt, {
+            skipForces: true,
+            skipSpawn: true,
+            skipLifeColor: true,
+          })
           return
         }
       }

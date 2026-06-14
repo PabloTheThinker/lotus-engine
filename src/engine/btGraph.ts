@@ -153,11 +153,38 @@ function compileNode(graph: BTGraph, id: string, path: string, pathIndex: Record
   }
 }
 
+/** Wave 18 — merge collapsed subtrees for PIE compile / tick. */
+export function graphForBTCompile(graph: BTGraph): BTGraph {
+  const subtrees = graph.subtrees ?? {}
+  const keys = Object.keys(subtrees)
+  if (!keys.length) return graph
+  let nodes = [...graph.nodes]
+  let edges = [...graph.edges]
+  for (const id of keys) {
+    const stash = subtrees[id]
+    if (!stash) continue
+    nodes = [...nodes, ...stash.nodes]
+    edges = [...edges, ...stash.edges]
+  }
+  return { ...graph, nodes, edges }
+}
+
+/** Map a runtime node id to a visible editor node (collapsed decorator when child is stashed). */
+export function resolveBTEditorHighlightNodeId(graph: BTGraph, runtimeNodeId: string | null): string | null {
+  if (!runtimeNodeId) return null
+  if (graph.nodes.some((n) => n.id === runtimeNodeId)) return runtimeNodeId
+  for (const [decoratorId, stash] of Object.entries(graph.subtrees ?? {})) {
+    if (stash.nodes.some((n) => n.id === runtimeNodeId)) return decoratorId
+  }
+  return runtimeNodeId
+}
+
 export function compileBTGraph(graph: BTGraph): CompiledBTGraph | null {
-  const root = graph.nodes.find((n) => n.type === 'Root')
+  const merged = graphForBTCompile(graph)
+  const root = merged.nodes.find((n) => n.type === 'Root')
   if (!root) return null
   const pathIndex: Record<string, string> = {}
-  const tree = compileNode(graph, root.id, 'root', pathIndex)
+  const tree = compileNode(merged, root.id, 'root', pathIndex)
   return { tree, pathIndex }
 }
 

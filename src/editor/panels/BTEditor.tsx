@@ -10,6 +10,7 @@ import {
   compileBTGraphToScript,
   emptyBTGraph,
   expandBTSubtree,
+  resolveBTEditorHighlightNodeId,
   inferBlackboardTypes,
   newBTNodeId,
   summarizeBTTree,
@@ -125,8 +126,10 @@ export function BTEditor() {
     }
     let raf = 0
     const tick = () => {
+      const g = graphRef.current
       const compiled = actor.btGraph ? compileBTGraph(actor.btGraph) : null
-      setLiveNode(getActiveBTGraphNodeId(actor.id, compiled?.pathIndex))
+      const runtimeId = getActiveBTGraphNodeId(actor.id, compiled?.pathIndex)
+      setLiveNode(g ? resolveBTEditorHighlightNodeId(g, runtimeId) : runtimeId)
       raf = requestAnimationFrame(tick)
     }
     tick()
@@ -442,6 +445,12 @@ export function BTEditor() {
                     const p = canvasPoint(e)
                     dragRef.current = { id: n.id, dx: p.x - n.x, dy: p.y - n.y }
                   }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    if (n.props.collapsed && graph.subtrees?.[n.id]) {
+                      commit(expandBTSubtree(graph, n.id))
+                    }
+                  }}
                 >
                   {n.breakpoint && (
                     <circle cx={-8} cy={HEADER_H / 2} r={5} fill={isBpHit ? '#ff4466' : '#e5484d'} />
@@ -455,7 +464,7 @@ export function BTEditor() {
                     strokeWidth={isBpHit || active || selected ? 3 : 1}
                   />
                   <text x={8} y={16} fill="#fff" fontSize={11}>
-                    {def.title}
+                    {n.props.collapsed ? `${def.title} (collapsed)` : def.title}
                   </text>
                   {showIn && (
                     <circle

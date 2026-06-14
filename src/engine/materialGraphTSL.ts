@@ -169,6 +169,12 @@ export function compileMaterialGraphTSLNodes(graph: MaterialGraph): Record<strin
   return Object.keys(channels).length ? channels : null
 }
 
+/** Wave 18 — channel names compiled from live node graph (Material Editor preview badge). */
+export function materialGraphTSLPreviewChannels(graph: MaterialGraph): string[] {
+  const nodes = compileMaterialGraphTSLNodes(graph)
+  return nodes ? Object.keys(nodes) : []
+}
+
 export function serializeMaterialGraphTSL(graph: MaterialGraph, t: number): object {
   const nodes = compileMaterialGraphTSLNodes(graph)
   const out = evaluateMaterialGraph(graph, t)

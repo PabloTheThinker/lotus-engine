@@ -864,6 +864,103 @@ test('wave 17 GPU particle alive mask bridge', async ({ page }) => {
   expect(result.aliveFLen).toBeGreaterThan(0)
 })
 
+test('wave 18 BT collapsed subtree still compiles for PIE', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        compile: (g: import('../src/engine/btGraph').BTGraph) => { tree: unknown } | null
+        collapseSubtree: (g: import('../src/engine/btGraph').BTGraph, id: string) => import('../src/engine/btGraph').BTGraph
+        graphForCompile: (g: import('../src/engine/btGraph').BTGraph) => import('../src/engine/btGraph').BTGraph
+        resolveHighlight: (g: import('../src/engine/btGraph').BTGraph, id: string | null) => string | null
+        summarize: (tree: unknown) => string
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const repeat = { id: 'r18', type: 'Repeat', x: 300, y: 80, props: { count: 2 } }
+    const wait = { id: 'w18', type: 'Wait', x: 500, y: 80, props: { seconds: 0.1 } }
+    graph.nodes.push(repeat, wait)
+    const selector = graph.nodes.find((n) => n.type === 'Selector')!
+    graph.edges = graph.edges.filter((e) => !(e.from === root.id && e.to === selector.id))
+    graph.edges.push({ from: root.id, to: repeat.id }, { from: repeat.id, to: wait.id })
+    const collapsed = v.bt.collapseSubtree(graph, repeat.id)
+    const compiled = v.bt.compile(collapsed)
+    const summary = compiled ? v.bt.summarize(compiled.tree) : ''
+    const merged = v.bt.graphForCompile(collapsed)
+    const highlight = v.bt.resolveHighlight(collapsed, wait.id)
+    return {
+      hasRepeat: summary.includes('Repeat x2'),
+      mergedNodes: merged.nodes.length,
+      visibleNodes: collapsed.nodes.length,
+      highlight,
+    }
+  })
+
+  expect(result.hasRepeat).toBe(true)
+  expect(result.mergedNodes).toBeGreaterThan(result.visibleNodes)
+  expect(result.highlight).toBe('r18')
+})
+
+test('wave 18 GPU particle life buffers + QA matrix', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: {
+        create: (b: 'gpu') => {
+          simBuffers: () => { life: Float32Array; colors: Float32Array; sizes: Float32Array }
+        }
+        qaMatrix: () => { ok: boolean; checks: { id: string; pass: boolean }[] }
+      }
+    }
+    const ps = v.particles.create('gpu')
+    const buf = ps.simBuffers()
+    const qa = v.particles.qaMatrix()
+    return {
+      lifeLen: buf.life.length,
+      colorLen: buf.colors.length,
+      sizeLen: buf.sizes.length,
+      qaChecks: qa.checks.length,
+      hasGpuApi: qa.checks.some((c) => c.id === 'navigator.gpu'),
+    }
+  })
+
+  expect(result.lifeLen).toBeGreaterThan(0)
+  expect(result.colorLen).toBeGreaterThan(0)
+  expect(result.sizeLen).toBeGreaterThan(0)
+  expect(result.qaChecks).toBeGreaterThanOrEqual(4)
+  expect(result.hasGpuApi).toBe(true)
+})
+
+test('wave 18 material TSL preview channels bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: { previewChannels: (g: import('../src/engine/materialGraph').MaterialGraph) => string[] }
+    }
+    const g = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 0, y: 0, props: {} },
+        { id: 'c', type: 'Color', x: 0, y: 0, props: { value: '#00ff00' } },
+        { id: 'r', type: 'Scalar', x: 0, y: 0, props: { value: 0.4 } },
+      ],
+      edges: [
+        { from: 'c', to: 'out:baseColor' },
+        { from: 'r', to: 'out:roughness' },
+      ],
+    }
+    const ch = v.materialTSL.previewChannels(g)
+    return { channels: ch }
+  })
+
+  expect(result.channels).toContain('baseColor')
+  expect(result.channels).toContain('roughness')
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

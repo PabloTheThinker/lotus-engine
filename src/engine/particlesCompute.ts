@@ -1,7 +1,8 @@
 /**
- * Wave 14–17 — TSL ComputeNode particle sim (WebGPU path).
+ * Wave 14–18 — TSL ComputeNode particle sim (WebGPU path).
  * Wave 16: StorageBufferAttribute kernel writes position/velocity buffers on GPU.
  * Wave 17: alive-mask integrate + probabilistic GPU emit kernel.
+ * Wave 18: life/color/size buffers on GPU (reduced CPU super.update sync).
  */
 
 export interface ParticleComputeState {
@@ -24,6 +25,15 @@ interface IntegrateKernel {
   dtU: UniformSlot
   gravityU: UniformSlot
   dragU: UniformSlot
+  sizeStartU: UniformSlot
+  sizeEndU: UniformSlot
+  opacityEndU: UniformSlot
+  colorStartRU: UniformSlot
+  colorStartGU: UniformSlot
+  colorStartBU: UniformSlot
+  colorEndRU: UniformSlot
+  colorEndGU: UniformSlot
+  colorEndBU: UniformSlot
 }
 
 interface EmitKernel {
@@ -31,6 +41,7 @@ interface EmitKernel {
   spawnProbU: UniformSlot
   speedU: UniformSlot
   seedU: UniformSlot
+  defaultLifeU: UniformSlot
 }
 
 let kernel: IntegrateKernel | null = null
@@ -70,12 +81,16 @@ export async function initParticleCompute(renderer: unknown): Promise<ParticleCo
   }
 }
 
-/** Wave 17 — bind integrate + emit kernels to sim buffer arrays. */
+/** Wave 18 — bind integrate + emit kernels to sim buffer arrays. */
 export async function bindParticleIntegrateKernel(
   renderer: unknown,
   positions: Float32Array,
   velocities: Float32Array,
   aliveF: Float32Array,
+  life: Float32Array,
+  maxLife: Float32Array,
+  colors: Float32Array,
+  sizes: Float32Array,
   cap: number,
 ): Promise<boolean> {
   const r = renderer as { compute?: (n: unknown) => void }
@@ -101,17 +116,35 @@ export async function bindParticleIntegrateKernel(
       sin: (v: unknown) => ScalarEl
       cos: (v: unknown) => ScalarEl
       fract: (v: unknown) => ScalarEl
+      mix: (a: unknown, b: unknown, f: ScalarEl) => ScalarEl
     }
 
     const posAttr = new StorageBufferAttribute(positions, 3)
     const velAttr = new StorageBufferAttribute(velocities, 3)
     const aliveAttr = new StorageBufferAttribute(aliveF, 1)
+    const lifeAttr = new StorageBufferAttribute(life, 1)
+    const maxLifeAttr = new StorageBufferAttribute(maxLife, 1)
+    const colorAttr = new StorageBufferAttribute(colors, 4)
+    const sizeAttr = new StorageBufferAttribute(sizes, 1)
     const posBuf = t.storage(posAttr, 'vec3', cap)
     const velBuf = t.storage(velAttr, 'vec3', cap)
     const aliveBuf = t.storage(aliveAttr, 'float', cap)
+    const lifeBuf = t.storage(lifeAttr, 'float', cap)
+    const maxLifeBuf = t.storage(maxLifeAttr, 'float', cap)
+    const colorBuf = t.storage(colorAttr, 'vec4', cap)
+    const sizeBuf = t.storage(sizeAttr, 'float', cap)
     const dtU = t.uniform(t.float(0))
     const gravityU = t.uniform(t.float(0))
     const dragU = t.uniform(t.float(0))
+    const sizeStartU = t.uniform(t.float(0.2))
+    const sizeEndU = t.uniform(t.float(0.04))
+    const opacityEndU = t.uniform(t.float(0))
+    const colorStartRU = t.uniform(t.float(1))
+    const colorStartGU = t.uniform(t.float(0.7))
+    const colorStartBU = t.uniform(t.float(0.28))
+    const colorEndRU = t.uniform(t.float(0.9))
+    const colorEndGU = t.uniform(t.float(0.28))
+    const colorEndBU = t.uniform(t.float(0.3))
 
     const computeNode = t.Fn(() => {
       const alive = aliveBuf.element(t.instanceIndex)
@@ -126,18 +159,41 @@ export async function bindParticleIntegrateKernel(
         p.x.addAssign(v.x.mul(dtU))
         p.y.addAssign(v.y.mul(dtU))
         p.z.addAssign(v.z.mul(dtU))
+        const lifeSlot = lifeBuf.element(t.instanceIndex)
+        lifeSlot.subAssign(dtU)
+        t.If(lifeSlot.lessThanEqual(t.float(0)), () => {
+          alive.assign(0)
+          lifeSlot.assign(0)
+          sizeBuf.element(t.instanceIndex).assign(0)
+        })
+        t.If(lifeSlot.greaterThan(0), () => {
+          const maxL = maxLifeBuf.element(t.instanceIndex)
+          const tNorm = t.float(1).sub(lifeSlot.div(maxL) as ScalarEl)
+          const alpha = t.float(1).sub(tNorm.mul(opacityEndU) as ScalarEl)
+          const col = colorBuf.element(t.instanceIndex)
+          col.x.assign(t.mix(colorStartRU, colorEndRU, tNorm))
+          col.y.assign(t.mix(colorStartGU, colorEndGU, tNorm))
+          col.z.assign(t.mix(colorStartBU, colorEndBU, tNorm))
+          col.w.assign(alpha)
+          sizeBuf.element(t.instanceIndex).assign(t.mix(sizeStartU, sizeEndU, tNorm))
+        })
       })
     }).compute(cap)
 
     const spawnProbU = t.uniform(t.float(0))
     const speedU = t.uniform(t.float(1))
     const seedU = t.uniform(t.float(0))
+    const defaultLifeU = t.uniform(t.float(1.6))
     const emitNode = t.Fn(() => {
       const alive = aliveBuf.element(t.instanceIndex)
       t.If(alive.lessThan(0.5), () => {
         const h = t.fract(t.sin(t.instanceIndex.add(seedU)).mul(43758.5453) as ScalarEl)
         t.If(h.lessThan(spawnProbU), () => {
           alive.assign(1)
+          const lifeSlot = lifeBuf.element(t.instanceIndex)
+          const maxL = maxLifeBuf.element(t.instanceIndex)
+          lifeSlot.assign(defaultLifeU)
+          maxL.assign(defaultLifeU)
           const p = posBuf.element(t.instanceIndex)
           const v = velBuf.element(t.instanceIndex)
           const a = h.mul(6.283)
@@ -148,12 +204,32 @@ export async function bindParticleIntegrateKernel(
           v.x.assign(t.sin(a).mul(sp))
           v.y.assign(sp.mul(0.6))
           v.z.assign(t.cos(a).mul(sp))
+          const col = colorBuf.element(t.instanceIndex)
+          col.x.assign(colorStartRU)
+          col.y.assign(colorStartGU)
+          col.z.assign(colorStartBU)
+          col.w.assign(1)
+          sizeBuf.element(t.instanceIndex).assign(sizeStartU)
         })
       })
     }).compute(cap)
 
-    kernel = { computeNode, dtU, gravityU, dragU }
-    emitKernel = { computeNode: emitNode, spawnProbU, speedU, seedU }
+    kernel = {
+      computeNode,
+      dtU,
+      gravityU,
+      dragU,
+      sizeStartU,
+      sizeEndU,
+      opacityEndU,
+      colorStartRU,
+      colorStartGU,
+      colorStartBU,
+      colorEndRU,
+      colorEndGU,
+      colorEndBU,
+    }
+    emitKernel = { computeNode: emitNode, spawnProbU, speedU, seedU, defaultLifeU }
     kernelCap = cap
     gpuKernelReady = true
     gpuEmitReady = true
@@ -171,11 +247,14 @@ interface ScalarEl {
   mul: (v: unknown) => ScalarEl
   sub: (v: unknown) => ScalarEl
   add: (v: unknown) => ScalarEl
+  div: (v: unknown) => ScalarEl
   addAssign: (v: unknown) => void
+  subAssign: (v: unknown) => void
   mulAssign: (v: unknown) => void
   assign: (v: unknown) => void
   greaterThan: (v: unknown) => unknown
   lessThan: (v: unknown) => unknown
+  lessThanEqual: (v: unknown) => unknown
 }
 
 interface VecEl {
@@ -187,8 +266,15 @@ interface VecEl {
   assign: (v: unknown) => void
 }
 
+interface ColorEl {
+  x: ScalarEl
+  y: ScalarEl
+  z: ScalarEl
+  w: ScalarEl
+}
+
 interface StorageEl {
-  element: (i: unknown) => VecEl & ScalarEl
+  element: (i: unknown) => VecEl & ScalarEl & ColorEl
 }
 
 /** Wave 17 — probabilistic GPU emit for dead slots (rate * dt / cap). */
@@ -197,6 +283,7 @@ export function runParticleGPUEmit(
   spawnProb: number,
   speed: number,
   seed: number,
+  defaultLife = 1.6,
 ): boolean {
   if (!gpuEmitReady || !emitKernel) return false
   const r = renderer as { compute?: (n: unknown) => void }
@@ -205,6 +292,7 @@ export function runParticleGPUEmit(
     emitKernel.spawnProbU.value = Math.max(0, Math.min(1, spawnProb))
     emitKernel.speedU.value = speed
     emitKernel.seedU.value = seed
+    emitKernel.defaultLifeU.value = defaultLife
     r.compute(emitKernel.computeNode)
     return true
   } catch {
@@ -213,11 +301,20 @@ export function runParticleGPUEmit(
 }
 
 /** Dispatch GPU integrate kernel (writes positions/velocities storage buffers). */
+export interface ParticleGPUStyle {
+  sizeStart: number
+  sizeEnd: number
+  opacityEnd: number
+  colorStart: [number, number, number]
+  colorEnd: [number, number, number]
+}
+
 export function runParticleGPUIntegrate(
   renderer: unknown,
   dt: number,
   gravity: number,
   drag: number,
+  style?: ParticleGPUStyle,
 ): boolean {
   if (!gpuKernelReady || !kernel) return false
   const r = renderer as { compute?: (n: unknown) => void }
@@ -226,6 +323,17 @@ export function runParticleGPUIntegrate(
     kernel.dtU.value = dt
     kernel.gravityU.value = gravity * dt
     kernel.dragU.value = drag
+    if (style) {
+      kernel.sizeStartU.value = style.sizeStart
+      kernel.sizeEndU.value = style.sizeEnd
+      kernel.opacityEndU.value = style.opacityEnd
+      kernel.colorStartRU.value = style.colorStart[0]
+      kernel.colorStartGU.value = style.colorStart[1]
+      kernel.colorStartBU.value = style.colorStart[2]
+      kernel.colorEndRU.value = style.colorEnd[0]
+      kernel.colorEndGU.value = style.colorEnd[1]
+      kernel.colorEndBU.value = style.colorEnd[2]
+    }
     r.compute(kernel.computeNode)
     return true
   } catch {

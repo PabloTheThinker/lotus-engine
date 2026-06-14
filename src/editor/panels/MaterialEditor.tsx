@@ -13,6 +13,7 @@ import {
 import {
   compileMaterialGraphTSL,
   isTSLPreviewAvailableAsync,
+  materialGraphTSLPreviewChannels,
 } from '../../engine/materialGraphTSL'
 import { PropertyCommand, runCommand } from '../commands'
 import { useEditor } from '../store'
@@ -156,12 +157,22 @@ function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: Material
     }
   }, [graphSnapshot, mode, tslBackend])
 
+  const nodeChannels =
+    tslBackend && graph.nodes.length ? materialGraphTSLPreviewChannels(graph) : []
+
   return (
-    <div
-      className="mat-preview-viewport"
-      ref={hostRef}
-      title={tslBackend ? 'Live TSL preview (WebGPU)' : 'Live material preview'}
-    />
+    <div className="mat-preview-wrap">
+      <div
+        className="mat-preview-viewport"
+        ref={hostRef}
+        title={tslBackend ? 'Live TSL node-graph preview (WebGPU)' : 'Live material preview'}
+      />
+      {nodeChannels.length > 0 && (
+        <div className="mat-preview-badge" title="TSL node graph channels">
+          TSL nodes · {nodeChannels.join(', ')}
+        </div>
+      )}
+    </div>
   )
 }
 

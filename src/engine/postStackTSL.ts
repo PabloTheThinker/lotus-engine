@@ -30,7 +30,7 @@ export function getTSLPostState(
     let note = 'TSL RenderPipeline GTAO + bloom + FXAA'
     if (taaOn) note += ' + TRAA'
     if (ssgiOn) note += ' + SSGI'
-    if (ssrOn) note += ' + SSR'
+    if (ssrOn) note += ' + SSR denoise'
     return { tier: 'full', note }
   }
   if (pipelineActive) {

@@ -4,6 +4,30 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 18: v1.27–v1.32
+
+### Added
+- **v1.27** TSL post SSR temporal denoise chain — velocity MRT when SSR on, TRAA on SSR + DenoiseNode (editor + export)
+- **v1.28** GPU particle life/color/size buffers — integrate kernel owns life decay + color/size lerp; `skipLifeColor` CPU path
+- **v1.29** Export particle GPU QA + playable perf badge — `__LOTUS_EXPORT_PERF__`, fps HUD, particle tier in overlay
+- **v1.30** BT collapsed subtree PIE compile — `graphForBTCompile` merges stashes; `resolveBTEditorHighlightNodeId` for live tick
+- **v1.31** Material Editor live TSL node-graph preview badge — `materialGraphTSLPreviewChannels`, channel overlay in preview panel
+- **v1.32** Playwright wave 18 tests — BT collapsed compile, GPU life buffers + QA matrix, TSL preview channels (38 tests)
+
+### Changed
+- `window.lotus.particles.qaMatrix` — particle GPU tier QA probe (`particleGPUQA.ts`)
+- `window.lotus.bt` adds `graphForCompile`, `resolveHighlight`; double-click collapsed decorator expands in-place
+- `window.lotus.materialTSL.previewChannels` for live node-graph channel list
+- `simBuffers()` exposes `life`, `maxLife`, `colors`, `sizes` for GPU tier
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 38 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 17: v1.21–v1.26
 
 ### Added

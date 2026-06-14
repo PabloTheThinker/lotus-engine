@@ -57,7 +57,7 @@ let playRenderTier = 'webgl'
 /** @type {{ render: () => void, setCamera: (cam: import('three').Camera) => void } | null} */
 let exportTslPipeline = null
 
-/** Wave 15–17 — TSL GTAO + SSGI/TRAA/denoise + SSR + bloom + FXAA for WebGPU export tier. */
+/** Wave 15–18 — TSL GTAO + SSGI/TRAA/denoise + SSR denoise + bloom + FXAA for WebGPU export tier. */
 async function createExportTSLPipeline(primary, scene, camera) {
   if (playRenderTier !== 'webgpu') return null
   try {
@@ -94,9 +94,10 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const rebuild = () => {
       const scenePass = pass(scene, activeCam)
       const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn
+      const needsVelocity = taaOn || ssgiOn || ssrOn
       if (needsMRT) {
         const mrtOut = { output, normal: normalView }
-        if (taaOn || ssgiOn) mrtOut.velocity = velocity
+        if (needsVelocity) mrtOut.velocity = velocity
         if (ssrOn) {
           mrtOut.metalness = metalness
           mrtOut.roughness = roughness
@@ -132,7 +133,14 @@ async function createExportTSLPipeline(primary, scene, camera) {
           const metal = scenePass.getTextureNode('metalness')
           const rough = scenePass.getTextureNode('roughness')
           const ssrPass = ssr(color, depth, normal, metal, rough, activeCam)
-          color = add(color, ssrPass.getTextureNode())
+          let ssrTex = ssrPass.getTextureNode()
+          if (taaOn && needsVelocity) {
+            const vel = scenePass.getTextureNode('velocity')
+            const ssrTraa = traa(ssrTex, depth, vel, activeCam)
+            ssrTex = ssrTraa.getTextureNode()
+          }
+          ssrTex = denoise(ssrTex, depth, normal, activeCam)
+          color = add(color, ssrTex)
         }
       }
       if (bloomOn) {
@@ -1032,6 +1040,17 @@ function compileScripts() {
 
 // ---- boot ----
 const overlay = document.getElementById('overlay')
+let perfBadge = document.getElementById('perf-badge')
+if (!perfBadge) {
+  perfBadge = document.createElement('div')
+  perfBadge.id = 'perf-badge'
+  perfBadge.style.cssText =
+    'position:fixed;top:8px;right:8px;padding:4px 8px;font:11px/1.4 monospace;background:rgba(0,0,0,.55);color:#9fd3ff;border-radius:4px;pointer-events:none;z-index:20'
+  document.body.appendChild(perfBadge)
+}
+let perfFpsAcc = 0
+let perfFpsFrames = 0
+let perfFps = 0
 async function boot() {
   const created = await createPlayRenderer()
   renderer = created.renderer
@@ -1051,13 +1070,30 @@ async function boot() {
   compileScripts()
   exportTslPipeline = await createExportTSLPipeline(renderer, scene, pawnCam)
   await bindExportParticleCompute()
+  const gpuParticleCount = particleSystems.filter((p) => p.gpuTier).length
+  const particleTier =
+    (LEVEL.environment?.particleBackend ?? 'cpu') === 'gpu' && playRenderTier === 'webgpu'
+      ? gpuParticleCount > 0
+        ? `GPU particles ×${gpuParticleCount}`
+        : 'GPU particles (bind pending)'
+      : 'CPU particles'
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
-    'Click to play — WASD + mouse · Space jump · Shift sprint'
+    `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`
+  window.__LOTUS_EXPORT_PERF__ = { tier: playRenderTier, particleTier, gpuParticleCount }
   const c = new THREE.Clock()
   renderer.setAnimationLoop(() => {
     const dt = Math.min(c.getDelta(), 0.1)
     clock += dt
+    perfFpsAcc += dt
+    perfFpsFrames++
+    if (perfFpsAcc >= 0.5) {
+      perfFps = Math.round(perfFpsFrames / perfFpsAcc)
+      perfFpsAcc = 0
+      perfFpsFrames = 0
+      const gpuN = particleSystems.filter((p) => p.gpuTier).length
+      perfBadge.textContent = `${perfFps} fps · ${playRenderTier}${gpuN ? ` · GPU×${gpuN}` : ''}`
+    }
     if (physWorld) {
       physWorld.timestep = Math.min(dt, 1 / 30)
       physWorld.step()

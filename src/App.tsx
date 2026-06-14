@@ -38,6 +38,8 @@ import {
   compileBTGraphToScript,
   emptyBTGraph,
   expandBTSubtree,
+  graphForBTCompile,
+  resolveBTEditorHighlightNodeId,
   inferBlackboardTypes,
   summarizeBTTree,
   validateBTGraph,
@@ -48,6 +50,7 @@ import { getSSGISettings } from './engine/ssgiPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
 import { DEFAULT_PARTICLES } from './engine/particles'
 import { createParticleSystem } from './engine/particlesGPU'
+import { runParticleGPUQAMatrix } from './engine/particleGPUQA'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
@@ -63,6 +66,7 @@ import { mpIsDedicatedServer, mpLagCompensatedTransform, mpNetSettings } from '.
 import {
   compileMaterialGraphTSLNodes,
   isTSLPreviewAvailableAsync,
+  materialGraphTSLPreviewChannels,
   serializeMaterialGraphTSL,
 } from './engine/materialGraphTSL'
 import { emptyMaterialGraph } from './engine/materialGraph'
@@ -155,6 +159,7 @@ const lotusBridge = {
     serialize: (graph = emptyMaterialGraph()) => serializeMaterialGraphTSL(graph, 0),
     previewAvailable: () => isTSLPreviewAvailableAsync(),
     compileNodes: (graph = emptyMaterialGraph()) => compileMaterialGraphTSLNodes(graph),
+    previewChannels: (graph = emptyMaterialGraph()) => materialGraphTSLPreviewChannels(graph),
   },
   bakeGIProbes: async () => {
     const gfx = (window as unknown as { lotusGfx?: { renderer?: THREE.WebGLRenderer } }).lotusGfx
@@ -188,6 +193,8 @@ const lotusBridge = {
     compileScript: compileBTGraphToScript,
     collapseSubtree: collapseBTSubtree,
     expandSubtree: expandBTSubtree,
+    graphForCompile: graphForBTCompile,
+    resolveHighlight: resolveBTEditorHighlightNodeId,
     validate: validateBTGraph,
     summarize: summarizeBTTree,
     inferBBTypes: inferBlackboardTypes,
@@ -209,6 +216,7 @@ const lotusBridge = {
   },
   particles: {
     create: (backend: 'cpu' | 'gpu' = 'cpu') => createParticleSystem({ ...DEFAULT_PARTICLES, maxParticles: 32 }, backend),
+    qaMatrix: runParticleGPUQAMatrix,
   },
   export: {
     buildPlayableHTML,
