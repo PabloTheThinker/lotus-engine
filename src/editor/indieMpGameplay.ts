@@ -8,7 +8,14 @@ import {
   applyMpScoreDelta,
   mirrorMpPeerScores,
 } from '../engine/mpGameplay'
-import { mpSetGameWonRelayHandler, mpSetPeerScoresMirrorHandler, mpSetScoreDeltaHandler } from '../engine/multiplayer'
+import {
+  mpLobbyRoom,
+  mpSetGameWonRelayHandler,
+  mpSetLobbyRefreshHandler,
+  mpSetLobbyStartHandler,
+  mpSetPeerScoresMirrorHandler,
+  mpSetScoreDeltaHandler,
+} from '../engine/multiplayer'
 import { AddActorCommand, runCommand } from './commands'
 import { buildSerializedActor } from './spawn'
 import { useEditor } from './store'
@@ -27,6 +34,127 @@ export {
   addMpScore,
   applyMpScoreDelta,
 } from '../engine/mpGameplay'
+
+export const MP_LOBBY_MANAGER_NAME = 'MpLobbyManager'
+export const MP_TAG_LOBBY = 'mp_lobby'
+
+/** Lobby manager — room browser HUD + ready-up; deathmatch spawns on lobby_start. */
+export const MP_LOBBY_SCRIPT = `// mp_lobby — room browser + ready-up (Wave 53)
+function refreshHud() {
+  const room = api.mpLobbyRoom()
+  const peers = api.mpLobbyPeers()
+  const lines = peers
+    .map((id) => id.slice(0, 4) + (api.mpLobbyIsReady(id) ? '✓' : '…'))
+    .join('  ')
+  const count = api.mpLobbyPeerReadyCount()
+  api.hud.text('mp_lobby_room', 'Room ' + room, { anchor: 'tc', x: 0, y: 24, size: 18, color: '#e8ecf0' })
+  api.hud.text('mp_lobby_peers', peers.length ? lines : 'Waiting for peers…', {
+    anchor: 'tc',
+    x: 0,
+    y: 52,
+    size: 15,
+    color: '#9aa4b2',
+  })
+  api.hud.text('mp_lobby_ready', count + '/' + peers.length + ' ready', {
+    anchor: 'tc',
+    x: 0,
+    y: 78,
+    size: 14,
+    color: '#81b29a',
+  })
+}
+function onBeginPlay() {
+  refreshHud()
+  api.on('mp_lobby_refresh', refreshHud)
+  const localId = api.mpLocalId()
+  const toggleReady = () => {
+    const next = !api.mpLobbyIsReady(localId)
+    api.mpLobbySetReady(next)
+    api.hud.button('mp_lobby_btn', next ? 'Unready' : 'Ready', toggleReady, {
+      anchor: 'bc',
+      x: 0,
+      y: 72,
+      size: 16,
+      color: next ? '#81b29a' : '#2f80ed',
+    })
+    refreshHud()
+  }
+  api.hud.button('mp_lobby_btn', 'Ready', toggleReady, {
+    anchor: 'bc',
+    x: 0,
+    y: 72,
+    size: 16,
+    color: '#2f80ed',
+  })
+  if (api.mpIsHost()) {
+    api.hud.button('mp_lobby_start', 'Start match', () => api.mpLobbyTryStart(), {
+      anchor: 'bc',
+      x: 0,
+      y: 120,
+      size: 15,
+      color: '#7c3aed',
+    })
+  }
+}
+function onTick(_dt) {
+  refreshHud()
+}
+`
+
+const MP_LOBBY_HUD_WIDGETS: HudWidget[] = [
+  {
+    id: 'mp_lobby_room',
+    type: 'text',
+    text: 'Room —',
+    anchor: 'tc',
+    x: 0,
+    y: 24,
+    size: 18,
+    color: '#e8ecf0',
+  },
+  {
+    id: 'mp_lobby_peers',
+    type: 'text',
+    text: 'Waiting…',
+    anchor: 'tc',
+    x: 0,
+    y: 52,
+    size: 15,
+    color: '#9aa4b2',
+  },
+  {
+    id: 'mp_lobby_ready',
+    type: 'text',
+    text: '0/0 ready',
+    anchor: 'tc',
+    x: 0,
+    y: 78,
+    size: 14,
+    color: '#81b29a',
+  },
+  {
+    id: 'mp_lobby_btn',
+    type: 'button',
+    text: 'Ready',
+    signal: 'mp_lobby_toggle_ready',
+    anchor: 'bc',
+    x: 0,
+    y: 72,
+    size: 16,
+    color: '#2f80ed',
+  },
+  {
+    id: 'mp_lobby_start',
+    type: 'button',
+    text: 'Start match',
+    signal: 'mp_lobby_start_btn',
+    anchor: 'bc',
+    x: 0,
+    y: 120,
+    size: 15,
+    color: '#7c3aed',
+  },
+]
 
 /** PlayerStart script — Fire raycast vs mp_target → api.addMpScore(1). */
 export const MP_SCORE_SCRIPT = `// mp_score — deathmatch lite (host authoritative)
@@ -146,6 +274,67 @@ const MP_SCORE_HUD_WIDGET: HudWidget = {
   color: '#e8ecf0',
 }
 
+const MP_LOBBY_UNDO_NAMES = ['MpLobbyFloor', 'MpLobbyHost', 'MpLobbyClient', MP_LOBBY_MANAGER_NAME, 'MpLobbySun']
+
+function buildLobbyManagerActor() {
+  const manager = buildSerializedActor({ kind: 'empty' }, [0, 2, 0])
+  manager.name = MP_LOBBY_MANAGER_NAME
+  manager.tags = [MP_TAG_LOBBY]
+  manager.script = MP_LOBBY_SCRIPT
+  return manager
+}
+
+/**
+ * Indie MP lobby greybox — room browser + ready-up HUD.
+ * Deathmatch does not spawn until host relays lobby_start.
+ */
+export function spawnIndieMpLobby() {
+  const floor = starterBox('MpLobbyFloor', [0, -0.1, 0], [14, 0.2, 14], '#3d4a5c')
+  floor.material!.roughness = 0.9
+
+  const host = buildSerializedActor({ kind: 'playerstart' }, [-4, 0.2, 0])
+  host.name = 'MpLobbyHost'
+  host.pawnMode = 'thirdperson' as PawnMode
+  host.tags = [MP_TAG_HOST]
+
+  const client = buildSerializedActor({ kind: 'playerstart' }, [4, 0.2, 0])
+  client.name = 'MpLobbyClient'
+  client.pawnMode = 'thirdperson' as PawnMode
+
+  const manager = buildLobbyManagerActor()
+  const sun = buildSerializedActor({ kind: 'light', type: 'DirectionalLight' }, [5, 10, 3])
+  sun.name = 'MpLobbySun'
+
+  runCommand({
+    label: 'Indie MP lobby',
+    execute() {
+      for (const sa of [floor, host, client, manager, sun]) {
+        new AddActorCommand(sa).execute()
+      }
+      world.environment.useRapierCharacter = true
+      world.applyEnvironment()
+      const existing = new Set(world.hudWidgets.map((w) => w.id))
+      for (const w of MP_LOBBY_HUD_WIDGETS) {
+        if (!existing.has(w.id)) world.hudWidgets.push({ ...w })
+      }
+      useEditor.getState().setStatus(`Indie MP lobby — room ${mpLobbyRoom()} · ready up then host starts`)
+      useEditor.getState().touch()
+    },
+    undo() {
+      removeActorsByName(MP_LOBBY_UNDO_NAMES)
+      world.hudWidgets = world.hudWidgets.filter((w) => !MP_LOBBY_HUD_WIDGETS.some((h) => h.id === w.id))
+      useEditor.getState().touch()
+    },
+  })
+}
+
+function transitionLobbyToDeathmatch() {
+  removeActorsByName(MP_LOBBY_UNDO_NAMES)
+  world.hudWidgets = world.hudWidgets.filter((w) => !MP_LOBBY_HUD_WIDGETS.some((h) => h.id === w.id))
+  spawnIndieMpDeathmatch()
+  world.playApi?.emit('mp_lobby_start')
+}
+
 /**
  * Indie MP deathmatch greybox — floor, spawns with MP_SCORE_SCRIPT,
  * mp_target dummies, scoreboard actor, score HUD widget.
@@ -217,4 +406,15 @@ mpSetPeerScoresMirrorHandler((scores) => {
 /** Clients receive mp_game_won when host broadcasts a win on the score relay. */
 mpSetGameWonRelayHandler((peerId, score) => {
   world.playApi?.emit('mp_game_won', peerId, score)
+})
+
+/** Lobby HUD refresh when peers join or toggle ready. */
+mpSetLobbyRefreshHandler(() => {
+  world.playApi?.emit('mp_lobby_refresh')
+})
+
+/** All tabs transition lobby → deathmatch when host relays lobby_start. */
+mpSetLobbyStartHandler(() => {
+  const inLobby = [...world.actors.values()].some((a) => a.name === MP_LOBBY_MANAGER_NAME)
+  if (inLobby) transitionLobbyToDeathmatch()
 })

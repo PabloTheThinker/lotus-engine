@@ -18,8 +18,21 @@ const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
 const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
 const GAMEPAD_ENABLED = window.__LOTUS_GAMEPAD__ === true || window.__LOTUS_GAMEPAD__ === 'true'
+const INPUT_BINDINGS = window.__LOTUS_INPUT_BINDINGS__ ?? { gamepad: {}, touch: {} }
+const DEFAULT_GP_BUTTONS = { Jump: 0, Interact: 2, Fire: 3 }
+const DEFAULT_TOUCH_SLOTS = { jump: 'jump-btn', fire: 'fire-btn', interact: 'interact-btn' }
+const GP_FIRE_ALT = 7
+function gpButtonFor(action) {
+  const n = INPUT_BINDINGS.gamepad?.[action]
+  return typeof n === 'number' ? n : DEFAULT_GP_BUTTONS[action]
+}
+function touchSlotFor(action) {
+  const slot = INPUT_BINDINGS.touch?.[action]
+  return slot === 'jump-btn' || slot === 'fire-btn' || slot === 'interact-btn' ? slot : DEFAULT_TOUCH_SLOTS[action]
+}
 const MINIGAME_ENABLED = window.__LOTUS_MINIGAME__ === true || window.__LOTUS_MINIGAME__ === 'true'
 const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
+const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
 const MAIN_MENU_ITEMS = [
   { label: 'Platformer', key: 'platformer' },
@@ -404,9 +417,12 @@ function pollExportGamepad() {
   }
   gamepadMove = { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) }
   const btn = (i) => !!pad.buttons[i]?.pressed
-  gamepadJump = btn(0)
-  gamepadInteract = btn(2)
-  gamepadFire = btn(3) || btn(7)
+  const jumpBtn = gpButtonFor('Jump')
+  const interactBtn = gpButtonFor('Interact')
+  const fireBtn = gpButtonFor('Fire')
+  gamepadJump = btn(jumpBtn)
+  gamepadInteract = btn(interactBtn)
+  gamepadFire = btn(fireBtn) || (fireBtn === DEFAULT_GP_BUTTONS.Fire && btn(GP_FIRE_ALT))
   if (gamepadJump && !gpPrevJump) pressed.add('Space')
   if (gamepadFire && !gpPrevFire) pressed.add('KeyF')
   if (gamepadInteract && !gpPrevInteract) pressed.add('KeyE')
@@ -554,9 +570,37 @@ function initExportTouchHud() {
   }
   base.addEventListener('touchend', endStick, { passive: false })
   base.addEventListener('touchcancel', endStick, { passive: false })
-  bindActionButton(jumpBtn, 'Space', () => touchJump, (v) => { touchJump = v })
-  bindActionButton(fireBtn, 'KeyF', () => touchFire, (v) => { touchFire = v })
-  bindActionButton(interactBtn, 'KeyE', () => touchInteract, (v) => { touchInteract = v })
+  const slotDown = { 'jump-btn': false, 'fire-btn': false, 'interact-btn': false }
+  const slotPressed = { 'jump-btn': false, 'fire-btn': false, 'interact-btn': false }
+  const bindSlotButton = (btn, slot, code) => {
+    btn.dataset.lotusTouchSlot = slot
+    const press = (e) => {
+      e.preventDefault()
+      if (!slotDown[slot]) slotPressed[slot] = true
+      slotDown[slot] = true
+      pressed.add(code)
+    }
+    const release = (e) => { e.preventDefault(); slotDown[slot] = false }
+    btn.addEventListener('touchstart', press, { passive: false })
+    btn.addEventListener('touchend', release, { passive: false })
+    btn.addEventListener('touchcancel', release, { passive: false })
+    btn.addEventListener('mousedown', press)
+    btn.addEventListener('mouseup', release)
+    btn.addEventListener('mouseleave', release)
+  }
+  bindSlotButton(jumpBtn, 'jump-btn', 'Space')
+  bindSlotButton(fireBtn, 'fire-btn', 'KeyF')
+  bindSlotButton(interactBtn, 'interact-btn', 'KeyE')
+  const syncTouchActions = () => {
+    touchJump = slotDown[touchSlotFor('jump')]
+    touchFire = slotDown[touchSlotFor('fire')]
+    touchInteract = slotDown[touchSlotFor('interact')]
+    if (slotPressed[touchSlotFor('jump')]) pressed.add('Space')
+    if (slotPressed[touchSlotFor('fire')]) pressed.add('KeyF')
+    if (slotPressed[touchSlotFor('interact')]) pressed.add('KeyE')
+    for (const slot of Object.keys(slotPressed)) slotPressed[slot] = false
+  }
+  window.__lotusSyncTouchBindings = syncTouchActions
 }
 
 let skyObj = null
@@ -1681,23 +1725,12 @@ const api = {
       api.log('loadLevel: unknown level', name)
       return false
     }
+    await sceneTransitionOut('fade', SCENE_TRANSITION_MS)
     loadingLevel = true
     try {
-      teardownActors()
-      LEVEL = resolved
-      applyEnvironment()
-      await loadAssets(LEVEL)
-      await loadSounds(LEVEL)
-      stopSeqAudio()
-      spawnLevelActors(LEVEL)
-      resetPawnFromStart()
-      await startPhysics()
-      compileScripts()
-      api.log('loadLevel:', name)
-      return true
-    } catch (e) {
-      console.warn('loadLevel failed:', e)
-      return false
+      const ok = await loadLevelCore(name)
+      await sceneTransitionIn('fade', SCENE_TRANSITION_MS)
+      return ok
     } finally {
       loadingLevel = false
     }
@@ -1720,6 +1753,107 @@ function compileScripts() {
       if (h.b) h.b()
       if (h.t) ticks.push([a, h.t])
     } catch (e) { console.warn(a.name, 'script error', e) }
+  }
+}
+
+/** Wave 55 — DOM scene transition overlay (mirrors editor/sceneTransitions.ts). */
+const SCENE_TRANSITION_MS = 400
+const SCENE_TRANSITION_OVERLAY_ID = 'lotus-scene-transition'
+
+function ensureSceneTransitionOverlay() {
+  let el = document.getElementById(SCENE_TRANSITION_OVERLAY_ID)
+  if (!el) {
+    el = document.createElement('div')
+    el.id = SCENE_TRANSITION_OVERLAY_ID
+    el.setAttribute('aria-hidden', 'true')
+    document.body.appendChild(el)
+  }
+  return el
+}
+
+function waitSceneTransition(el, ms) {
+  return new Promise((resolve) => {
+    const done = () => {
+      el.removeEventListener('transitionend', onEnd)
+      clearTimeout(tid)
+      resolve()
+    }
+    const onEnd = (e) => {
+      if (e.target === el) done()
+    }
+    el.addEventListener('transitionend', onEnd)
+    const tid = setTimeout(done, ms + 96)
+  })
+}
+
+async function sceneTransitionOut(kind, ms = SCENE_TRANSITION_MS) {
+  const el = ensureSceneTransitionOverlay()
+  el.style.position = 'fixed'
+  el.style.inset = '0'
+  el.style.zIndex = '10000'
+  el.style.background = '#0d0f12'
+  el.style.pointerEvents = 'auto'
+  el.style.transition = 'none'
+  if (kind === 'fade') {
+    el.style.opacity = '0'
+    el.style.transform = 'none'
+  } else if (kind === 'slideLeft') {
+    el.style.opacity = '1'
+    el.style.transform = 'translateX(100%)'
+  } else {
+    el.style.opacity = '1'
+    el.style.transform = 'translateX(-100%)'
+  }
+  void el.offsetWidth
+  el.style.transition = kind === 'fade' ? `opacity ${ms}ms ease` : `transform ${ms}ms ease`
+  if (kind === 'fade') el.style.opacity = '1'
+  else el.style.transform = 'translateX(0)'
+  await waitSceneTransition(el, ms)
+}
+
+async function sceneTransitionIn(kind, ms = SCENE_TRANSITION_MS) {
+  const el = ensureSceneTransitionOverlay()
+  el.style.position = 'fixed'
+  el.style.inset = '0'
+  el.style.zIndex = '10000'
+  el.style.background = '#0d0f12'
+  el.style.pointerEvents = 'auto'
+  el.style.transition = 'none'
+  el.style.opacity = '1'
+  el.style.transform = 'none'
+  void el.offsetWidth
+  el.style.transition = kind === 'fade' ? `opacity ${ms}ms ease` : `transform ${ms}ms ease`
+  if (kind === 'fade') el.style.opacity = '0'
+  else if (kind === 'slideLeft') el.style.transform = 'translateX(-100%)'
+  else el.style.transform = 'translateX(100%)'
+  await waitSceneTransition(el, ms)
+  el.style.pointerEvents = 'none'
+  if (kind === 'fade') el.style.opacity = '0'
+}
+
+async function loadLevelCore(name) {
+  const key = String(name).trim().toLowerCase()
+  const resolved = LEVELS[key] ?? LEVELS[name] ?? (key === 'main' ? LEVELS[MAIN_KEY] : null)
+  if (!resolved) {
+    api.log('loadLevel: unknown level', name)
+    return false
+  }
+  try {
+    teardownActors()
+    LEVEL = resolved
+    applyEnvironment()
+    await loadAssets(LEVEL)
+    await loadSounds(LEVEL)
+    stopSeqAudio()
+    spawnLevelActors(LEVEL)
+    resetPawnFromStart()
+    await startPhysics()
+    compileScripts()
+    api.log('loadLevel:', name)
+    return true
+  } catch (e) {
+    console.warn('loadLevel failed:', e)
+    return false
   }
 }
 
@@ -1746,7 +1880,8 @@ function showExportMainMenu() {
       btn.style.cssText =
         'min-width:220px;padding:10px 20px;border:none;border-radius:8px;background:#2f80ed;color:#fff;cursor:pointer;font:inherit'
       if (item.key === 'mpdeathmatch') btn.style.background = '#7c3aed'
-      btn.onclick = () => {
+      btn.onclick = async () => {
+        await sceneTransitionOut('fade', SCENE_TRANSITION_MS)
         root.remove()
         resolve(item.key)
       }
@@ -1775,9 +1910,11 @@ async function boot() {
   playRenderTier = created.tier
   bindPawnInput()
   initExportTouchHud()
+  let bootMenuPick = false
   if (MAIN_MENU_ENABLED) {
     if (overlay) overlay.textContent = 'Select a level'
     const picked = await showExportMainMenu()
+    bootMenuPick = true
     const resolved = LEVELS[picked] ?? LEVELS[MAIN_KEY]
     if (resolved) LEVEL = resolved
   }
@@ -1793,6 +1930,7 @@ async function boot() {
   resetPawnFromStart()
   await startPhysics()
   compileScripts()
+  if (bootMenuPick) await sceneTransitionIn('fade', SCENE_TRANSITION_MS)
   exportTslPipeline = await createExportTSLPipeline(renderer, scene, pawnCam)
   await bindExportParticleCompute()
   const gpuParticleCount = particleSystems.filter((p) => p.gpuTier).length
@@ -1803,7 +1941,13 @@ async function boot() {
         : 'GPU particles (bind pending)'
       : 'CPU particles'
   const gamepadHint = GAMEPAD_ENABLED ? ` · ${GAMEPAD_GLYPH_HINT}` : ''
-  const presetHint = MINIGAME_PRESET ? ` · Mini-game: ${MINIGAME_PRESET}` : MINIGAME_ENABLED ? ' · Mini-game HUD' : ''
+  const presetHint = MINIGAME_PACK
+    ? ` · Pack: ${MINIGAME_PACK}`
+    : MINIGAME_PRESET
+      ? ` · Mini-game: ${MINIGAME_PRESET}`
+      : MINIGAME_ENABLED
+        ? ' · Mini-game HUD'
+        : ''
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
     (TOUCH_ENABLED
@@ -1914,6 +2058,7 @@ async function boot() {
     const subSystems = particleSystems.filter((p) => p.subEmitterOn)
     if (subSystems.length) window.__LOTUS_EXPORT_SUB_EMITTER_QA__ = { systems: subSystems.length }
     if (GAMEPAD_ENABLED) pollExportGamepad()
+    if (TOUCH_ENABLED && typeof window.__lotusSyncTouchBindings === 'function') window.__lotusSyncTouchBindings()
     updatePawn(dt)
     if (CELL_MANIFEST) syncCellsAround(pawnCam.position)
     applyStreamingVisibility(pawnCam.position)

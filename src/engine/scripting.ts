@@ -12,7 +12,18 @@ import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
 import { addMpScore, getMpPeerScores, getMpScore } from './mpGameplay'
-import { mpConnected, mpIsHost, mpLocalId } from './multiplayer'
+import {
+  mpConnected,
+  mpIsHost,
+  mpLobbyAllReady,
+  mpLobbyIsReady,
+  mpLobbyPeerReadyCount,
+  mpLobbyPeers,
+  mpLobbyRoom,
+  mpLobbySetReady,
+  mpLobbyTryStart,
+  mpLocalId,
+} from './multiplayer'
 
 /**
  * Scripting — per-actor JavaScript, the Blueprint/GDScript analog.
@@ -152,6 +163,20 @@ export interface ScriptApi {
   mpIsHost: () => boolean
   /** This client's relay peer id */
   mpLocalId: () => string
+  /** MP lobby room name from World Settings */
+  mpLobbyRoom: () => string
+  /** Peers in the lobby room (includes local id) */
+  mpLobbyPeers: () => string[]
+  /** Toggle local ready state (relays lobby_ready) */
+  mpLobbySetReady: (ready: boolean) => void
+  /** Whether a peer is ready (defaults to local id) */
+  mpLobbyIsReady: (peerId?: string) => boolean
+  /** True when every peer in the room is ready */
+  mpLobbyAllReady: () => boolean
+  /** Count of ready peers */
+  mpLobbyPeerReadyCount: () => number
+  /** Host starts match when all peers ready */
+  mpLobbyTryStart: () => boolean
   /** Pawn camera yaw (radians) while playing — for hitscan / facing */
   pawnYaw: () => number
   /** Pawn camera pitch (radians) while playing */
@@ -314,6 +339,13 @@ export function makeScriptApi(
     mpConnected,
     mpIsHost,
     mpLocalId,
+    mpLobbyRoom,
+    mpLobbyPeers,
+    mpLobbySetReady,
+    mpLobbyIsReady: (peerId) => mpLobbyIsReady(peerId ?? mpLocalId()),
+    mpLobbyAllReady,
+    mpLobbyPeerReadyCount,
+    mpLobbyTryStart,
     pawnYaw,
     pawnPitch,
     getMpScore: (peerId) => getMpScore(actors, peerId),

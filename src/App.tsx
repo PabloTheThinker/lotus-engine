@@ -16,6 +16,13 @@ import { getLiveSnapshot } from './engine/liveSnapshot'
 import { executeAICommands, extractCommands } from './editor/ai'
 import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable'
 import {
+  buildMiniGamePackHTML,
+  exportMiniGamePack,
+  MINIGAME_PACK_MODES,
+  miniGamePackIconStub,
+  miniGamePackTitle,
+} from './editor/miniGameExportPack'
+import {
   enableMiniGameHud,
   hideMiniGameHud,
   showLoseOverlay,
@@ -60,7 +67,9 @@ import {
   getMpScore,
   getMpPeerScores,
   mirrorMpPeerScores,
+  MP_LOBBY_SCRIPT,
   spawnIndieMpDeathmatch,
+  spawnIndieMpLobby,
 } from './editor/indieMpGameplay'
 import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
 import {
@@ -81,15 +90,19 @@ import {
   linkStarterLevel,
   mainMenuBootEnabled,
   paintMainMenuHud,
+  fadeToLevel,
   selectLevel,
   spawnMainMenu,
   type MainMenuLevelKind,
 } from './editor/mainMenuFlow'
+import { sceneTransition, type SceneTransitionKind, type SceneTransitionPhase } from './editor/sceneTransitions'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
 import { resolveAnimParams } from './engine/animStateMachine'
 import {
   activeGridLayerIndex,
+  autotileExtendedMask,
   autotileNeighbors,
+  autotileRuleForMask,
   eraseGridCell,
   eraseGridLayer,
   getGridCellCount,
@@ -99,12 +112,25 @@ import {
   isGridLayerVisible,
   paintGridCell,
   paintGridLayer,
+  previewAutotileCorner,
+  previewAutotileExtendedMask,
   previewAutotileMask,
+  resolveAutotileCorner,
+  resolveAutotileKind,
   setGridLayerVisible,
   worldToGridCell,
 } from './engine/gridMap'
 import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
 import { getActionAxis } from './engine/inputActions'
+import {
+  getBindings,
+  resetBindings,
+  setGamepadButton,
+  setTouchSlot,
+  type GamepadAction,
+  type TouchAction,
+  type TouchSlotId,
+} from './engine/inputBindings'
 import { createResource, getResource, listResources, saveResource } from './engine/resources'
 import { listScriptVarPresets, loadScriptVarPreset, saveScriptVarPreset } from './engine/scriptVarPresets'
 import { applyScriptVarPreset, keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
@@ -194,7 +220,20 @@ import { runParticleGPUQAMatrix } from './engine/particleGPUQA'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
-import { loadMPSettings, mpEnabled, mpConnected, mpIsHost, mpKnownPeerIds, mpLocalId } from './engine/multiplayer'
+import {
+  loadMPSettings,
+  mpEnabled,
+  mpConnected,
+  mpIsHost,
+  mpKnownPeerIds,
+  mpLobbyAllReady,
+  mpLobbyIsReady,
+  mpLobbyPeerReadyCount,
+  mpLobbyPeers,
+  mpLobbySetReady,
+  mpLobbyTryStart,
+  mpLocalId,
+} from './engine/multiplayer'
 import * as THREE from 'three'
 import {
   characterIsOnFloor,
@@ -610,6 +649,15 @@ const lotusBridge = {
         return true
       },
     },
+    input: {
+      getBindings: () => getBindings(),
+      setGamepadButton: (action: GamepadAction, button: number) => setGamepadButton(action, button),
+      setTouchSlot: (action: TouchAction, slot: TouchSlotId) => setTouchSlot(action, slot),
+      resetBindings: () => {
+        resetBindings()
+        return getBindings()
+      },
+    },
     minigame: {
       managerName: MINIGAME_MANAGER_NAME,
       goalZoneName: GOAL_ZONE_NAME,
@@ -631,6 +679,11 @@ const lotusBridge = {
       showWinOverlay,
       showLoseOverlay,
       exportPreset: (mode: 'platformer' | 'rpg' | 'fps') => exportMiniGamePreset(mode),
+      packModes: [...MINIGAME_PACK_MODES],
+      packTitle: (mode: 'platformer' | 'rpg' | 'fps') => miniGamePackTitle(mode),
+      packIconStub: () => miniGamePackIconStub(),
+      buildPackHTML: (mode: 'platformer' | 'rpg' | 'fps') => buildMiniGamePackHTML(mode),
+      exportPack: (mode: 'platformer' | 'rpg' | 'fps') => exportMiniGamePack(mode),
     },
     mp: {
       tagHost: MP_TAG_HOST,
@@ -650,6 +703,15 @@ const lotusBridge = {
         delta: number,
         emit?: (signal: string, ...args: unknown[]) => void,
       ) => applyMpScoreDelta(world.actors, peerId, delta, emit),
+      lobbyScript: MP_LOBBY_SCRIPT,
+      lobby: {
+        setReady: (ready: boolean) => mpLobbySetReady(ready),
+        isReady: (peerId?: string) => mpLobbyIsReady(peerId ?? (mpLocalId() || '__local__')),
+        allReady: () => mpLobbyAllReady(),
+        peerReadyCount: () => mpLobbyPeerReadyCount(),
+        peers: () => mpLobbyPeers(),
+        tryStart: () => mpLobbyTryStart(),
+      },
     },
     spawnCharacterStarter,
     spawnPlatformerStarter,
@@ -657,6 +719,7 @@ const lotusBridge = {
     spawnFpsStarter,
     spawnIndieMpTemplate,
     spawnIndieMpDeathmatch,
+    spawnIndieMpLobby,
     configureIndieMpSettings,
     spawnMiniGame,
     flow: {
@@ -664,7 +727,13 @@ const lotusBridge = {
       menuScript: MAIN_MENU_SCRIPT,
       menuItems: MENU_ITEMS,
       spawnMainMenu,
-      selectLevel: (kind: MainMenuLevelKind, opts?: { play?: boolean; link?: boolean }) => selectLevel(kind, opts),
+      selectLevel: (
+        kind: MainMenuLevelKind,
+        opts?: { play?: boolean; link?: boolean; transition?: boolean | SceneTransitionKind; transitionMs?: number },
+      ) => selectLevel(kind, opts),
+      fadeToLevel: (kind: MainMenuLevelKind, ms = 400) => fadeToLevel(kind, ms),
+      transition: (kind: SceneTransitionKind, ms = 400, phase: SceneTransitionPhase = 'out') =>
+        sceneTransition(kind, ms, phase),
       linkStarterLevel,
       paintMainMenuHud,
       mainMenuBootEnabled,
@@ -690,11 +759,48 @@ const lotusBridge = {
     getLayerCellCount: (props: import('./engine/types').FoliageProps, layer: number) => getLayerCellCount(props, layer),
     autotileNeighbors: (hasN: boolean, hasE: boolean, hasS: boolean, hasW: boolean) =>
       autotileNeighbors(hasN, hasE, hasS, hasW),
+    autotileExtendedMask: (
+      hasN: boolean,
+      hasE: boolean,
+      hasS: boolean,
+      hasW: boolean,
+      hasNE: boolean,
+      hasSE: boolean,
+      hasSW: boolean,
+      hasNW: boolean,
+    ) => autotileExtendedMask(hasN, hasE, hasS, hasW, hasNE, hasSE, hasSW, hasNW),
+    resolveAutotileKind: (
+      mask: number,
+      neighborKinds: ('box' | 'sphere' | 'plane' | null)[],
+      baseKind: 'box' | 'sphere' | 'plane',
+    ) => resolveAutotileKind(mask, neighborKinds, baseKind),
+    autotileRuleForMask: (
+      mask: number,
+      tileKind: 'box' | 'sphere' | 'plane',
+      extendedMask?: number,
+      neighborKinds?: ('box' | 'sphere' | 'plane' | null)[],
+    ) => autotileRuleForMask(mask, tileKind, extendedMask, neighborKinds),
+    resolveAutotileCorner: (cardinalMask: number, extendedMask: number) =>
+      resolveAutotileCorner(cardinalMask, extendedMask),
     setLayerVisible: (props: import('./engine/types').FoliageProps, layer: number, visible: boolean) =>
       setGridLayerVisible(props, layer, visible),
     isLayerVisible: (props: import('./engine/types').FoliageProps, layer: number) => isGridLayerVisible(props, layer),
     previewAutotileMask: (props: import('./engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) =>
       previewAutotileMask(props, layer, cx, cy, cz),
+    previewAutotileExtendedMask: (
+      props: import('./engine/types').FoliageProps,
+      layer: number,
+      cx: number,
+      cy: number,
+      cz: number,
+    ) => previewAutotileExtendedMask(props, layer, cx, cy, cz),
+    previewAutotileCorner: (
+      props: import('./engine/types').FoliageProps,
+      layer: number,
+      cx: number,
+      cy: number,
+      cz: number,
+    ) => previewAutotileCorner(props, layer, cx, cy, cz),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,
@@ -711,6 +817,7 @@ const lotusBridge = {
   },
   export: {
     buildPlayableHTML,
+    buildMiniGamePackHTML,
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
   },

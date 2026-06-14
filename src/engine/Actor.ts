@@ -86,6 +86,8 @@ export class Actor {
   particleSystem?: import('./particles').ParticleSystem
   foliageProps?: FoliageProps
   foliageMesh?: THREE.InstancedMesh
+  /** Per-tile-kind instanced meshes when gridAutotileRules is enabled */
+  foliageMeshes?: Partial<Record<'box' | 'sphere' | 'plane', THREE.InstancedMesh>>
   landscapeProps?: LandscapeProps
   probeProps?: { radius: number }
   waterProps?: import('./types').WaterProps

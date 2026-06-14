@@ -2564,6 +2564,18 @@ function FoliageSection({ actor }: { actor: Actor }) {
             />
           </label>
           <label className="field check">
+            <span>Autotile rules</span>
+            <input
+              type="checkbox"
+              checked={!!props.gridAutotileRules}
+              onChange={(e) => {
+                props.gridAutotileRules = e.target.checked
+                buildFoliageMesh(actor)
+                touch()
+              }}
+            />
+          </label>
+          <label className="field check">
             <span>Autotile preview</span>
             <input
               type="checkbox"
@@ -2628,7 +2640,7 @@ function FoliageSection({ actor }: { actor: Actor }) {
       </button>
       <div className="panel-empty" style={{ padding: '2px 0' }}>
         {gridMode
-          ? 'Click-drag paints active layer · Shift erases · autotile refreshes 4-neighbors.'
+          ? 'Click-drag paints active layer · Shift erases · autotile rules match neighbor tile kinds + corners.'
           : 'Click-drag paints onto surfaces · Shift erases.'}
       </div>
     </Section>

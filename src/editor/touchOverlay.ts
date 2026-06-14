@@ -1,4 +1,5 @@
 import { Input } from '../engine/Input'
+import { getEffectiveTouchSlot, type TouchSlotId } from '../engine/inputBindings'
 import { applyTouchLayoutPreset, type TouchLayoutPreset } from '../engine/touchLayoutPresets'
 import type { EnvironmentSettings } from '../engine/types'
 import {
@@ -82,9 +83,7 @@ export const TOUCH_OVERLAY_CSS = `
 export class TouchOverlay {
   private root: HTMLElement | null = null
   private joystick: VirtualJoystick | null = null
-  private jump: TouchJumpButton | null = null
-  private fire: TouchActionButton | null = null
-  private interact: TouchActionButton | null = null
+  private slots: Partial<Record<TouchSlotId, TouchActionButton | TouchJumpButton>> = {}
 
   get mounted(): boolean {
     return !!this.root
@@ -111,20 +110,24 @@ export class TouchOverlay {
     const actions = document.createElement('div')
     actions.className = 'lotus-touch-actions'
     hud.appendChild(actions)
-    this.interact = new TouchActionButton(actions, 'Use', 'lotus-touch-interact')
-    this.fire = new TouchActionButton(actions, 'Fire', 'lotus-touch-fire')
-    this.jump = new TouchJumpButton(actions)
+    const interact = new TouchActionButton(actions, 'Use', 'lotus-touch-interact')
+    const fire = new TouchActionButton(actions, 'Fire', 'lotus-touch-fire')
+    const jump = new TouchJumpButton(actions)
+    interact.root.dataset.lotusTouchSlot = 'interact-btn'
+    fire.root.dataset.lotusTouchSlot = 'fire-btn'
+    jump.root.dataset.lotusTouchSlot = 'jump-btn'
+    this.slots = {
+      'interact-btn': interact,
+      'fire-btn': fire,
+      'jump-btn': jump,
+    }
   }
 
   unmount() {
     this.joystick?.dispose()
-    this.jump?.dispose()
-    this.fire?.dispose()
-    this.interact?.dispose()
+    for (const btn of Object.values(this.slots)) btn?.dispose()
     this.joystick = null
-    this.jump = null
-    this.fire = null
-    this.interact = null
+    this.slots = {}
     this.root?.remove()
     this.root = null
     resetTouchInput()
@@ -132,19 +135,23 @@ export class TouchOverlay {
   }
 
   tick() {
-    if (!this.joystick || !this.jump || !this.fire || !this.interact) return
+    if (!this.joystick) return
+    const jumpBtn = this.slots[getEffectiveTouchSlot('jump')]
+    const fireBtn = this.slots[getEffectiveTouchSlot('fire')]
+    const interactBtn = this.slots[getEffectiveTouchSlot('interact')]
+    if (!jumpBtn || !fireBtn || !interactBtn) return
     const axis = this.joystick.getAxis()
-    const jumpDown = this.jump.isDown()
-    const jumpJust = this.jump.justPressed()
-    const fireDown = this.fire.isDown()
-    const fireJust = this.fire.justPressed()
-    const interactDown = this.interact.isDown()
-    const interactJust = this.interact.justPressed()
+    const jumpDown = jumpBtn.isDown()
+    const jumpJust = jumpBtn.justPressed()
+    const fireDown = fireBtn.isDown()
+    const fireJust = fireBtn.justPressed()
+    const interactDown = interactBtn.isDown()
+    const interactJust = interactBtn.justPressed()
     syncTouchInputState(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust)
     Input.syncTouchInput(axis, jumpDown, jumpJust, fireDown, fireJust, interactDown, interactJust)
-    this.jump.endFrame()
-    this.fire.endFrame()
-    this.interact.endFrame()
+    jumpBtn.endFrame()
+    fireBtn.endFrame()
+    interactBtn.endFrame()
     endTouchInputFrame()
   }
 }

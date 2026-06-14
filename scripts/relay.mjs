@@ -8,7 +8,10 @@
      input   { t:'input', id, p?, ry? }       — client pawn uplink
      sync    { t:'sync', id, aid, props }     — host property deltas (10 Hz)
      spawn   { t:'spawn', id, actor }         — host spawner replication
-     despawn { t:'despawn', id, aid }         — host removes replicated actor */
+     despawn { t:'despawn', id, aid }         — host removes replicated actor
+     lobby_join  { t:'lobby_join', id, ready? }  — lobby peer announce
+     lobby_ready { t:'lobby_ready', id, ready }  — ready-up toggle
+     lobby_start { t:'lobby_start', id }         — host starts match */
 import { WebSocketServer } from 'ws'
 
 const port = Number(process.argv[2] ?? 24690)
@@ -34,6 +37,12 @@ wss.on('connection', (ws) => {
       for (const peer of peers) {
         if (peer !== ws && peer.readyState === 1) {
           peer.send(JSON.stringify({ t: 'join', room, id }))
+        }
+      }
+      // tell the new joiner about peers already in the room (lobby browser sync)
+      for (const peer of peers) {
+        if (peer !== ws && peer.readyState === 1 && peer._vid) {
+          ws.send(JSON.stringify({ t: 'join', room, id: peer._vid }))
         }
       }
       peers.add(ws)

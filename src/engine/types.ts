@@ -387,6 +387,8 @@ export interface FoliageProps {
   gridLayers?: Record<number, number[][]>
   /** 4-neighbor autotile variant refresh on paint (snap mode) */
   gridAutotile?: boolean
+  /** Tile-kind neighbor rules + corner sprites when painting/rebuilding (snap mode) */
+  gridAutotileRules?: boolean
   /** Per-layer viewport visibility (layers 0–3; default all visible) */
   gridLayerVisibility?: boolean[]
   /** Viewport hover preview of 4-neighbor autotile bitmask on active layer */
@@ -800,7 +802,7 @@ export interface HudWidget {
   id: string
   type: 'text' | 'bar' | 'button'
   text: string
-  anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center'
+  anchor: 'tl' | 'tr' | 'bl' | 'br' | 'center' | 'tc' | 'bc'
   x: number
   y: number
   size: number

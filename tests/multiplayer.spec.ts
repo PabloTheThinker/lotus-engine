@@ -320,3 +320,157 @@ test('wave 48 multiplayer relay: client mirrors host scores + mp_game_won', asyn
     await contextB.close()
   }
 })
+
+test('wave 53 multiplayer relay: both tabs ready then host starts deathmatch', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.setTimeout(120_000)
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave53-lobby'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    await pageA.addInitScript(
+      ({ url, room }) => {
+        localStorage.clear()
+        localStorage.setItem('lotus-engine.multiplayer', JSON.stringify({ url, room, enabled: true }))
+      },
+      { url: relayUrl, room: MP_ROOM },
+    )
+    await pageB.addInitScript(
+      ({ url, room }) => {
+        localStorage.clear()
+        localStorage.setItem('lotus-engine.multiplayer', JSON.stringify({ url, room, enabled: true }))
+      },
+      { url: relayUrl, room: MP_ROOM },
+    )
+    await pageA.goto('/')
+    await pageB.goto('/')
+    await pageA.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+    await pageB.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    const spawnLobby = async (page: import('@playwright/test').Page) => {
+      await page.evaluate(() => {
+        const v = window.lotus! as typeof window.lotus & { indie: { spawnIndieMpLobby: () => void } }
+        v.indie.spawnIndieMpLobby()
+      })
+    }
+    await spawnLobby(pageA)
+    await spawnLobby(pageB)
+
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+    await pageB.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+
+    let hostPage: import('@playwright/test').Page | undefined
+    let clientPage: import('@playwright/test').Page | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const [aHost, bHost] = await Promise.all([
+        pageA.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageB.evaluate(() => window.lotus!.multiplayer.isHost()),
+      ])
+      if (aHost && !bHost) {
+        hostPage = pageA
+        clientPage = pageB
+        break
+      }
+      if (!aHost && bHost) {
+        hostPage = pageB
+        clientPage = pageA
+        break
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    expect(hostPage, 'expected stable MP host election').toBeDefined()
+    expect(clientPage, 'expected MP client tab').toBeDefined()
+
+    await hostPage!.waitForFunction(
+      () => {
+        const v = window.lotus! as typeof window.lotus & {
+          indie: { mp: { lobby: { peers: () => string[] } } }
+        }
+        return v.indie.mp.lobby.peers().length >= 2
+      },
+      { timeout: 15_000 },
+    )
+
+    await Promise.all([
+      hostPage!.evaluate(() => {
+        const v = window.lotus! as typeof window.lotus & {
+          indie: { mp: { lobby: { setReady: (r: boolean) => void } } }
+        }
+        v.indie.mp.lobby.setReady(true)
+      }),
+      clientPage!.evaluate(() => {
+        const v = window.lotus! as typeof window.lotus & {
+          indie: { mp: { lobby: { setReady: (r: boolean) => void } } }
+        }
+        v.indie.mp.lobby.setReady(true)
+      }),
+    ])
+
+    await hostPage!.waitForFunction(
+      () => {
+        const v = window.lotus! as typeof window.lotus & {
+          indie: { mp: { lobby: { allReady: () => boolean; peerReadyCount: () => number } } }
+        }
+        return v.indie.mp.lobby.allReady() && v.indie.mp.lobby.peerReadyCount() >= 2
+      },
+      { timeout: 15_000 },
+    )
+
+    const started = await hostPage!.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        indie: { mp: { lobby: { tryStart: () => boolean; allReady: () => boolean } } }
+        multiplayer: { isHost: () => boolean }
+      }
+      return {
+        isHost: v.multiplayer.isHost(),
+        allReady: v.indie.mp.lobby.allReady(),
+        started: v.indie.mp.lobby.tryStart(),
+      }
+    })
+    expect(started.isHost).toBe(true)
+    expect(started.allReady).toBe(true)
+    expect(started.started || started.allReady).toBe(true)
+
+    await hostPage!.waitForFunction(
+      () => [...(window.lotus?.world?.actors?.values?.() ?? [])].some((a) => a.name === 'MpScoreboard'),
+      { timeout: 15_000 },
+    )
+    await clientPage!.waitForFunction(
+      () => [...(window.lotus?.world?.actors?.values?.() ?? [])].some((a) => a.name === 'MpScoreboard'),
+      { timeout: 15_000 },
+    )
+
+    const hostDm = await hostPage!.evaluate(() => {
+      const lobby = [...window.lotus!.world.actors.values()].find((a) => a.name === 'MpLobbyManager')
+      const board = [...window.lotus!.world.actors.values()].find((a) => a.name === 'MpScoreboard')
+      const targets = [...window.lotus!.world.actors.values()].filter((a) => a.tags.includes('mp_target'))
+      return { lobbyGone: !lobby, board: !!board, targetCount: targets.length }
+    })
+    const clientDm = await clientPage!.evaluate(() => {
+      const lobby = [...window.lotus!.world.actors.values()].find((a) => a.name === 'MpLobbyManager')
+      const board = [...window.lotus!.world.actors.values()].find((a) => a.name === 'MpScoreboard')
+      return { lobbyGone: !lobby, board: !!board }
+    })
+
+    expect(hostDm.lobbyGone).toBe(true)
+    expect(hostDm.board).toBe(true)
+    expect(hostDm.targetCount).toBe(3)
+    expect(clientDm.lobbyGone).toBe(true)
+    expect(clientDm.board).toBe(true)
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})

@@ -68,6 +68,16 @@
 | 49 | v2.84–v2.88 | **Input polish** — touch layout presets, gamepad glyph hints in export |
 | 50 | v2.89–v2.93 | **Scene flow** — `/mainmenu`, starter level picker, `__LOTUS_MAIN_MENU__` — **194 tests** |
 
+## Shipped (Waves 51–55, v2.94–v3.18)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 51 | v2.94–v2.98 | **Autotile rules** — 8-neighbor corners, per-cell tile-kind rebuild |
+| 52 | v2.99–v3.03 | **Mini-game export pack** — PWA `/exportpack`, genre presets |
+| 53 | v3.04–v3.08 | **MP lobby** — ready-up, `/mplobby`, relay start |
+| 54 | v3.09–v3.13 | **Input rebinding** — gamepad buttons + touch slot overrides |
+| 55 | v3.14–v3.18 | **Scene transitions** — fade/slide on menu → level — **219 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -76,11 +86,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **TileMap autotile rules** — tile-kind neighbor matching + corner sprites
-2. **Mini-game export pack** — bundled PWA presets per genre
-3. **MP lobby** — room browser + ready-up before deathmatch
-4. **Input rebinding** — per-action gamepad + touch slot overrides
-5. **Scene transitions** — fade/slide between main menu and levels
+1. **Autotile art** — sprite sheet UV mapping per corner variant
+2. **Export pack polish** — itch.io metadata + screenshot capture
+3. **MP matchmaking** — public room list + ping display
+4. **Input profiles** — save/load binding presets (desktop vs mobile)
+5. **Level streaming UX** — cell load progress bar in export
 
 ## Non-goals (honest skip)
 
@@ -91,5 +101,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **194** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **219** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

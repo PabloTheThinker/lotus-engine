@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.93 (waves 46–50).** v0.33–v2.93 shipped; **build clean**, **`npm run test` — 194 passed**.
+- **Last clean commit: v3.18 (waves 51–55).** v0.33–v3.18 shipped; **build clean**, **`npm run test` — 219 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -429,12 +429,22 @@
 | 49 | v2.84–v2.88 | Input polish — touch layout presets, gamepad glyph hints |
 | 50 | v2.89–v2.93 | Scene flow — `/mainmenu`, level select, `__LOTUS_MAIN_MENU__` — 194 tests |
 
+## Shipped (v2.94–v3.18, Waves 51–55 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 51 | v2.94–v2.98 | Autotile rules — 8-neighbor corners, per-cell kind rebuild |
+| 52 | v2.99–v3.03 | Mini-game export pack — PWA `/exportpack`, `__LOTUS_MINIGAME_PACK__` |
+| 53 | v3.04–v3.08 | MP lobby — ready-up, `/mplobby`, relay start smoke |
+| 54 | v3.09–v3.13 | Input rebinding — gamepad + touch slot overrides |
+| 55 | v3.14–v3.18 | Scene transitions — fade/slide on level select — 219 tests |
+
 ## Next up (indie roadmap)
 
-1. **TileMap autotile rules** — tile-kind neighbor matching + corner sprites
-2. **Mini-game export pack** — bundled PWA presets per genre
-3. **MP lobby** — room browser + ready-up before deathmatch
-4. **Input rebinding** — per-action gamepad + touch slot overrides
+1. **Autotile art** — sprite sheet UV mapping per corner variant
+2. **Export pack polish** — itch.io metadata + screenshot capture
+3. **MP matchmaking** — public room list + ping display
+4. **Input profiles** — save/load binding presets (desktop vs mobile)
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

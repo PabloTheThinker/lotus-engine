@@ -2829,12 +2829,12 @@ test('wave 50 indie.flow menuItems + spawnMainMenu', async ({ page }) => {
 test('wave 50 indie.flow.selectLevel platformer', async ({ page }) => {
   await bootEditor(page)
 
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     const v = window.lotus! as typeof window.lotus & {
-      indie: { flow: { selectLevel: (kind: 'platformer') => void } }
+      indie: { flow: { selectLevel: (kind: 'platformer', opts?: { transition?: boolean }) => Promise<void> } }
       world: { levelLinks: { name: string }[] }
     }
-    v.indie.flow.selectLevel('platformer')
+    await v.indie.flow.selectLevel('platformer', { transition: false })
     const floor = [...v.world.actors.values()].find((a) => a.name === 'PlatformerFloor')
     const mgr = [...v.world.actors.values()].find((a) => a.name === 'MiniGameManager')
     const link = v.world.levelLinks.find((l) => l.name === 'platformer')
@@ -2885,15 +2885,96 @@ test('wave 50 export embeds __LOTUS_MAIN_MENU__', async ({ page }) => {
   expect(result.disabled).toBe(false)
 })
 
+test('wave 54 indie.input getBindings returns defaults', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { resetBindings: () => { gamepad: Record<string, number>; touch: Record<string, string> }; getBindings: () => { gamepad: Record<string, number>; touch: Record<string, string> } } }
+    }
+    v.indie.input.resetBindings()
+    return v.indie.input.getBindings()
+  })
+  expect(result.gamepad).toEqual({ Jump: 0, Fire: 3, Interact: 2 })
+  expect(result.touch).toEqual({ jump: 'jump-btn', fire: 'fire-btn', interact: 'interact-btn' })
+})
+
+test('wave 54 indie.input setGamepadButton persists Fire to button 0', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { resetBindings: () => unknown; setGamepadButton: (a: 'Fire', b: number) => boolean; getBindings: () => { gamepad: { Fire: number } } } }
+    }
+    v.indie.input.resetBindings()
+    const ok = v.indie.input.setGamepadButton('Fire', 0)
+    const fire = v.indie.input.getBindings().gamepad.Fire
+    const stored = JSON.parse(localStorage.getItem('lotus-engine.inputBindings') ?? '{}') as { gamepad?: { Fire?: number } }
+    return { ok, fire, stored: stored.gamepad?.Fire }
+  })
+  expect(result.ok).toBe(true)
+  expect(result.fire).toBe(0)
+  expect(result.stored).toBe(0)
+})
+
+test('wave 54 indie.input setTouchSlot maps fire to interact-btn', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { resetBindings: () => unknown; setTouchSlot: (a: 'fire', s: 'interact-btn') => boolean; getBindings: () => { touch: { fire: string } } } }
+    }
+    v.indie.input.resetBindings()
+    const ok = v.indie.input.setTouchSlot('fire', 'interact-btn')
+    const fire = v.indie.input.getBindings().touch.fire
+    const stored = JSON.parse(localStorage.getItem('lotus-engine.inputBindings') ?? '{}') as { touch?: { fire?: string } }
+    return { ok, fire, stored: stored.touch?.fire }
+  })
+  expect(result.ok).toBe(true)
+  expect(result.fire).toBe('interact-btn')
+  expect(result.stored).toBe('interact-btn')
+})
+
+test('wave 54 indie.input resetBindings restores defaults', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { setGamepadButton: (a: 'Fire', b: number) => boolean; setTouchSlot: (a: 'fire', s: 'interact-btn') => boolean; resetBindings: () => { gamepad: Record<string, number>; touch: Record<string, string> } } }
+    }
+    v.indie.input.setGamepadButton('Fire', 1)
+    v.indie.input.setTouchSlot('fire', 'interact-btn')
+    const bindings = v.indie.input.resetBindings()
+    const stored = localStorage.getItem('lotus-engine.inputBindings')
+    return { bindings, stored }
+  })
+  expect(result.bindings.gamepad.Fire).toBe(3)
+  expect(result.bindings.touch.fire).toBe('fire-btn')
+  expect(result.stored).toBe('{"gamepad":{},"touch":{}}')
+})
+
+test('wave 54 export HTML embeds __LOTUS_INPUT_BINDINGS__', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { input: { setGamepadButton: (a: 'Fire', b: number) => boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.indie.input.setGamepadButton('Fire', 0)
+    const html = v.export.buildPlayableHTML()
+    const match = html.match(/window\.__LOTUS_INPUT_BINDINGS__ = (\{[^;]+\})/)
+    const parsed = match ? (JSON.parse(match[1]) as { gamepad?: { Fire?: number } }) : null
+    return { hasTag: html.includes('__LOTUS_INPUT_BINDINGS__'), fire: parsed?.gamepad?.Fire }
+  })
+  expect(result.hasTag).toBe(true)
+  expect(result.fire).toBe(0)
+})
+
 test('wave 50 indie.flow.selectLevel mpdeathmatch', async ({ page }) => {
   await bootEditor(page)
 
-  const result = await page.evaluate(() => {
+  const result = await page.evaluate(async () => {
     const v = window.lotus! as typeof window.lotus & {
-      indie: { flow: { selectLevel: (kind: 'mpdeathmatch') => void } }
+      indie: { flow: { selectLevel: (kind: 'mpdeathmatch', opts?: { transition?: boolean }) => Promise<void> } }
       world: { levelLinks: { name: string }[] }
     }
-    v.indie.flow.selectLevel('mpdeathmatch')
+    await v.indie.flow.selectLevel('mpdeathmatch', { transition: false })
     const board = [...v.world.actors.values()].find((a) => a.name === 'MpScoreboard')
     const targets = [...v.world.actors.values()].filter((a) => a.tags.includes('mp_target'))
     const link = v.world.levelLinks.find((l) => l.name === 'mpdeathmatch')
@@ -2903,6 +2984,358 @@ test('wave 50 indie.flow.selectLevel mpdeathmatch', async ({ page }) => {
   expect(result.board).toBe(true)
   expect(result.targetCount).toBe(3)
   expect(result.link).toBe(true)
+})
+
+test('wave 55 sceneTransitions fadeOut creates overlay', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { transition: (k: string, ms: number, phase: string) => Promise<void> } }
+    }
+    const prev = document.getElementById('lotus-scene-transition')
+    if (prev) prev.remove()
+    await v.indie.flow.transition('fade', 40, 'out')
+    const el = document.getElementById('lotus-scene-transition')
+    const out = {
+      exists: !!el,
+      opacity: el ? getComputedStyle(el).opacity : null,
+      z: el?.style.zIndex ?? null,
+    }
+    await v.indie.flow.transition('fade', 40, 'in')
+    return out
+  })
+
+  expect(result.exists).toBe(true)
+  expect(Number(result.opacity)).toBeGreaterThan(0.9)
+  expect(result.z).toBe('10000')
+})
+
+test('wave 55 indie.flow.transition slideLeft in phase', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { transition: (k: string, ms: number, phase: string) => Promise<void> } }
+    }
+    const el = document.getElementById('lotus-scene-transition') ?? document.createElement('div')
+    el.id = 'lotus-scene-transition'
+    el.style.position = 'fixed'
+    el.style.inset = '0'
+    el.style.background = '#0d0f12'
+    el.style.opacity = '1'
+    el.style.transform = 'translateX(0)'
+    document.body.appendChild(el)
+    await v.indie.flow.transition('slideLeft', 40, 'in')
+    return { transform: el.style.transform, pointerEvents: el.style.pointerEvents }
+  })
+
+  expect(result.transform).toContain('-100%')
+  expect(result.pointerEvents).toBe('none')
+})
+
+test('wave 55 indie.flow.fadeToLevel spawns platformer', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { fadeToLevel: (kind: 'platformer', ms?: number) => Promise<void> } }
+      world: { levelLinks: { name: string }[] }
+    }
+    await v.indie.flow.fadeToLevel('platformer', 40)
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'PlatformerFloor')
+    const link = v.world.levelLinks.find((l) => l.name === 'platformer')
+    return { floor: !!floor, link: !!link }
+  })
+
+  expect(result.floor).toBe(true)
+  expect(result.link).toBe(true)
+})
+
+test('wave 55 indie.flow.selectLevel default fade transition', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { selectLevel: (kind: 'fps', opts?: { transitionMs?: number }) => Promise<void> } }
+      world: { levelLinks: { name: string }[] }
+    }
+    const prev = document.getElementById('lotus-scene-transition')
+    if (prev) prev.remove()
+    await v.indie.flow.selectLevel('fps', { transitionMs: 40 })
+    const el = document.getElementById('lotus-scene-transition')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MiniGameManager')
+    return { overlay: !!el, mgr: !!mgr, opacity: el?.style.opacity ?? null }
+  })
+
+  expect(result.overlay).toBe(true)
+  expect(result.mgr).toBe(true)
+  expect(result.opacity).toBe('0')
+})
+
+test('wave 55 export runtime embeds scene transition overlay', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { spawnMainMenu: () => void } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.indie.flow.spawnMainMenu()
+    const html = v.export.buildPlayableHTML()
+    return {
+      overlayId: html.includes('lotus-scene-transition'),
+      transitionOut: html.includes('sceneTransitionOut'),
+      bootFadeIn: html.includes('bootMenuPick') && html.includes('sceneTransitionIn'),
+    }
+  })
+
+  expect(result.overlayId).toBe(true)
+  expect(result.transitionOut).toBe(true)
+  expect(result.bootFadeIn).toBe(true)
+})
+
+test('wave 52 indie.minigame packModes + exportPack bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      packModes: string[]
+      packTitle: (m: string) => string
+      packIconStub: () => { sizes: string }[]
+      buildPackHTML: (m: string) => string
+      exportPack: (m: string) => void
+    }
+    return {
+      modes: mg.packModes,
+      title: mg.packTitle('rpg'),
+      icons: mg.packIconStub().map((i) => i.sizes),
+      hasBuild: typeof mg.buildPackHTML === 'function',
+      hasExport: typeof mg.exportPack === 'function',
+    }
+  })
+
+  expect(result.modes).toEqual(['platformer', 'rpg', 'fps'])
+  expect(result.title).toBe('Lotus RPG Pack')
+  expect(result.icons).toEqual(expect.arrayContaining(['192x192', '512x512']))
+  expect(result.hasBuild).toBe(true)
+  expect(result.hasExport).toBe(true)
+})
+
+test('wave 52 buildPackHTML embeds __LOTUS_MINIGAME_PACK__ and PWA manifest', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'platformer') => void; buildPackHTML: (m: 'platformer') => string } }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    return {
+      pack: html.includes("__LOTUS_MINIGAME_PACK__ = 'platformer'"),
+      preset: html.includes("__LOTUS_MINIGAME_PRESET__ = 'platformer'"),
+      manifest: html.includes('application/manifest+json;base64,'),
+      sw: html.includes('serviceWorker'),
+      badge: html.includes('PLATFORMER PACK'),
+    }
+  })
+
+  expect(result.pack).toBe(true)
+  expect(result.preset).toBe(true)
+  expect(result.manifest).toBe(true)
+  expect(result.sw).toBe(true)
+  expect(result.badge).toBe(true)
+})
+
+test('wave 52 /exportpack platformer terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/exportpack platformer')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MiniGameManager')
+    const goal = [...v.world.actors.values()].find((a) => a.name === 'GoalZone')
+    return { output: out?.output, mgr: !!mgr, goal: !!goal }
+  })
+
+  expect(result.output).toMatch(/Exported mini-game pack: platformer/i)
+  expect(result.mgr).toBe(true)
+  expect(result.goal).toBe(true)
+})
+
+test('wave 52 buildPackHTML manifest includes icon stub', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { packIconStub: () => { src: string; sizes: string }[] } }
+      export: { buildMiniGamePackHTML: (m: 'fps') => string }
+    }
+    const html = v.export.buildMiniGamePackHTML('fps')
+    const stubSrc = v.indie.minigame.packIconStub()[0]?.src ?? ''
+    const m = html.match(/manifest\+json;base64,([^"]+)/)
+    const manifest = m ? (JSON.parse(atob(m[1])) as { icons?: { src: string; sizes: string }[] }) : null
+    return {
+      iconCount: manifest?.icons?.length ?? 0,
+      iconSrc: manifest?.icons?.[0]?.src ?? '',
+      stubSrc,
+      minigameHud: html.includes('__LOTUS_MINIGAME__ = true'),
+    }
+  })
+
+  expect(result.iconCount).toBeGreaterThanOrEqual(2)
+  expect(result.iconSrc).toBe(result.stubSrc)
+  expect(result.iconSrc.startsWith('data:image/png;base64,')).toBe(true)
+  expect(result.minigameHud).toBe(true)
+})
+
+test('wave 52 buildPackHTML preset level per genre', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'rpg' | 'fps') => void; buildPackHTML: (m: 'rpg' | 'fps') => string } }
+    }
+    v.indie.minigame.spawnMiniGame('rpg')
+    const rpgHtml = v.indie.minigame.buildPackHTML('rpg')
+    const rpgNpcs = [...v.world.actors.values()].filter((a) => a.tags.includes('NPC')).length
+    v.indie.minigame.spawnMiniGame('fps')
+    const fpsHtml = v.indie.minigame.buildPackHTML('fps')
+    const fpsTargets = [...v.world.actors.values()].filter((a) => a.tags.includes('Target')).length
+    return {
+      rpgPack: rpgHtml.includes("__LOTUS_MINIGAME_PACK__ = 'rpg'"),
+      rpgNpcs,
+      fpsPack: fpsHtml.includes("__LOTUS_MINIGAME_PACK__ = 'fps'"),
+      fpsTargets,
+    }
+  })
+
+  expect(result.rpgPack).toBe(true)
+  expect(result.rpgNpcs).toBeGreaterThanOrEqual(3)
+  expect(result.fpsPack).toBe(true)
+  expect(result.fpsTargets).toBeGreaterThanOrEqual(2)
+})
+
+test('wave 51 gridMap autotileExtendedMask 8-neighbor bits', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        autotileExtendedMask: (
+          n: boolean,
+          e: boolean,
+          s: boolean,
+          w: boolean,
+          ne: boolean,
+          se: boolean,
+          sw: boolean,
+          nw: boolean,
+        ) => number
+        autotileNeighbors: (n: boolean, e: boolean, s: boolean, w: boolean) => number
+      }
+    }
+    const full = v.gridMap.autotileExtendedMask(true, true, true, true, true, false, false, true)
+    const cross = v.gridMap.autotileNeighbors(true, true, true, true)
+    return { full, cross }
+  })
+
+  expect(result.full).toBe(159)
+  expect(result.cross).toBe(15)
+})
+
+test('wave 51 gridMap resolveAutotileCorner inner-ne and outer-ne', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: { resolveAutotileCorner: (cardinal: number, extended: number) => string }
+    }
+    return {
+      inner: v.gridMap.resolveAutotileCorner(3, 3),
+      outer: v.gridMap.resolveAutotileCorner(0, 16),
+    }
+  })
+
+  expect(result.inner).toBe('inner-ne')
+  expect(result.outer).toBe('outer-ne')
+})
+
+test('wave 51 gridMap autotileRuleForMask corner sprites', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        autotileRuleForMask: (
+          mask: number,
+          kind: 'box' | 'sphere' | 'plane',
+          ext?: number,
+        ) => { resolvedKind: string; corner: string }
+      }
+    }
+    const inner = v.gridMap.autotileRuleForMask(3, 'box', 3)
+    const isolated = v.gridMap.autotileRuleForMask(0, 'sphere')
+    return { innerKind: inner.resolvedKind, innerCorner: inner.corner, isolatedKind: isolated.resolvedKind }
+  })
+
+  expect(result.innerKind).toBe('plane')
+  expect(result.innerCorner).toBe('inner-ne')
+  expect(result.isolatedKind).toBe('box')
+})
+
+test('wave 51 gridMap resolveAutotileKind majority vote', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      gridMap: {
+        resolveAutotileKind: (
+          mask: number,
+          neighbors: ('box' | 'sphere' | 'plane' | null)[],
+          base: 'box' | 'sphere' | 'plane',
+        ) => string
+      }
+    }
+    const majority = v.gridMap.resolveAutotileKind(7, ['box', 'box', 'sphere', null], 'sphere')
+    const isolated = v.gridMap.resolveAutotileKind(0, [null, null, null, null], 'sphere')
+    return { majority, isolated }
+  })
+
+  expect(result.majority).toBe('box')
+  expect(result.isolated).toBe('sphere')
+})
+
+test('wave 51 gridmap spawn exposes gridAutotileRules + bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { gridAutotileRules?: boolean } } | null }
+      gridMap: {
+        autotileRuleForMask: unknown
+        resolveAutotileKind: unknown
+        previewAutotileCorner: unknown
+        previewAutotileExtendedMask: unknown
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    props!.gridAutotileRules = true
+    return {
+      rules: props?.gridAutotileRules,
+      hasRule: typeof v.gridMap.autotileRuleForMask === 'function',
+      hasKind: typeof v.gridMap.resolveAutotileKind === 'function',
+      hasCorner: typeof v.gridMap.previewAutotileCorner === 'function',
+      hasExt: typeof v.gridMap.previewAutotileExtendedMask === 'function',
+    }
+  })
+
+  expect(result.rules).toBe(true)
+  expect(result.hasRule).toBe(true)
+  expect(result.hasKind).toBe(true)
+  expect(result.hasCorner).toBe(true)
+  expect(result.hasExt).toBe(true)
 })
 
 test('wave 43 indie MP deathmatch template', async ({ page }) => {
@@ -4855,4 +5288,115 @@ test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('bt'))
   await expect(page.locator('.bt-side summary', { hasText: 'Blackboard' })).toBeVisible()
   await expect(page.locator('.bt-side input[value="false"]')).toBeVisible()
+})
+
+test('wave 53 indie MP lobby template', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnIndieMpLobby: () => void }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnIndieMpLobby()
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'MpLobbyFloor')
+    const manager = [...v.world.actors.values()].find((a) => a.name === 'MpLobbyManager')
+    const dmFloor = [...v.world.actors.values()].find((a) => a.name === 'MpDmFloor')
+    const hud = v.world.hudWidgets.find((w) => w.id === 'mp_lobby_room')
+    return {
+      added: v.world.actors.size > before,
+      floor: !!floor,
+      managerTag: manager?.tags.includes('mp_lobby'),
+      managerScript: manager?.script?.includes('mpLobbyPeers'),
+      noDeathmatch: !dmFloor,
+      hud: !!hud,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.floor).toBe(true)
+  expect(result.managerTag).toBe(true)
+  expect(result.managerScript).toBe(true)
+  expect(result.noDeathmatch).toBe(true)
+  expect(result.hud).toBe(true)
+})
+
+test('wave 53 mpLobby allReady + setReady state', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          lobby: {
+            setReady: (r: boolean) => void
+            isReady: (id?: string) => boolean
+            allReady: () => boolean
+            peerReadyCount: () => number
+          }
+        }
+      }
+    }
+    v.indie.mp.lobby.setReady(true)
+    return {
+      isReady: v.indie.mp.lobby.isReady(),
+      allReady: v.indie.mp.lobby.allReady(),
+      peerReadyCount: v.indie.mp.lobby.peerReadyCount(),
+    }
+  })
+
+  expect(result.isReady).toBe(true)
+  expect(result.allReady).toBe(false)
+  expect(result.peerReadyCount).toBeGreaterThanOrEqual(1)
+})
+
+test('wave 53 /mplobby terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/mplobby')
+    const manager = [...v.world.actors.values()].find((a) => a.name === 'MpLobbyManager')
+    const btn = v.world.hudWidgets.find((w) => w.id === 'mp_lobby_btn')
+    return { output: out?.output, manager: !!manager, btn: !!btn }
+  })
+
+  expect(result.output).toMatch(/lobby/i)
+  expect(result.manager).toBe(true)
+  expect(result.btn).toBe(true)
+})
+
+test('wave 53 indie.mp.lobby bridge APIs', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        mp: {
+          lobbyScript: string
+          lobby: {
+            setReady: (r: boolean) => void
+            isReady: (id?: string) => boolean
+            allReady: () => boolean
+            peerReadyCount: () => number
+          }
+        }
+      }
+    }
+    return {
+      scriptHasReady: v.indie.mp.lobbyScript.includes('mpLobbySetReady'),
+      scriptHasRoom: v.indie.mp.lobbyScript.includes('mpLobbyRoom'),
+      hasSetReady: typeof v.indie.mp.lobby.setReady === 'function',
+      hasIsReady: typeof v.indie.mp.lobby.isReady === 'function',
+      hasAllReady: typeof v.indie.mp.lobby.allReady === 'function',
+      hasPeerReadyCount: typeof v.indie.mp.lobby.peerReadyCount === 'function',
+    }
+  })
+
+  expect(result.scriptHasReady).toBe(true)
+  expect(result.scriptHasRoom).toBe(true)
+  expect(result.hasSetReady).toBe(true)
+  expect(result.hasIsReady).toBe(true)
+  expect(result.hasAllReady).toBe(true)
+  expect(result.hasPeerReadyCount).toBe(true)
 })

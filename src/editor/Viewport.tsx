@@ -32,6 +32,8 @@ import {
   getLayerCellCount,
   gridOverlaySize,
   paintGridLayerBrush,
+  previewAutotileCorner,
+  previewAutotileExtendedMask,
   previewAutotileMask,
   restoreGridPaint,
   snapshotGridPaint,
@@ -1059,6 +1061,12 @@ export function Viewport() {
       { dx: 0, dz: 0.42, bit: 4 },
       { dx: -0.42, dz: 0, bit: 8 },
     ]
+    const AUTOTILE_CORNER_DIRS: { dx: number; dz: number; corner: string }[] = [
+      { dx: 0.3, dz: -0.3, corner: 'ne' },
+      { dx: 0.3, dz: 0.3, corner: 'se' },
+      { dx: -0.3, dz: 0.3, corner: 'sw' },
+      { dx: -0.3, dz: -0.3, corner: 'nw' },
+    ]
 
     function ensureAutotilePreviewGroup(): THREE.Group {
       if (autotilePreviewGroup) return autotilePreviewGroup
@@ -1074,6 +1082,18 @@ export function Viewport() {
         box.userData.bit = d.bit
         box.userData.isHelper = true
         group.add(box)
+      }
+      for (const d of AUTOTILE_CORNER_DIRS) {
+        const tri = new THREE.Mesh(
+          new THREE.ConeGeometry(0.08, 0.12, 3),
+          new THREE.MeshBasicMaterial({ color: 0x8899aa, transparent: true, opacity: 0.4, depthTest: false }),
+        )
+        tri.position.set(d.dx, 0.04, d.dz)
+        tri.rotation.y = Math.PI / 4
+        tri.userData.corner = d.corner
+        tri.userData.isHelper = true
+        tri.visible = false
+        group.add(tri)
       }
       const center = new THREE.Mesh(
         new THREE.RingGeometry(0.12, 0.2, 16),
@@ -1105,14 +1125,28 @@ export function Viewport() {
       }
       const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
       const mask = previewAutotileMask(props, layer, cell.x, cell.y, cell.z)
+      const corner = props.gridAutotileRules ? previewAutotileCorner(props, layer, cell.x, cell.y, cell.z) : 'none'
       group.position.set(cell.x, hit.point.y + 0.06, cell.z)
       group.visible = true
       for (const child of group.children) {
-        if (!(child instanceof THREE.Mesh) || child.userData.bit == null) continue
-        const active = (mask & child.userData.bit) !== 0
-        const mat = child.material as THREE.MeshBasicMaterial
-        mat.color.setHex(active ? 0x4aef88 : 0x3a4150)
-        mat.opacity = active ? 0.9 : 0.35
+        if (!(child instanceof THREE.Mesh)) continue
+        if (child.userData.bit != null) {
+          const active = (mask & child.userData.bit) !== 0
+          const mat = child.material as THREE.MeshBasicMaterial
+          mat.color.setHex(active ? 0x4aef88 : 0x3a4150)
+          mat.opacity = active ? 0.9 : 0.35
+          continue
+        }
+        if (child.userData.corner != null) {
+          const suffix = child.userData.corner as string
+          const isInner = corner === `inner-${suffix}`
+          const isOuter = corner === `outer-${suffix}`
+          child.visible = props.gridAutotileRules === true && (isInner || isOuter)
+          if (!child.visible) continue
+          const mat = child.material as THREE.MeshBasicMaterial
+          mat.color.setHex(isInner ? 0xc77dff : 0x56b3c9)
+          mat.opacity = 0.95
+        }
       }
       return mask
     }
@@ -1137,7 +1171,7 @@ export function Viewport() {
     function stampFoliage(e: MouseEvent) {
       const s = useEditor.getState()
       const layer = s.selectedId ? world.actors.get(s.selectedId) : null
-      if (!layer?.foliageProps || !layer.foliageMesh) return
+      if (!layer?.foliageProps || (!layer.foliageMesh && !layer.foliageMeshes)) return
       const hit = paintSurfaceHit(e)
       if (!hit) return
       if (lastStamp && hit.point.distanceTo(lastStamp) < layer.foliageProps.brushRadius * 0.4) return
@@ -1220,7 +1254,14 @@ export function Viewport() {
           let status = `GridMap · L${gl} · cell (${cell.x}, ${cell.y}, ${cell.z}) · ${getLayerCellCount(gridProps, gl)} / ${getGridCellCount(gridProps)} tiles`
           if (gridProps.gridAutotilePreview) {
             const mask = syncAutotilePreviewOverlay(gridProps, hit, gl)
-            if (mask != null) status += ` · autotile ${mask}`
+            if (mask != null) {
+              status += ` · autotile ${mask}`
+              if (gridProps.gridAutotileRules) {
+                const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+                const corner = previewAutotileCorner(gridProps, gl, cell.x, cell.y, cell.z)
+                if (corner !== 'none') status += ` · ${corner}`
+              }
+            }
           } else if (autotilePreviewGroup) {
             autotilePreviewGroup.visible = false
           }
@@ -1234,7 +1275,14 @@ export function Viewport() {
           const mask = syncAutotilePreviewOverlay(gridProps, hit, gl)
           if (hit && mask != null) {
             const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
-            s.setStatus(`Autotile preview · L${gl} · (${cell.x},${cell.y},${cell.z}) · mask ${mask}`)
+            let status = `Autotile preview · L${gl} · (${cell.x},${cell.y},${cell.z}) · mask ${mask}`
+            if (gridProps.gridAutotileRules) {
+              const corner = previewAutotileCorner(gridProps, gl, cell.x, cell.y, cell.z)
+              if (corner !== 'none') status += ` · ${corner}`
+              const ext = previewAutotileExtendedMask(gridProps, gl, cell.x, cell.y, cell.z)
+              status += ` · ext ${ext}`
+            }
+            s.setStatus(status)
           }
         } else if (autotilePreviewGroup) {
           autotilePreviewGroup.visible = false

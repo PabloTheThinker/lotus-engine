@@ -9,6 +9,7 @@ import { useEditor } from './store'
 import { mainMenuBootEnabled } from './mainMenuFlow'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
 import { TOUCH_OVERLAY_CSS } from './touchOverlay'
+import { bindingsForExport } from '../engine/inputBindings'
 import { shouldShowTouchControls } from '../engine/touchInput'
 import { MINIGAME_OVERLAY_CSS } from './miniGameHud'
 import { MINIGAME_MANAGER_NAME, spawnMiniGame, type MiniGameMode } from './starterMiniGames'
@@ -22,6 +23,10 @@ export interface ExportOptions {
   minigameHud?: boolean
   /** preset label embedded in export boot metadata */
   minigamePreset?: MiniGameMode
+  /** v2.99 — bundled mini-game PWA pack genre (manifest icons + __LOTUS_MINIGAME_PACK__) */
+  minigamePack?: MiniGameMode
+  /** optional PWA manifest icons (mini-game pack supplies stub icons) */
+  pwaIcons?: { src: string; sizes: string; type: string; purpose?: string }[]
 }
 
 function levelHasMiniGameManager(level: SerializedLevel): boolean {
@@ -60,7 +65,7 @@ function buildLevelsManifest(mainLevel: SerializedLevel): { levels: Record<strin
   return { levels, main: 'main' }
 }
 
-function pwaHeadExtras(title: string): string {
+function pwaHeadExtras(title: string, icons?: { src: string; sizes: string; type: string; purpose?: string }[]): string {
   const manifest = {
     name: title,
     short_name: title.slice(0, 12),
@@ -69,7 +74,7 @@ function pwaHeadExtras(title: string): string {
     background_color: '#0d0f12',
     theme_color: '#0d0f12',
     start_url: '.',
-    icons: [],
+    icons: icons ?? [],
   }
   const manifestB64 = btoa(JSON.stringify(manifest))
   return `<link rel="manifest" href="data:application/manifest+json;base64,${manifestB64}" />
@@ -124,20 +129,23 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
       perfMinFps: 20,
     }),
   )
-  const title = s.levelName || 'Lotus Level'
-  const pwa = !!opts.pwa
+  const minigamePack = opts.minigamePack ?? null
+  const title = minigamePack ? `Lotus ${minigamePack.charAt(0).toUpperCase()}${minigamePack.slice(1)} Pack` : s.levelName || 'Lotus Level'
+  const pwa = !!opts.pwa || !!minigamePack
   const lutPayload = getExportGradingLUTPayload(world.environment)
   const lutJSON = lutPayload ? escapeJsonForScript(JSON.stringify(lutPayload)) : 'null'
   const branding = loadProjectSettings().showLotusBranding
   const badgeHtml = branding
-    ? `<div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>`
+    ? `<div id="badge">LOTUS ENGINE${minigamePack ? ` · ${minigamePack.toUpperCase()} PACK` : pwa ? ' · PWA' : ''}</div>`
     : ''
   const touchEnabled =
     shouldShowTouchControls(mainLevel.environment?.touchControls) || pwa || quality === 'mobile'
   const gamepadEnabled = mainLevel.environment?.gamepadControls !== false
   const minigameHud = opts.minigameHud ?? levelHasMiniGameManager(mainLevel)
-  const minigamePreset = opts.minigamePreset ?? null
+  const minigamePreset = opts.minigamePreset ?? minigamePack
   const mainMenuBoot = mainMenuBootEnabled()
+  const pwaIcons = opts.pwaIcons
+  const bindingsJSON = escapeJsonForScript(JSON.stringify(bindingsForExport()))
 
   return `<!doctype html>
 <html lang="en">
@@ -145,7 +153,7 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${title} — Lotus Engine</title>
-${pwa ? pwaHeadExtras(title) : ''}
+${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0f12; }
   canvas { display: block; }
@@ -176,7 +184,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

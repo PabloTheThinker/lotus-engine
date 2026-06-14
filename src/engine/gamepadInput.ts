@@ -4,15 +4,14 @@
  */
 
 import { Input } from './Input'
+import {
+  DEFAULT_GAMEPAD_BUTTONS,
+  GAMEPAD_FIRE_ALT,
+  getEffectiveGamepadButton,
+} from './inputBindings'
 import type { TouchAxis } from './touchInput'
 
 const ZERO: TouchAxis = { x: 0, y: 0 }
-
-/** Standard mapping: left stick move, A jump, Y fire, X interact. */
-const BTN_JUMP = 0
-const BTN_INTERACT = 2
-const BTN_FIRE = 3
-const BTN_FIRE_ALT = 7 // RT
 
 let moveAxis: TouchAxis = { ...ZERO }
 let jumpDown = false
@@ -95,9 +94,12 @@ export function pollGamepadInput(): boolean {
   moveAxis = { x: clamp(x), y: clamp(y) }
 
   const btn = (i: number) => !!pad.buttons[i]?.pressed
-  jumpDown = btn(BTN_JUMP)
-  fireDown = btn(BTN_FIRE) || btn(BTN_FIRE_ALT)
-  interactDown = btn(BTN_INTERACT)
+  const jumpBtn = getEffectiveGamepadButton('Jump')
+  const fireBtn = getEffectiveGamepadButton('Fire')
+  const interactBtn = getEffectiveGamepadButton('Interact')
+  jumpDown = btn(jumpBtn)
+  fireDown = btn(fireBtn) || (fireBtn === DEFAULT_GAMEPAD_BUTTONS.Fire && btn(GAMEPAD_FIRE_ALT))
+  interactDown = btn(interactBtn)
 
   jumpJustPressed = jumpDown && !prevJump
   fireJustPressed = fireDown && !prevFire

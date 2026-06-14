@@ -38,6 +38,16 @@ import {
 import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
+import {
+  GAMEPAD_ACTIONS,
+  getBindings,
+  resetBindings,
+  setGamepadButton,
+  setTouchSlot,
+  TOUCH_ACTIONS,
+  TOUCH_SLOT_IDS,
+  type TouchAction,
+} from '../../engine/inputBindings'
 import { setBusVolume, setSoundAttenuationDefaults } from '../../engine/audio'
 import { AttenuationFields } from './AttenuationFields'
 import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
@@ -158,7 +168,10 @@ function MultiplayerSection() {
           may predict movement when <em>Client Predicted</em> is on; host still syncs @ 10 Hz and clients snap on large error.
         </div>
         <div className="panel-empty" style={{ padding: '2px 0' }}>
-          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>leave</code>
+          Protocol: <code>join</code> · <code>pose</code>/<code>input</code> · <code>sync</code> · <code>spawn</code> · <code>despawn</code> · <code>own</code> · <code>lobby_join</code> · <code>lobby_ready</code> · <code>lobby_start</code> · <code>leave</code>
+        </div>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          <strong>Lobby:</strong> <code>/mplobby</code> spawns a room browser + ready-up HUD; host relays <code>lobby_start</code> when all peers are ready (deathmatch spawns after).
         </div>
       </div>
     </details>
@@ -274,6 +287,70 @@ function DataAssetsSection() {
           + Add Data Asset
         </button>
         <div className="panel-empty" style={{ padding: '2px 0' }}>JSON tables — scripts read api.getData('name').</div>
+      </div>
+    </details>
+  )
+}
+
+function InputBindingsSection() {
+  const [, bump] = useState(0)
+  const refresh = () => bump((n) => n + 1)
+  const bindings = getBindings()
+  return (
+    <details className="details-section">
+      <summary>Input Bindings (Gamepad + Touch)</summary>
+      <div className="details-grid">
+        <strong style={{ fontSize: 11, gridColumn: '1 / -1' }}>Gamepad face buttons</strong>
+        {GAMEPAD_ACTIONS.map((action) => (
+          <label className="field" key={action}>
+            <span>{action}</span>
+            <select
+              value={bindings.gamepad[action]}
+              onChange={(e) => {
+                setGamepadButton(action, parseInt(e.target.value, 10))
+                refresh()
+              }}
+            >
+              {Array.from({ length: 16 }, (_, i) => (
+                <option key={i} value={i}>
+                  Button {i}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        <strong style={{ fontSize: 11, gridColumn: '1 / -1' }}>Touch action slots</strong>
+        {TOUCH_ACTIONS.map((action) => (
+          <label className="field" key={action}>
+            <span>{action}</span>
+            <select
+              value={bindings.touch[action]}
+              onChange={(e) => {
+                setTouchSlot(action as TouchAction, e.target.value as import('../../engine/inputBindings').TouchSlotId)
+                refresh()
+              }}
+            >
+              {TOUCH_SLOT_IDS.map((slot) => (
+                <option key={slot} value={slot}>
+                  {slot}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        <button
+          type="button"
+          onClick={() => {
+            resetBindings()
+            refresh()
+          }}
+        >
+          Reset bindings to defaults
+        </button>
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Overrides persist in <code>lotus-engine.inputBindings</code>. Bridge:{' '}
+          <code>indie.input.getBindings()</code> · <code>setGamepadButton</code> · <code>setTouchSlot</code>
+        </div>
       </div>
     </details>
   )
@@ -1366,6 +1443,7 @@ export function WorldSettings() {
       <LightingBakeSection />
       <NavigationSection />
       <InputMapSection />
+      <InputBindingsSection />
       <DataAssetsSection />
       <AudioSection />
       <MultiplayerSection />

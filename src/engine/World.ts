@@ -45,6 +45,7 @@ import {
 } from './factory'
 import { rebuildPath3DVisual } from './path3d'
 import { loadProjectSettings } from '../editor/projectSettings'
+import { transitionIn, transitionOut } from '../editor/sceneTransitions'
 import { createWidget3DActor, syncWidget3D } from './widget3d'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
@@ -418,6 +419,8 @@ export class World {
       return false
     }
 
+    await transitionOut('fade', 350)
+
     const autoloadIds = new Set([...this.actors.values()].filter((a) => this.isAutoloadActor(a)).map((a) => a.id))
     const autoloadRoots = [...autoloadIds].map((id) => this.actors.get(id)!.root)
 
@@ -446,6 +449,7 @@ export class World {
     this.beginPlay()
     this.onLevelSwitched?.()
     scriptLog('log', `loadLevel('${name}')`)
+    await transitionIn('fade', 350)
     return true
   }
 

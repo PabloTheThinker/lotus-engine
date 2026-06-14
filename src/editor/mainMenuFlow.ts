@@ -5,6 +5,7 @@ import { AddActorCommand, runCommand } from './commands'
 import { buildSerializedActor } from './spawn'
 import { spawnIndieMpDeathmatch } from './indieMpGameplay'
 import { spawnMiniGame } from './starterMiniGames'
+import { runSceneTransition, type SceneTransitionKind } from './sceneTransitions'
 import { useEditor } from './store'
 
 /** v2.89 — main menu → level select from starter templates. */
@@ -125,8 +126,16 @@ export function linkStarterLevel(kind: MainMenuLevelKind, level?: SerializedLeve
   return key
 }
 
+export type SelectLevelOpts = {
+  play?: boolean
+  link?: boolean
+  /** false skips overlay; string picks fade / slideLeft / slideRight (default fade). */
+  transition?: boolean | SceneTransitionKind
+  transitionMs?: number
+}
+
 /** Spawn starter greybox + mini-game (or MP deathmatch) for the chosen menu item. */
-export function selectLevel(kind: MainMenuLevelKind, opts: { play?: boolean; link?: boolean } = {}) {
+function selectLevelCore(kind: MainMenuLevelKind, opts: SelectLevelOpts = {}) {
   const item = menuItem(kind)
   removeActorsByName([MAIN_MENU_MANAGER_NAME])
   world.hudWidgets = []
@@ -149,8 +158,29 @@ export function selectLevel(kind: MainMenuLevelKind, opts: { play?: boolean; lin
   if (opts.link !== false) linkStarterLevel(kind)
   useEditor.getState().setStatus(`Level selected: ${item.label}`)
   useEditor.getState().touch()
+}
 
-  if (opts.play) useEditor.getState().startPlay('pie')
+function resolveTransitionKind(transition: SelectLevelOpts['transition']): SceneTransitionKind | null {
+  if (transition === false) return null
+  if (transition === true || transition === undefined) return 'fade'
+  return transition
+}
+
+/** Spawn + optional Play with fade/slide transition (Wave 55). */
+export async function selectLevel(kind: MainMenuLevelKind, opts: SelectLevelOpts = {}) {
+  const transitionKind = resolveTransitionKind(opts.transition)
+  const ms = opts.transitionMs ?? 400
+  const run = async () => {
+    selectLevelCore(kind, opts)
+    if (opts.play) useEditor.getState().startPlay('pie')
+  }
+  if (transitionKind) await runSceneTransition(transitionKind, ms, run)
+  else await run()
+}
+
+/** Fade transition alias for menu → level (Wave 55 bridge). */
+export async function fadeToLevel(kind: MainMenuLevelKind, ms = 400) {
+  return selectLevel(kind, { transition: 'fade', transitionMs: ms })
 }
 
 /** Editor + Play — spawn MainMenuManager and authored HUD menu buttons. */
@@ -196,7 +226,7 @@ export function paintMainMenuHud() {
     else if (w.type === 'button') {
       const kind = w.signal?.replace('menu_select:', '') as MainMenuLevelKind | undefined
       hud.button(w.id, w.text, () => {
-        if (kind) selectLevel(kind)
+        if (kind) void selectLevel(kind)
       }, opts)
     }
   }

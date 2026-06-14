@@ -3,6 +3,18 @@ import type { World } from './World'
 import type { SerializedActor } from './types'
 import { getActorAttributes, setAttribute } from './gameplayAbilities'
 import {
+  allReady,
+  mpLobbyAddPeer,
+  mpLobbyIsReady,
+  mpLobbyIsStarted,
+  mpLobbyMarkStarted,
+  mpLobbyPeerReadyCount,
+  mpLobbyPeers,
+  mpLobbyRemovePeer,
+  mpLobbyReset,
+  setReady,
+} from './mpLobby'
+import {
   DEFAULT_MP_NET,
   mpActorInInterest,
   mpExpandDelta,
@@ -26,6 +38,9 @@ import {
  *   despawn { t, id, aid }                      — host removes replicated actor
  *   input   { t, id, p?, ry?, actions? }      — client input (optional v1)
  *   own     { t, id, aid, ownerId }           — host reassigns actor ownership (empty ownerId = host)
+ *   lobby_join  { t, id, ready? }             — announce lobby peer (+ optional ready state)
+ *   lobby_ready { t, id, ready }              — peer toggles ready-up
+ *   lobby_start { t, id }                     — host starts match when all peers ready
  *
  * Host = lexicographically smallest peer id in the room.
  */
@@ -58,6 +73,8 @@ let worldRef: World | null = null
 let scoreDeltaHandler: ((peerId: string, delta: number) => void) | null = null
 let peerScoresMirrorHandler: ((scores: Record<string, number>) => void) | null = null
 let gameWonRelayHandler: ((peerId: string, score: number) => void) | null = null
+let lobbyStartHandler: (() => void) | null = null
+let lobbyRefreshHandler: (() => void) | null = null
 /** ids spawned by the network host (safe to despawn on disconnect) */
 const netSpawned = new Set<string>()
 
@@ -354,6 +371,46 @@ export function mpSetGameWonRelayHandler(fn: ((peerId: string, score: number) =>
   gameWonRelayHandler = fn
 }
 
+/** Lobby → deathmatch transition (all tabs when host sends lobby_start). */
+export function mpSetLobbyStartHandler(fn: (() => void) | null) {
+  lobbyStartHandler = fn
+}
+
+/** HUD refresh when lobby peer list or ready flags change. */
+export function mpSetLobbyRefreshHandler(fn: (() => void) | null) {
+  lobbyRefreshHandler = fn
+}
+
+export function mpLobbyRoom(): string {
+  return loadMPSettings().room
+}
+
+export { allReady as mpLobbyAllReady, mpLobbyIsReady, mpLobbyPeerReadyCount, mpLobbyPeers }
+
+/** Local peer toggles ready — relays lobby_ready to room. */
+export function mpLobbySetReady(ready: boolean) {
+  const peerId = localId || '__local__'
+  if (!mpLobbyPeers().includes(peerId)) mpLobbyAddPeer(peerId)
+  setReady(peerId, ready)
+  if (!mpConnected()) {
+    lobbyRefreshHandler?.()
+    return
+  }
+  send({ t: 'lobby_ready', id: localId, ready })
+  lobbyRefreshHandler?.()
+  if (mpIsHost()) mpLobbyTryStart()
+}
+
+/** Host starts match when all peers are ready (idempotent). */
+export function mpLobbyTryStart(): boolean {
+  if (!mpConnected() || !mpIsHost() || mpLobbyIsStarted()) return false
+  if (!allReady()) return false
+  mpLobbyMarkStarted()
+  send({ t: 'lobby_start', id: localId })
+  lobbyStartHandler?.()
+  return true
+}
+
 /** Host broadcasts authoritative peerScores (+ optional win) via score relay. */
 export function mpBroadcastPeerScores(
   scores: Record<string, number>,
@@ -396,6 +453,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   remoteSync.clear()
   netSpawned.clear()
   mpNetReset()
+  mpLobbyReset(localId)
   try {
     ws = new WebSocket(cfg.url)
   } catch (err) {
@@ -404,6 +462,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
   }
   ws.onopen = () => {
     send({ t: 'join', room: cfg.room, id: localId })
+    send({ t: 'lobby_join', id: localId, ready: false })
     const mode = cfg.dedicatedServer ? ' dedicated' : ''
     status(`MP connected: ${cfg.room} as ${localId}${mpIsHost() ? ' (host)' : ''}${mode}`)
   }
@@ -424,6 +483,7 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       delta?: number
       peerScores?: Record<string, number>
       gameWon?: [string, number]
+      ready?: boolean
     }
     try {
       msg = JSON.parse(String(ev.data))
@@ -432,6 +492,9 @@ export function mpConnect(world: World, status: (msg: string) => void) {
     }
     if (msg.t === 'join' && msg.id !== localId) {
       trackPeer(msg.id)
+      mpLobbyAddPeer(msg.id)
+      send({ t: 'lobby_join', id: localId, ready: mpLobbyIsReady(localId) })
+      lobbyRefreshHandler?.()
       return
     }
     if (msg.t === 'leave') {
@@ -441,6 +504,28 @@ export function mpConnect(world: World, status: (msg: string) => void) {
         peers.delete(msg.id)
       }
       knownPeerIds.delete(msg.id)
+      mpLobbyRemovePeer(msg.id)
+      lobbyRefreshHandler?.()
+      return
+    }
+    if (msg.t === 'lobby_join' && msg.id !== localId) {
+      trackPeer(msg.id)
+      mpLobbyAddPeer(msg.id)
+      if (typeof msg.ready === 'boolean') setReady(msg.id, msg.ready)
+      lobbyRefreshHandler?.()
+      return
+    }
+    if (msg.t === 'lobby_ready' && msg.id !== localId) {
+      setReady(msg.id, !!msg.ready)
+      lobbyRefreshHandler?.()
+      if (mpIsHost()) mpLobbyTryStart()
+      return
+    }
+    if (msg.t === 'lobby_start' && isFromHost(msg.id)) {
+      if (!mpLobbyIsStarted()) {
+        mpLobbyMarkStarted()
+        lobbyStartHandler?.()
+      }
       return
     }
     if (msg.id === localId) return
@@ -508,6 +593,7 @@ export function mpDisconnect() {
   knownPeerIds.clear()
   remoteSync.clear()
   mpNetReset()
+  mpLobbyReset()
   if (worldRef) {
     for (const id of [...netSpawned]) {
       if (worldRef.actors.has(id)) worldRef.removeActor(id)

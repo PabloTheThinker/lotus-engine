@@ -16,7 +16,17 @@ import {
   DEFAULT_AREA3D,
 } from './types'
 import { DEFAULT_PATH3D, rebuildPath3DVisual } from './path3d'
-import { syncGridInstancesFromLayers } from './gridMap'
+import {
+  autotileRuleForMask,
+  ensureGridLayerVisibility,
+  GRID_TILE_KINDS,
+  gridCellKind,
+  gridNeighborKinds,
+  previewAutotileExtendedMask,
+  previewAutotileMask,
+  syncGridInstancesFromLayers,
+  type GridTileKind,
+} from './gridMap'
 import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
@@ -203,15 +213,28 @@ const _fe = new THREE.Euler()
 const _fs = new THREE.Vector3()
 const _fp = new THREE.Vector3()
 
-/** Sync an InstancedMesh from a foliage layer's packed instance list. */
-export function rebuildFoliage(actor: Actor) {
-  const mesh = actor.foliageMesh
-  const props = actor.foliageProps
-  if (!mesh || !props) return
-  if (props.snap && props.gridLayers) syncGridInstancesFromLayers(props)
-  const count = Math.min(props.instances.length, FOLIAGE_CAP)
+function disposeFoliageMeshes(actor: Actor) {
+  if (actor.foliageMesh) {
+    actor.foliageMesh.removeFromParent()
+    actor.foliageMesh.geometry.dispose()
+    ;(actor.foliageMesh.material as THREE.Material).dispose()
+    actor.foliageMesh = undefined
+  }
+  if (actor.foliageMeshes) {
+    for (const mesh of Object.values(actor.foliageMeshes)) {
+      if (!mesh) continue
+      mesh.removeFromParent()
+      mesh.geometry.dispose()
+      ;(mesh.material as THREE.Material).dispose()
+    }
+    actor.foliageMeshes = undefined
+  }
+}
+
+function setInstanceMatrices(mesh: THREE.InstancedMesh, rows: number[][]) {
+  const count = Math.min(rows.length, FOLIAGE_CAP)
   for (let i = 0; i < count; i++) {
-    const [x, y, z, sc, rotY] = props.instances[i]
+    const [x, y, z, sc, rotY] = rows[i]
     _fp.set(x, y, z)
     _fe.set(0, rotY, 0)
     _fq.setFromEuler(_fe)
@@ -222,6 +245,55 @@ export function rebuildFoliage(actor: Actor) {
   mesh.count = count
   mesh.instanceMatrix.needsUpdate = true
   mesh.computeBoundingSphere()
+}
+
+function rebuildFoliageAutotileRules(actor: Actor) {
+  const props = actor.foliageProps
+  const meshes = actor.foliageMeshes
+  if (!props || !meshes) return
+  const vis = ensureGridLayerVisibility(props)
+  const fallback = (props.geometry as GridTileKind) ?? 'box'
+  const perKind: Record<GridTileKind, number[][]> = { box: [], sphere: [], plane: [] }
+
+  for (let layer = 0; layer <= 3; layer++) {
+    if (vis[layer] === false) continue
+    const bucket = props.gridLayers?.[layer]
+    if (!bucket) continue
+    for (const raw of bucket) {
+      const cell = raw as [number, number, number, number, number, number?]
+      const [x, y, z, sc, rotY] = cell
+      const cx = x
+      const cy = Math.round(y - 0.5)
+      const cz = z
+      const baseKind = gridCellKind(cell, fallback)
+      const mask = previewAutotileMask(props, layer, cx, cy, cz)
+      const extended = previewAutotileExtendedMask(props, layer, cx, cy, cz)
+      const neighborKinds = gridNeighborKinds(bucket, cx, cy, cz, fallback)
+      const rule = autotileRuleForMask(mask, baseKind, extended, neighborKinds)
+      const layerY = y + layer * 0.05
+      perKind[rule.resolvedKind].push([x, layerY, z, sc, rotY + rule.rotY])
+    }
+  }
+
+  for (const kind of GRID_TILE_KINDS) {
+    const mesh = meshes[kind]
+    if (!mesh) continue
+    setInstanceMatrices(mesh, perKind[kind])
+  }
+}
+
+/** Sync an InstancedMesh from a foliage layer's packed instance list. */
+export function rebuildFoliage(actor: Actor) {
+  const props = actor.foliageProps
+  if (!props) return
+  if (props.snap && props.gridAutotileRules && actor.foliageMeshes) {
+    rebuildFoliageAutotileRules(actor)
+    return
+  }
+  const mesh = actor.foliageMesh
+  if (!mesh) return
+  if (props.snap && props.gridLayers) syncGridInstancesFromLayers(props)
+  setInstanceMatrices(mesh, props.instances)
 }
 
 /** FoliageLayer — UE Foliage mode analog: paintable instanced scatter. */
@@ -235,11 +307,28 @@ export function createFoliageLayerActor(name: string, id = nextActorId()): Actor
 /** (re)create the instanced mesh after geometry/color changes */
 export function buildFoliageMesh(actor: Actor) {
   const props = actor.foliageProps as FoliageProps
-  if (actor.foliageMesh) {
-    actor.foliageMesh.removeFromParent()
-    actor.foliageMesh.geometry.dispose()
-    ;(actor.foliageMesh.material as THREE.Material).dispose()
+  disposeFoliageMeshes(actor)
+
+  if (props.snap && props.gridAutotileRules) {
+    const meshes: Partial<Record<GridTileKind, THREE.InstancedMesh>> = {}
+    for (const kind of GRID_TILE_KINDS) {
+      const geo = buildGeometry(kind)
+      const mat = new THREE.MeshStandardMaterial({ color: props.color, roughness: 0.85 })
+      const mesh = new THREE.InstancedMesh(geo, mat, FOLIAGE_CAP)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      mesh.userData.actorId = actor.id
+      mesh.userData.isFoliage = true
+      mesh.userData.gridTileKind = kind
+      mesh.count = 0
+      meshes[kind] = mesh
+      actor.root.add(mesh)
+    }
+    actor.foliageMeshes = meshes
+    rebuildFoliage(actor)
+    return
   }
+
   const geo = buildGeometry(props.geometry)
   const mat = new THREE.MeshStandardMaterial({ color: props.color, roughness: 0.85 })
   const mesh = new THREE.InstancedMesh(geo, mat, FOLIAGE_CAP)

@@ -4,6 +4,36 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 51–55: v2.94–v3.18 (indie swarm)
+
+### Wave 51 (v2.94–v2.98) — TileMap autotile rules
+- 8-neighbor masks, corner sprites, `resolveAutotileKind` majority vote
+- `gridAutotileRules` toggle; per-cell kind in `rebuildFoliage`
+
+### Wave 52 (v2.99–v3.03) — Mini-game export pack
+- `miniGameExportPack.ts` — PWA pack HTML per genre
+- `/exportpack platformer|rpg|fps`; `__LOTUS_MINIGAME_PACK__`
+
+### Wave 53 (v3.04–v3.08) — MP lobby
+- `mpLobby.ts` — ready-up state; relay `lobby_join`/`lobby_ready`/`lobby_start`
+- `/mplobby`, deathmatch spawns after all ready; relay smoke test
+
+### Wave 54 (v3.09–v3.13) — Input rebinding
+- `inputBindings.ts` — gamepad button + touch slot overrides in localStorage
+- World Settings rebinding UI; export `__LOTUS_INPUT_BINDINGS__`
+
+### Wave 55 (v3.14–v3.18) — Scene transitions
+- `sceneTransitions.ts` — fade/slide overlays on `selectLevel` and `changeScene`
+- Export runtime + `indie.flow.transition` / `fadeToLevel`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 219 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 46–50: v2.69–v2.93 (indie swarm)
 
 ### Wave 46 (v2.69–v2.73) — TileMap polish

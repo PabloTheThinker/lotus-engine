@@ -15,8 +15,57 @@ export interface GridCell {
   z: number
 }
 
-/** Packed grid cell on a TileMap layer — [x, y, z, scale, rotY]. */
-export type GridLayerCell = [x: number, y: number, z: number, scale: number, rotY: number]
+/** Packed grid cell on a TileMap layer — [x, y, z, scale, rotY, kindIdx?]. */
+export type GridLayerCell = [x: number, y: number, z: number, scale: number, rotY: number, kindIdx?: number]
+
+export const GRID_TILE_KIND_INDEX: Record<GridTileKind, number> = { box: 0, sphere: 1, plane: 2 }
+
+export type AutotileCorner =
+  | 'none'
+  | 'inner-ne'
+  | 'inner-se'
+  | 'inner-sw'
+  | 'inner-nw'
+  | 'outer-ne'
+  | 'outer-se'
+  | 'outer-sw'
+  | 'outer-nw'
+
+export interface AutotileRule {
+  mask: number
+  extendedMask: number
+  tileKind: GridTileKind
+  resolvedKind: GridTileKind
+  corner: AutotileCorner
+  rotY: number
+}
+
+const CARDINAL_BITS = [1, 2, 4, 8] as const
+const DIAG_BITS = [16, 32, 64, 128] as const
+const CARDINAL_DELTAS: [number, number][] = [
+  [0, -1],
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+]
+const DIAG_DELTAS: [number, number][] = [
+  [1, -1],
+  [1, 1],
+  [-1, 1],
+  [-1, -1],
+]
+
+const CORNER_ROT_Y: Record<AutotileCorner, number> = {
+  none: 0,
+  'inner-ne': 0,
+  'inner-se': Math.PI / 2,
+  'inner-sw': Math.PI,
+  'inner-nw': -Math.PI / 2,
+  'outer-ne': Math.PI / 4,
+  'outer-se': (3 * Math.PI) / 4,
+  'outer-sw': (-3 * Math.PI) / 4,
+  'outer-nw': -Math.PI / 4,
+}
 
 const CELL_Y_TOL = 0.6
 const DEFAULT_CAP = 4000
@@ -85,6 +134,61 @@ export function setGridLayerVisible(props: FoliageProps, layer: number, visible:
   syncGridInstancesFromLayers(props)
 }
 
+export function gridCellKindIndex(cell: GridLayerCell, fallback: GridTileKind = 'box'): number {
+  const idx = cell[5]
+  if (typeof idx === 'number' && idx >= 0 && idx < GRID_TILE_KINDS.length) return idx
+  return GRID_TILE_KIND_INDEX[fallback]
+}
+
+export function gridCellKind(cell: GridLayerCell, fallback: GridTileKind = 'box'): GridTileKind {
+  return GRID_TILE_KINDS[gridCellKindIndex(cell, fallback)] ?? fallback
+}
+
+export function withGridCellKind(cell: GridLayerCell, kind: GridTileKind): GridLayerCell {
+  const next = [...cell] as GridLayerCell
+  while (next.length < 6) next.push(0)
+  next[5] = GRID_TILE_KIND_INDEX[kind]
+  return next
+}
+
+function autotileMaskForBucket(bucket: number[][], cx: number, cy: number, cz: number): number {
+  return autotileNeighbors(
+    hasLayerNeighbor(bucket, cx, cy, cz, 0, -1),
+    hasLayerNeighbor(bucket, cx, cy, cz, 1, 0),
+    hasLayerNeighbor(bucket, cx, cy, cz, 0, 1),
+    hasLayerNeighbor(bucket, cx, cy, cz, -1, 0),
+  )
+}
+
+function autotileExtendedMaskForBucket(bucket: number[][], cx: number, cy: number, cz: number): number {
+  const cardinals = CARDINAL_DELTAS.map(([dx, dz]) => hasLayerNeighbor(bucket, cx, cy, cz, dx, dz))
+  const diagonals = DIAG_DELTAS.map(([dx, dz]) => hasLayerNeighbor(bucket, cx, cy, cz, dx, dz))
+  return autotileExtendedMask(
+    cardinals[0],
+    cardinals[1],
+    cardinals[2],
+    cardinals[3],
+    diagonals[0],
+    diagonals[1],
+    diagonals[2],
+    diagonals[3],
+  )
+}
+
+export function gridNeighborKinds(
+  bucket: number[][],
+  cx: number,
+  cy: number,
+  cz: number,
+  fallback: GridTileKind,
+): (GridTileKind | null)[] {
+  return CARDINAL_DELTAS.map(([dx, dz]) => {
+    const at = findGridCellIndexIn(bucket, cx + dx, cy, cz + dz)
+    if (at < 0) return null
+    return gridCellKind(bucket[at] as GridLayerCell, fallback)
+  })
+}
+
 /** 4-neighbor autotile mask at a cell on a layer (N=1, E=2, S=4, W=8). */
 export function previewAutotileMask(
   props: FoliageProps,
@@ -94,12 +198,32 @@ export function previewAutotileMask(
   cz: number,
 ): number {
   const bucket = layerBucket(props, layer)
-  return autotileNeighbors(
-    hasLayerNeighbor(bucket, cx, cy, cz, 0, -1),
-    hasLayerNeighbor(bucket, cx, cy, cz, 1, 0),
-    hasLayerNeighbor(bucket, cx, cy, cz, 0, 1),
-    hasLayerNeighbor(bucket, cx, cy, cz, -1, 0),
-  )
+  return autotileMaskForBucket(bucket, cx, cy, cz)
+}
+
+/** 8-neighbor autotile mask (cardinals + diagonals) on a layer. */
+export function previewAutotileExtendedMask(
+  props: FoliageProps,
+  layer: number,
+  cx: number,
+  cy: number,
+  cz: number,
+): number {
+  const bucket = layerBucket(props, layer)
+  return autotileExtendedMaskForBucket(bucket, cx, cy, cz)
+}
+
+export function previewAutotileCorner(
+  props: FoliageProps,
+  layer: number,
+  cx: number,
+  cy: number,
+  cz: number,
+): AutotileCorner {
+  const bucket = layerBucket(props, layer)
+  const mask = autotileMaskForBucket(bucket, cx, cy, cz)
+  const extended = autotileExtendedMaskForBucket(bucket, cx, cy, cz)
+  return resolveAutotileCorner(mask, extended)
 }
 
 /** Merge gridLayers into instances for InstancedMesh rendering. */
@@ -128,6 +252,123 @@ export function autotileNeighbors(hasN: boolean, hasE: boolean, hasS: boolean, h
   return (hasN ? 1 : 0) | (hasE ? 2 : 0) | (hasS ? 4 : 0) | (hasW ? 8 : 0)
 }
 
+/** 8-neighbor bitmask: N=1, E=2, S=4, W=8, NE=16, SE=32, SW=64, NW=128. */
+export function autotileExtendedMask(
+  hasN: boolean,
+  hasE: boolean,
+  hasS: boolean,
+  hasW: boolean,
+  hasNE: boolean,
+  hasSE: boolean,
+  hasSW: boolean,
+  hasNW: boolean,
+): number {
+  return (
+    autotileNeighbors(hasN, hasE, hasS, hasW) |
+    (hasNE ? DIAG_BITS[0] : 0) |
+    (hasSE ? DIAG_BITS[1] : 0) |
+    (hasSW ? DIAG_BITS[2] : 0) |
+    (hasNW ? DIAG_BITS[3] : 0)
+  )
+}
+
+/** Inner/outer corner detection from cardinal + extended masks. */
+export function resolveAutotileCorner(cardinalMask: number, extendedMask: number): AutotileCorner {
+  const hasN = (cardinalMask & CARDINAL_BITS[0]) !== 0
+  const hasE = (cardinalMask & CARDINAL_BITS[1]) !== 0
+  const hasS = (cardinalMask & CARDINAL_BITS[2]) !== 0
+  const hasW = (cardinalMask & CARDINAL_BITS[3]) !== 0
+  const hasNE = (extendedMask & DIAG_BITS[0]) !== 0
+  const hasSE = (extendedMask & DIAG_BITS[1]) !== 0
+  const hasSW = (extendedMask & DIAG_BITS[2]) !== 0
+  const hasNW = (extendedMask & DIAG_BITS[3]) !== 0
+
+  if (hasN && hasE && !hasNE) return 'inner-ne'
+  if (hasE && hasS && !hasSE) return 'inner-se'
+  if (hasS && hasW && !hasSW) return 'inner-sw'
+  if (hasN && hasW && !hasNW) return 'inner-nw'
+  if (!hasN && !hasE && hasNE) return 'outer-ne'
+  if (!hasE && !hasS && hasSE) return 'outer-se'
+  if (!hasS && !hasW && hasSW) return 'outer-sw'
+  if (!hasN && !hasW && hasNW) return 'outer-nw'
+  return 'none'
+}
+
+/** Majority vote among cardinal neighbor tile kinds (null = missing). */
+export function resolveAutotileKind(
+  cardinalMask: number,
+  neighborKinds: (GridTileKind | null)[],
+  baseKind: GridTileKind,
+): GridTileKind {
+  const votes = new Map<GridTileKind, number>()
+  for (let i = 0; i < 4; i++) {
+    if ((cardinalMask & CARDINAL_BITS[i]) === 0) continue
+    const kind = neighborKinds[i]
+    if (!kind) continue
+    votes.set(kind, (votes.get(kind) ?? 0) + 1)
+  }
+  if (votes.size === 0) return baseKind
+  let best = baseKind
+  let bestCount = -1
+  for (const [kind, count] of votes) {
+    if (count > bestCount) {
+      best = kind
+      bestCount = count
+    }
+  }
+  return best
+}
+
+/** Map bitmask + tile kind to resolved kind, corner sprite, and rotation. */
+export function autotileRuleForMask(
+  mask: number,
+  tileKind: GridTileKind,
+  extendedMask?: number,
+  neighborKinds?: (GridTileKind | null)[],
+): AutotileRule {
+  const ext = extendedMask ?? mask
+  const corner = resolveAutotileCorner(mask, ext)
+  const matchedKind = neighborKinds ? resolveAutotileKind(mask, neighborKinds, tileKind) : tileKind
+  let resolvedKind = matchedKind
+  let rotY = 0
+
+  if (corner !== 'none') {
+    if (corner.startsWith('inner')) {
+      resolvedKind = 'plane'
+      rotY = CORNER_ROT_Y[corner]
+    } else {
+      resolvedKind = 'sphere'
+      rotY = CORNER_ROT_Y[corner]
+    }
+  } else if (mask === 0) {
+    resolvedKind = 'box'
+  } else if (mask === 15) {
+    resolvedKind = matchedKind
+  } else {
+    resolvedKind = 'sphere'
+    rotY = (mask * Math.PI) / 8
+  }
+
+  return { mask, extendedMask: ext, tileKind, resolvedKind, corner, rotY }
+}
+
+export function autotileRuleAtCell(
+  props: FoliageProps,
+  layer: number,
+  cx: number,
+  cy: number,
+  cz: number,
+  fallbackKind: GridTileKind = 'box',
+): AutotileRule {
+  const bucket = layerBucket(props, layer)
+  const at = findGridCellIndexIn(bucket, cx, cy, cz)
+  const baseKind = at >= 0 ? gridCellKind(bucket[at] as GridLayerCell, fallbackKind) : fallbackKind
+  const mask = autotileMaskForBucket(bucket, cx, cy, cz)
+  const extended = autotileExtendedMaskForBucket(bucket, cx, cy, cz)
+  const neighborKinds = gridNeighborKinds(bucket, cx, cy, cz, fallbackKind)
+  return autotileRuleForMask(mask, baseKind, extended, neighborKinds)
+}
+
 function applyAutotileAt(bucket: number[][], cx: number, cy: number, cz: number): void {
   const at = findGridCellIndexIn(bucket, cx, cy, cz)
   if (at < 0) return
@@ -150,6 +391,47 @@ function refreshAutotileAt(props: FoliageProps, layer: number, cx: number, cy: n
     [cx - 1, cy, cz],
   ]
   for (const [x, y, z] of cells) applyAutotileAt(bucket, x, y, z)
+}
+
+function applyAutotileRulesAt(
+  bucket: number[][],
+  cx: number,
+  cy: number,
+  cz: number,
+  fallbackKind: GridTileKind,
+): void {
+  const at = findGridCellIndexIn(bucket, cx, cy, cz)
+  if (at < 0) return
+  const cell = bucket[at] as GridLayerCell
+  const baseKind = gridCellKind(cell, fallbackKind)
+  const mask = autotileMaskForBucket(bucket, cx, cy, cz)
+  const extended = autotileExtendedMaskForBucket(bucket, cx, cy, cz)
+  const neighborKinds = gridNeighborKinds(bucket, cx, cy, cz, fallbackKind)
+  const rule = autotileRuleForMask(mask, baseKind, extended, neighborKinds)
+  bucket[at][4] = rule.rotY
+}
+
+function refreshAutotileRulesAt(
+  props: FoliageProps,
+  layer: number,
+  cx: number,
+  cy: number,
+  cz: number,
+): void {
+  const bucket = layerBucket(props, layer)
+  const fallback = (props.geometry as GridTileKind) ?? 'box'
+  const cells: [number, number, number][] = [
+    [cx, cy, cz],
+    [cx, cy, cz - 1],
+    [cx + 1, cy, cz],
+    [cx, cy, cz + 1],
+    [cx - 1, cy, cz],
+    [cx + 1, cy, cz - 1],
+    [cx + 1, cy, cz + 1],
+    [cx - 1, cy, cz + 1],
+    [cx - 1, cy, cz - 1],
+  ]
+  for (const [x, y, z] of cells) applyAutotileRulesAt(bucket, x, y, z, fallback)
 }
 
 /** Integer brush radius in cells (0 = single cell). */
@@ -199,8 +481,12 @@ export function paintGridLayer(
   const bucket = layerBucket(props, layer)
   if (findGridCellIndexIn(bucket, cx, cy, cz) >= 0) return false
   if (totalLayerCells(props) >= cap) return false
-  bucket.push([cx, cy + 0.5, cz, 1, 0])
-  if (props.gridAutotile) refreshAutotileAt(props, layer, cx, cy, cz)
+  const paintKind = GRID_TILE_KINDS.includes(props.geometry as GridTileKind)
+    ? (props.geometry as GridTileKind)
+    : 'box'
+  bucket.push([cx, cy + 0.5, cz, 1, 0, GRID_TILE_KIND_INDEX[paintKind]])
+  if (props.gridAutotileRules) refreshAutotileRulesAt(props, layer, cx, cy, cz)
+  else if (props.gridAutotile) refreshAutotileAt(props, layer, cx, cy, cz)
   syncGridInstancesFromLayers(props)
   return true
 }
@@ -210,7 +496,8 @@ export function eraseGridLayer(props: FoliageProps, layer: number, cx: number, c
   const at = findGridCellIndexIn(bucket, cx, cy, cz)
   if (at < 0) return false
   bucket.splice(at, 1)
-  if (props.gridAutotile) refreshAutotileAt(props, layer, cx, cy, cz)
+  if (props.gridAutotileRules) refreshAutotileRulesAt(props, layer, cx, cy, cz)
+  else if (props.gridAutotile) refreshAutotileAt(props, layer, cx, cy, cz)
   syncGridInstancesFromLayers(props)
   return true
 }

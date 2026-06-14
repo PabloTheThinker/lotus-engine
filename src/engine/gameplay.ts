@@ -155,7 +155,7 @@ export interface HudOpts {
   y?: number | string
   size?: number
   color?: string
-  anchor?: 'tl' | 'tr' | 'bl' | 'br' | 'center'
+  anchor?: 'tl' | 'tr' | 'bl' | 'br' | 'center' | 'tc' | 'bc'
 }
 
 function place(el: HTMLElement, opts: HudOpts = {}) {
@@ -165,10 +165,11 @@ function place(el: HTMLElement, opts: HudOpts = {}) {
   const y = typeof opts.y === 'number' ? `${opts.y}px` : (opts.y ?? '16px')
   el.style.left = el.style.right = el.style.top = el.style.bottom = ''
   el.style.transform = ''
-  if (anchor === 'center') {
+  if (anchor === 'center' || anchor === 'tc' || anchor === 'bc') {
     el.style.left = '50%'
-    el.style.top = y
     el.style.transform = 'translateX(-50%)'
+    if (anchor === 'bc') el.style.bottom = y
+    else el.style.top = y
   } else {
     if (anchor.includes('l')) el.style.left = x
     else el.style.right = x
