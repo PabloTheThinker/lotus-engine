@@ -42,6 +42,7 @@ import { setBusVolume, setSoundAttenuationDefaults } from '../../engine/audio'
 import { AttenuationFields } from './AttenuationFields'
 import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
 import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
+import { TOUCH_LAYOUT_PRESET_IDS, TOUCH_LAYOUT_PRESET_LABELS } from '../../engine/touchLayoutPresets'
 import { useEditor } from '../store'
 
 function HudDesignerSection() {
@@ -1328,6 +1329,21 @@ export function WorldSettings() {
             onChange={(e) => set('touchControls', e.target.checked)}
           />
         </label>
+        {env.touchControls !== false && (
+          <label className="field" title="Joystick + action button positions for touch HUD (editor PIE + export)">
+            <span>Touch layout preset</span>
+            <select
+              value={env.touchLayoutPreset ?? 'compact'}
+              onChange={(e) => set('touchLayoutPreset', e.target.value as 'compact' | 'wide' | 'fps')}
+            >
+              {TOUCH_LAYOUT_PRESET_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {TOUCH_LAYOUT_PRESET_LABELS[id]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field check" title="Gamepad left stick + A/Y/X face buttons during Play and export (auto when a pad is connected)">
           <span>Gamepad controls</span>
           <input

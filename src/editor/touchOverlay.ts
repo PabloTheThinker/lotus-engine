@@ -1,4 +1,5 @@
 import { Input } from '../engine/Input'
+import { applyTouchLayoutPreset, type TouchLayoutPreset } from '../engine/touchLayoutPresets'
 import type { EnvironmentSettings } from '../engine/types'
 import {
   endTouchInputFrame,
@@ -13,13 +14,24 @@ import {
 /** Touch HUD CSS — shared by editor PIE overlay and export HTML. */
 export const TOUCH_OVERLAY_CSS = `
   .lotus-touch-hud {
+    --lotus-touch-stick-left: 24px;
+    --lotus-touch-stick-bottom: 24px;
+    --lotus-touch-stick-size: 140px;
+    --lotus-touch-actions-right: 28px;
+    --lotus-touch-actions-bottom: 36px;
+    --lotus-touch-actions-gap: 10px;
+    --lotus-touch-btn-size: 72px;
+    --lotus-touch-fire-btn-size: 72px;
     position: fixed; inset: 0; pointer-events: none; z-index: 40;
     touch-action: none; user-select: none;
   }
   .lotus-touch-hud > * { pointer-events: auto; }
   .lotus-touch-stick-zone {
-    position: absolute; left: 24px; bottom: 24px;
-    width: 140px; height: 140px;
+    position: absolute;
+    left: var(--lotus-touch-stick-left);
+    bottom: var(--lotus-touch-stick-bottom);
+    width: var(--lotus-touch-stick-size);
+    height: var(--lotus-touch-stick-size);
   }
   .lotus-touch-joystick {
     position: relative; border-radius: 50%;
@@ -36,13 +48,21 @@ export const TOUCH_OVERLAY_CSS = `
     pointer-events: none;
   }
   .lotus-touch-actions {
-    position: absolute; right: 28px; bottom: 36px;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+    position: absolute;
+    right: var(--lotus-touch-actions-right);
+    bottom: var(--lotus-touch-actions-bottom);
+    display: flex; flex-direction: column; align-items: flex-end;
+    gap: var(--lotus-touch-actions-gap);
   }
   .lotus-touch-jump,
-  .lotus-touch-fire,
   .lotus-touch-interact {
-    width: 72px; height: 72px; border-radius: 50%;
+    width: var(--lotus-touch-btn-size); height: var(--lotus-touch-btn-size); border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.35);
+    color: #fff; font: 600 13px system-ui, sans-serif;
+    touch-action: none;
+  }
+  .lotus-touch-fire {
+    width: var(--lotus-touch-fire-btn-size); height: var(--lotus-touch-fire-btn-size); border-radius: 50%;
     border: 2px solid rgba(255,255,255,.35);
     color: #fff; font: 600 13px system-ui, sans-serif;
     touch-action: none;
@@ -70,7 +90,7 @@ export class TouchOverlay {
     return !!this.root
   }
 
-  mount(parent: HTMLElement) {
+  mount(parent: HTMLElement, layoutPreset?: TouchLayoutPreset) {
     if (this.root) return
     if (!document.getElementById('lotus-touch-style')) {
       const style = document.createElement('style')
@@ -81,6 +101,7 @@ export class TouchOverlay {
     const hud = document.createElement('div')
     hud.className = 'lotus-touch-hud'
     hud.id = 'lotus-touch-hud'
+    applyTouchLayoutPreset(hud, layoutPreset)
     const stickZone = document.createElement('div')
     stickZone.className = 'lotus-touch-stick-zone'
     hud.appendChild(stickZone)

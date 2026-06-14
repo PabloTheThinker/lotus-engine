@@ -11,7 +11,7 @@ import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, init
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
-import { addMpScore, getMpScore } from './mpGameplay'
+import { addMpScore, getMpPeerScores, getMpScore } from './mpGameplay'
 import { mpConnected, mpIsHost, mpLocalId } from './multiplayer'
 
 /**
@@ -158,6 +158,8 @@ export interface ScriptApi {
   pawnPitch: () => number
   /** Read MP deathmatch score for a peer (defaults to local id) */
   getMpScore: (peerId?: string) => number
+  /** Read full MP peer score map from scoreboard (host + mirrored clients) */
+  getMpPeerScores: () => Record<string, number>
   /** Add MP score delta — host authoritative, clients request via relay */
   addMpScore: (delta: number, peerId?: string) => boolean
 }
@@ -315,6 +317,7 @@ export function makeScriptApi(
     pawnYaw,
     pawnPitch,
     getMpScore: (peerId) => getMpScore(actors, peerId),
+    getMpPeerScores: () => getMpPeerScores(actors),
     addMpScore: (delta, peerId) => {
       const emit = (signal: string, ...args: unknown[]) => {
         for (const h of signalHandlers.get(signal) ?? []) {

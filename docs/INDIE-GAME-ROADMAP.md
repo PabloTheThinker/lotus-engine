@@ -58,6 +58,16 @@
 | 44 | v2.59–v2.63 | **Touch + gamepad** — Fire/Interact buttons, `gamepadInput.ts`, export `__LOTUS_GAMEPAD__` |
 | 45 | v2.64–v2.68 | **2D blend ↔ @export** — `blendScriptVarLinkX/Y`, AnimStateEditor param links — **169 tests** |
 
+## Shipped (Waves 46–50, v2.69–v2.93)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 46 | v2.69–v2.73 | **TileMap polish** — per-layer visibility, autotile bitmask hover preview |
+| 47 | v2.74–v2.78 | **Mini-game HUD** — win/lose overlays, `/minigameexport`, export `__LOTUS_MINIGAME__` |
+| 48 | v2.79–v2.83 | **MP score sync** — client scoreboard mirror, `mp_game_won` relay |
+| 49 | v2.84–v2.88 | **Input polish** — touch layout presets, gamepad glyph hints in export |
+| 50 | v2.89–v2.93 | **Scene flow** — `/mainmenu`, starter level picker, `__LOTUS_MAIN_MENU__` — **194 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -66,11 +76,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **TileMap polish** — autotile preview in viewport + per-layer visibility
-2. **Mini-game polish** — HUD win/lose overlay + export playable mini-game presets
-3. **MP score sync** — client scoreboard mirror + `mp_game_won` relay smoke
-4. **Input polish** — gamepad glyph hints + touch button layout presets
-5. **Scene flow** — main menu → level select from starter templates
+1. **TileMap autotile rules** — tile-kind neighbor matching + corner sprites
+2. **Mini-game export pack** — bundled PWA presets per genre
+3. **MP lobby** — room browser + ready-up before deathmatch
+4. **Input rebinding** — per-action gamepad + touch slot overrides
+5. **Scene transitions** — fade/slide between main menu and levels
 
 ## Non-goals (honest skip)
 
@@ -81,5 +91,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **169** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **194** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

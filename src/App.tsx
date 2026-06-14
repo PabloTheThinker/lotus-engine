@@ -14,7 +14,13 @@ import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
 import { getLiveSnapshot } from './engine/liveSnapshot'
 import { executeAICommands, extractCommands } from './editor/ai'
-import { buildPlayableHTML } from './editor/exportPlayable'
+import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable'
+import {
+  enableMiniGameHud,
+  hideMiniGameHud,
+  showLoseOverlay,
+  showWinOverlay,
+} from './editor/miniGameHud'
 import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
@@ -50,7 +56,10 @@ import {
   MP_TAG_TARGET,
   MP_SCORE_WIN,
   addMpScore,
+  applyMpScoreDelta,
   getMpScore,
+  getMpPeerScores,
+  mirrorMpPeerScores,
   spawnIndieMpDeathmatch,
 } from './editor/indieMpGameplay'
 import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
@@ -65,6 +74,17 @@ import {
   RPG_NPC_GOAL,
   spawnMiniGame,
 } from './editor/starterMiniGames'
+import {
+  MAIN_MENU_MANAGER_NAME,
+  MAIN_MENU_SCRIPT,
+  MENU_ITEMS,
+  linkStarterLevel,
+  mainMenuBootEnabled,
+  paintMainMenuHud,
+  selectLevel,
+  spawnMainMenu,
+  type MainMenuLevelKind,
+} from './editor/mainMenuFlow'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
 import { resolveAnimParams } from './engine/animStateMachine'
 import {
@@ -76,8 +96,11 @@ import {
   getLayerCellCount,
   gridCellKey,
   gridCellsInBrush,
+  isGridLayerVisible,
   paintGridCell,
   paintGridLayer,
+  previewAutotileMask,
+  setGridLayerVisible,
   worldToGridCell,
 } from './engine/gridMap'
 import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
@@ -85,6 +108,12 @@ import { getActionAxis } from './engine/inputActions'
 import { createResource, getResource, listResources, saveResource } from './engine/resources'
 import { listScriptVarPresets, loadScriptVarPreset, saveScriptVarPreset } from './engine/scriptVarPresets'
 import { applyScriptVarPreset, keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
+import {
+  TOUCH_LAYOUT_PRESET_IDS,
+  applyTouchLayoutPreset,
+  getTouchLayoutVars,
+  normalizeTouchLayoutPreset,
+} from './engine/touchLayoutPresets'
 import {
   endTouchInputFrame,
   getTouchMoveAxis,
@@ -165,7 +194,7 @@ import { runParticleGPUQAMatrix } from './engine/particleGPUQA'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
-import { loadMPSettings, mpEnabled, mpConnected, mpIsHost, mpKnownPeerIds } from './engine/multiplayer'
+import { loadMPSettings, mpEnabled, mpConnected, mpIsHost, mpKnownPeerIds, mpLocalId } from './engine/multiplayer'
 import * as THREE from 'three'
 import {
   characterIsOnFloor,
@@ -256,6 +285,7 @@ const lotusBridge = {
     enabled: mpEnabled,
     connected: mpConnected,
     isHost: mpIsHost,
+    localId: mpLocalId,
     peerCount: () => mpKnownPeerIds().length,
   },
   /** Rapier kinematic character — E2E + devtools (Wave 10) */
@@ -532,6 +562,18 @@ const lotusBridge = {
       isTouchDevice: () => isTouchDevice(),
       getMoveAxis: () => getTouchMoveAxis(),
       getActionAxis: (name: string) => getActionAxis(name),
+      layoutPresets: [...TOUCH_LAYOUT_PRESET_IDS],
+      getLayoutPreset: () => normalizeTouchLayoutPreset(world.environment.touchLayoutPreset),
+      setLayoutPreset: (preset: 'compact' | 'wide' | 'fps') => {
+        world.environment.touchLayoutPreset = preset
+        useEditor.getState().touch()
+        const hud = document.getElementById('lotus-touch-hud')
+        if (hud) applyTouchLayoutPreset(hud, preset)
+        return preset
+      },
+      getLayoutVars: (preset?: 'compact' | 'wide' | 'fps') => getTouchLayoutVars(preset),
+      applyLayoutPreset: (el: HTMLElement, preset?: 'compact' | 'wide' | 'fps') =>
+        applyTouchLayoutPreset(el, preset),
       controlsEnabled: () => shouldShowTouchControls(world.environment.touchControls),
       setControlsEnabled: (on: boolean) => {
         world.environment.touchControls = on
@@ -578,6 +620,17 @@ const lotusBridge = {
       fpsScript: FPS_MINIGAME_SCRIPT,
       attachMiniGameScripts,
       spawnMiniGame,
+      showHud: () => {
+        enableMiniGameHud()
+        return true
+      },
+      hideHud: () => {
+        hideMiniGameHud()
+        return true
+      },
+      showWinOverlay,
+      showLoseOverlay,
+      exportPreset: (mode: 'platformer' | 'rpg' | 'fps') => exportMiniGamePreset(mode),
     },
     mp: {
       tagHost: MP_TAG_HOST,
@@ -589,7 +642,14 @@ const lotusBridge = {
       scoreboardScript: MP_SCOREBOARD_SCRIPT,
       winScore: MP_SCORE_WIN,
       getScore: (peerId?: string) => getMpScore(world.actors, peerId),
+      getPeerScores: () => getMpPeerScores(world.actors),
+      mirrorScores: (scores: Record<string, number>) => mirrorMpPeerScores(world.actors, scores),
       addScore: (delta: number, peerId?: string) => addMpScore(world.actors, delta, peerId),
+      applyMpScoreDelta: (
+        peerId: string,
+        delta: number,
+        emit?: (signal: string, ...args: unknown[]) => void,
+      ) => applyMpScoreDelta(world.actors, peerId, delta, emit),
     },
     spawnCharacterStarter,
     spawnPlatformerStarter,
@@ -599,6 +659,16 @@ const lotusBridge = {
     spawnIndieMpDeathmatch,
     configureIndieMpSettings,
     spawnMiniGame,
+    flow: {
+      managerName: MAIN_MENU_MANAGER_NAME,
+      menuScript: MAIN_MENU_SCRIPT,
+      menuItems: MENU_ITEMS,
+      spawnMainMenu,
+      selectLevel: (kind: MainMenuLevelKind, opts?: { play?: boolean; link?: boolean }) => selectLevel(kind, opts),
+      linkStarterLevel,
+      paintMainMenuHud,
+      mainMenuBootEnabled,
+    },
   },
   /** Wave 36–41 — GridMap cell helpers (foliage snap mode) */
   gridMap: {
@@ -620,6 +690,11 @@ const lotusBridge = {
     getLayerCellCount: (props: import('./engine/types').FoliageProps, layer: number) => getLayerCellCount(props, layer),
     autotileNeighbors: (hasN: boolean, hasE: boolean, hasS: boolean, hasW: boolean) =>
       autotileNeighbors(hasN, hasE, hasS, hasW),
+    setLayerVisible: (props: import('./engine/types').FoliageProps, layer: number, visible: boolean) =>
+      setGridLayerVisible(props, layer, visible),
+    isLayerVisible: (props: import('./engine/types').FoliageProps, layer: number) => isGridLayerVisible(props, layer),
+    previewAutotileMask: (props: import('./engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) =>
+      previewAutotileMask(props, layer, cx, cy, cz),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,

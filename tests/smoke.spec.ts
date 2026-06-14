@@ -2199,6 +2199,263 @@ test('wave 42 /minigame platformer terminal command', async ({ page }) => {
   expect(result.mgr).toBe(true)
 })
 
+test('wave 46 gridMap isLayerVisible defaults all layers on', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        isLayerVisible: (props: import('../src/engine/types').FoliageProps, layer: number) => boolean
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    return {
+      ok: true,
+      l0: v.gridMap.isLayerVisible(props, 0),
+      l1: v.gridMap.isLayerVisible(props, 1),
+      l2: v.gridMap.isLayerVisible(props, 2),
+      l3: v.gridMap.isLayerVisible(props, 3),
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.l0).toBe(true)
+  expect(result.l1).toBe(true)
+  expect(result.l2).toBe(true)
+  expect(result.l3).toBe(true)
+})
+
+test('wave 46 gridMap setLayerVisible hides layer from merged instances', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        setLayerVisible: (props: import('../src/engine/types').FoliageProps, layer: number, visible: boolean) => void
+        isLayerVisible: (props: import('../src/engine/types').FoliageProps, layer: number) => boolean
+        getLayerCellCount: (props: import('../src/engine/types').FoliageProps, layer: number) => number
+        getCellCount: (props: import('../src/engine/types').FoliageProps) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 1, 0, 0, 0)
+    v.gridMap.setLayerVisible(props, 1, false)
+    return {
+      ok: true,
+      l0Cells: v.gridMap.getLayerCellCount(props, 0),
+      l1Cells: v.gridMap.getLayerCellCount(props, 1),
+      merged: v.gridMap.getCellCount(props),
+      l1Visible: v.gridMap.isLayerVisible(props, 1),
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.l0Cells).toBe(1)
+  expect(result.l1Cells).toBe(1)
+  expect(result.merged).toBe(1)
+  expect(result.l1Visible).toBe(false)
+})
+
+test('wave 46 gridMap previewAutotileMask north-east cross', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        previewAutotileMask: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    v.gridMap.paintLayer(props, 0, 2, 0, 1)
+    v.gridMap.paintLayer(props, 0, 3, 0, 2)
+    const center = v.gridMap.previewAutotileMask(props, 0, 2, 0, 2)
+    const isolated = v.gridMap.previewAutotileMask(props, 0, 5, 0, 5)
+    return { ok: true, center, isolated }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.center).toBe(3)
+  expect(result.isolated).toBe(0)
+})
+
+test('wave 46 gridmap spawn exposes visibility + preview fields', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: { gridLayerVisibility?: boolean[]; gridAutotilePreview?: boolean } } | null }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    const props = layer?.foliageProps
+    props!.gridAutotilePreview = true
+    props!.gridLayerVisibility = [true, false, true, true]
+    return {
+      ok: !!props?.gridAutotilePreview,
+      preview: props?.gridAutotilePreview,
+      vis: props?.gridLayerVisibility,
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.preview).toBe(true)
+  expect(result.vis).toEqual([true, false, true, true])
+})
+
+test('wave 46 gridMap setLayerVisible restores merged count', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => { foliageProps?: import('../src/engine/types').FoliageProps } | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        setLayerVisible: (props: import('../src/engine/types').FoliageProps, layer: number, visible: boolean) => void
+        getCellCount: (props: import('../src/engine/types').FoliageProps) => number
+      }
+    }
+    const layer = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!layer?.foliageProps) return { ok: false }
+    const props = layer.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 1, 1, 0, 1)
+    v.gridMap.setLayerVisible(props, 1, false)
+    const hidden = v.gridMap.getCellCount(props)
+    v.gridMap.setLayerVisible(props, 1, true)
+    const restored = v.gridMap.getCellCount(props)
+    return { ok: true, hidden, restored }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.hidden).toBe(1)
+  expect(result.restored).toBe(2)
+})
+
+test('wave 47 minigame scripts emit game_lost on timeout export', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const m = (window.lotus! as typeof window.lotus).indie.minigame
+    return {
+      plat: m.platformerScript.includes('game_lost') && m.platformerScript.includes('timeoutSeconds'),
+      rpg: m.rpgScript.includes('game_lost') && m.rpgScript.includes('timeoutSeconds'),
+      fps: m.fpsScript.includes('game_lost') && m.fpsScript.includes('timeoutSeconds'),
+      noHudText: !m.platformerScript.includes("api.hud.text('win'"),
+    }
+  })
+
+  expect(result.plat).toBe(true)
+  expect(result.rpg).toBe(true)
+  expect(result.fps).toBe(true)
+  expect(result.noHudText).toBe(true)
+})
+
+test('wave 47 indie.minigame bridge showHud hideHud exportPreset', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const mg = (window.lotus! as typeof window.lotus).indie.minigame as {
+      showHud: () => boolean
+      hideHud: () => boolean
+      showWinOverlay: () => void
+      showLoseOverlay: () => void
+      exportPreset: (m: string) => void
+    }
+    const show = mg.showHud()
+    mg.showWinOverlay()
+    const win = !!document.getElementById('lotus-minigame-overlay')
+    mg.hideHud()
+    const hidden = !document.getElementById('lotus-minigame-overlay')
+    mg.showLoseOverlay()
+    const lose = document.querySelector('.lotus-minigame-lose') != null
+    mg.hideHud()
+    return {
+      show,
+      win,
+      hidden,
+      lose,
+      hasExport: typeof mg.exportPreset === 'function',
+    }
+  })
+
+  expect(result.show).toBe(true)
+  expect(result.win).toBe(true)
+  expect(result.hidden).toBe(true)
+  expect(result.lose).toBe(true)
+  expect(result.hasExport).toBe(true)
+})
+
+test('wave 47 export embeds __LOTUS_MINIGAME__ when MiniGameManager present', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'platformer') => void } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.export.buildPlayableHTML()
+    return {
+      flag: html.includes('__LOTUS_MINIGAME__ = true'),
+      css: html.includes('lotus-minigame-overlay'),
+      manager: html.includes('MiniGameManager'),
+    }
+  })
+
+  expect(result.flag).toBe(true)
+  expect(result.css).toBe(true)
+  expect(result.manager).toBe(true)
+})
+
+test('wave 47 /minigameexport platformer terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/minigameexport platformer')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MiniGameManager')
+    const html = v.export.buildPlayableHTML({ minigameHud: true, minigamePreset: 'platformer' })
+    return {
+      output: out?.output,
+      mgr: !!mgr,
+      preset: html.includes("__LOTUS_MINIGAME_PRESET__ = 'platformer'"),
+    }
+  })
+
+  expect(result.output).toMatch(/Exported mini-game preset: platformer/i)
+  expect(result.mgr).toBe(true)
+  expect(result.preset).toBe(true)
+})
+
+test('wave 47 spawnMiniGame enables HUD wiring flag', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'fps') => void; showHud: () => boolean } }
+    }
+    v.indie.minigame.spawnMiniGame('fps')
+    return {
+      mgr: [...v.world.actors.values()].some((a) => a.name === 'MiniGameManager'),
+      hudReady: v.indie.minigame.showHud(),
+    }
+  })
+
+  expect(result.mgr).toBe(true)
+  expect(result.hudReady).toBe(true)
+})
+
 test('wave 44 touch fire justPressed via bridge simulate', async ({ page }) => {
   await bootEditor(page)
   const result = await page.evaluate(() => {
@@ -2257,6 +2514,77 @@ test('wave 44 indie.gamepad setControlsEnabled toggles env flag', async ({ page 
     return { ok: on && off, on, off }
   })
   expect(result.ok).toBe(true)
+})
+
+test('wave 49 layoutPresets lists compact wide fps', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { touch: { layoutPresets: string[] } }
+    }
+    return v.indie.touch.layoutPresets
+  })
+  expect(result).toEqual(['compact', 'wide', 'fps'])
+})
+
+test('wave 49 setLayoutPreset writes environment.touchLayoutPreset', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { touch: { setLayoutPreset: (p: 'compact' | 'wide' | 'fps') => string } }
+      world: { environment: { touchLayoutPreset?: string } }
+    }
+    const preset = v.indie.touch.setLayoutPreset('wide')
+    return { preset, env: v.world.environment.touchLayoutPreset }
+  })
+  expect(result.preset).toBe('wide')
+  expect(result.env).toBe('wide')
+})
+
+test('wave 49 getLayoutPreset defaults to compact', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { touch: { getLayoutPreset: () => string } }
+      world: { environment: { touchLayoutPreset?: string } }
+    }
+    delete v.world.environment.touchLayoutPreset
+    return v.indie.touch.getLayoutPreset()
+  })
+  expect(result).toBe('compact')
+})
+
+test('wave 49 applyLayoutPreset sets fps fire button CSS var', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { touch: { applyLayoutPreset: (el: HTMLElement, p: 'fps') => string } }
+    }
+    const el = document.createElement('div')
+    const id = v.indie.touch.applyLayoutPreset(el, 'fps')
+    const fireSize = el.style.getPropertyValue('--lotus-touch-fire-btn-size')
+    const layout = el.dataset.lotusTouchLayout
+    return { id, fireSize, layout }
+  })
+  expect(result.id).toBe('fps')
+  expect(result.fireSize).toBe('88px')
+  expect(result.layout).toBe('fps')
+})
+
+test('wave 49 export HTML embeds gamepad glyph hint', async ({ page }) => {
+  await bootEditor(page)
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+    }
+    const html = v.export.buildPlayableHTML()
+    return {
+      hasGlyph: html.includes('🎮 A fire · B interact'),
+      hasGamepadFlag: html.includes('__LOTUS_GAMEPAD__ = true'),
+    }
+  })
+  expect(result.hasGlyph).toBe(true)
+  expect(result.hasGamepadFlag).toBe(true)
 })
 
 test('wave 44 indie.touch fireJustPressed bridge', async ({ page }) => {
@@ -2460,6 +2788,123 @@ test('wave 45 resolveAnimParams boolean script var for blend2D Y', async ({ page
   expect(result.strafe).toBe(1)
   expect(result.speed).toBe(0.5)
 })
+
+test('wave 50 indie.flow menuItems + spawnMainMenu', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        flow: {
+          menuItems: { kind: string; label: string; levelKey: string }[]
+          managerName: string
+          menuScript: string
+          spawnMainMenu: () => void
+        }
+      }
+    }
+    const items = v.indie.flow.menuItems
+    v.indie.flow.spawnMainMenu()
+    const mgr = [...v.world.actors.values()].find((a) => a.name === v.indie.flow.managerName)
+    return {
+      count: items.length,
+      labels: items.map((i) => i.label),
+      kinds: items.map((i) => i.kind),
+      mgr: !!mgr,
+      mgrTag: mgr?.tags.includes('mainmenu'),
+      script: mgr?.script?.includes('api.changeScene'),
+      menuScript: v.indie.flow.menuScript.includes('menu_btn_platformer'),
+    }
+  })
+
+  expect(result.count).toBe(4)
+  expect(result.labels).toEqual(expect.arrayContaining(['Platformer', 'RPG', 'FPS', 'MP Deathmatch']))
+  expect(result.kinds).toEqual(expect.arrayContaining(['platformer', 'rpg', 'fps', 'mpdeathmatch']))
+  expect(result.mgr).toBe(true)
+  expect(result.mgrTag).toBe(true)
+  expect(result.script).toBe(true)
+  expect(result.menuScript).toBe(true)
+})
+
+test('wave 50 indie.flow.selectLevel platformer', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { selectLevel: (kind: 'platformer') => void } }
+      world: { levelLinks: { name: string }[] }
+    }
+    v.indie.flow.selectLevel('platformer')
+    const floor = [...v.world.actors.values()].find((a) => a.name === 'PlatformerFloor')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MiniGameManager')
+    const link = v.world.levelLinks.find((l) => l.name === 'platformer')
+    return { floor: !!floor, mgr: !!mgr, link: !!link }
+  })
+
+  expect(result.floor).toBe(true)
+  expect(result.mgr).toBe(true)
+  expect(result.link).toBe(true)
+})
+
+test('wave 50 /mainmenu terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output: string | null } }
+      world: { hudWidgets: { id: string; type: string }[] }
+    }
+    const out = v.terminal.exec('/mainmenu')
+    const mgr = [...v.world.actors.values()].find((a) => a.name === 'MainMenuManager')
+    const btn = v.world.hudWidgets.find((w) => w.id === 'menu_btn_platformer')
+    return { output: out?.output, mgr: !!mgr, btn: btn?.type === 'button' }
+  })
+
+  expect(result.output).toMatch(/Main menu/i)
+  expect(result.mgr).toBe(true)
+  expect(result.btn).toBe(true)
+})
+
+test('wave 50 export embeds __LOTUS_MAIN_MENU__', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { spawnMainMenu: () => void } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.indie.flow.spawnMainMenu()
+    const html = v.export.buildPlayableHTML()
+    return {
+      enabled: html.includes('window.__LOTUS_MAIN_MENU__ = true'),
+      disabled: html.includes('window.__LOTUS_MAIN_MENU__ = false'),
+    }
+  })
+
+  expect(result.enabled).toBe(true)
+  expect(result.disabled).toBe(false)
+})
+
+test('wave 50 indie.flow.selectLevel mpdeathmatch', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { flow: { selectLevel: (kind: 'mpdeathmatch') => void } }
+      world: { levelLinks: { name: string }[] }
+    }
+    v.indie.flow.selectLevel('mpdeathmatch')
+    const board = [...v.world.actors.values()].find((a) => a.name === 'MpScoreboard')
+    const targets = [...v.world.actors.values()].filter((a) => a.tags.includes('mp_target'))
+    const link = v.world.levelLinks.find((l) => l.name === 'mpdeathmatch')
+    return { board: !!board, targetCount: targets.length, link: !!link }
+  })
+
+  expect(result.board).toBe(true)
+  expect(result.targetCount).toBe(3)
+  expect(result.link).toBe(true)
+})
+
 test('wave 43 indie MP deathmatch template', async ({ page }) => {
   await bootEditor(page)
 
@@ -2567,6 +3012,98 @@ test('wave 43 getMpScore addMpScore host authority', async ({ page }) => {
   expect(result.before).toBe(0)
   expect(result.after).toBe(0)
   expect(result.ok).toBe(false)
+})
+
+test('wave 48 getMpPeerScores returns scoreboard map', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpDeathmatch: () => void
+        mp: { getPeerScores: () => Record<string, number>; mirrorScores: (s: Record<string, number>) => boolean }
+      }
+    }
+    v.indie.spawnIndieMpDeathmatch()
+    const empty = v.indie.mp.getPeerScores()
+    const mirrored = v.indie.mp.mirrorScores({ 'peer-a': 2, 'peer-b': 1 })
+    const after = v.indie.mp.getPeerScores()
+    return { empty, mirrored, after }
+  })
+
+  expect(result.empty).toEqual({})
+  expect(result.mirrored).toBe(true)
+  expect(result.after).toEqual({ 'peer-a': 2, 'peer-b': 1 })
+})
+
+test('wave 48 mirrorScores updates MpScoreboard scriptVars', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpDeathmatch: () => void
+        mp: { mirrorScores: (s: Record<string, number>) => boolean }
+      }
+    }
+    v.indie.spawnIndieMpDeathmatch()
+    v.indie.mp.mirrorScores({ host1: 3, client9: 1 })
+    const board = [...v.world.actors.values()].find((a) => a.name === 'MpScoreboard')
+    const sv = (board?.scriptVars?.peerScores ?? {}) as Record<string, number>
+    return { host1: sv.host1 ?? 0, client9: sv.client9 ?? 0 }
+  })
+
+  expect(result.host1).toBe(3)
+  expect(result.client9).toBe(1)
+})
+
+test('wave 48 scoreboard script shows all peer scores', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { mp: { scoreboardScript: string } }
+    }
+    const script = v.indie.mp.scoreboardScript
+    return {
+      hasGetPeerScores: script.includes('getMpPeerScores'),
+      hasEntries: script.includes('Object.entries(scores)'),
+      hasGameWon: script.includes("api.on('mp_game_won'"),
+    }
+  })
+
+  expect(result.hasGetPeerScores).toBe(true)
+  expect(result.hasEntries).toBe(true)
+  expect(result.hasGameWon).toBe(true)
+})
+
+test('wave 48 applyMpScoreDelta emits mp_game_won at win threshold', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpDeathmatch: () => void
+        mp: {
+          winScore: number
+          applyMpScoreDelta: (
+            peerId: string,
+            delta: number,
+            emit?: (signal: string, ...args: unknown[]) => void,
+          ) => boolean
+        }
+      }
+    }
+    v.indie.spawnIndieMpDeathmatch()
+    let won: { peerId: string; score: number } | null = null
+    const ok = v.indie.mp.applyMpScoreDelta('peer-win', v.indie.mp.winScore, (signal, peerId, score) => {
+      if (signal === 'mp_game_won') won = { peerId: String(peerId), score: Number(score) }
+    })
+    return { ok, won, winScore: v.indie.mp.winScore }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.won).toEqual({ peerId: 'peer-win', score: result.winScore })
 })
 
 test('wave 36 gridMap worldToGridCell + gridCellKey', async ({ page }) => {

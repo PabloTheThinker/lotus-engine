@@ -4,6 +4,38 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 46–50: v2.69–v2.93 (indie swarm)
+
+### Wave 46 (v2.69–v2.73) — TileMap polish
+- `gridLayerVisibility`, `gridAutotilePreview` on FoliageProps
+- Viewport per-layer visibility + autotile bitmask hover preview
+- `setGridLayerVisible`, `previewAutotileMask`; Details layer visibility checkboxes
+
+### Wave 47 (v2.74–v2.78) — Mini-game polish
+- `miniGameHud.ts` — win/lose DOM overlays; `game_lost` timeout
+- `/minigameexport platformer|rpg|fps`; export `__LOTUS_MINIGAME__`
+- `indie.minigame.showHud` / `exportPreset`
+
+### Wave 48 (v2.79–v2.83) — MP score sync
+- Host broadcasts `peerScores` to clients; `getMpPeerScores` / `mirrorScores`
+- Scoreboard lists all peers; `mp_game_won` relay smoke test
+
+### Wave 49 (v2.84–v2.88) — Input polish
+- `touchLayoutPresets.ts` — compact / wide / fps CSS vars
+- Export overlay gamepad glyph hints; `indie.touch` layout preset APIs
+
+### Wave 50 (v2.89–v2.93) — Scene flow
+- `mainMenuFlow.ts` — `/mainmenu`, level picker (Platformer/RPG/FPS/MP)
+- Export `__LOTUS_MAIN_MENU__`; `indie.flow.selectLevel`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 194 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 41–45: v2.44–v2.68 (indie swarm)
 
 ### Wave 41 (v2.44–v2.48) — TileMap layers + autotile

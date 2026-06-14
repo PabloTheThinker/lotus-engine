@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.68 (waves 41–45).** v0.33–v2.68 shipped; **build clean**, **`npm run test` — 169 passed**.
+- **Last clean commit: v2.93 (waves 46–50).** v0.33–v2.93 shipped; **build clean**, **`npm run test` — 194 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -419,12 +419,22 @@
 | 44 | v2.59–v2.63 | Touch Fire/Interact + gamepad — `touchInput`, `gamepadInput`, export `__LOTUS_GAMEPAD__` |
 | 45 | v2.64–v2.68 | 2D blend ↔ @export — `blendScriptVarLinkX/Y`, AnimStateEditor links, `resolveAnimParams` — 169 tests |
 
+## Shipped (v2.69–v2.93, Waves 46–50 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 46 | v2.69–v2.73 | TileMap polish — layer visibility, autotile preview in viewport |
+| 47 | v2.74–v2.78 | Mini-game HUD — win/lose overlays, `/minigameexport`, export preset |
+| 48 | v2.79–v2.83 | MP score sync — client mirror, `mp_game_won` relay smoke |
+| 49 | v2.84–v2.88 | Input polish — touch layout presets, gamepad glyph hints |
+| 50 | v2.89–v2.93 | Scene flow — `/mainmenu`, level select, `__LOTUS_MAIN_MENU__` — 194 tests |
+
 ## Next up (indie roadmap)
 
-1. **TileMap polish** — autotile preview in viewport + layer visibility toggles
-2. **Mini-game polish** — HUD win/lose UI + export playable mini-game presets
-3. **MP score sync** — client scoreboard mirror + `mp_game_won` relay assert
-4. **Input polish** — gamepad glyph hints in export overlay + touch button layout presets
+1. **TileMap autotile rules** — tile-kind neighbor matching + corner sprites
+2. **Mini-game export pack** — bundled PWA presets per genre
+3. **MP lobby** — room browser + ready-up before deathmatch
+4. **Input rebinding** — per-action gamepad + touch slot overrides
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

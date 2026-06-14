@@ -47,7 +47,13 @@ import {
   summarizePrefabOverrides,
 } from '../prefabs'
 import { buildFoliageMesh } from '../../engine/factory'
-import { activeGridLayerIndex, getLayerCellCount, syncGridInstancesFromLayers } from '../../engine/gridMap'
+import {
+  activeGridLayerIndex,
+  getLayerCellCount,
+  isGridLayerVisible,
+  setGridLayerVisible,
+  syncGridInstancesFromLayers,
+} from '../../engine/gridMap'
 import { buildLandscapeMesh, syncLandscapeColors, syncLandscapeHeights } from '../../engine/landscape'
 import { buildWaterMesh } from '../../engine/water'
 import { regeneratePCG } from '../../engine/pcg'
@@ -2556,6 +2562,35 @@ function FoliageSection({ actor }: { actor: Actor }) {
                 touch()
               }}
             />
+          </label>
+          <label className="field check">
+            <span>Autotile preview</span>
+            <input
+              type="checkbox"
+              checked={!!props.gridAutotilePreview}
+              onChange={(e) => {
+                props.gridAutotilePreview = e.target.checked
+                touch()
+              }}
+            />
+          </label>
+          <label className="field">
+            <span>Layer visibility</span>
+            <div className="paint-layers">
+              {[0, 1, 2, 3].map((i) => (
+                <label key={i} className="paint-layer" title={`Layer ${i} visible in viewport`}>
+                  <input
+                    type="checkbox"
+                    checked={isGridLayerVisible(props, i)}
+                    onChange={(e) => {
+                      setGridLayerVisible(props, i, e.target.checked)
+                      rebuild()
+                    }}
+                  />
+                  {i}
+                </label>
+              ))}
+            </div>
           </label>
           <Num
             label="Grid Brush"

@@ -9,6 +9,7 @@ import {
   type PlatformerStarterMode,
   type TopDownRpgStarterMode,
 } from './starterTemplates'
+import { enableMiniGameHud } from './miniGameHud'
 import { useEditor } from './store'
 
 export type MiniGameMode = 'platformer' | 'rpg' | 'fps'
@@ -18,18 +19,23 @@ export const GOAL_ZONE_NAME = 'GoalZone'
 export const FPS_TARGET_TAG = 'Target'
 export const RPG_NPC_GOAL = 3
 
-/** Shared HUD handler invoked when game_won fires. */
-export const MINIGAME_WIN_HANDLER = `function _miniGameWin() {
-  api.log('YOU WIN!')
-  api.hud.text('win', 'YOU WIN!', { anchor: 'center', y: '40%', size: 28, color: '#46a758' })
+/** Optional countdown — 0 disables timeout. */
+export const MINIGAME_TIMEOUT_EXPORT = `// @export timeoutSeconds = 0`
+
+function miniGameTimeoutBlock(): string {
+  return `  if (vars.timeoutSeconds > 0) {
+    api.setTimer(vars.timeoutSeconds, () => {
+      api.log('Time up!')
+      api.emit('game_lost')
+    })
+  }`
 }
-`
 
 /** v2.50 — reach GoalZone TriggerVolume → emit game_won. */
 export const PLATFORMER_MINIGAME_SCRIPT = `// platformer minigame — reach GoalZone
-${MINIGAME_WIN_HANDLER}
+${MINIGAME_TIMEOUT_EXPORT}
 function onBeginPlay() {
-  api.on('game_won', _miniGameWin)
+${miniGameTimeoutBlock()}
   api.on('enter:${GOAL_ZONE_NAME}', () => {
     api.log('Goal reached!')
     api.emit('game_won')
@@ -41,10 +47,10 @@ function onBeginPlay() {
 export const RPG_MINIGAME_SCRIPT = `// rpg minigame — collect NPCs or reach quest zone
 // @export npcGoal = ${RPG_NPC_GOAL}
 // @export collectRadius = 1.5
-${MINIGAME_WIN_HANDLER}
+${MINIGAME_TIMEOUT_EXPORT}
 const _collected = new Set()
 function onBeginPlay() {
-  api.on('game_won', _miniGameWin)
+${miniGameTimeoutBlock()}
   api.on('enter:RpgQuestZone', () => {
     api.log('Quest zone reached!')
     api.emit('game_won')
@@ -72,10 +78,10 @@ function onTick(_dt) {
 export const FPS_MINIGAME_SCRIPT = `// fps minigame — shoot Target crates
 // @export targetsToWin = 2
 // @export shootRange = 30
-${MINIGAME_WIN_HANDLER}
+${MINIGAME_TIMEOUT_EXPORT}
 let _destroyed = 0
 function onBeginPlay() {
-  api.on('game_won', _miniGameWin)
+${miniGameTimeoutBlock()}
 }
 function onTick(_dt) {
   if (!api.actionJustPressed('Fire')) return
@@ -251,4 +257,5 @@ export function spawnMiniGame(mode: MiniGameMode, variant?: string) {
       break
   }
   attachMiniGameScripts(mode)
+  enableMiniGameHud()
 }

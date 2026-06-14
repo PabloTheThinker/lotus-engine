@@ -387,6 +387,10 @@ export interface FoliageProps {
   gridLayers?: Record<number, number[][]>
   /** 4-neighbor autotile variant refresh on paint (snap mode) */
   gridAutotile?: boolean
+  /** Per-layer viewport visibility (layers 0–3; default all visible) */
+  gridLayerVisibility?: boolean[]
+  /** Viewport hover preview of 4-neighbor autotile bitmask on active layer */
+  gridAutotilePreview?: boolean
 }
 
 export const DEFAULT_FOLIAGE: FoliageProps = {
@@ -632,6 +636,8 @@ export interface EnvironmentSettings {
   touchControls?: boolean
   /** Wave 44 — Gamepad API stick + face buttons (auto when a pad is connected when unset) */
   gamepadControls?: boolean
+  /** Wave 49 — touch HUD joystick + action button layout preset */
+  touchLayoutPreset?: 'compact' | 'wide' | 'fps'
 }
 
 /** Grid-chunked world streaming (UE World Partition analog). */

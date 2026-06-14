@@ -65,11 +65,50 @@ function totalLayerCells(props: FoliageProps): number {
   return n
 }
 
+/** Ensure gridLayerVisibility has 4 entries (default all visible). */
+export function ensureGridLayerVisibility(props: FoliageProps): boolean[] {
+  if (!props.gridLayerVisibility) props.gridLayerVisibility = [true, true, true, true]
+  while (props.gridLayerVisibility.length < 4) props.gridLayerVisibility.push(true)
+  return props.gridLayerVisibility
+}
+
+export function isGridLayerVisible(props: FoliageProps, layer: number): boolean {
+  const vis = ensureGridLayerVisibility(props)
+  const L = Math.max(0, Math.min(3, Math.floor(layer)))
+  return vis[L] !== false
+}
+
+export function setGridLayerVisible(props: FoliageProps, layer: number, visible: boolean): void {
+  const vis = ensureGridLayerVisibility(props)
+  const L = Math.max(0, Math.min(3, Math.floor(layer)))
+  vis[L] = visible
+  syncGridInstancesFromLayers(props)
+}
+
+/** 4-neighbor autotile mask at a cell on a layer (N=1, E=2, S=4, W=8). */
+export function previewAutotileMask(
+  props: FoliageProps,
+  layer: number,
+  cx: number,
+  cy: number,
+  cz: number,
+): number {
+  const bucket = layerBucket(props, layer)
+  return autotileNeighbors(
+    hasLayerNeighbor(bucket, cx, cy, cz, 0, -1),
+    hasLayerNeighbor(bucket, cx, cy, cz, 1, 0),
+    hasLayerNeighbor(bucket, cx, cy, cz, 0, 1),
+    hasLayerNeighbor(bucket, cx, cy, cz, -1, 0),
+  )
+}
+
 /** Merge gridLayers into instances for InstancedMesh rendering. */
 export function syncGridInstancesFromLayers(props: FoliageProps): void {
   if (!props.gridLayers) return
+  const vis = ensureGridLayerVisibility(props)
   const merged: number[][] = []
   for (let L = 0; L <= 3; L++) {
+    if (vis[L] === false) continue
     const bucket = props.gridLayers[L]
     if (!bucket) continue
     for (const [x, y, z, sc, rotY] of bucket) {

@@ -32,6 +32,7 @@ import {
   getLayerCellCount,
   gridOverlaySize,
   paintGridLayerBrush,
+  previewAutotileMask,
   restoreGridPaint,
   snapshotGridPaint,
   worldToGridCell,
@@ -42,6 +43,12 @@ import { sculptStamp, syncLandscapeColors, syncLandscapeHeights } from '../engin
 import { hasAudioTracks, hasHudTracks, sampleSequence, setKey } from '../engine/sequencer'
 import { Input } from '../engine/Input'
 import { applyShake, getViewCamera, isHudMounted, mountHud, syncAuthoredHud, unmountHud } from '../engine/gameplay'
+import {
+  hasMiniGameManager,
+  isMiniGameHudEnabled,
+  mountMiniGameHudForPlay,
+  unmountMiniGameHudForPlay,
+} from './miniGameHud'
 import { mpConnect, mpDisconnect, mpTick } from '../engine/multiplayer'
 import { runConstructScript, setScriptLogSink } from '../engine/scripting'
 import { pushSample, latest } from '../engine/profiler'
@@ -1045,6 +1052,70 @@ export function Viewport() {
     let strokeBefore: GridPaintSnapshot | null = null
     let lastStamp: THREE.Vector3 | null = null
     let gridPaintHelper: THREE.GridHelper | null = null
+    let autotilePreviewGroup: THREE.Group | null = null
+    const AUTOTILE_PREVIEW_DIRS: { dx: number; dz: number; bit: number }[] = [
+      { dx: 0, dz: -0.42, bit: 1 },
+      { dx: 0.42, dz: 0, bit: 2 },
+      { dx: 0, dz: 0.42, bit: 4 },
+      { dx: -0.42, dz: 0, bit: 8 },
+    ]
+
+    function ensureAutotilePreviewGroup(): THREE.Group {
+      if (autotilePreviewGroup) return autotilePreviewGroup
+      const group = new THREE.Group()
+      group.userData.isHelper = true
+      group.renderOrder = 1000
+      for (const d of AUTOTILE_PREVIEW_DIRS) {
+        const box = new THREE.Mesh(
+          new THREE.BoxGeometry(0.18, 0.06, 0.18),
+          new THREE.MeshBasicMaterial({ color: 0x556677, transparent: true, opacity: 0.55, depthTest: false }),
+        )
+        box.position.set(d.dx, 0, d.dz)
+        box.userData.bit = d.bit
+        box.userData.isHelper = true
+        group.add(box)
+      }
+      const center = new THREE.Mesh(
+        new THREE.RingGeometry(0.12, 0.2, 16),
+        new THREE.MeshBasicMaterial({
+          color: 0xf5a623,
+          transparent: true,
+          opacity: 0.7,
+          side: THREE.DoubleSide,
+          depthTest: false,
+        }),
+      )
+      center.rotation.x = -Math.PI / 2
+      center.userData.isHelper = true
+      group.add(center)
+      world.scene.add(group)
+      autotilePreviewGroup = group
+      return group
+    }
+
+    function syncAutotilePreviewOverlay(
+      props: import('../engine/types').FoliageProps,
+      hit: THREE.Intersection | null,
+      layer: number,
+    ): number | null {
+      const group = ensureAutotilePreviewGroup()
+      if (!hit) {
+        group.visible = false
+        return null
+      }
+      const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+      const mask = previewAutotileMask(props, layer, cell.x, cell.y, cell.z)
+      group.position.set(cell.x, hit.point.y + 0.06, cell.z)
+      group.visible = true
+      for (const child of group.children) {
+        if (!(child instanceof THREE.Mesh) || child.userData.bit == null) continue
+        const active = (mask & child.userData.bit) !== 0
+        const mat = child.material as THREE.MeshBasicMaterial
+        mat.color.setHex(active ? 0x4aef88 : 0x3a4150)
+        mat.opacity = active ? 0.9 : 0.35
+      }
+      return mask
+    }
 
     function paintSurfaceHit(e: MouseEvent): THREE.Intersection | null {
       const s = useEditor.getState()
@@ -1138,19 +1209,36 @@ export function Viewport() {
     domElement.addEventListener('mousemove', (e) => {
       const s = useEditor.getState()
       const layer = s.selectedId ? world.actors.get(s.selectedId) : null
-      if (s.foliagePaint && !s.playing && layer?.foliageProps?.snap) {
+      const gridProps = !s.playing && layer?.foliageProps?.snap ? layer.foliageProps : null
+      if (s.foliagePaint && gridProps) {
         const hit = paintSurfaceHit(e)
-        const brush = layer.foliageProps.gridBrushSize ?? 0
+        const brush = gridProps.gridBrushSize ?? 0
         syncGridPaintOverlay(hit, brush)
         if (hit) {
           const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
-          const gl = activeGridLayerIndex(layer.foliageProps)
-          s.setStatus(
-            `GridMap · L${gl} · cell (${cell.x}, ${cell.y}, ${cell.z}) · ${getLayerCellCount(layer.foliageProps, gl)} / ${getGridCellCount(layer.foliageProps)} tiles`,
-          )
+          const gl = activeGridLayerIndex(gridProps)
+          let status = `GridMap · L${gl} · cell (${cell.x}, ${cell.y}, ${cell.z}) · ${getLayerCellCount(gridProps, gl)} / ${getGridCellCount(gridProps)} tiles`
+          if (gridProps.gridAutotilePreview) {
+            const mask = syncAutotilePreviewOverlay(gridProps, hit, gl)
+            if (mask != null) status += ` · autotile ${mask}`
+          } else if (autotilePreviewGroup) {
+            autotilePreviewGroup.visible = false
+          }
+          s.setStatus(status)
         }
-      } else if (gridPaintHelper) {
-        gridPaintHelper.visible = false
+      } else {
+        if (gridPaintHelper) gridPaintHelper.visible = false
+        if (gridProps?.gridAutotilePreview) {
+          const hit = paintSurfaceHit(e)
+          const gl = activeGridLayerIndex(gridProps)
+          const mask = syncAutotilePreviewOverlay(gridProps, hit, gl)
+          if (hit && mask != null) {
+            const cell = worldToGridCell(hit.point.x, hit.point.y, hit.point.z)
+            s.setStatus(`Autotile preview · L${gl} · (${cell.x},${cell.y},${cell.z}) · mask ${mask}`)
+          }
+        } else if (autotilePreviewGroup) {
+          autotilePreviewGroup.visible = false
+        }
       }
       if (painting) stampFoliage(e)
     })
@@ -1519,8 +1607,13 @@ export function Viewport() {
       const possessed = s.playing && !s.simulate && !s.ejected
       if (s.playing && !wasPlaying) {
         mountHud(mount) // before beginPlay so onBeginPlay scripts can draw HUD
-        if (touchControlsActive(world.environment)) touchOverlay.mount(mount)
+        if (touchControlsActive(world.environment)) {
+          touchOverlay.mount(mount, world.environment.touchLayoutPreset)
+        }
         world.beginPlay()
+        if (world.playApi && (isMiniGameHudEnabled() || hasMiniGameManager(world.actors.values()))) {
+          mountMiniGameHudForPlay(mount, world.playApi)
+        }
         mpConnect(world, (m) => useEditor.getState().setStatus(m))
         if (!s.simulate) {
           pawn.useRapierCharacter = world.environment.useRapierCharacter !== false
@@ -1538,6 +1631,7 @@ export function Viewport() {
         touchOverlay.unmount()
         resetGamepadInput()
         unmountHud()
+        unmountMiniGameHudForPlay()
         mpDisconnect()
         s.touch()
       }
@@ -1704,6 +1798,9 @@ export function Viewport() {
       if (!s.sculptActive || s.playing) brushRing.visible = false
       if (!s.foliagePaint || s.playing) {
         if (gridPaintHelper) gridPaintHelper.visible = false
+      }
+      if (s.playing || !selected?.foliageProps?.gridAutotilePreview) {
+        if (autotilePreviewGroup) autotilePreviewGroup.visible = false
       }
 
       // helpers + editor-only visuals — hidden while possessed, Game View (G), or path tracing
@@ -2081,6 +2178,16 @@ export function Viewport() {
         ;(gridPaintHelper.material as THREE.Material).dispose()
         world.scene.remove(gridPaintHelper)
         gridPaintHelper = null
+      }
+      if (autotilePreviewGroup) {
+        for (const child of autotilePreviewGroup.children) {
+          if (child instanceof THREE.Mesh) {
+            child.geometry.dispose()
+            ;(child.material as THREE.Material).dispose()
+          }
+        }
+        world.scene.remove(autotilePreviewGroup)
+        autotilePreviewGroup = null
       }
       world.scene.remove(grid, axes, gizmoHelper, pawn.body, brushRing)
       world.pawnPosition = null

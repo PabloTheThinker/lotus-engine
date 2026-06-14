@@ -6,8 +6,9 @@ import {
   MP_SCOREBOARD_NAME,
   MP_TAG_TARGET,
   applyMpScoreDelta,
+  mirrorMpPeerScores,
 } from '../engine/mpGameplay'
-import { mpSetScoreDeltaHandler } from '../engine/multiplayer'
+import { mpSetGameWonRelayHandler, mpSetPeerScoresMirrorHandler, mpSetScoreDeltaHandler } from '../engine/multiplayer'
 import { AddActorCommand, runCommand } from './commands'
 import { buildSerializedActor } from './spawn'
 import { useEditor } from './store'
@@ -21,6 +22,8 @@ export {
   MP_SCORE_VAR,
   findMpScoreboard,
   getMpScore,
+  getMpPeerScores,
+  mirrorMpPeerScores,
   addMpScore,
   applyMpScoreDelta,
 } from '../engine/mpGameplay'
@@ -41,28 +44,33 @@ function onTick(_dt) {
   const hit = api.raycast(origin, dir, 80)
   if (!hit || !hit.actor.tags.includes('mp_target')) return
   api.addMpScore(1)
-  api.on('mp_game_won', (winnerId, score) => {
-    api.log('MP winner: ' + winnerId + ' (' + score + ')')
-  })
 }
 `
 
-/** Scoreboard actor — host owns peerScores scriptVar, replicated to clients. */
+/** Scoreboard actor — host owns peerScores scriptVar; clients mirror via score relay. */
 export const MP_SCOREBOARD_SCRIPT = `// mp_scoreboard — host score state + HUD refresh
 // @export winScore = 3
 // @export peerScores = {}
 function onBeginPlay() {
+  api.on('mp_game_won', (winnerId, score) => {
+    api.log('MP winner: ' + winnerId + ' (' + score + ')')
+  })
   if (!api.mpIsHost()) return
   const scores = { ...(vars.peerScores || {}) }
   scores[api.mpLocalId()] = scores[api.mpLocalId()] ?? 0
   actor.scriptVars = { ...(actor.scriptVars ?? {}), peerScores: scores }
 }
 function onTick(_dt) {
-  const scores = (actor.scriptVars?.peerScores ?? vars.peerScores ?? {}) as Record<string, number>
+  let scores = {} as Record<string, number>
   if (api.mpIsHost()) {
-    const merged = { ...scores }
-    merged[api.mpLocalId()] = merged[api.mpLocalId()] ?? 0
-    actor.scriptVars = { ...(actor.scriptVars ?? {}), peerScores: merged }
+    const raw = (actor.scriptVars?.peerScores ?? vars.peerScores ?? {}) as Record<string, number>
+    scores = { ...raw }
+    scores[api.mpLocalId()] = scores[api.mpLocalId()] ?? 0
+    actor.scriptVars = { ...(actor.scriptVars ?? {}), peerScores: scores }
+  } else if (api.mpConnected()) {
+    scores = api.getMpPeerScores()
+  } else {
+    scores = (actor.scriptVars?.peerScores ?? vars.peerScores ?? {}) as Record<string, number>
   }
   const lines = Object.entries(scores)
     .sort((a, b) => b[1] - a[1])
@@ -199,4 +207,14 @@ export function spawnIndieMpDeathmatch() {
 /** Host applies score deltas requested by clients over the relay. */
 mpSetScoreDeltaHandler((peerId, delta) => {
   applyMpScoreDelta(world.actors, peerId, delta, (signal, ...args) => world.playApi?.emit(signal, ...args))
+})
+
+/** Clients mirror host peerScores snapshots from the score relay. */
+mpSetPeerScoresMirrorHandler((scores) => {
+  mirrorMpPeerScores(world.actors, scores)
+})
+
+/** Clients receive mp_game_won when host broadcasts a win on the score relay. */
+mpSetGameWonRelayHandler((peerId, score) => {
+  world.playApi?.emit('mp_game_won', peerId, score)
 })

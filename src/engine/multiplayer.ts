@@ -56,6 +56,8 @@ const PREDICT_ROT_THRESHOLD = 0.35
 let sendAcc = 0
 let worldRef: World | null = null
 let scoreDeltaHandler: ((peerId: string, delta: number) => void) | null = null
+let peerScoresMirrorHandler: ((scores: Record<string, number>) => void) | null = null
+let gameWonRelayHandler: ((peerId: string, score: number) => void) | null = null
 /** ids spawned by the network host (safe to despawn on disconnect) */
 const netSpawned = new Set<string>()
 
@@ -342,6 +344,30 @@ export function mpSetScoreDeltaHandler(fn: ((peerId: string, delta: number) => v
   scoreDeltaHandler = fn
 }
 
+/** Client mirror — host peerScores snapshot applied to local scoreboard. */
+export function mpSetPeerScoresMirrorHandler(fn: ((scores: Record<string, number>) => void) | null) {
+  peerScoresMirrorHandler = fn
+}
+
+/** Client relay — host mp_game_won forwarded to local playApi. */
+export function mpSetGameWonRelayHandler(fn: ((peerId: string, score: number) => void) | null) {
+  gameWonRelayHandler = fn
+}
+
+/** Host broadcasts authoritative peerScores (+ optional win) via score relay. */
+export function mpBroadcastPeerScores(
+  scores: Record<string, number>,
+  gameWon?: { peerId: string; score: number },
+) {
+  if (!mpConnected() || !mpIsHost()) return
+  send({
+    t: 'score',
+    id: localId,
+    peerScores: scores,
+    ...(gameWon ? { gameWon: [gameWon.peerId, gameWon.score] as [string, number] } : {}),
+  })
+}
+
 /** Client requests a score delta — host applies via mpSetScoreDeltaHandler. */
 export function mpRequestScoreDelta(delta: number, peerId?: string) {
   if (!mpConnected() || mpIsHost()) return
@@ -396,6 +422,8 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       ownerId?: string
       ts?: number
       delta?: number
+      peerScores?: Record<string, number>
+      gameWon?: [string, number]
     }
     try {
       msg = JSON.parse(String(ev.data))
@@ -448,6 +476,13 @@ export function mpConnect(world: World, status: (msg: string) => void) {
     }
     if (msg.t === 'score' && mpIsHost() && typeof msg.delta === 'number' && msg.id) {
       scoreDeltaHandler?.(msg.id, msg.delta)
+      return
+    }
+    if (msg.t === 'score' && !mpIsHost() && isFromHost(msg.id) && msg.peerScores) {
+      peerScoresMirrorHandler?.(msg.peerScores)
+      if (Array.isArray(msg.gameWon) && msg.gameWon.length >= 2) {
+        gameWonRelayHandler?.(String(msg.gameWon[0]), Number(msg.gameWon[1]))
+      }
       return
     }
     if (msg.t === 'input' && msg.p && worldRef && mpIsHost()) {

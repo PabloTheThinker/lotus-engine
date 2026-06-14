@@ -16,6 +16,7 @@ import {
   DEFAULT_AREA3D,
 } from './types'
 import { DEFAULT_PATH3D, rebuildPath3DVisual } from './path3d'
+import { syncGridInstancesFromLayers } from './gridMap'
 import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
@@ -207,6 +208,7 @@ export function rebuildFoliage(actor: Actor) {
   const mesh = actor.foliageMesh
   const props = actor.foliageProps
   if (!mesh || !props) return
+  if (props.snap && props.gridLayers) syncGridInstancesFromLayers(props)
   const count = Math.min(props.instances.length, FOLIAGE_CAP)
   for (let i = 0; i < count; i++) {
     const [x, y, z, sc, rotY] = props.instances[i]

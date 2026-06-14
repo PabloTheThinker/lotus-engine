@@ -6,15 +6,26 @@ import type { SerializedLevel } from '../engine/types'
 import { loadPrefs, type ExportQuality } from './Preferences'
 import { loadProjectSettings } from './projectSettings'
 import { useEditor } from './store'
+import { mainMenuBootEnabled } from './mainMenuFlow'
 import { scheduleExportPerfProbe } from './exportPerfProbe'
 import { TOUCH_OVERLAY_CSS } from './touchOverlay'
 import { shouldShowTouchControls } from '../engine/touchInput'
+import { MINIGAME_OVERLAY_CSS } from './miniGameHud'
+import { MINIGAME_MANAGER_NAME, spawnMiniGame, type MiniGameMode } from './starterMiniGames'
 
 export interface ExportOptions {
   /** add PWA manifest + service worker stub for offline single-file play */
   pwa?: boolean
   /** mobile: no bloom, capped pixel ratio; desktop: editor defaults */
   quality?: ExportQuality
+  /** v2.78 — force mini-game HUD overlay in export runtime */
+  minigameHud?: boolean
+  /** preset label embedded in export boot metadata */
+  minigamePreset?: MiniGameMode
+}
+
+function levelHasMiniGameManager(level: SerializedLevel): boolean {
+  return level.actors.some((a) => a.name === MINIGAME_MANAGER_NAME)
 }
 
 function escapeJsonForScript(json: string): string {
@@ -124,6 +135,9 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const touchEnabled =
     shouldShowTouchControls(mainLevel.environment?.touchControls) || pwa || quality === 'mobile'
   const gamepadEnabled = mainLevel.environment?.gamepadControls !== false
+  const minigameHud = opts.minigameHud ?? levelHasMiniGameManager(mainLevel)
+  const minigamePreset = opts.minigamePreset ?? null
+  const mainMenuBoot = mainMenuBootEnabled()
 
   return `<!doctype html>
 <html lang="en">
@@ -145,6 +159,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
     color: #79828f; z-index: 5; pointer-events: none;
   }
   ${touchEnabled ? TOUCH_OVERLAY_CSS : ''}
+  ${minigameHud ? MINIGAME_OVERLAY_CSS : ''}
 </style>
 <script type="importmap">
 {
@@ -161,7 +176,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}
@@ -189,4 +204,12 @@ export function exportPlayable(opts: ExportOptions = {}) {
 
 export function exportPlayablePWA() {
   exportPlayable({ pwa: true })
+}
+
+/** Spawn a mini-game preset scene and download a playable HTML export. */
+export function exportMiniGamePreset(mode: MiniGameMode, opts: ExportOptions = {}) {
+  spawnMiniGame(mode)
+  const s = useEditor.getState()
+  const base = `${(s.levelName || 'level').replace(/[^\w-]+/g, '_')}_${mode}`
+  downloadHtml(`${base}.play.html`, buildPlayableHTML({ ...opts, minigameHud: true, minigamePreset: mode }))
 }

@@ -18,6 +18,15 @@ const CELL_MANIFEST = window.__LOTUS_CELLS__ ?? window.__VEKTRA_CELLS__ ?? null
 const EXPORT_LUT = window.__LOTUS_LUT__ ?? window.__VEKTRA_LUT__ ?? null
 const TOUCH_ENABLED = window.__LOTUS_TOUCH__ === true || window.__LOTUS_TOUCH__ === 'true'
 const GAMEPAD_ENABLED = window.__LOTUS_GAMEPAD__ === true || window.__LOTUS_GAMEPAD__ === 'true'
+const MINIGAME_ENABLED = window.__LOTUS_MINIGAME__ === true || window.__LOTUS_MINIGAME__ === 'true'
+const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
+const MAIN_MENU_ENABLED = window.__LOTUS_MAIN_MENU__ === true || window.__LOTUS_MAIN_MENU__ === 'true'
+const MAIN_MENU_ITEMS = [
+  { label: 'Platformer', key: 'platformer' },
+  { label: 'RPG', key: 'rpg' },
+  { label: 'FPS', key: 'fps' },
+  { label: 'MP Deathmatch', key: 'mpdeathmatch' },
+]
 
 /** Wave 32 — decode embedded LUT atlas bytes from export payload. */
 function decodeExportLUTTexture(payload) {
@@ -420,11 +429,43 @@ function bindActionButton(btn, code, getDown, setDown) {
   btn.addEventListener('mouseup', release)
   btn.addEventListener('mouseleave', release)
 }
+const TOUCH_LAYOUT_PRESETS = {
+  compact: {
+    stickLeft: '12px', stickBottom: '12px', stickSize: '120px',
+    actionsRight: '16px', actionsBottom: '24px', actionsGap: '8px',
+    btnSize: '64px', fireBtnSize: '64px',
+  },
+  wide: {
+    stickLeft: '48px', stickBottom: '32px', stickSize: '160px',
+    actionsRight: '48px', actionsBottom: '48px', actionsGap: '14px',
+    btnSize: '80px', fireBtnSize: '80px',
+  },
+  fps: {
+    stickLeft: '20px', stickBottom: '18px', stickSize: '128px',
+    actionsRight: '18px', actionsBottom: '22px', actionsGap: '12px',
+    btnSize: '60px', fireBtnSize: '88px',
+  },
+}
+const GAMEPAD_GLYPH_HINT = '🎮 A fire · B interact'
+function applyExportTouchLayoutPreset(hud, preset) {
+  const id = preset === 'wide' || preset === 'fps' ? preset : 'compact'
+  const vars = TOUCH_LAYOUT_PRESETS[id]
+  hud.dataset.lotusTouchLayout = id
+  hud.style.setProperty('--lotus-touch-stick-left', vars.stickLeft)
+  hud.style.setProperty('--lotus-touch-stick-bottom', vars.stickBottom)
+  hud.style.setProperty('--lotus-touch-stick-size', vars.stickSize)
+  hud.style.setProperty('--lotus-touch-actions-right', vars.actionsRight)
+  hud.style.setProperty('--lotus-touch-actions-bottom', vars.actionsBottom)
+  hud.style.setProperty('--lotus-touch-actions-gap', vars.actionsGap)
+  hud.style.setProperty('--lotus-touch-btn-size', vars.btnSize)
+  hud.style.setProperty('--lotus-touch-fire-btn-size', vars.fireBtnSize)
+}
 function initExportTouchHud() {
   if (!TOUCH_ENABLED) return
   const hud = document.createElement('div')
   hud.className = 'lotus-touch-hud'
   hud.id = 'lotus-touch-hud'
+  applyExportTouchLayoutPreset(hud, LEVEL.environment?.touchLayoutPreset)
   const stickZone = document.createElement('div')
   stickZone.className = 'lotus-touch-stick-zone'
   hud.appendChild(stickZone)
@@ -524,6 +565,106 @@ let ticks = []
 let physWorld = null
 let bindings = []
 let clock = 0
+/** v2.74 — script signal bus + timers for mini-game export */
+const signalHandlers = new Map()
+let scriptTimers = []
+let triggerState = new Map()
+let mgOverlay = null
+
+function resetSignals() {
+  signalHandlers.clear()
+}
+
+function parseExportValue(raw) {
+  const t = String(raw).trim()
+  try { return JSON.parse(t) } catch { return t.replace(/^["']|["']$/g, '') }
+}
+
+function parseExportVars(source, overrides) {
+  const vars = {}
+  if (!source) return { ...vars, ...(overrides ?? {}) }
+  for (const line of source.split('\n')) {
+    let m = line.match(/^\s*\/\/\s*@export_range\s+([A-Za-z_$][\w$]*)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*=\s*(.+)\s*$/)
+    if (m) {
+      const value = Number(parseExportValue(m[5]))
+      vars[m[1]] = Number.isFinite(value) ? value : 0
+      continue
+    }
+    m = line.match(/^\s*\/\/\s*@export_enum\s+([A-Za-z_$][\w$]*)\s*:\s*(.+)\s*=\s*(.+)\s*$/)
+    if (m) {
+      vars[m[1]] = parseExportValue(m[3])
+      continue
+    }
+    m = line.match(/^\s*\/\/\s*@export\s+([A-Za-z_$][\w$]*)\s*=\s*(.+)\s*$/)
+    if (m) vars[m[1]] = parseExportValue(m[2])
+  }
+  return { ...vars, ...(overrides ?? {}) }
+}
+
+function tickScriptTimers(dt) {
+  for (let i = scriptTimers.length - 1; i >= 0; i--) {
+    const t = scriptTimers[i]
+    t.at -= dt
+    if (t.at > 0) continue
+    try { t.fn() } catch (e) { console.warn('timer', e) }
+    if (t.loop != null) t.at = t.loop
+    else scriptTimers.splice(i, 1)
+  }
+}
+
+function showMiniGameOverlay(kind, title, color) {
+  if (mgOverlay) mgOverlay.remove()
+  mgOverlay = document.createElement('div')
+  mgOverlay.className = `lotus-minigame-overlay lotus-minigame-${kind}`
+  mgOverlay.innerHTML = `<div class="lotus-minigame-panel">
+    <div class="lotus-minigame-title" style="color:${color}">${title}</div>
+    <div class="lotus-minigame-sub">${kind === 'win' ? 'Great run!' : 'Refresh to try again'}</div>
+  </div>`
+  document.body.appendChild(mgOverlay)
+}
+
+function wireExportMiniGameHud() {
+  api.on('game_won', () => showMiniGameOverlay('win', 'YOU WIN!', '#46a758'))
+  api.on('game_lost', () => showMiniGameOverlay('lose', 'GAME OVER', '#e5484d'))
+}
+
+const _ray = new THREE.Raycaster()
+function raycastActors(origin, dir, maxDist = 1000) {
+  _ray.set(new THREE.Vector3(...origin), new THREE.Vector3(...dir).normalize())
+  _ray.far = maxDist
+  const meshes = []
+  for (const a of actors.values()) {
+    a.root.traverse((o) => {
+      if (o.isMesh && !o.userData?.isHelper && !o.userData?.isEditorOnly) meshes.push(o)
+    })
+  }
+  for (const hit of _ray.intersectObjects(meshes, false)) {
+    let cur = hit.object
+    while (cur) {
+      const id = cur.userData?.actorId
+      if (id && actors.has(id)) {
+        return { point: [hit.point.x, hit.point.y, hit.point.z], actor: actors.get(id), distance: hit.distance }
+      }
+      cur = cur.parent
+    }
+  }
+  return null
+}
+
+function tickTriggerVolumes(pos) {
+  const local = new THREE.Vector3()
+  for (const a of actors.values()) {
+    if (a.data.type !== 'TriggerVolume') continue
+    local.copy(pos)
+    a.root.worldToLocal(local)
+    const inside = Math.abs(local.x) <= 0.5 && Math.abs(local.y) <= 0.5 && Math.abs(local.z) <= 0.5
+    const was = triggerState.get(a.id) ?? false
+    if (inside !== was) {
+      triggerState.set(a.id, inside)
+      api.emit(`${inside ? 'enter' : 'exit'}:${a.data.name}`, a.data.name)
+    }
+  }
+}
 
 /** Wave 28 — cinematic focus-pull parity with editor CineCamera. */
 function resolveExportDofFocus(camProps, env, playT) {
@@ -1031,7 +1172,16 @@ function instantiate(sa) {
   root.rotation.set(...sa.transform.rotation)
   root.scale.fromArray(sa.transform.scale)
   root.visible = sa.visible !== false
-  const actor = { id: sa.id, name: sa.name, type: sa.type, root, data: sa, mesh: null, autoload: (sa.tags ?? []).some((t) => String(t).toLowerCase() === 'autoload') }
+  const actor = {
+    id: sa.id,
+    name: sa.name,
+    type: sa.type,
+    tags: sa.tags ?? [],
+    root,
+    data: sa,
+    mesh: null,
+    autoload: (sa.tags ?? []).some((t) => String(t).toLowerCase() === 'autoload'),
+  }
 
   if (sa.type === 'StaticMesh') {
     const mesh = new THREE.Mesh(buildGeometry(sa.geometry), buildMaterial(sa.material, !!sa.bakedAO))
@@ -1239,8 +1389,9 @@ function loadCellActors(cx, cz) {
     const a = actors.get(sa.id)
     if (!a?.data.script) continue
     try {
-      const fn = new Function('actor', 'api', 'THREE', `"use strict";\n${a.data.script}\nreturn { b: typeof onBeginPlay === 'function' ? onBeginPlay : null, t: typeof onTick === 'function' ? onTick : null }`)
-      const h = fn(a, api, THREE)
+      const vars = parseExportVars(a.data.script, a.data.scriptVars)
+      const fn = new Function('actor', 'api', 'THREE', 'vars', `"use strict";\n${a.data.script}\nreturn { b: typeof onBeginPlay === 'function' ? onBeginPlay : null, t: typeof onTick === 'function' ? onTick : null }`)
+      const h = fn(a, api, THREE, vars)
       if (h.b) h.b()
       if (h.t) ticks.push([a, h.t])
     } catch (e) { console.warn(a.name, 'script error', e) }
@@ -1485,7 +1636,35 @@ const api = {
   log: (...a) => console.log('[lotus]', ...a),
   isKeyDown: (c) => touchKeyDown(c),
   keyJustPressed: (c) => pressed.has(c),
+  actionJustPressed: (name) => {
+    if (name === 'Fire') return pressed.has('KeyF')
+    if (name === 'Interact') return pressed.has('KeyE')
+    if (name === 'Jump') return pressed.has('Space')
+    return false
+  },
   getActor: (n) => [...actors.values()].find((a) => a.name === n),
+  getActorsByTag: (tag) => {
+    const q = String(tag).toLowerCase()
+    return [...actors.values()].filter((a) =>
+      (a.data.tags ?? []).some((t) => {
+        const tl = String(t).toLowerCase()
+        return tl === q || tl.startsWith(q + '.')
+      }),
+    )
+  },
+  emit: (signal, ...args) => {
+    for (const h of signalHandlers.get(signal) ?? []) {
+      try { h(...args) } catch (e) { console.warn('signal', signal, e) }
+    }
+  },
+  on: (signal, handler) => {
+    if (!signalHandlers.has(signal)) signalHandlers.set(signal, [])
+    signalHandlers.get(signal).push(handler)
+  },
+  setTimer: (seconds, fn, loop) => {
+    scriptTimers.push({ at: Math.max(0, seconds), fn, loop: loop ? Math.max(0, seconds) : null })
+  },
+  raycast: (origin, dir, maxDist) => raycastActors(origin, dir, maxDist),
   time: () => clock,
   pawnPosition: () => (pawnMode === 'fly' ? pawnCam.position : feet),
   async loadCell(cx, cz) {
@@ -1523,19 +1702,58 @@ const api = {
       loadingLevel = false
     }
   },
+  changeScene: (name) => api.loadLevel(name),
 }
 function compileScripts() {
   ticks = []
+  scriptTimers = []
+  triggerState.clear()
+  resetSignals()
+  if (MINIGAME_ENABLED) wireExportMiniGameHud()
   for (const a of actors.values()) {
     const src = a.data.script
     if (!src) continue
     try {
-      const fn = new Function('actor', 'api', 'THREE', `"use strict";\n${src}\nreturn { b: typeof onBeginPlay === 'function' ? onBeginPlay : null, t: typeof onTick === 'function' ? onTick : null }`)
-      const h = fn(a, api, THREE)
+      const vars = parseExportVars(src, a.data.scriptVars)
+      const fn = new Function('actor', 'api', 'THREE', 'vars', `"use strict";\n${src}\nreturn { b: typeof onBeginPlay === 'function' ? onBeginPlay : null, t: typeof onTick === 'function' ? onTick : null }`)
+      const h = fn(a, api, THREE, vars)
       if (h.b) h.b()
       if (h.t) ticks.push([a, h.t])
     } catch (e) { console.warn(a.name, 'script error', e) }
   }
+}
+
+/** Wave 50 — optional boot main-menu overlay before first level load. */
+function showExportMainMenu() {
+  return new Promise((resolve) => {
+    const root = document.createElement('div')
+    root.id = 'lotus-export-main-menu'
+    root.style.cssText =
+      'position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(13,15,18,.94);z-index:30;font:600 16px system-ui,sans-serif;color:#e8edf4;gap:10px;pointer-events:auto'
+    const title = document.createElement('div')
+    title.textContent = 'LOTUS ENGINE'
+    title.style.cssText = 'font-size:28px;margin-bottom:4px'
+    root.appendChild(title)
+    const sub = document.createElement('div')
+    sub.textContent = 'Choose a starter level'
+    sub.style.cssText = 'font-size:13px;color:#9aa4b2;margin-bottom:16px;font-weight:500'
+    root.appendChild(sub)
+    const available = MAIN_MENU_ITEMS.filter((item) => LEVELS[item.key])
+    const items = available.length ? available : MAIN_MENU_ITEMS
+    for (const item of items) {
+      const btn = document.createElement('button')
+      btn.textContent = item.label
+      btn.style.cssText =
+        'min-width:220px;padding:10px 20px;border:none;border-radius:8px;background:#2f80ed;color:#fff;cursor:pointer;font:inherit'
+      if (item.key === 'mpdeathmatch') btn.style.background = '#7c3aed'
+      btn.onclick = () => {
+        root.remove()
+        resolve(item.key)
+      }
+      root.appendChild(btn)
+    }
+    document.body.appendChild(root)
+  })
 }
 
 // ---- boot ----
@@ -1557,6 +1775,12 @@ async function boot() {
   playRenderTier = created.tier
   bindPawnInput()
   initExportTouchHud()
+  if (MAIN_MENU_ENABLED) {
+    if (overlay) overlay.textContent = 'Select a level'
+    const picked = await showExportMainMenu()
+    const resolved = LEVELS[picked] ?? LEVELS[MAIN_KEY]
+    if (resolved) LEVEL = resolved
+  }
   applyEnvironment()
   await loadAssets(LEVEL)
   await loadSounds(LEVEL)
@@ -1578,13 +1802,15 @@ async function boot() {
         ? `GPU particles ×${gpuParticleCount}`
         : 'GPU particles (bind pending)'
       : 'CPU particles'
+  const gamepadHint = GAMEPAD_ENABLED ? ` · ${GAMEPAD_GLYPH_HINT}` : ''
+  const presetHint = MINIGAME_PRESET ? ` · Mini-game: ${MINIGAME_PRESET}` : MINIGAME_ENABLED ? ' · Mini-game HUD' : ''
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
     (TOUCH_ENABLED
-      ? `${particleTier} · Touch stick + actions · tap canvas for mouse look`
+      ? `${particleTier} · Touch stick + actions · tap canvas for mouse look${gamepadHint}${presetHint}`
       : GAMEPAD_ENABLED
-        ? `${particleTier} · WASD / gamepad · click canvas for mouse look`
-        : `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint`)
+        ? `${particleTier} · WASD / gamepad · click canvas for mouse look${gamepadHint}${presetHint}`
+        : `${particleTier} · Click to play — WASD + mouse · Space jump · Shift sprint${presetHint}`)
   const perfMinFps = EXPORT.perfMinFps ?? 24
   window.__LOTUS_EXPORT_PERF__ = {
     tier: playRenderTier,
@@ -1622,7 +1848,9 @@ async function boot() {
         a.root.quaternion.set(r.x, r.y, r.z, r.w)
       }
     }
+    tickScriptTimers(dt)
     for (const [a, t] of ticks) { try { t(dt) } catch (e) { /* script error */ } }
+    tickTriggerVolumes(pawnMode === 'fly' ? pawnCam.position : feet)
     for (const a of actors.values()) {
       for (const b of a.data.behaviors ?? []) {
         if (b.type === 'rotator') { a.root.rotation.x += b.speedX * dt; a.root.rotation.y += b.speedY * dt; a.root.rotation.z += b.speedZ * dt }

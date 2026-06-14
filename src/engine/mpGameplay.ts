@@ -1,5 +1,5 @@
 import type { Actor } from './Actor'
-import { mpConnected, mpIsHost, mpLocalId, mpRequestScoreDelta } from './multiplayer'
+import { mpBroadcastPeerScores, mpConnected, mpIsHost, mpLocalId, mpRequestScoreDelta } from './multiplayer'
 
 /** Deathmatch target tag — raycast hits award score (host authoritative). */
 export const MP_TAG_TARGET = 'mp_target'
@@ -21,6 +21,20 @@ export function getMpScore(actors: Map<string, Actor>, peerId?: string): number 
   return scores[id] ?? 0
 }
 
+/** Full peer score map from the MpScoreboard actor (host + mirrored clients). */
+export function getMpPeerScores(actors: Map<string, Actor>): Record<string, number> {
+  const board = findMpScoreboard(actors)
+  return { ...((board?.scriptVars?.[MP_SCORE_VAR] ?? {}) as Record<string, number>) }
+}
+
+/** Client mirror — overwrite local scoreboard scriptVars from host relay. */
+export function mirrorMpPeerScores(actors: Map<string, Actor>, scores: Record<string, number>): boolean {
+  const board = findMpScoreboard(actors)
+  if (!board) return false
+  board.scriptVars = { ...(board.scriptVars ?? {}), [MP_SCORE_VAR]: { ...scores } }
+  return true
+}
+
 export function applyMpScoreDelta(
   actors: Map<string, Actor>,
   peerId: string,
@@ -33,7 +47,11 @@ export function applyMpScoreDelta(
   const next = (scores[peerId] ?? 0) + delta
   scores[peerId] = next
   board.scriptVars = { ...(board.scriptVars ?? {}), [MP_SCORE_VAR]: scores }
-  if (next >= MP_SCORE_WIN && emit) emit('mp_game_won', peerId, next)
+  const won = next >= MP_SCORE_WIN
+  if (mpConnected() && mpIsHost()) {
+    mpBroadcastPeerScores(scores, won ? { peerId, score: next } : undefined)
+  }
+  if (won && emit) emit('mp_game_won', peerId, next)
   return true
 }
 
