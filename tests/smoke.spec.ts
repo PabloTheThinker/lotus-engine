@@ -1929,6 +1929,151 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 33 Timer actor timeout signal', async ({ page }) => {
+  await bootEditor(page)
+
+  const timerId = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        defaultTimer: () => { wait: number; oneShot: boolean; autostart: boolean; paused: boolean }
+        spawn: (p: { kind: 'timer' }, pos: [number, number, number]) => { id: string } | null
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'timer' }, [0, 1, 0])
+    if (actor) {
+      actor.name = 'TestTimer'
+      actor.timerProps = { ...v.indie.defaultTimer(), wait: 0.05, autostart: true, oneShot: true }
+      return actor.id
+    }
+    return ''
+  })
+
+  const fired = await page.evaluate(async (id) => {
+    const v = window.lotus! as typeof window.lotus & { indie: { timerActive: (id: string) => boolean } }
+    v.terminal.exec('/simulate')
+    await new Promise((r) => setTimeout(r, 200))
+    const done = !v.indie.timerActive(id)
+    v.terminal.exec('/stop')
+    return done
+  }, timerId)
+
+  expect(fired).toBe(true)
+})
+
+test('wave 33 RayCast3D hit signal', async ({ page }) => {
+  await bootEditor(page)
+
+  const rayId = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'raycast' }, pos: [number, number, number]) => { id: string } | null }
+    }
+    v.terminal.exec('/spawn box')
+    const ray = v.indie.spawn({ kind: 'raycast' }, [0, 3, 0])
+    if (ray) {
+      ray.name = 'TestRay'
+      ray.rayCastProps = { enabled: true, length: 8, localDirection: [0, -1, 0], excludeSelf: true }
+      return ray.id
+    }
+    return ''
+  })
+
+  const hitId = await page.evaluate(async (id) => {
+    const v = window.lotus! as typeof window.lotus & { indie: { rayCastHitId: (id: string) => string } }
+    v.terminal.exec('/simulate')
+    await new Promise((r) => setTimeout(r, 150))
+    const hit = v.indie.rayCastHitId(id)
+    v.terminal.exec('/stop')
+    return hit
+  }, rayId)
+
+  expect(hitId.length).toBeGreaterThan(0)
+})
+
+test('wave 33 Path3D sample + PathFollow actor types', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        samplePath: (w: [number, number, number][], c: boolean, t: number) => [number, number, number] | null
+        spawn: (p: { kind: 'path3d' | 'pathfollow' }, pos: [number, number, number]) => void
+      }
+    }
+    v.indie.spawn({ kind: 'path3d' }, [0, 0, 0])
+    const path = [...v.world.actors.values()].find((a) => a.type === 'Path3D')
+    if (path) path.name = 'TestPath'
+    v.indie.spawn({ kind: 'pathfollow' }, [0, 0, 0])
+    const follow = [...v.world.actors.values()].find((a) => a.type === 'PathFollow3D')
+    if (follow?.pathFollowProps) follow.pathFollowProps.pathActorName = 'TestPath'
+    const waypoints: [number, number, number][] = [
+      [0, 0, 0],
+      [4, 0, 0],
+    ]
+    const mid = v.indie.samplePath(waypoints, false, 0.5)
+    const pathActor = [...v.world.actors.values()].find((a) => a.name === 'TestPath')
+    const followActor = [...v.world.actors.values()].find((a) => a.type === 'PathFollow3D')
+    return { midX: mid?.[0], pathType: pathActor?.type, followType: followActor?.type }
+  })
+
+  expect(result.pathType).toBe('Path3D')
+  expect(result.followType).toBe('PathFollow3D')
+  expect(result.midX).toBeCloseTo(2, 0)
+})
+
+test('wave 33 groups api.getActorsInGroup', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        scriptApi: () => { getActorsInGroup: (g: string) => { name: string }[] }
+        spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => void
+      }
+    }
+    v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    const actor = [...v.world.actors.values()].find((a) => a.type === 'Empty' && a.name.startsWith('Empty'))
+    if (actor) {
+      actor.name = 'GroupMember'
+      actor.groups = ['enemies', 'bosses']
+    }
+    const api = v.indie.scriptApi()
+    return {
+      enemies: api.getActorsInGroup('enemies').map((a) => a.name),
+      bosses: api.getActorsInGroup('bosses').length,
+    }
+  })
+
+  expect(result.enemies).toContain('GroupMember')
+  expect(result.bosses).toBe(1)
+})
+
+test('wave 33 project autoload + main scene export', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      projectSettings: { save: (s: import('../src/editor/projectSettings').ProjectSettings) => void; load: () => import('../src/editor/projectSettings').ProjectSettings }
+      indie: { isAutoload: (n: string) => boolean; spawn: (p: { kind: 'empty' }, pos: [number, number, number]) => { name: string } | null }
+      export: { buildPlayableHTML: () => string }
+    }
+    const gm = v.indie.spawn({ kind: 'empty' }, [0, 0, 0])
+    if (gm) gm.name = 'GameManager'
+    const prev = v.projectSettings.load()
+    v.projectSettings.save({ ...prev, autoloadActorNames: ['GameManager'], mainSceneKey: 'dungeon' })
+    v.world.levelLinks.push({
+      name: 'dungeon',
+      level: { engine: 'lotus', version: 4, name: 'Dungeon', environment: { ...v.world.environment }, actors: [] },
+    })
+    const html = v.export.buildPlayableHTML()
+    const autoload = gm ? v.indie.isAutoload(gm.name) : false
+    v.projectSettings.save(prev)
+    return { autoload, mainTag: html.includes("window.__LOTUS_MAIN__ = 'dungeon'"), gmName: gm?.name ?? '' }
+  })
+
+  expect(result.autoload).toBe(true)
+  expect(result.mainTag).toBe(true)
+})
+
 test('wave 32 PNG LUT decode + level persist', async ({ page }) => {
   await bootEditor(page)
 

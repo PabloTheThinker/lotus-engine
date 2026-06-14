@@ -71,6 +71,8 @@ export class Actor {
   pawnMode?: PawnMode
   mobility: Mobility
   tags: string[]
+  /** Godot groups — api.getActorsInGroup */
+  groups: string[] = []
   /** GAS-lite attribute set + assigned abilities */
   attributeSetId?: string
   abilityIds: string[] = []
@@ -118,6 +120,14 @@ export class Actor {
   prefabOverrides?: Record<string, Partial<SerializedActor>>
   /** TriggerVolume — reverb zone preset */
   triggerProps?: import('./types').TriggerProps
+  /** Timer — Godot Timer node */
+  timerProps?: import('./types').TimerProps
+  /** RayCast3D — per-frame scene ray */
+  rayCastProps?: import('./types').RayCastProps
+  /** Path3D — spline waypoints */
+  path3DProps?: import('./types').Path3DProps
+  /** PathFollow3D — slides along Path3D */
+  pathFollowProps?: import('./types').PathFollowProps
   /** SoundEmitter — procedural/imported sound playback */
   soundEmitterProps?: import('./types').SoundEmitterProps
   /** Godot MultiplayerSynchronizer-lite — replicated property checklist */
@@ -317,6 +327,7 @@ export class Actor {
       pawnMode: this.pawnMode,
       mobility: this.mobility,
       tags: [...this.tags],
+      groups: this.groups.length ? [...this.groups] : undefined,
       attributeSetId: this.attributeSetId,
       abilityIds: this.abilityIds.length ? [...this.abilityIds] : undefined,
       cullDistance: this.cullDistance || undefined,
@@ -353,6 +364,12 @@ export class Actor {
           )
         : undefined,
       trigger: this.triggerProps ? { ...this.triggerProps } : undefined,
+      timer: this.timerProps ? { ...this.timerProps } : undefined,
+      rayCast: this.rayCastProps ? { ...this.rayCastProps, localDirection: [...this.rayCastProps.localDirection] as [number, number, number] } : undefined,
+      path3D: this.path3DProps
+        ? { closed: this.path3DProps.closed, waypoints: this.path3DProps.waypoints.map((w) => [...w] as [number, number, number]) }
+        : undefined,
+      pathFollow: this.pathFollowProps ? { ...this.pathFollowProps } : undefined,
       soundEmitter: this.soundEmitterProps ? { ...this.soundEmitterProps } : undefined,
       label3D: this.label3DProps ? { ...this.label3DProps } : undefined,
       widget3D: this.widget3DProps ? { ...this.widget3DProps } : undefined,

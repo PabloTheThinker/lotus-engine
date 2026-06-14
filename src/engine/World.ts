@@ -22,7 +22,8 @@ import { createWaterActor, buildWaterMesh, updateWater } from './water'
 import { createPCGVolumeActor } from './pcg'
 import { syncPropsFromGraph } from './pcgGraph'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
-import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
+import { hud, raycastActors, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
+import { buildPathCurve } from './path3d'
 import { resetBTs, runBTGraph, tickBTs } from './behaviorTree'
 import { compileBTGraph } from './btGraph'
 import { resetCrowd, tickCrowd } from './navCrowd'
@@ -34,7 +35,14 @@ import {
   createCustomMeshActor,
   createLabel3DActor,
   rebuildLabel3D,
+  createTimerActor,
+  createRayCastActor,
+  createPath3DActor,
+  createPathFollowActor,
+  rebuildRayCastVisual,
 } from './factory'
+import { rebuildPath3DVisual } from './path3d'
+import { loadProjectSettings } from '../editor/projectSettings'
 import { createWidget3DActor, syncWidget3D } from './widget3d'
 import { PhysicsSim } from './physics'
 import { makeScriptApi, resetSignals, scriptLog, setDataStore } from './scripting'
@@ -222,6 +230,10 @@ export class World {
     this.lastSeqTime = 0
     setDataStore(this.dataTables)
     this.triggerState.clear()
+    this.timerElapsed.clear()
+    this.timerActive.clear()
+    this.rayCastState.clear()
+    this.pathFollowActive.clear()
     this.activeReverb = ''
     setReverbZone('')
     const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
@@ -251,6 +263,13 @@ export class World {
           customCurve: sp.customCurve,
         })
       }
+      if (a.type === 'Timer' && a.timerProps?.autostart && !a.timerProps.paused) {
+        this.timerElapsed.set(a.id, 0)
+        this.timerActive.set(a.id, true)
+      }
+      if (a.type === 'PathFollow3D' && a.pathFollowProps?.autoplay) {
+        this.pathFollowActive.set(a.id, true)
+      }
     }
     this.physics.start(this.actors.values(), this.physicsJoints)
     // authored HUD widgets (UMG designer)
@@ -265,6 +284,26 @@ export class World {
   private lastSeqTime = 0
   private triggerState = new Map<string, boolean>()
   private activeReverb: ReverbPreset = ''
+  private timerElapsed = new Map<string, number>()
+  private timerActive = new Map<string, boolean>()
+  private rayCastState = new Map<string, string>()
+  private pathFollowActive = new Map<string, boolean>()
+
+  /** Godot autoload — tag or Project Settings autoloadActorNames */
+  isAutoloadActor(a: Actor): boolean {
+    const names = loadProjectSettings().autoloadActorNames.map((n) => n.toLowerCase().trim()).filter(Boolean)
+    return a.tags.some((t) => t.toLowerCase() === 'autoload') || names.includes(a.name.toLowerCase())
+  }
+
+  /** E2E — Timer node fired (one-shot inactive after timeout). */
+  isTimerActive(actorId: string): boolean {
+    return this.timerActive.get(actorId) ?? false
+  }
+
+  /** E2E — RayCast3D last hit actor id (empty = no hit). */
+  getRayCastHitId(rayActorId: string): string {
+    return this.rayCastState.get(rayActorId) ?? ''
+  }
 
   endPlay() {
     this.playing = false
@@ -320,9 +359,7 @@ export class World {
       return false
     }
 
-    const autoloadIds = new Set(
-      [...this.actors.values()].filter((a) => a.tags.some((t) => t.toLowerCase() === 'autoload')).map((a) => a.id),
-    )
+    const autoloadIds = new Set([...this.actors.values()].filter((a) => this.isAutoloadActor(a)).map((a) => a.id))
     const autoloadRoots = [...autoloadIds].map((id) => this.actors.get(id)!.root)
 
     stopAllSounds()
@@ -335,6 +372,10 @@ export class World {
     resetBTs()
     resetCrowd()
     this.triggerState.clear()
+    this.timerElapsed.clear()
+    this.timerActive.clear()
+    this.rayCastState.clear()
+    this.pathFollowActive.clear()
     hud.clear()
 
     for (const id of [...this.actors.keys()]) {
@@ -538,6 +579,95 @@ export class World {
       if (reverb !== this.activeReverb) {
         this.activeReverb = reverb
         setReverbZone(reverb)
+      }
+    }
+    this.tickIndieNodes(dt)
+  }
+
+  /** Godot indie node pack — Timer, RayCast3D, PathFollow3D (Wave 33). */
+  private tickIndieNodes(dt: number) {
+    if (!this.playApi) return
+    const emit = this.playApi.emit
+    const _origin = new THREE.Vector3()
+    const _dir = new THREE.Vector3()
+    const _worldPt = new THREE.Vector3()
+    const _nextWorld = new THREE.Vector3()
+
+    for (const a of this.actors.values()) {
+      if (a.type !== 'Timer' || !a.timerProps) continue
+      if (!this.timerActive.get(a.id)) continue
+      if (a.timerProps.paused) continue
+      let el = (this.timerElapsed.get(a.id) ?? 0) + dt
+      const wait = Math.max(0.001, a.timerProps.wait)
+      if (el >= wait) {
+        emit(`timeout:${a.name}`, a.name)
+        if (a.timerProps.oneShot) {
+          this.timerActive.set(a.id, false)
+          el = 0
+        } else {
+          el -= wait
+        }
+      }
+      this.timerElapsed.set(a.id, el)
+    }
+
+    for (const a of this.actors.values()) {
+      if (a.type !== 'RayCast3D' || !a.rayCastProps?.enabled) continue
+      const props = a.rayCastProps
+      a.root.updateMatrixWorld()
+      a.root.getWorldPosition(_origin)
+      _dir.set(...props.localDirection).normalize().transformDirection(a.root.matrixWorld)
+      let hit = raycastActors(
+        this.actors,
+        [_origin.x, _origin.y, _origin.z],
+        [_dir.x, _dir.y, _dir.z],
+        props.length,
+      )
+      if (hit && props.excludeSelf && hit.actor.id === a.id) hit = null
+      const hitKey = hit?.actor.id ?? ''
+      const was = this.rayCastState.get(a.id) ?? ''
+      if (hitKey !== was) {
+        this.rayCastState.set(a.id, hitKey)
+        if (hit) emit(`hit:${a.name}`, hit.actor.name, hit.point, hit.distance)
+        else if (was) emit(`clear:${a.name}`, a.name)
+      }
+    }
+
+    for (const a of this.actors.values()) {
+      if (a.type !== 'PathFollow3D' || !a.pathFollowProps) continue
+      const pf = a.pathFollowProps
+      const active = this.pathFollowActive.get(a.id) ?? pf.autoplay
+      if (!active && pf.speed <= 0) continue
+      const pathActor = [...this.actors.values()].find((p) => p.name === pf.pathActorName && p.type === 'Path3D')
+      if (!pathActor?.path3DProps || pathActor.path3DProps.waypoints.length < 2) continue
+      const curve = buildPathCurve(pathActor.path3DProps.waypoints, pathActor.path3DProps.closed)
+      if (!curve) continue
+      let progress = pf.progress
+      if (active && pf.speed > 0) {
+        const len = curve.getLength()
+        const delta = len > 0 ? (pf.speed * dt) / len : 0
+        progress += delta
+        if (progress >= 1) {
+          if (pf.loop) progress = progress % 1
+          else {
+            progress = 1
+            this.pathFollowActive.set(a.id, false)
+          }
+        }
+        pf.progress = progress
+      }
+      const localPt = curve.getPointAt(THREE.MathUtils.clamp(progress, 0, 1))
+      pathActor.root.localToWorld(_worldPt.copy(localPt))
+      if (a.parentId) {
+        const parent = this.actors.get(a.parentId)
+        parent?.root.worldToLocal(_worldPt)
+      }
+      a.root.position.copy(_worldPt)
+      if (pf.rotateToPath) {
+        const t2 = Math.min(1, progress + 0.02)
+        const nextLocal = curve.getPointAt(t2)
+        pathActor.root.localToWorld(_nextWorld.copy(nextLocal))
+        a.root.lookAt(_nextWorld)
       }
     }
   }
@@ -803,6 +933,31 @@ export class World {
           syncWidget3D(actor, this.hudWidgets)
         }
         break
+      case 'Timer':
+        actor = createTimerActor(sa.name, sa.id)
+        if (sa.timer) actor.timerProps = { ...sa.timer }
+        break
+      case 'RayCast3D':
+        actor = createRayCastActor(sa.name, sa.id)
+        if (sa.rayCast) {
+          actor.rayCastProps = { ...sa.rayCast, localDirection: [...sa.rayCast.localDirection] as [number, number, number] }
+          rebuildRayCastVisual(actor)
+        }
+        break
+      case 'Path3D':
+        actor = createPath3DActor(sa.name, sa.id)
+        if (sa.path3D) {
+          actor.path3DProps = {
+            closed: sa.path3D.closed,
+            waypoints: sa.path3D.waypoints.map((w) => [...w] as [number, number, number]),
+          }
+          rebuildPath3DVisual(actor)
+        }
+        break
+      case 'PathFollow3D':
+        actor = createPathFollowActor(sa.name, sa.id)
+        if (sa.pathFollow) actor.pathFollowProps = { ...sa.pathFollow }
+        break
       default:
         actor = createEmptyActor(sa.name, sa.id)
     }
@@ -835,6 +990,7 @@ export class World {
     if (sa.btAutoRun) actor.btAutoRun = true
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]
+    if (sa.groups?.length) actor.groups = [...sa.groups]
     if (sa.attributeSetId) actor.attributeSetId = sa.attributeSetId
     if (sa.abilityIds?.length) actor.abilityIds = [...sa.abilityIds]
     if (sa.postProcess && actor.postProcessProps) Object.assign(actor.postProcessProps, sa.postProcess)

@@ -1,7 +1,8 @@
 import { useRef } from 'react'
 import * as THREE from 'three'
 import type { Actor } from '../../engine/Actor'
-import { applyMaterialProps, rebuildLabel3D } from '../../engine/factory'
+import { applyMaterialProps, rebuildLabel3D, rebuildRayCastVisual } from '../../engine/factory'
+import { rebuildPath3DVisual } from '../../engine/path3d'
 import { syncWidget3D } from '../../engine/widget3d'
 import {
   applyActorMaterial,
@@ -11,7 +12,25 @@ import {
 } from '../../engine/materialAssets'
 import { applyLightProps, world } from '../../engine/World'
 import { listMetaSounds } from '../../engine/metaSoundAssets'
-import type { Behavior, CameraProps, IKChain, IKTarget, Label3DProps, LookAtTarget, MaterialProps, Mobility, PostProcessProps, ReverbPreset, SoundEmitterProps, TransformSnapshot, TriggerProps, Widget3DProps } from '../../engine/types'
+import type {
+  Behavior,
+  CameraProps,
+  IKChain,
+  IKTarget,
+  Label3DProps,
+  LookAtTarget,
+  MaterialProps,
+  Mobility,
+  PathFollowProps,
+  PostProcessProps,
+  RayCastProps,
+  ReverbPreset,
+  SoundEmitterProps,
+  TimerProps,
+  TransformSnapshot,
+  TriggerProps,
+  Widget3DProps,
+} from '../../engine/types'
 import { AttenuationFields } from './AttenuationFields'
 import { DEFAULT_MATERIAL } from '../../engine/types'
 import { PropertyCommand, RevertPrefabOverrideCommand, TransformCommand, runCommand } from '../commands'
@@ -1132,6 +1151,211 @@ function AbilitiesSection({ actor }: { actor: Actor }) {
       )}
       <div className="panel-empty" style={{ padding: '2px 0' }}>
         Scripts: api.activateAbility('{abilities[0]?.name ?? 'AbilityName'}') · api.applyEffect('Poison')
+      </div>
+    </Section>
+  )
+}
+
+function TimerSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.timerProps) actor.timerProps = { wait: 1, oneShot: true, autostart: false, paused: false }
+  const props = actor.timerProps
+  const set = <K extends keyof TimerProps>(key: K, value: TimerProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `Timer ${String(key)}`,
+        () => (props[key] = value),
+        () => (props[key] = prev),
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="Timer">
+      <Num label="Wait (s)" value={props.wait} step={0.1} min={0.01} onLive={(v) => { props.wait = v; touch() }} onCommit={() => {}} />
+      <Check label="One Shot" value={props.oneShot} onToggle={(v) => set('oneShot', v)} />
+      <Check label="Autostart" value={props.autostart} onToggle={(v) => set('autostart', v)} />
+      <Check label="Paused" value={props.paused} onToggle={(v) => set('paused', v)} />
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Emits <code>timeout:{actor.name}</code> during Play. Loop when One Shot is off.
+      </div>
+    </Section>
+  )
+}
+
+function RayCastSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.rayCastProps) actor.rayCastProps = { enabled: true, length: 10, localDirection: [0, 0, -1], excludeSelf: true }
+  const props = actor.rayCastProps
+  const set = <K extends keyof RayCastProps>(key: K, value: RayCastProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `RayCast ${String(key)}`,
+        () => {
+          props[key] = value
+          if (key === 'length' || key === 'localDirection') rebuildRayCastVisual(actor)
+        },
+        () => {
+          props[key] = prev
+          rebuildRayCastVisual(actor)
+        },
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="RayCast3D">
+      <Check label="Enabled" value={props.enabled} onToggle={(v) => set('enabled', v)} />
+      <Num label="Length" value={props.length} step={0.5} min={0.1} onLive={(v) => { props.length = v; rebuildRayCastVisual(actor); touch() }} onCommit={() => {}} />
+      {(['x', 'y', 'z'] as const).map((axis, i) => (
+        <Num
+          key={axis}
+          label={`Dir ${axis.toUpperCase()}`}
+          value={props.localDirection[i]}
+          step={0.1}
+          onLive={(v) => {
+            props.localDirection[i] = v
+            rebuildRayCastVisual(actor)
+            touch()
+          }}
+          onCommit={() => {}}
+        />
+      ))}
+      <Check label="Exclude Self" value={props.excludeSelf} onToggle={(v) => set('excludeSelf', v)} />
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Emits <code>hit:{actor.name}</code> / <code>clear:{actor.name}</code> when collision changes.
+      </div>
+    </Section>
+  )
+}
+
+function Path3DSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.path3DProps) actor.path3DProps = { waypoints: [[0, 0, 0], [2, 0, 0]], closed: false }
+  const props = actor.path3DProps
+  const setClosed = (v: boolean) => {
+    const prev = props.closed
+    runCommand(
+      new PropertyCommand(
+        'Path closed',
+        () => {
+          props.closed = v
+          rebuildPath3DVisual(actor)
+        },
+        () => {
+          props.closed = prev
+          rebuildPath3DVisual(actor)
+        },
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="Path3D">
+      <Check label="Closed Loop" value={props.closed} onToggle={setClosed} />
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        {props.waypoints.length} waypoints — edit transform to reposition path root; PathFollow actors reference <code>{actor.name}</code>.
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          const last = props.waypoints[props.waypoints.length - 1] ?? [0, 0, 0]
+          const next: [number, number, number] = [last[0] + 1, last[1], last[2]]
+          runCommand(
+            new PropertyCommand(
+              'Add waypoint',
+              () => {
+                props.waypoints.push(next)
+                rebuildPath3DVisual(actor)
+              },
+              () => {
+                props.waypoints.pop()
+                rebuildPath3DVisual(actor)
+              },
+            ),
+          )
+          touch()
+        }}
+      >
+        + Add Waypoint
+      </button>
+    </Section>
+  )
+}
+
+function PathFollowSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  if (!actor.pathFollowProps) {
+    actor.pathFollowProps = { pathActorName: '', progress: 0, speed: 2, loop: false, autoplay: false, rotateToPath: true }
+  }
+  const props = actor.pathFollowProps
+  const pathNames = [...world.actors.values()].filter((a) => a.type === 'Path3D').map((a) => a.name)
+  const set = <K extends keyof PathFollowProps>(key: K, value: PathFollowProps[K]) => {
+    const prev = props[key]
+    runCommand(
+      new PropertyCommand(
+        `PathFollow ${String(key)}`,
+        () => (props[key] = value),
+        () => (props[key] = prev),
+      ),
+    )
+    touch()
+  }
+  return (
+    <Section title="PathFollow3D">
+      <label className="field">
+        <span>Path Actor</span>
+        <select value={props.pathActorName} onChange={(e) => set('pathActorName', e.target.value)}>
+          <option value="">— select —</option>
+          {pathNames.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <Num label="Progress" value={props.progress} step={0.01} min={0} max={1} onLive={(v) => { props.progress = v; touch() }} onCommit={() => {}} />
+      <Num label="Speed" value={props.speed} step={0.1} min={0} onLive={(v) => { props.speed = v; touch() }} onCommit={() => {}} />
+      <Check label="Loop" value={props.loop} onToggle={(v) => set('loop', v)} />
+      <Check label="Autoplay" value={props.autoplay} onToggle={(v) => set('autoplay', v)} />
+      <Check label="Rotate To Path" value={props.rotateToPath} onToggle={(v) => set('rotateToPath', v)} />
+    </Section>
+  )
+}
+
+function GroupsSection({ actor }: { actor: Actor }) {
+  const touch = useEditor((s) => s.touch)
+  const raw = actor.groups.join(', ')
+  return (
+    <Section title="Groups">
+      <label className="field">
+        <span>Groups</span>
+        <input
+          type="text"
+          placeholder="enemies, interactables"
+          defaultValue={raw}
+          onBlur={(e) => {
+            const next = e.target.value
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+            const prev = [...actor.groups]
+            if (next.join(',') === prev.join(',')) return
+            runCommand(
+              new PropertyCommand(
+                'Edit groups',
+                () => (actor.groups = next),
+                () => (actor.groups = prev),
+              ),
+            )
+            touch()
+          }}
+        />
+      </label>
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Query in scripts: <code>api.getActorsInGroup('enemies')</code>
       </div>
     </Section>
   )
@@ -2457,9 +2681,14 @@ export function Details() {
         <TransformSection actor={actor} />
         <MobilitySection actor={actor} />
         <TagsSection actor={actor} />
+        <GroupsSection actor={actor} />
         <AbilitiesSection actor={actor} />
         {actor.type === 'PostProcessVolume' && actor.postProcessProps && <PostProcessSection actor={actor} />}
         {actor.type === 'TriggerVolume' && <TriggerSection actor={actor} />}
+        {actor.type === 'Timer' && <TimerSection actor={actor} />}
+        {actor.type === 'RayCast3D' && <RayCastSection actor={actor} />}
+        {actor.type === 'Path3D' && <Path3DSection actor={actor} />}
+        {actor.type === 'PathFollow3D' && <PathFollowSection actor={actor} />}
         {actor.type === 'SoundEmitter' && <SoundEmitterSection actor={actor} />}
         {actor.type === 'Label3D' && <Label3DSection actor={actor} />}
         {actor.type === 'Widget3D' && <Widget3DSection actor={actor} />}

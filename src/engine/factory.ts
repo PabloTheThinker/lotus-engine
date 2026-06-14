@@ -3,7 +3,18 @@ import { Actor, nextActorId } from './Actor'
 import { DEFAULT_PARTICLES } from './particles'
 import { createParticleSystem, type ParticleBackend } from './particlesGPU'
 import type { ActorType, CameraProps, GeometryKind, Label3DProps, LightProps, MaterialProps } from './types'
-import { DEFAULT_FOLIAGE, DEFAULT_LABEL3D, DEFAULT_MATERIAL, DEFAULT_PHYSICS, DEFAULT_POST_PROCESS, DEFAULT_SOUND_EMITTER } from './types'
+import {
+  DEFAULT_FOLIAGE,
+  DEFAULT_LABEL3D,
+  DEFAULT_MATERIAL,
+  DEFAULT_PHYSICS,
+  DEFAULT_POST_PROCESS,
+  DEFAULT_RAY_CAST,
+  DEFAULT_SOUND_EMITTER,
+  DEFAULT_TIMER,
+  DEFAULT_PATH_FOLLOW,
+} from './types'
+import { DEFAULT_PATH3D, rebuildPath3DVisual } from './path3d'
 import type { FoliageProps } from './types'
 
 export function buildGeometry(kind: GeometryKind): THREE.BufferGeometry {
@@ -438,6 +449,69 @@ export function updateLabel3DBillboards(camera: THREE.Camera, actors: Iterable<A
     _billboardLookQ.setFromRotationMatrix(_billboardLookM)
     actor.mesh.quaternion.copy(_billboardInvParentQ).multiply(_billboardLookQ)
   }
+}
+
+/** Timer — Godot Timer node emitting timeout: signals. */
+export function createTimerActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'Timer')
+  actor.timerProps = { ...DEFAULT_TIMER }
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.2, 0.04, 8, 16),
+    new THREE.MeshBasicMaterial({ color: 0x6eb5ff, wireframe: true }),
+  )
+  ring.rotation.x = Math.PI / 2
+  ring.userData.actorId = id
+  ring.userData.isEditorOnly = true
+  actor.mesh = ring
+  actor.root.add(ring)
+  return actor
+}
+
+/** RayCast3D — dashed arrow gizmo along local cast direction. */
+export function createRayCastActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'RayCast3D')
+  actor.rayCastProps = { ...DEFAULT_RAY_CAST }
+  rebuildRayCastVisual(actor)
+  return actor
+}
+
+export function rebuildRayCastVisual(actor: Actor) {
+  const props = actor.rayCastProps ?? DEFAULT_RAY_CAST
+  actor.root.children
+    .filter((c) => c.userData.isRayCastHelper)
+    .forEach((c) => actor.root.remove(c))
+  const dir = new THREE.Vector3(...props.localDirection).normalize()
+  const arrow = new THREE.ArrowHelper(dir, new THREE.Vector3(0, 0, 0), props.length, 0xff6b6b, 0.15, 0.1)
+  arrow.userData.isRayCastHelper = true
+  arrow.userData.isHelper = true
+  arrow.userData.actorId = actor.id
+  actor.root.add(arrow)
+}
+
+/** Path3D — editable Catmull-Rom spline with waypoint handles. */
+export function createPath3DActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'Path3D')
+  actor.path3DProps = {
+    waypoints: DEFAULT_PATH3D.waypoints.map((w) => [...w] as [number, number, number]),
+    closed: DEFAULT_PATH3D.closed,
+  }
+  rebuildPath3DVisual(actor)
+  return actor
+}
+
+/** PathFollow3D — follower marker that slides along a Path3D. */
+export function createPathFollowActor(name: string, id = nextActorId()): Actor {
+  const actor = new Actor(id, name, 'PathFollow3D')
+  actor.pathFollowProps = { ...DEFAULT_PATH_FOLLOW }
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 10, 10),
+    new THREE.MeshBasicMaterial({ color: 0x9b6bff, wireframe: true }),
+  )
+  marker.userData.actorId = id
+  marker.userData.isEditorOnly = true
+  actor.mesh = marker
+  actor.root.add(marker)
+  return actor
 }
 
 /** Wrap a loaded glTF scene in an actor. */

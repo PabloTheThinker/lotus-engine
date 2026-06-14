@@ -79,6 +79,33 @@ export function ProjectSettingsModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => update({ showLotusBranding: e.target.checked })}
             />
           </label>
+          <label className="field">
+            <span>Autoload actor names</span>
+            <input
+              placeholder="GameManager, AudioBus (comma-separated)"
+              value={proj.autoloadActorNames.join(', ')}
+              onChange={(e) =>
+                update({
+                  autoloadActorNames: e.target.value
+                    .split(',')
+                    .map((n) => n.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Main scene key (export entry)</span>
+            <input
+              placeholder="main or linked level key (e.g. dungeon)"
+              value={proj.mainSceneKey}
+              onChange={(e) => update({ mainSceneKey: e.target.value.trim() })}
+            />
+          </label>
+          <div className="panel-empty" style={{ padding: '2px 0' }}>
+            Autoload names persist across <code>api.loadLevel</code> / <code>api.changeScene</code>. Main scene key sets{' '}
+            <code>window.__LOTUS_MAIN__</code> in exported playables.
+          </div>
           <button onClick={() => update({ ...DEFAULT_PROJECT })}>Reset to defaults</button>
         </div>
       </div>

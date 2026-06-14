@@ -15,6 +15,10 @@ const ITEMS: PlaceItem[] = [
   { label: 'Empty Actor', icon: '◇', category: 'Basic', payload: { kind: 'empty' } },
   { label: 'Player Start', icon: '🚩', category: 'Basic', payload: { kind: 'playerstart' } },
   { label: 'Trigger Volume', icon: '⏚', category: 'Basic', payload: { kind: 'trigger' } },
+  { label: 'Timer', icon: '⏱', category: 'Basic', payload: { kind: 'timer' } },
+  { label: 'RayCast3D', icon: '↯', category: 'Basic', payload: { kind: 'raycast' } },
+  { label: 'Path3D', icon: '〰', category: 'Basic', payload: { kind: 'path3d' } },
+  { label: 'Path Follow', icon: '●', category: 'Basic', payload: { kind: 'pathfollow' } },
   // Lights
   { label: 'Directional Light', icon: '☀', category: 'Lights', payload: { kind: 'light', type: 'DirectionalLight' } },
   { label: 'Point Light', icon: '✦', category: 'Lights', payload: { kind: 'light', type: 'PointLight' } },

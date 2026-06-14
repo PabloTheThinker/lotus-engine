@@ -1,11 +1,12 @@
 # CHECKPOINT — 2026-06-13 (Lotus Engine — wave 18)
 
-> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.14.
+> Working doc: `docs/INDIE-GAME-ROADMAP.md` (primary) + `docs/GODOT-CENSUS.md`. UE gap list is reference only.
 
 ## State
 
+- **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v2.03 (wave 32).** v0.33–v2.03 shipped; **build clean**, **`npm run test` — 105 passed**.
+- **Last clean commit: v2.08 (wave 33).** v0.33–v2.08 shipped; **build clean**, **`npm run test` — 110 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -368,13 +369,23 @@
 | v2.02 | BT step-into nested collapsed decorator subtrees + PIE blackboard watch panel |
 | v2.03 | Material Shift+Tab reverse focus cycle + legend drag wire pin preview — 105 tests passed |
 
-## Remaining gap-list queue (post–wave 7)
+## Shipped (v2.04–v2.08, Wave 33 — indie focus)
 
-1. **Editor UX**: buffer visualization view modes, status-bar save indicator + autosave countdown
-2. **Sequencer audio**: waveform display, loop regions (scrubbing ✅ v0.62)
-3. **Networking**: 2-tab live relay test; ownership/prediction polish (base ✅ v0.65)
-4. **Rendering**: second UV lightmaps (vertex-color AO ✅ v0.66)
-5. **Honest-skip**: full Lightmass, Nanite, Lumen, Control Rig graphs 🚫
+| Ver | What |
+|---|---|
+| v2.04 | Timer actor — wait/oneShot/autostart, `timeout:` signal (`Timer`, `tickIndieNodes`) |
+| v2.05 | RayCast3D actor — per-frame hit/clear signals, arrow gizmo (`RayCast3D`) |
+| v2.06 | Path3D + PathFollow3D — Catmull-Rom waypoints, progress/speed/loop (`path3d.ts`) |
+| v2.07 | Godot groups (`groups[]`, `api.getActorsInGroup`), Project Settings autoload + main scene key |
+| v2.08 | `api.changeScene`, export `__LOTUS_MAIN__`, `docs/INDIE-GAME-ROADMAP.md` — 110 tests passed |
+
+## Next up (indie roadmap)
+
+1. **Scene instancing** — editable children + property override UX (prefab deltas)
+2. **@export range/enum** — slider/dropdown Details widgets from script annotations
+3. **Area3D** — physics overlap signals beyond pawn TriggerVolume
+4. **CharacterBody starter scenes** — FPS / third-person greybox templates
+5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward
 

@@ -32,11 +32,17 @@ function applyQualityToLevel(level: SerializedLevel, quality: ExportQuality): Se
 }
 
 function buildLevelsManifest(mainLevel: SerializedLevel): { levels: Record<string, SerializedLevel>; main: string } {
+  const proj = loadProjectSettings()
+  const mainKey = proj.mainSceneKey.trim()
   const levels: Record<string, SerializedLevel> = { main: mainLevel }
   for (const link of world.levelLinks) {
     const key = sanitizeLevelKey(link.name)
     if (key === 'main') continue
     levels[key] = link.level
+  }
+  if (mainKey) {
+    const sanitized = sanitizeLevelKey(mainKey)
+    if (levels[sanitized]) return { levels, main: sanitized }
   }
   return { levels, main: 'main' }
 }

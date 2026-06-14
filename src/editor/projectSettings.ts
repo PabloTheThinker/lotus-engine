@@ -9,6 +9,10 @@ export interface ProjectSettings {
   showLotusBranding: boolean
   /** SSGI quality preset default for new levels */
   defaultPostSsgi: boolean
+  /** Godot autoload — actor names that persist across api.loadLevel */
+  autoloadActorNames: string[]
+  /** Export / playable entry level key (linked level name; empty = current level as main) */
+  mainSceneKey: string
 }
 
 const KEY = 'lotus-engine.project'
@@ -20,6 +24,8 @@ export const DEFAULT_PROJECT: ProjectSettings = {
   defaultMaterialBackend: 'glsl',
   showLotusBranding: true,
   defaultPostSsgi: false,
+  autoloadActorNames: [],
+  mainSceneKey: '',
 }
 
 export function loadProjectSettings(): ProjectSettings {

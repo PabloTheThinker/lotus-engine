@@ -41,6 +41,8 @@ export interface ScriptApi {
   actionHeldTime: (name: string) => number
   getActor: (name: string) => Actor | undefined
   getActorsByTag: (tag: string) => Actor[]
+  /** Godot groups — exact group name match */
+  getActorsInGroup: (group: string) => Actor[]
   /** Godot-style signals: decoupled events between scripts */
   emit: (signal: string, ...args: unknown[]) => void
   on: (signal: string, handler: (...args: unknown[]) => void) => void
@@ -130,6 +132,8 @@ export interface ScriptApi {
   pawnPosition: () => THREE.Vector3 | null
   /** switch to a linked level (PIE + exported playable) — returns false if unknown */
   loadLevel: (name: string) => boolean | Promise<boolean>
+  /** Godot change_scene alias for loadLevel */
+  changeScene: (name: string) => boolean | Promise<boolean>
   /** lazy-load a grid cell's actors (exported playable + PIE) */
   loadCell: (cx: number, cz: number) => boolean | Promise<boolean>
   /** Godot move_and_slide — Rapier kinematic character (PIE + physics ready) */
@@ -202,6 +206,10 @@ export function makeScriptApi(
         }),
       )
     },
+    getActorsInGroup: (group) => {
+      const q = group.toLowerCase()
+      return [...actors.values()].filter((a) => a.groups.some((g) => g.toLowerCase() === q))
+    },
     emit: (signal, ...args) => {
       for (const h of signalHandlers.get(signal) ?? []) {
         try {
@@ -264,6 +272,7 @@ export function makeScriptApi(
     time: clock,
     pawnPosition,
     loadLevel,
+    changeScene: loadLevel,
     loadCell,
     moveAndSlide: (position, velocity, dt) => {
       if (!isCharacterControllerReady()) return null

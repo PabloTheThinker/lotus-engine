@@ -4,6 +4,28 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 33: v2.04–v2.08 (indie / Godot focus)
+
+### Added
+- **v2.04** Timer actor — wait, oneShot, autostart, `timeout:${name}` signal during Play
+- **v2.05** RayCast3D actor — per-frame ray, `hit:` / `clear:` signals, arrow gizmo
+- **v2.06** Path3D + PathFollow3D — Catmull-Rom waypoints, progress/speed/loop along spline
+- **v2.07** Godot groups (`groups[]`, `api.getActorsInGroup`), Project Settings autoload names + main scene key
+- **v2.08** `api.changeScene` alias, export `__LOTUS_MAIN__` from main scene key, `docs/INDIE-GAME-ROADMAP.md` — 110 tests passed
+
+### Changed
+- Strategic focus documented in `docs/CHECKPOINT.md` — indie Godot parity over UE 5.7 gap chasing
+- `window.lotus.indie` test bridge (`spawn`, `samplePath`, `isAutoload`, `scriptApi`)
+- Place Actors palette: Timer, RayCast3D, Path3D, Path Follow
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 110 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 32: v1.99–v2.03
 
 ### Added

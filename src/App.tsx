@@ -18,7 +18,8 @@ import { buildPlayableHTML } from './editor/exportPlayable'
 import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
-import { undo, redo, runCommand } from './editor/commands'
+import { AddActorCommand, undo, redo, runCommand } from './editor/commands'
+import { buildSerializedActor, type AssetPayload } from './editor/spawn'
 import { CommandPalette, installPlugin, loadUserPlugins, registerPlugin } from './editor/palette'
 import {
   registerConsoleCommand,
@@ -30,7 +31,10 @@ import {
 import { PluginManagerModal } from './editor/PluginManager'
 import { PreferencesModal } from './editor/Preferences'
 import { ProjectSettingsModal } from './editor/ProjectSettingsModal'
-import { loadProjectSettings } from './editor/projectSettings'
+import { loadProjectSettings, saveProjectSettings } from './editor/projectSettings'
+import { samplePathAt } from './engine/path3d'
+import { makeScriptApi } from './engine/scripting'
+import { DEFAULT_RAY_CAST, DEFAULT_TIMER } from './engine/types'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import {
   collapseBTSubtree,
@@ -357,6 +361,32 @@ const lotusBridge = {
   },
   projectSettings: {
     load: loadProjectSettings,
+    save: saveProjectSettings,
+  },
+  /** Wave 33 — Godot-style indie node pack (Timer, RayCast3D, Path3D, groups) */
+  indie: {
+    samplePath: (
+      waypoints: [number, number, number][],
+      closed: boolean,
+      t: number,
+    ): [number, number, number] | null => {
+      const p = samplePathAt(waypoints, closed, t)
+      return p ? [p.x, p.y, p.z] : null
+    },
+    defaultTimer: () => ({ ...DEFAULT_TIMER }),
+    defaultRayCast: () => ({ ...DEFAULT_RAY_CAST }),
+    isAutoload: (actorName: string) => {
+      const a = [...world.actors.values()].find((x) => x.name === actorName)
+      return a ? world.isAutoloadActor(a) : false
+    },
+    scriptApi: () => makeScriptApi(world.actors, () => 0, () => null),
+    spawn: (payload: AssetPayload, position: [number, number, number] = [0, 1, 0]) => {
+      const sa = buildSerializedActor(payload, position)
+      runCommand(new AddActorCommand(sa))
+      return world.actors.get(sa.id) ?? null
+    },
+    timerActive: (actorId: string) => world.isTimerActive(actorId),
+    rayCastHitId: (rayActorId: string) => world.getRayCastHitId(rayActorId),
   },
   renderer: {
     runQA: runWebGPUQAMatrix,

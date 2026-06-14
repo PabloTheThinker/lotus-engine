@@ -3,7 +3,15 @@ import { world } from '../engine/World'
 import type { ActorType, GeometryKind, SerializedActor } from '../engine/types'
 import { DEFAULT_MATERIAL } from '../engine/types'
 import { DEFAULT_PARTICLES } from '../engine/particles'
-import { DEFAULT_FOLIAGE, DEFAULT_LABEL3D, DEFAULT_WIDGET3D } from '../engine/types'
+import {
+  DEFAULT_FOLIAGE,
+  DEFAULT_LABEL3D,
+  DEFAULT_WIDGET3D,
+  DEFAULT_TIMER,
+  DEFAULT_RAY_CAST,
+  DEFAULT_PATH_FOLLOW,
+} from '../engine/types'
+import { DEFAULT_PATH3D } from '../engine/path3d'
 import { DEFAULT_LANDSCAPE } from '../engine/landscape'
 import { DEFAULT_WATER } from '../engine/water'
 import { DEFAULT_PCG } from '../engine/pcg'
@@ -30,6 +38,10 @@ export type AssetPayload =
   | { kind: 'playerstart' }
   | { kind: 'label3d' }
   | { kind: 'widget3d' }
+  | { kind: 'timer' }
+  | { kind: 'raycast' }
+  | { kind: 'path3d' }
+  | { kind: 'pathfollow' }
   | { kind: 'imported'; assetId: string; name: string }
   | { kind: 'plugin-node'; nodeType: string }
 
@@ -199,6 +211,41 @@ export function buildSerializedActor(payload: AssetPayload, position: [number, n
         type: 'Widget3D',
         widget3D: { ...DEFAULT_WIDGET3D },
         transform: { ...base.transform, position: [position[0], Math.max(position[1], 1.5), position[2]] },
+      }
+    case 'timer':
+      return {
+        ...base,
+        name: uniqueName('Timer'),
+        type: 'Timer',
+        timer: { ...DEFAULT_TIMER, wait: 2 },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1), position[2]] },
+      }
+    case 'raycast':
+      return {
+        ...base,
+        name: uniqueName('RayCast3D'),
+        type: 'RayCast3D',
+        rayCast: { ...DEFAULT_RAY_CAST, length: 12 },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 1.5), position[2]] },
+      }
+    case 'path3d':
+      return {
+        ...base,
+        name: uniqueName('Path3D'),
+        type: 'Path3D',
+        path3D: {
+          closed: DEFAULT_PATH3D.closed,
+          waypoints: DEFAULT_PATH3D.waypoints.map((w) => [...w] as [number, number, number]),
+        },
+        transform: { ...base.transform, position: [position[0], 0, position[2]] },
+      }
+    case 'pathfollow':
+      return {
+        ...base,
+        name: uniqueName('PathFollow3D'),
+        type: 'PathFollow3D',
+        pathFollow: { ...DEFAULT_PATH_FOLLOW },
+        transform: { ...base.transform, position: [position[0], Math.max(position[1], 0.5), position[2]] },
       }
     case 'imported':
       return { ...base, name: uniqueName(payload.name), type: 'ImportedMesh', assetId: payload.assetId }

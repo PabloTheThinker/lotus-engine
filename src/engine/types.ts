@@ -24,6 +24,10 @@ export type ActorType =
   | 'PCGVolume'
   | 'Label3D'
   | 'Widget3D'
+  | 'Timer'
+  | 'RayCast3D'
+  | 'Path3D'
+  | 'PathFollow3D'
 
 /** UE EComponentMobility — how an actor may change at runtime. */
 export type Mobility = 'static' | 'stationary' | 'movable'
@@ -52,6 +56,10 @@ export const DEFAULT_MOBILITY: Record<ActorType, Mobility> = {
   PCGVolume: 'static',
   Label3D: 'movable',
   Widget3D: 'movable',
+  Timer: 'movable',
+  RayCast3D: 'movable',
+  Path3D: 'movable',
+  PathFollow3D: 'movable',
 }
 
 /** UE PostProcessVolume overrides — blended when the camera is inside the volume. */
@@ -202,6 +210,8 @@ export interface SerializedActor {
   mobility?: Mobility
   /** UE-style actor tags for filtering and gameplay queries */
   tags?: string[]
+  /** Godot groups — scene-wide membership for api.getActorsInGroup */
+  groups?: string[]
   /** GAS-lite: attribute set asset id (localStorage) */
   attributeSetId?: string
   /** GAS-lite: ability asset ids assigned to this actor */
@@ -260,6 +270,14 @@ export interface SerializedActor {
   label3D?: Label3DProps
   /** Widget3D only — interactive HTML in world space */
   widget3D?: Widget3DProps
+  /** Timer only — Godot Timer node */
+  timer?: TimerProps
+  /** RayCast3D only — per-frame scene ray */
+  rayCast?: RayCastProps
+  /** Path3D only — editable spline waypoints */
+  path3D?: Path3DProps
+  /** PathFollow3D only — slides along a Path3D actor */
+  pathFollow?: PathFollowProps
   /** MultiplayerSynchronizer-lite: property names to replicate (position, rotation, visible, script var names) */
   syncProperties?: string[]
   replicateGAS?: boolean
@@ -385,6 +403,66 @@ export type ReverbPreset = '' | 'room' | 'hall' | 'cave'
 
 export interface TriggerProps {
   reverbPreset?: ReverbPreset
+}
+
+/** Timer — Godot Timer node: wait, one-shot/loop, autostart, timeout signal. */
+export interface TimerProps {
+  wait: number
+  oneShot: boolean
+  autostart: boolean
+  paused: boolean
+}
+
+export const DEFAULT_TIMER: TimerProps = {
+  wait: 1,
+  oneShot: true,
+  autostart: false,
+  paused: false,
+}
+
+/** RayCast3D — persistent per-frame ray with hit/clear signals. */
+export interface RayCastProps {
+  enabled: boolean
+  length: number
+  /** Local-space cast direction (normalized at runtime). Default -Z. */
+  localDirection: [number, number, number]
+  /** Exclude this actor's own meshes from hits */
+  excludeSelf: boolean
+}
+
+export const DEFAULT_RAY_CAST: RayCastProps = {
+  enabled: true,
+  length: 10,
+  localDirection: [0, 0, -1],
+  excludeSelf: true,
+}
+
+/** Path3D — Catmull-Rom spline through local waypoints. */
+export interface Path3DProps {
+  waypoints: [number, number, number][]
+  closed: boolean
+}
+
+/** PathFollow3D — advances along a Path3D actor by progress or speed. */
+export interface PathFollowProps {
+  /** Path3D actor name to follow */
+  pathActorName: string
+  progress: number
+  /** World units per second along curve (0 = manual progress only) */
+  speed: number
+  loop: boolean
+  autoplay: boolean
+  /** Rotate follower to face path tangent */
+  rotateToPath: boolean
+}
+
+export const DEFAULT_PATH_FOLLOW: PathFollowProps = {
+  pathActorName: '',
+  progress: 0,
+  speed: 2,
+  loop: false,
+  autoplay: false,
+  rotateToPath: true,
 }
 
 /** Distance attenuation curve — normalized distance 0 (min) → 1 (max). */
