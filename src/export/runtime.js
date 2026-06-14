@@ -20,15 +20,40 @@ if (!LEVELS || !LEVELS[MAIN_KEY]) throw new Error('Lotus: no level data')
 
 let LEVEL = LEVELS[MAIN_KEY]
 const pixelRatio = EXPORT.pixelRatio ?? (EXPORT.quality === 'mobile' ? 1 : Math.min(devicePixelRatio, 2))
+const exportRenderTier = EXPORT.renderBackend ?? LEVEL.environment?.renderBackend ?? 'webgl'
 
-const renderer = new THREE.WebGLRenderer({ antialias: EXPORT.quality !== 'mobile' })
-renderer.shadowMap.enabled = true
-renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = LEVEL.environment.exposure ?? 0.75
-renderer.outputColorSpace = THREE.SRGBColorSpace
-renderer.setPixelRatio(pixelRatio)
-renderer.setSize(innerWidth, innerHeight)
-document.body.appendChild(renderer.domElement)
+/** Wave 14 — WebGPU export runtime when tier + API available. */
+async function createPlayRenderer() {
+  const antialias = EXPORT.quality !== 'mobile'
+  if (exportRenderTier === 'webgpu' && navigator.gpu) {
+    try {
+      const { WebGPURenderer } = await import('three/webgpu')
+      const r = new WebGPURenderer({ antialias, alpha: false })
+      await r.init()
+      r.toneMapping = THREE.ACESFilmicToneMapping
+      r.toneMappingExposure = LEVEL.environment?.exposure ?? 0.75
+      r.outputColorSpace = THREE.SRGBColorSpace
+      r.setPixelRatio(pixelRatio)
+      r.setSize(innerWidth, innerHeight)
+      document.body.appendChild(r.domElement)
+      return { renderer: r, tier: 'webgpu' }
+    } catch {
+      /* fall through to WebGL */
+    }
+  }
+  const r = new THREE.WebGLRenderer({ antialias })
+  r.shadowMap.enabled = true
+  r.toneMapping = THREE.ACESFilmicToneMapping
+  r.toneMappingExposure = LEVEL.environment.exposure ?? 0.75
+  r.outputColorSpace = THREE.SRGBColorSpace
+  r.setPixelRatio(pixelRatio)
+  r.setSize(innerWidth, innerHeight)
+  document.body.appendChild(r.domElement)
+  return { renderer: r, tier: 'webgl' }
+}
+
+let renderer
+let playRenderTier = 'webgl'
 
 const scene = new THREE.Scene()
 const actors = new Map()
@@ -103,7 +128,7 @@ function applyEnvironment() {
     scene.background = new THREE.Color(env.background)
   }
   scene.fog = env.fogEnabled ? new THREE.FogExp2(env.fogColor, env.fogDensity) : null
-  renderer.toneMappingExposure = env.exposure ?? 0.75
+  if (renderer) renderer.toneMappingExposure = env.exposure ?? 0.75
 }
 applyEnvironment()
 
@@ -549,11 +574,15 @@ function groundAt(p) {
   return hit ? hit.point.y : null
 }
 addEventListener('mousemove', (e) => {
+  if (!renderer?.domElement) return
   if (document.pointerLockElement !== renderer.domElement) return
   yaw -= e.movementX * 0.0023
   pitch = Math.max(-1.45, Math.min(1.45, pitch - e.movementY * 0.0023))
 })
-renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock())
+function bindPawnInput() {
+  if (!renderer?.domElement) return
+  renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock())
+}
 
 function resetPawnFromStart() {
   const start = LEVEL.actors.find((a) => a.type === 'PlayerStart')
@@ -662,9 +691,9 @@ let seqAudioVoices = []
 let seqAudioLastT = -1
 
 async function loadSounds(level) {
-  if (!level.sounds) return
+  if (!level.sounds || !Object.keys(level.sounds).length) return
   if (!audioCtx) audioCtx = new AudioContext()
-  if (audioCtx.state === 'suspended') await audioCtx.resume()
+  if (audioCtx.state === 'suspended') void audioCtx.resume()
   for (const [name, b64] of Object.entries(level.sounds)) {
     if (soundBuffers.has(name)) continue
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
@@ -799,6 +828,11 @@ function compileScripts() {
 // ---- boot ----
 const overlay = document.getElementById('overlay')
 async function boot() {
+  const created = await createPlayRenderer()
+  renderer = created.renderer
+  playRenderTier = created.tier
+  bindPawnInput()
+  applyEnvironment()
   await loadAssets(LEVEL)
   await loadSounds(LEVEL)
   spawnLevelActors(LEVEL)
@@ -810,7 +844,9 @@ async function boot() {
   resetPawnFromStart()
   await startPhysics()
   compileScripts()
-  overlay.textContent = 'Click to play — WASD + mouse · Space jump · Shift sprint'
+  overlay.textContent =
+    (playRenderTier === 'webgpu' ? 'WebGPU · ' : '') +
+    'Click to play — WASD + mouse · Space jump · Shift sprint'
   const c = new THREE.Clock()
   renderer.setAnimationLoop(() => {
     const dt = Math.min(c.getDelta(), 0.1)

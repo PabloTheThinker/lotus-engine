@@ -14,6 +14,15 @@ import { useEditor } from '../store'
 
 const NODE_W = 170
 const HEADER_H = 24
+const PORT_R = 6
+
+function outPort(n: BTGraphNode): { x: number; y: number } {
+  return { x: n.x + NODE_W, y: n.y + HEADER_H / 2 }
+}
+
+function inPort(n: BTGraphNode): { x: number; y: number } {
+  return { x: n.x, y: n.y + HEADER_H / 2 }
+}
 
 function wirePath(x1: number, y1: number, x2: number, y2: number): string {
   const dx = Math.max(40, Math.abs(x2 - x1) * 0.5)
@@ -42,6 +51,7 @@ export function BTEditor() {
   const [liveNode, setLiveNode] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
+  const [pendingWire, setPendingWire] = useState<{ from: string; x: number; y: number } | null>(null)
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const lastActor = useRef<string | null>(null)
@@ -105,7 +115,11 @@ export function BTEditor() {
             ? { seconds: 1 }
             : type === 'MoveToPlayer'
               ? { speed: 2.5, stopAt: 1.2 }
-              : {},
+              : type === 'Repeat'
+                ? { count: 3 }
+                : type === 'Cooldown'
+                  ? { seconds: 2 }
+                  : {},
     }
     const parentId = nearestWireParent(graph, addMenu.x, addMenu.y)
     const edges = [...graph.edges]
@@ -120,6 +134,36 @@ export function BTEditor() {
       ...graph,
       edges: graph.edges.filter((e) => !(e.from === from && e.to === to)),
     })
+  }
+
+  const connectWire = (from: string, to: string) => {
+    if (from === to) return
+    if (graph.edges.some((e) => e.from === from && e.to === to)) return
+    const parent = graph.nodes.find((n) => n.id === from)
+    const child = graph.nodes.find((n) => n.id === to)
+    if (!parent || !child) return
+    const def = BT_NODE_DEFS[parent.type] ?? { maxChildren: 0 }
+    const childCount = graph.edges.filter((e) => e.from === from).length
+    if (def.maxChildren <= childCount) {
+      useEditor.getState().setStatus(`${parent.type} already has max children`)
+      return
+    }
+    commit({ ...graph, edges: [...graph.edges, { from, to }] })
+  }
+
+  const portAt = (x: number, y: number): { nodeId: string; kind: 'in' | 'out' } | null => {
+    for (const n of graph.nodes) {
+      const def = BT_NODE_DEFS[n.type] ?? { maxChildren: 0 }
+      if (n.type !== 'Root') {
+        const ip = inPort(n)
+        if (Math.hypot(ip.x - x, ip.y - y) <= PORT_R + 4) return { nodeId: n.id, kind: 'in' }
+      }
+      if (def.maxChildren > 0) {
+        const op = outPort(n)
+        if (Math.hypot(op.x - x, op.y - y) <= PORT_R + 4) return { nodeId: n.id, kind: 'out' }
+      }
+    }
+    return null
   }
 
   const updateNodeProp = (nodeId: string, key: string, value: string | number) => {
@@ -175,7 +219,7 @@ export function BTEditor() {
             }}
           />
         </label>
-        <span className="panel-empty">Right-click add · click wire to delete · select node for props</span>
+        <span className="panel-empty">Right-click add · drag ports to wire · click wire to delete</span>
       </div>
       <div className="bt-body">
         <div
@@ -183,8 +227,9 @@ export function BTEditor() {
           ref={canvasRef}
           onMouseDown={() => setAddMenu(null)}
           onMouseMove={(e) => {
-            if (!dragRef.current) return
             const p = canvasPoint(e)
+            if (pendingWire) setPendingWire({ ...pendingWire, x: p.x, y: p.y })
+            if (!dragRef.current) return
             const { id, dx, dy } = dragRef.current
             const next = {
               ...graph,
@@ -194,7 +239,15 @@ export function BTEditor() {
             }
             setGraph(next)
           }}
-          onMouseUp={() => {
+          onMouseUp={(e) => {
+            if (pendingWire) {
+              const p = canvasPoint(e)
+              const hit = portAt(p.x, p.y)
+              if (hit?.kind === 'in' && hit.nodeId !== pendingWire.from) {
+                connectWire(pendingWire.from, hit.nodeId)
+              }
+              setPendingWire(null)
+            }
             if (dragRef.current) commit(graph)
             dragRef.current = null
           }}
@@ -205,6 +258,17 @@ export function BTEditor() {
           }}
         >
           <svg className="bt-canvas" width="100%" height="280">
+            {pendingWire && (() => {
+              const from = graph.nodes.find((n) => n.id === pendingWire.from)
+              if (!from) return null
+              const op = outPort(from)
+              return (
+                <path
+                  d={wirePath(op.x, op.y, pendingWire.x, pendingWire.y)}
+                  className="bt-wire pending"
+                />
+              )
+            })()}
             {graph.edges.map((edge) => {
               const a = graph.nodes.find((n) => n.id === edge.from)
               const b = graph.nodes.find((n) => n.id === edge.to)
@@ -222,9 +286,11 @@ export function BTEditor() {
               )
             })}
             {graph.nodes.map((n) => {
-              const def = BT_NODE_DEFS[n.type] ?? { title: n.type, color: '#555' }
+              const def = BT_NODE_DEFS[n.type] ?? { title: n.type, color: '#555', maxChildren: 0 }
               const active = liveNode === n.id
               const selected = selectedNode === n.id
+              const showIn = n.type !== 'Root'
+              const showOut = def.maxChildren > 0
               return (
                 <g
                   key={n.id}
@@ -247,6 +313,37 @@ export function BTEditor() {
                   <text x={8} y={16} fill="#fff" fontSize={11}>
                     {def.title}
                   </text>
+                  {showIn && (
+                    <circle
+                      className="bt-port bt-port-in"
+                      cx={0}
+                      cy={HEADER_H / 2}
+                      r={PORT_R}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onMouseUp={(e) => {
+                        e.stopPropagation()
+                        if (pendingWire && pendingWire.from !== n.id) {
+                          connectWire(pendingWire.from, n.id)
+                          setPendingWire(null)
+                        }
+                      }}
+                    />
+                  )}
+                  {showOut && (
+                    <circle
+                      className="bt-port bt-port-out"
+                      cx={NODE_W}
+                      cy={HEADER_H / 2}
+                      r={PORT_R}
+                      onMouseDown={(e) => {
+                        e.stopPropagation()
+                        setSelectedNode(n.id)
+                        const op = outPort(n)
+                        setPendingWire({ from: n.id, x: op.x, y: op.y })
+                        dragRef.current = null
+                      }}
+                    />
+                  )}
                 </g>
               )
             })}
@@ -364,6 +461,30 @@ export function BTEditor() {
                     <input
                       value={String(node.props.text ?? 'BT')}
                       onChange={(e) => updateNodeProp(node.id, 'text', e.target.value)}
+                    />
+                  </label>
+                )}
+                {node.type === 'Repeat' && (
+                  <label className="field">
+                    <span>count</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={32}
+                      value={Number(node.props.count ?? 3)}
+                      onChange={(e) => updateNodeProp(node.id, 'count', parseInt(e.target.value, 10) || 1)}
+                    />
+                  </label>
+                )}
+                {node.type === 'Cooldown' && (
+                  <label className="field">
+                    <span>seconds</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      value={Number(node.props.seconds ?? 2)}
+                      onChange={(e) => updateNodeProp(node.id, 'seconds', parseFloat(e.target.value) || 0)}
                     />
                   </label>
                 )}

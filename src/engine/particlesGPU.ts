@@ -1,5 +1,6 @@
 import type { ParticleProps } from './particles'
 import { ParticleSystem } from './particles'
+import { initParticleCompute } from './particlesCompute'
 
 /**
  * GPU particles (Wave 13) — compute-tier sim when WebGPU backend is available.
@@ -21,6 +22,8 @@ export class GPUParticleSystem extends ParticleSystem {
   readonly backend: ParticleBackend
   readonly gpuTier: boolean
   readonly computeSim: boolean
+  /** Wave 14 — true when TSL ComputeNode path initialized */
+  usesComputeNode = false
   private batchDt = 0
 
   constructor(props: ParticleProps, backend: ParticleBackend = 'cpu') {
@@ -30,7 +33,14 @@ export class GPUParticleSystem extends ParticleSystem {
     this.computeSim = this.gpuTier
   }
 
-  /** Wave 13 — accumulate dt and simulate in fixed substeps (compute-style batching). */
+  /** Bind WebGPU renderer for TSL compute sim (Wave 14). */
+  async bindComputeRenderer(renderer: unknown) {
+    if (!this.gpuTier) return
+    const st = await initParticleCompute(renderer)
+    this.usesComputeNode = st.ready
+  }
+
+  /** Wave 13–14 — GPU tier: compute integration or fixed-substep CPU fallback. */
   update(
     dt: number,
     emitting: boolean,

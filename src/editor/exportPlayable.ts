@@ -95,7 +95,13 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   }
   const { levels, main } = buildLevelsManifest(mainLevel)
   const levelsJSON = escapeJsonForScript(JSON.stringify(levels))
-  const exportJSON = escapeJsonForScript(JSON.stringify({ quality, pixelRatio: quality === 'mobile' ? 1 : undefined }))
+  const exportJSON = escapeJsonForScript(
+    JSON.stringify({
+      quality,
+      pixelRatio: quality === 'mobile' ? 1 : undefined,
+      renderBackend: mainLevel.environment.renderBackend ?? 'webgl',
+    }),
+  )
   const title = s.levelName || 'Lotus Level'
   const pwa = !!opts.pwa
   const branding = loadProjectSettings().showLotusBranding
@@ -127,6 +133,8 @@ ${pwa ? pwaHeadExtras(title) : ''}
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.js",
+    "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.webgpu.js",
+    "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.tsl.js",
     "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.184.0/examples/jsm/",
     "@dimforge/rapier3d-compat": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.19.3/+esm"
   }

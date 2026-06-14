@@ -1648,6 +1648,9 @@ input[type='checkbox'] {
 .bt-canvas-wrap { position: relative; flex: 1; min-height: 200px; background: var(--bg-1); overflow: hidden; }
 .bt-canvas { display: block; background: repeating-linear-gradient(0deg, transparent, transparent 15px, rgba(255,255,255,.03) 15px, rgba(255,255,255,.03) 16px), repeating-linear-gradient(90deg, transparent, transparent 15px, rgba(255,255,255,.03) 15px, rgba(255,255,255,.03) 16px); }
 .bt-wire { fill: none; stroke: #7a8a9a; stroke-width: 2; }
+.bt-wire.pending { stroke: #6eb5ff; stroke-dasharray: 6 4; pointer-events: none; }
+.bt-port { fill: #1a1d22; stroke: #9ab0c4; stroke-width: 2; cursor: crosshair; }
+.bt-port-out:hover, .bt-port-in:hover { fill: #2f80ed; stroke: #fff; }
 .bt-add-menu { position: absolute; z-index: 5; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px; display: flex; flex-direction: column; min-width: 140px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
 .bt-add-menu button { text-align: left; padding: 5px 8px; background: transparent; border: none; border-radius: 4px; font-size: 12px; }
 .bt-add-menu button:hover { background: var(--accent); color: #fff; }

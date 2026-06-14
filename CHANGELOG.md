@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 14: v1.03–v1.08
+
+### Added
+- **v1.03** TSL RenderPipeline bloom on WebGPURenderer canvas (`postStackTSLPipeline.ts`, wired in `Viewport.tsx`)
+- **v1.04** GPU particle `ComputeNode` probe + tier flag (`particlesCompute.ts`, `GPUParticleSystem.bindComputeRenderer`)
+- **v1.05** Export playable E2E — serve exported HTML via preview, assert canvas + “Click to play” overlay
+- **v1.06** WebGPU export runtime — `createPlayRenderer()` async boot, `renderBackend` in `__LOTUS_EXPORT__`, CDN import map for `three/webgpu` + `three/tsl`
+- **v1.07** BT editor wire drag-to-connect — in/out ports, pending wire line, Repeat/Cooldown decorator nodes + props
+- **v1.08** Wave 14 integration — export runtime boot fixes (deferred pawn input, guarded `applyEnvironment`, non-blocking `loadSounds`)
+
+### Changed
+- Viewport stats badge shows `P` when TSL RenderPipeline bloom is active on WebGPU tier
+- `getTSLPostState` adds `pipeline` tier when RenderPipeline is live
+- Playable export `runtime.js` no longer touches `renderer` before async `boot()` completes
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 27 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 13: v0.97–v1.02
 
 ### Added

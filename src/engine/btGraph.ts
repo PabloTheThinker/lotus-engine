@@ -69,6 +69,8 @@ export const BT_NODE_DEFS: Record<string, { title: string; color: string; maxChi
   Selector: { title: 'Selector (OR)', color: '#6a4a8a', maxChildren: 99 },
   Sequence: { title: 'Sequence (AND)', color: '#4a8a6a', maxChildren: 99 },
   Invert: { title: 'Invert', color: '#8a6a4a', maxChildren: 1 },
+  Repeat: { title: 'Repeat (decorator)', color: '#8a5a6a', maxChildren: 1 },
+  Cooldown: { title: 'Cooldown (decorator)', color: '#6a5a8a', maxChildren: 1 },
   PlayerNear: { title: 'Player Near', color: '#3a6a9a', maxChildren: 0 },
   Blackboard: { title: 'Blackboard', color: '#3a6a9a', maxChildren: 0 },
   MoveToPlayer: { title: 'Move To Player', color: '#9a5a3a', maxChildren: 0 },
@@ -98,6 +100,18 @@ function compileNode(graph: BTGraph, id: string, path: string, pathIndex: Record
       return { selector: kids }
     case 'Invert':
       return kids[0] ? { invert: kids[0] } : { task: 'log', text: 'invert missing child' }
+    case 'Repeat': {
+      const count = Math.max(1, Math.min(32, Number(node.props.count ?? 3)))
+      const child = kids[0] ?? { task: 'log', text: 'repeat empty' }
+      return {
+        sequence: Array.from({ length: count }, () => JSON.parse(JSON.stringify(child)) as BTNode),
+      }
+    }
+    case 'Cooldown': {
+      const secs = Number(node.props.seconds ?? 2)
+      const child = kids[0] ?? { task: 'log', text: 'cooldown empty' }
+      return { sequence: [{ task: 'wait', seconds: secs }, child] }
+    }
     case 'PlayerNear':
       return { condition: 'playerNear', distance: Number(node.props.distance ?? 8) }
     case 'Blackboard':

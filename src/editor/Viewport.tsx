@@ -13,6 +13,7 @@ import {
 import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } from '../engine/lotusRenderer'
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getTSLPostState } from '../engine/postStackTSL'
+import { createTSLRenderPipeline, type TSLPipelineStack } from '../engine/postStackTSLPipeline'
 import { ensureLightProbeGrid } from '../engine/ssrProbeGI'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
@@ -396,6 +397,22 @@ export function Viewport() {
     )
     const composer = postStack.composer
     const renderPass = postStack.renderPass
+    let tslPipeline: TSLPipelineStack | null = null
+    if (webgpuActive) {
+      tslPipeline = await createTSLRenderPipeline(
+        primaryRenderer,
+        world.scene,
+        editorCamera,
+        mount.clientWidth,
+        mount.clientHeight,
+        {
+          bloomEnabled: world.environment.bloomEnabled,
+          bloomStrength: world.environment.bloomStrength,
+          bloomThreshold: world.environment.bloomThreshold,
+          bloomRadius: world.environment.bloomRadius,
+        },
+      )
+    }
     if (import.meta.env.DEV) {
       const winGfx = window as unknown as Record<string, unknown>
       winGfx.lotusGfx = { renderer, composer }
@@ -465,6 +482,12 @@ export function Viewport() {
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
+      tslPipeline?.applyBloom(
+        post.bloomEnabled,
+        post.bloomStrength,
+        post.bloomThreshold,
+        post.bloomRadius,
+      )
     }
 
     // editor-only chrome
@@ -1358,6 +1381,7 @@ export function Viewport() {
         primaryRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
       }
       postStack.setSize(w, h)
+      tslPipeline?.setSize(w, h)
       const st = useEditor.getState()
       const panes = computePanes(w, h, st.viewportLayout, st.maximizedPane)
       for (const pr of panes) {
@@ -1771,7 +1795,12 @@ export function Viewport() {
             s.bufferViz === 'none' &&
             s.viewportLayout === 'single'
           if (useWebGPURender) {
-            primaryRenderer.render(world.scene, activeCam)
+            if (tslPipeline?.active) {
+              tslPipeline.setCamera(activeCam)
+              tslPipeline.render()
+            } else {
+              primaryRenderer.render(world.scene, activeCam)
+            }
           } else if (usePostFx) {
             composer.render()
           } else {
@@ -1887,10 +1916,11 @@ export function Viewport() {
       if (fpsTimer >= 0.5 && statsRef.current) {
         const fps = Math.round(frames / fpsTimer)
         const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
-        const tsl = getTSLPostState(backend === 'webgpu', webgpuOk)
+        const tsl = getTSLPostState(backend === 'webgpu', webgpuOk, tslPipeline?.active ?? false)
+        const tslBadge = tsl.tier === 'pipeline' ? 'P' : tsl.tier === 'active' ? '+' : ''
         const ssgi = ssgiStatusLabel(world.environment, webgpuOk)
         const tris = rendererTriangleCount(primaryRenderer)
-        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${tris.toLocaleString()} tris · ${backend.toUpperCase()}${webgpuActive ? 'R' : ''}${tsl.tier === 'active' ? '+' : ''}${ssgi}`
+        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${tris.toLocaleString()} tris · ${backend.toUpperCase()}${webgpuActive ? 'R' : ''}${tslBadge}${ssgi}`
         frames = 0
         fpsTimer = 0
       }
@@ -1910,6 +1940,7 @@ export function Viewport() {
       pmrem.dispose()
       pathTracer.dispose()
       postStack.dispose()
+      tslPipeline?.dispose()
       syncSelectionBoxes([], false)
       if (navMeshHelper) {
         world.scene.remove(navMeshHelper)

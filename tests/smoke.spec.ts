@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
@@ -575,6 +576,77 @@ test('wave 13 WebGPU QA matrix + export playable roundtrip', async ({ page }) =>
   expect(result.hasLevel).toBe(true)
   expect(result.htmlLen).toBeGreaterThan(5000)
   expect(result.gpuBackend === 'gpu' || result.gpuBackend === 'cpu').toBe(true)
+})
+
+test('wave 14 exported HTML boots playable overlay', async ({ page }) => {
+  test.setTimeout(120_000)
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+    }
+    return v.export.buildPlayableHTML()
+  })
+
+  const exportPath = path.join(root, 'dist', 'e2e-wave14.play.html')
+  fs.writeFileSync(exportPath, html, 'utf8')
+
+  await page.goto('/e2e-wave14.play.html', { waitUntil: 'domcontentloaded', timeout: 60_000 })
+  await page.waitForSelector('canvas', { timeout: 90_000 })
+  await page.waitForFunction(
+    () => document.getElementById('overlay')?.textContent?.includes('Click to play') ?? false,
+    { timeout: 90_000 },
+  )
+
+  const overlay = await page.locator('#overlay').textContent()
+  expect(overlay).toContain('Click to play')
+})
+
+test('wave 14 export embeds renderBackend + BT decorators compile', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: { buildPlayableHTML: () => string }
+      bt: {
+        emptyGraph: () => { nodes: { id: string; type: string; x: number; y: number; props: Record<string, unknown> }[]; edges: { from: string; to: string }[] }
+        compile: (g: unknown) => { tree: unknown } | null
+      }
+    }
+    const html = v.export.buildPlayableHTML()
+    const hasExport = html.includes('__LOTUS_EXPORT__')
+    const hasRenderBackend = html.includes('"renderBackend"')
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const repeat: typeof graph.nodes[0] = {
+      id: 'repeat-test',
+      type: 'Repeat',
+      x: 200,
+      y: 40,
+      props: { count: 2 },
+    }
+    const wait: typeof graph.nodes[0] = {
+      id: 'wait-test',
+      type: 'Wait',
+      x: 400,
+      y: 40,
+      props: { seconds: 0.1 },
+    }
+    graph.nodes.push(repeat, wait)
+    graph.edges.push({ from: root.id, to: repeat.id }, { from: repeat.id, to: wait.id })
+    const compiled = v.bt.compile(graph)
+    const seq = compiled?.tree as { sequence?: unknown[] } | undefined
+    return {
+      hasExport,
+      hasRenderBackend,
+      repeatSeqLen: seq?.sequence?.length ?? 0,
+    }
+  })
+
+  expect(result.hasExport).toBe(true)
+  expect(result.hasRenderBackend).toBe(true)
+  expect(result.repeatSeqLen).toBe(2)
 })
 
 test('wave 13 BT editor blackboard panel', async ({ page }) => {

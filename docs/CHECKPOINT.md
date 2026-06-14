@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 13)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 14)
 
-> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.02.
+> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.08.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.02 (wave 13).** v0.33–v1.02 shipped; **build clean**, **`npm run test` — 25 passed**.
+- **Last clean commit: v1.08 (wave 14).** v0.33–v1.08 shipped; **build clean**, **`npm run test` — 27 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -172,13 +172,24 @@
 | v1.01 | BT editor v2 — wire delete, node props, blackboard panel |
 | v1.02 | Export playable E2E + `window.lotus.renderer` bridge |
 
-## Next up (v1.03+, Wave 14)
+## Shipped wave 14 (v1.03 → v1.08)
 
-1. **TSL PostProcessing** — full bloom/SSAO migration off EffectComposer
-2. **GPU particles** — real `ComputeNode` sim (not batch CPU)
-3. **Export playable** — load exported HTML in Playwright and assert play boot
-4. **WebGPU export runtime** — match editor tier in `runtime.js`
-5. **BT editor** — edge drag-to-connect, decorator nodes
+| Ver | What |
+|---|---|
+| v1.03 | TSL RenderPipeline bloom on WebGPURenderer (`postStackTSLPipeline.ts`) |
+| v1.04 | GPU particle `ComputeNode` probe + `usesComputeNode` flag |
+| v1.05 | Export playable Playwright boot test (canvas + overlay) |
+| v1.06 | WebGPU export runtime — async `createPlayRenderer`, `renderBackend` in export JSON |
+| v1.07 | BT editor drag-to-connect wires + Repeat/Cooldown decorator nodes |
+| v1.08 | Export runtime boot fixes — deferred pawn input, guarded env apply, `loadSounds` skip |
+
+## Next up (v1.09+, Wave 15)
+
+1. **TSL post stack** — SSAO/FXAA migration off EffectComposer (full WebGPU path)
+2. **GPU particles** — wire `ComputeNode` sim into position buffers (protected accessors)
+3. **Export runtime** — TSL bloom pipeline in standalone HTML when `renderBackend: webgpu`
+4. **BT editor** — wire validation UI, decorator nesting limits, compile preview
+5. **Material TSL** — fix `MeshPhysicalNodeMaterial` import warnings in build
 
 ## Remaining gap-list queue (post–wave 7)
 
