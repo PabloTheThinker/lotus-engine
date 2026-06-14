@@ -18,8 +18,9 @@ import {
   summarizeBTTree,
   summarizeBTServices,
   diffBTScriptPreview,
+  exportBTScriptDiffPatch,
   getBTScriptDiffGutterNodeIds,
-  resolveBTScriptDiffGutter,
+  resolveBTScriptDiffGutterSelection,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
   validateBTGraph,
@@ -72,6 +73,7 @@ export function BTEditor() {
   const [liveNode, setLiveNode] = useState<string | null>(null)
   const [liveServices, setLiveServices] = useState<string[]>([])
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
+  const [selectedDiffGutterIds, setSelectedDiffGutterIds] = useState<Set<string>>(() => new Set())
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
   const [pendingWire, setPendingWire] = useState<{ from: string; x: number; y: number } | null>(null)
   const [breakpointHitNode, setBreakpointHitNode] = useState<string | null>(null)
@@ -386,20 +388,46 @@ export function BTEditor() {
           To Script
         </button>
         {diffGutterIds.size > 0 && (
-          <button
-            type="button"
-            title="Scroll to all script-diff gutter nodes"
-            onClick={() => {
-              const wrap = canvasRef.current
-              if (!wrap) return
-              const batch = resolveBTScriptDiffGutter(actor.script, graph, wrap.clientWidth, wrap.clientHeight)
-              wrap.scrollTo({ left: batch.scrollLeft, top: batch.scrollTop, behavior: 'smooth' })
-              if (batch.nodeIds[0]) setSelectedNode(batch.nodeIds[0])
-              useEditor.getState().setStatus(`Resolved ${batch.nodeIds.length} diff gutter node(s)`)
-            }}
-          >
-            Resolve ≠
-          </button>
+          <>
+            <button
+              type="button"
+              title="Scroll to selected (or all) script-diff gutter nodes"
+              onClick={() => {
+                const wrap = canvasRef.current
+                if (!wrap) return
+                const ids =
+                  selectedDiffGutterIds.size > 0
+                    ? [...selectedDiffGutterIds].filter((id) => diffGutterIds.has(id))
+                    : [...diffGutterIds]
+                const batch = resolveBTScriptDiffGutterSelection(
+                  graph,
+                  ids,
+                  wrap.clientWidth,
+                  wrap.clientHeight,
+                )
+                wrap.scrollTo({ left: batch.scrollLeft, top: batch.scrollTop, behavior: 'smooth' })
+                if (batch.nodeIds[0]) setSelectedNode(batch.nodeIds[0])
+                useEditor.getState().setStatus(
+                  `Resolved ${batch.nodeIds.length} diff gutter node(s)${selectedDiffGutterIds.size ? ' (selection)' : ''}`,
+                )
+              }}
+            >
+              Resolve ≠{selectedDiffGutterIds.size ? ` (${selectedDiffGutterIds.size})` : ''}
+            </button>
+            {scriptDiff.changed && (
+              <button
+                type="button"
+                title="Copy unified diff patch to clipboard"
+                onClick={() => {
+                  const patch = exportBTScriptDiffPatch(actor.script, graph)
+                  void navigator.clipboard.writeText(patch)
+                  useEditor.getState().setStatus('BT diff patch copied to clipboard')
+                }}
+              >
+                Export patch
+              </button>
+            )}
+          </>
         )}
         {breakpointHit && breakpointHit.actorId === actor.id && (
           <button
@@ -567,17 +595,30 @@ export function BTEditor() {
                     <text
                       x={-10}
                       y={HEADER_H / 2 + 14}
-                      fill="#f0c080"
+                      fill={selectedDiffGutterIds.has(n.id) ? '#ffe066' : '#f0c080'}
                       fontSize={10}
                       textAnchor="middle"
                       className="bt-gutter-diff"
                       style={{ cursor: 'pointer' }}
                       onClick={(e) => {
                         e.stopPropagation()
+                        if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                          setSelectedDiffGutterIds((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(n.id)) next.delete(n.id)
+                            else next.add(n.id)
+                            return next
+                          })
+                        } else {
+                          setSelectedDiffGutterIds(new Set([n.id]))
+                        }
                         setSelectedNode(n.id)
                         scrollNodeIntoView(n.id)
                         const hint = getBTNodeServiceCompileHint(graph, n.id)
-                        useEditor.getState().setStatus(hint ?? `Script diff at ${def.title}`)
+                        useEditor.getState().setStatus(
+                          hint ??
+                            `Script diff at ${def.title}${e.shiftKey || e.ctrlKey || e.metaKey ? ' (multi-select)' : ''}`,
+                        )
                       }}
                     >
                       ≠

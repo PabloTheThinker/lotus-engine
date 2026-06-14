@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 28: v1.79–v1.83
+
+### Added
+- **v1.79** Color grading preset thumbnails + per-preset ACES — `postPresetAces`, `getPresetACESEnabled()`, World Settings thumbnail grid
+- **v1.80** GPU particle ground bounce — `groundYU`/`groundBounceU` on integrate kernel; CPU `skipGroundBounce` when GPU handles terrain
+- **v1.81** Export cinematic focus-pull — `resolveExportDofFocus()` + `findExportFocusPullCamera()` in playable runtime
+- **v1.82** BT diff gutter multi-select (Shift/Ctrl+click) + `exportBTScriptDiffPatch` + `resolveBTScriptDiffGutterSelection`
+- **v1.83** Material legend Shift+pin minimap channel + solo upstream graph flash — 85 tests passed
+
+### Changed
+- `colorGrading.presetAces()` / `presetThumbnails()` bridges
+- `bt.exportDiffPatch()` / `resolveDiffGutterSelection()` bridges
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 85 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 27: v1.74–v1.78
 
 ### Added

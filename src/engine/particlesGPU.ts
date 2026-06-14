@@ -145,6 +145,16 @@ export class GPUParticleSystem extends ParticleSystem {
           colorStart: [c0.r, c0.g, c0.b] as [number, number, number],
           colorEnd: [c1.r, c1.g, c1.b] as [number, number, number],
         }
+        let groundYLocal = -9999
+        const groundOn = p.groundBounce && !offForces && terrainAt && worldMatrix
+        if (groundOn) {
+          const origin = new THREE.Vector3(0, 0, 0).applyMatrix4(worldMatrix)
+          const gh = terrainAt!(origin.x, origin.z)
+          if (gh != null) {
+            const inv = new THREE.Matrix4().copy(worldMatrix).invert()
+            groundYLocal = new THREE.Vector3(origin.x, gh, origin.z).applyMatrix4(inv).y
+          }
+        }
         const modules = {
           windX: p.windX ?? 0,
           windY: p.windY ?? 0,
@@ -155,6 +165,9 @@ export class GPUParticleSystem extends ParticleSystem {
           collisionRadius: p.collisionRadius ?? 0,
           collisionBounce: p.collisionBounce ?? 0.55,
           collisionOff: offCollision || offForces,
+          groundBounce: groundOn && groundYLocal > -9000,
+          groundY: groundYLocal,
+          bounceFactor: p.bounceFactor ?? 0.45,
         }
         if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style, modules)) {
           this.computeIntegratedFrames++
@@ -167,6 +180,7 @@ export class GPUParticleSystem extends ParticleSystem {
             skipForces: true,
             skipSpawn: true,
             skipLifeColor: true,
+            skipGroundBounce: true,
           })
           if ((p.renderMode ?? 'points') === 'ribbon') {
             if (!runParticleGPUTrailShift(this.computeRenderer)) this.shiftAllRibbonTrails()

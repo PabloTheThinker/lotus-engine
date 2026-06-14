@@ -260,6 +260,25 @@ let ticks = []
 let physWorld = null
 let bindings = []
 let clock = 0
+
+/** Wave 28 — cinematic focus-pull parity with editor CineCamera. */
+function resolveExportDofFocus(camProps, env, playT) {
+  const base = camProps?.dofFocusDistance ?? env.postDofFocusDistance ?? 5
+  if (!camProps?.dofFocusPull) return base
+  const dur = Math.max(0.05, camProps.dofFocusPullDuration ?? 2)
+  const t = Math.min(1, playT / dur)
+  const from = camProps.dofFocusPullFrom ?? base
+  const to = camProps.dofFocusPullTo ?? base
+  return from + (to - from) * t
+}
+
+function findExportFocusPullCamera() {
+  for (const a of actors.values()) {
+    const cp = a.data.cameraProps
+    if (cp?.dofFocusPull) return cp
+  }
+  return null
+}
 let loadingLevel = false
 const loadedCells = new Set()
 const cellActorIds = new Map()
@@ -1380,7 +1399,12 @@ async function boot() {
       }
       if (hasAudio) updateSeqAudio(t)
     }
-    if (seqDofFocus != null && exportTslPipeline?.setDofFocus) exportTslPipeline.setDofFocus(seqDofFocus)
+    let dofFocus = seqDofFocus
+    if (dofFocus == null) {
+      const pullCam = findExportFocusPullCamera()
+      if (pullCam) dofFocus = resolveExportDofFocus(pullCam, LEVEL.environment ?? {}, clock)
+    }
+    if (dofFocus != null && exportTslPipeline?.setDofFocus) exportTslPipeline.setDofFocus(dofFocus)
     for (const ps of particleSystems) ps.update(dt)
     if (particleSystems.some((p) => p.trailLen > 0)) {
       let trailTris = 0

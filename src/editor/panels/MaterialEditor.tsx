@@ -103,6 +103,7 @@ const CHANNEL_LEGEND_COLORS: Record<string, string> = {
 function MaterialGraphMinimap({
   graph,
   isolateChannel,
+  pinnedChannel,
   panOffset,
   zoom,
   viewportW,
@@ -112,6 +113,7 @@ function MaterialGraphMinimap({
 }: {
   graph: MaterialGraph
   isolateChannel: string | null
+  pinnedChannel?: string | null
   panOffset: { x: number; y: number }
   zoom: number
   viewportW: number
@@ -139,6 +141,8 @@ function MaterialGraphMinimap({
   const sx = mw / Math.max(gw, 1)
   const sy = mh / Math.max(gh, 1)
   const soloNodes = nodesInSoloChannel(graph, isolateChannel)
+  const pinNodes = nodesInSoloChannel(graph, pinnedChannel ?? null)
+  const outNode = graph.nodes.find((n) => n.type === 'Output')
   const vw = Math.max(viewportW, 320)
   const vh = Math.max(viewportH, 200)
   const viewGx = -panOffset.x / Math.max(zoom, 0.05)
@@ -197,14 +201,21 @@ function MaterialGraphMinimap({
             y1={(p1.y - minY + pad) * sy}
             x2={(p2.x - minX + pad) * sx}
             y2={(p2.y - minY + pad) * sy}
-            stroke={isolateChannel && tp === isolateChannel ? '#9ec8ff' : '#3a4a5a'}
-            strokeWidth={1}
+            stroke={
+              pinnedChannel && tp === pinnedChannel
+                ? '#c9a8ff'
+                : isolateChannel && tp === isolateChannel
+                  ? '#9ec8ff'
+                  : '#3a4a5a'
+            }
+            strokeWidth={pinnedChannel && tp === pinnedChannel ? 2 : 1}
           />
         )
       })}
       {graph.nodes.map((n) => {
         const def = MAT_NODE_DEFS[n.type]
         const soloHit = isolateChannel && soloNodes.has(n.id)
+        const pinHit = pinnedChannel && pinNodes.has(n.id)
         return (
           <rect
             key={n.id}
@@ -213,13 +224,27 @@ function MaterialGraphMinimap({
             width={Math.max(8, NODE_W * sx)}
             height={10}
             rx={2}
-            fill={soloHit ? '#9ec8ff' : (def?.color ?? '#444')}
-            opacity={soloHit ? 1 : 0.7}
-            stroke={soloHit ? '#6eb5ff' : undefined}
-            strokeWidth={soloHit ? 1 : 0}
+            fill={pinHit ? '#c9a8ff' : soloHit ? '#9ec8ff' : (def?.color ?? '#444')}
+            opacity={soloHit || pinHit ? 1 : 0.7}
+            stroke={pinHit ? '#c9a8ff' : soloHit ? '#6eb5ff' : undefined}
+            strokeWidth={soloHit || pinHit ? 1 : 0}
           />
         )
       })}
+      {pinnedChannel && outNode && (() => {
+        const p2 = portPos(outNode, pinnedChannel)
+        return (
+          <circle
+            className="mat-minimap-pin"
+            cx={(p2.x - minX + pad) * sx}
+            cy={(p2.y - minY + pad) * sy}
+            r={3}
+            fill="#c9a8ff"
+            stroke="#fff"
+            strokeWidth={0.5}
+          />
+        )
+      })()}
       <rect
           className="mat-minimap-viewport"
           x={(viewGx - minX + pad) * sx}
@@ -401,9 +426,12 @@ export function MaterialEditor() {
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
   const [previewFlash, setPreviewFlash] = useState<string | null>(null)
   const [isolateChannel, setIsolateChannel] = useState<string | null>(null)
+  const [pinnedMinimapChannel, setPinnedMinimapChannel] = useState<string | null>(null)
+  const [upstreamFlashIds, setUpstreamFlashIds] = useState<Set<string>>(() => new Set())
   const [channelOrder, setChannelOrder] = useState<string[]>([])
   const legendDrag = useRef<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const upstreamFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActor = useRef<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
@@ -459,10 +487,25 @@ export function MaterialEditor() {
   }, [wiredChannels])
 
   useEffect(() => {
+    if (!graph || !isolateChannel) {
+      setUpstreamFlashIds(new Set())
+      return
+    }
+    const ids = nodesInSoloChannel(graph, isolateChannel)
+    setUpstreamFlashIds(ids)
+    if (upstreamFlashTimer.current) clearTimeout(upstreamFlashTimer.current)
+    upstreamFlashTimer.current = setTimeout(() => setUpstreamFlashIds(new Set()), 900)
+    return () => {
+      if (upstreamFlashTimer.current) clearTimeout(upstreamFlashTimer.current)
+    }
+  }, [graph, isolateChannel])
+
+  useEffect(() => {
     if (!graph || world.environment.materialBackend !== 'tsl') return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsolateChannel(null)
+        setPinnedMinimapChannel(null)
         return
       }
       if (e.altKey && e.key >= '1' && e.key <= '9') {
@@ -638,6 +681,7 @@ export function MaterialEditor() {
         <MaterialGraphMinimap
           graph={graph}
           isolateChannel={isolateChannel}
+          pinnedChannel={pinnedMinimapChannel}
           panOffset={panOffset}
           zoom={zoom}
           viewportW={viewportSize.w}
@@ -652,10 +696,16 @@ export function MaterialEditor() {
                 key={ch}
                 type="button"
                 draggable
-                className={`mat-legend-chip${isolateChannel === ch ? ' active' : ''}`}
+                className={`mat-legend-chip${isolateChannel === ch ? ' active' : ''}${pinnedMinimapChannel === ch ? ' pinned' : ''}`}
                 style={{ '--legend-color': CHANNEL_LEGEND_COLORS[ch] ?? '#6eb5ff' } as React.CSSProperties}
-                title={`Solo ${ch} (Alt+${orderedChannels.indexOf(ch) + 1}) · drag to reorder`}
-                onClick={() => setIsolateChannel((prev) => (prev === ch ? null : ch))}
+                title={`Solo ${ch} (Alt+${orderedChannels.indexOf(ch) + 1}) · Shift+click pin minimap · drag to reorder`}
+                onClick={(e) => {
+                  if (e.shiftKey) {
+                    setPinnedMinimapChannel((prev) => (prev === ch ? null : ch))
+                    return
+                  }
+                  setIsolateChannel((prev) => (prev === ch ? null : ch))
+                }}
                 onDragStart={() => {
                   legendDrag.current = ch
                 }}
@@ -773,7 +823,11 @@ export function MaterialEditor() {
             const def = MAT_NODE_DEFS[node.type]
             if (!def) return null
             return (
-              <div key={node.id} className="bp-node" style={{ left: node.x, top: node.y, width: NODE_W }}>
+              <div
+                key={node.id}
+                className={`bp-node${upstreamFlashIds.has(node.id) ? ' mat-node-upstream-flash' : ''}`}
+                style={{ left: node.x, top: node.y, width: NODE_W }}
+              >
                 <div
                   className="bp-node-header"
                   style={{ background: def.color }}

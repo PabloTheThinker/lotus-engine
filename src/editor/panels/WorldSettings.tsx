@@ -29,6 +29,7 @@ import {
 } from '../../engine/lightmapBake'
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
 import { sanitizeLevelKey, world } from '../../engine/World'
+import { COLOR_GRADING_PRESET_IDS, COLOR_GRADING_PRESET_THUMBNAILS } from '../../engine/postStackColorGrading'
 import type { SerializedLevel } from '../../engine/types'
 import { consoleState } from '../consoleCommands'
 import { loadInputMap, saveInputMap, type InputAction } from '../../engine/inputActions'
@@ -1112,28 +1113,59 @@ export function WorldSettings() {
             </label>
           </>
         )}
-        <label className="field">
+        <div className="field grading-preset-field">
           <span>Color grading preset</span>
-          <select
-            value={env.postColorGradingPreset ?? 'off'}
-            onChange={(e) => {
-              const v = e.target.value as 'off' | 'neutral' | 'cinematic' | 'highContrast'
-              set('postColorGradingPreset', v)
-              if (v !== 'off') set('postColorGrading', true)
-            }}
-          >
-            <option value="off">Off (manual sliders)</option>
-            <option value="neutral">Neutral</option>
-            <option value="cinematic">Cinematic</option>
-            <option value="highContrast">High contrast</option>
-          </select>
-        </label>
+          <div className="grading-preset-grid" role="radiogroup" aria-label="Color grading preset">
+            <button
+              type="button"
+              className={`grading-preset-thumb${(env.postColorGradingPreset ?? 'off') === 'off' ? ' active' : ''}`}
+              title="Off — manual lift/gamma/gain sliders"
+              onClick={() => set('postColorGradingPreset', 'off')}
+            >
+              <span className="grading-preset-swatch" style={{ background: 'linear-gradient(135deg, #2a3038, #4a5058)' }} />
+              <em>Off</em>
+            </button>
+            {COLOR_GRADING_PRESET_IDS.map((id) => {
+              const meta = COLOR_GRADING_PRESET_THUMBNAILS[id]
+              const active = env.postColorGradingPreset === id
+              const acesOn = env.postPresetAces?.[id] ?? env.postAces ?? false
+              return (
+                <div key={id} className={`grading-preset-card${active ? ' active' : ''}`}>
+                  <button
+                    type="button"
+                    className="grading-preset-thumb"
+                    title={meta.label}
+                    onClick={() => {
+                      set('postColorGradingPreset', id)
+                      set('postColorGrading', true)
+                    }}
+                  >
+                    <span className="grading-preset-swatch" style={{ background: meta.gradient }} />
+                    <em>{meta.label}</em>
+                  </button>
+                  <label className="grading-preset-aces" title={`ACES tonemap for ${meta.label}`}>
+                    <input
+                      type="checkbox"
+                      checked={acesOn}
+                      onChange={(e) => {
+                        const next = { ...(env.postPresetAces ?? {}) }
+                        next[id] = e.target.checked
+                        set('postPresetAces', next)
+                      }}
+                    />
+                    ACES
+                  </label>
+                </div>
+              )
+            })}
+          </div>
+        </div>
         <label className="field check">
           <span>Color grading (lift/gamma/gain)</span>
           <input type="checkbox" checked={!!env.postColorGrading} onChange={(e) => set('postColorGrading', e.target.checked)} />
         </label>
         <label className="field check">
-          <span>ACES tonemap (WebGPU TSL)</span>
+          <span>ACES tonemap global (manual / off preset)</span>
           <input type="checkbox" checked={!!env.postAces} onChange={(e) => set('postAces', e.target.checked)} />
         </label>
         {env.postColorGrading && (

@@ -44,9 +44,11 @@ import {
   summarizeBTTree,
   summarizeBTServices,
   diffBTScriptPreview,
+  exportBTScriptDiffPatch,
   getBTScriptDiffGutterNodeIds,
   getBTScriptDiffLineTargets,
   resolveBTScriptDiffGutter,
+  resolveBTScriptDiffGutterSelection,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
   validateBTGraph,
@@ -58,6 +60,8 @@ import { getDOFSettings, resolveCameraDOFFocusDistance } from './engine/postStac
 import {
   applyExposureToColorGrading,
   getACESExposure,
+  getPresetACESEnabled,
+  COLOR_GRADING_PRESET_THUMBNAILS,
   getACESPostEnabled,
   getColorGradingPreset,
   getColorGradingSettings,
@@ -242,6 +246,13 @@ const lotusBridge = {
       scrollRectForBTNode(node, wrapW, wrapH),
     resolveDiffGutter: (graph = emptyBTGraph(), script = '', wrapW = 400, wrapH = 280) =>
       resolveBTScriptDiffGutter(script, graph, wrapW, wrapH),
+    resolveDiffGutterSelection: (
+      graph = emptyBTGraph(),
+      nodeIds: string[] = [],
+      wrapW = 400,
+      wrapH = 280,
+    ) => resolveBTScriptDiffGutterSelection(graph, nodeIds, wrapW, wrapH),
+    exportDiffPatch: (graph = emptyBTGraph(), script = '') => exportBTScriptDiffPatch(script, graph),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
@@ -275,6 +286,9 @@ const lotusBridge = {
     ) => applyExposureToColorGrading({ lift, gamma, gain }, world.environment.exposure ?? 0.75),
     acesEnabled: () => getACESPostEnabled(world.environment),
     acesExposure: () => getACESExposure(world.environment),
+    presetAces: (preset?: import('./engine/postStackColorGrading').ColorGradingPreset) =>
+      getPresetACESEnabled(world.environment, preset ?? getColorGradingPreset(world.environment)),
+    presetThumbnails: () => COLOR_GRADING_PRESET_THUMBNAILS,
   },
   projectSettings: {
     load: loadProjectSettings,

@@ -304,6 +304,50 @@ export function resolveBTScriptDiffLineNodeId(line: string, graph: BTGraph): str
   return null
 }
 
+/** Wave 28 — unified diff patch for export / clipboard (compile-to-script preview). */
+export function exportBTScriptDiffPatch(
+  existingScript: string | undefined,
+  graph: BTGraph,
+): string {
+  const { changed, lines } = diffBTScriptPreview(existingScript, graph)
+  if (!changed) return '# BT script matches compile preview — no patch\n'
+  const header = [
+    '--- actor.script',
+    '+++ bt-compile-preview',
+    `@@ nodes=${graph.nodes.length} edges=${graph.edges.length} @@`,
+    '',
+  ]
+  return [...header, ...lines.map((l) => (l.startsWith('+') || l.startsWith('-') ? l : ` ${l}`))].join('\n')
+}
+
+/** Wave 28 — scroll focal point for a subset of gutter diff node ids. */
+export function resolveBTScriptDiffGutterSelection(
+  graph: BTGraph,
+  nodeIds: string[],
+  wrapW = 400,
+  wrapH = 280,
+  nodeW = 170,
+  headerH = 24,
+): { nodeIds: string[]; scrollLeft: number; scrollTop: number } {
+  if (!nodeIds.length) return { nodeIds: [], scrollLeft: 0, scrollTop: 0 }
+  let cx = 0
+  let cy = 0
+  let n = 0
+  for (const id of nodeIds) {
+    const node = graph.nodes.find((x) => x.id === id)
+    if (!node) continue
+    cx += node.x + nodeW / 2
+    cy += node.y + headerH / 2
+    n++
+  }
+  if (!n) return { nodeIds, scrollLeft: 0, scrollTop: 0 }
+  return {
+    nodeIds,
+    scrollLeft: Math.max(0, cx / n - wrapW / 2),
+    scrollTop: Math.max(0, cy / n - wrapH / 2),
+  }
+}
+
 /** Wave 27 — batch-resolve gutter diff nodes to a single scroll focal point. */
 export function resolveBTScriptDiffGutter(
   existingScript: string | undefined,

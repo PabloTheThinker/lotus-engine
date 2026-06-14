@@ -42,14 +42,37 @@ const ColorGradingShader = {
 
 export type ColorGradingPreset = 'off' | 'neutral' | 'cinematic' | 'highContrast'
 
+export type ColorGradingPresetId = Exclude<ColorGradingPreset, 'off'>
+
 const COLOR_GRADING_PRESETS: Record<
-  Exclude<ColorGradingPreset, 'off'>,
+  ColorGradingPresetId,
   { lift: [number, number, number]; gamma: [number, number, number]; gain: [number, number, number] }
 > = {
   neutral: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] },
   cinematic: { lift: [0.02, 0.01, 0], gamma: [0.95, 0.98, 1.05], gain: [1.05, 1.02, 0.98] },
   highContrast: { lift: [-0.02, -0.02, -0.02], gamma: [1.1, 1.1, 1.1], gain: [1.2, 1.15, 1.1] },
 }
+
+/** Wave 28 — CSS thumbnail swatches for preset picker. */
+export const COLOR_GRADING_PRESET_THUMBNAILS: Record<
+  ColorGradingPresetId,
+  { label: string; gradient: string }
+> = {
+  neutral: {
+    label: 'Neutral',
+    gradient: 'linear-gradient(135deg, #6a7a8a 0%, #9aa8b8 50%, #c8d0d8 100%)',
+  },
+  cinematic: {
+    label: 'Cinematic',
+    gradient: 'linear-gradient(135deg, #3a2818 0%, #8a6040 45%, #c8a878 100%)',
+  },
+  highContrast: {
+    label: 'High contrast',
+    gradient: 'linear-gradient(135deg, #0a0c10 0%, #4a5058 50%, #e8ecf0 100%)',
+  },
+}
+
+export const COLOR_GRADING_PRESET_IDS: ColorGradingPresetId[] = ['neutral', 'cinematic', 'highContrast']
 
 /** Wave 27 — scale manual/preset LGG by scene exposure (UE post-process analog). */
 export function applyExposureToColorGrading(
@@ -152,6 +175,19 @@ export function applyColorGradingTSL(
   return rgb
 }
 
+/** Wave 28 — per-preset ACES toggle (falls back to global postAces). */
+export function getPresetACESEnabled(
+  env: EnvironmentSettings,
+  preset: ColorGradingPreset = getColorGradingPreset(env),
+): boolean {
+  if (preset === 'off') return env.postAces === true
+  const per = env.postPresetAces?.[preset]
+  if (per != null) return per
+  return env.postAces === true
+}
+
 export function getACESPostEnabled(env: EnvironmentSettings): boolean {
+  const preset = getColorGradingPreset(env)
+  if (preset !== 'off') return getPresetACESEnabled(env, preset)
   return env.postAces === true
 }

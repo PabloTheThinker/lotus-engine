@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.78 (wave 27).** v0.33–v1.78 shipped; **build clean**, **`npm run test` — 80 passed**.
+- **Last clean commit: v1.83 (wave 28).** v0.33–v1.83 shipped; **build clean**, **`npm run test` — 85 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -318,13 +318,23 @@
 | v1.77 | Export DOF sequencer — `dofFocusDistance` track + `setDofFocus()` |
 | v1.78 | BT gutter batch-resolve + PIE resync; minimap zoom + legend reorder — 80 tests passed |
 
-## Next up (v1.79+, Wave 28)
+## Shipped (v1.79–v1.83, Wave 28)
 
-1. **TSL post** — preset preview thumbnails + per-preset ACES toggle
-2. **GPU particles** — ground bounce module on GPU path
-3. **Export** — cinematic focus-pull (`dofFocusPull`) in playable runtime
-4. **BT** — diff gutter multi-select + compile diff export patch
-5. **Material TSL** — legend channel pin-to-minimap + solo upstream graph flash
+| Ver | What |
+|---|---|
+| v1.79 | TSL post preset thumbnails + per-preset ACES toggle — `postPresetAces`, `grading-preset-grid` |
+| v1.80 | GPU particle ground bounce — terrain `groundYU` on integrate kernel |
+| v1.81 | Export cinematic focus-pull — `resolveExportDofFocus` in playable runtime |
+| v1.82 | BT diff gutter multi-select + `exportBTScriptDiffPatch` clipboard export |
+| v1.83 | Material legend Shift+pin minimap + solo upstream graph flash — 85 tests passed |
+
+## Next up (v1.84+, Wave 29)
+
+1. **TSL post** — LUT upload stub + preset A/B compare slider
+2. **GPU particles** — sub-emitter spawn on GPU path
+3. **Export** — color grading preset parity + per-preset ACES in runtime
+4. **BT** — service decorator PIE breakpoint polish
+5. **Material TSL** — minimap click-to-focus node + wire channel pin sync
 
 ## Remaining gap-list queue (post–wave 7)
 

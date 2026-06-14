@@ -34,6 +34,9 @@ interface IntegrateKernel {
   collisionRadiusU: UniformSlot
   collisionBounceU: UniformSlot
   collisionOffU: UniformSlot
+  groundYOffU: UniformSlot
+  groundYU: UniformSlot
+  groundBounceU: UniformSlot
   sizeStartU: UniformSlot
   sizeEndU: UniformSlot
   opacityEndU: UniformSlot
@@ -161,6 +164,9 @@ export async function bindParticleIntegrateKernel(
     const collisionRadiusU = t.uniform(t.float(0))
     const collisionBounceU = t.uniform(t.float(0.55))
     const collisionOffU = t.uniform(t.float(0))
+    const groundYOffU = t.uniform(t.float(1))
+    const groundYU = t.uniform(t.float(-9999))
+    const groundBounceU = t.uniform(t.float(0.45))
     const degToRad = t.float(Math.PI / 180)
     const eps = t.float(1e-5)
     const sizeStartU = t.uniform(t.float(0.2))
@@ -219,6 +225,17 @@ export async function bindParticleIntegrateKernel(
                 v.z.subAssign(k.mul(nz))
               })
               })
+            })
+          })
+        })
+        t.If(groundYOffU.lessThan(0.5), () => {
+          t.If(p.y.lessThan(groundYU), () => {
+            p.y.assign(groundYU)
+            t.If(v.y.lessThan(t.float(0)), () => {
+              v.y.assign(v.y.mul(t.float(-1)).mul(groundBounceU))
+            })
+            t.If(v.y.greaterThan(eps), () => {
+              v.y.assign(v.y.mul(groundBounceU))
             })
           })
         })
@@ -291,6 +308,9 @@ export async function bindParticleIntegrateKernel(
       collisionRadiusU,
       collisionBounceU,
       collisionOffU,
+      groundYOffU,
+      groundYU,
+      groundBounceU,
       sizeStartU,
       sizeEndU,
       opacityEndU,
@@ -391,6 +411,9 @@ export interface ParticleGPUModules {
   collisionRadius?: number
   collisionBounce?: number
   collisionOff?: boolean
+  groundBounce?: boolean
+  groundY?: number
+  bounceFactor?: number
 }
 
 export function runParticleGPUIntegrate(
@@ -417,6 +440,9 @@ export function runParticleGPUIntegrate(
     kernel.collisionRadiusU.value = modules?.collisionRadius ?? 0
     kernel.collisionBounceU.value = modules?.collisionBounce ?? 0.55
     kernel.collisionOffU.value = modules?.collisionOff ? 1 : 0
+    kernel.groundYOffU.value = modules?.groundBounce ? 0 : 1
+    kernel.groundYU.value = modules?.groundY ?? -9999
+    kernel.groundBounceU.value = modules?.bounceFactor ?? 0.45
     if (style) {
       kernel.sizeStartU.value = style.sizeStart
       kernel.sizeEndU.value = style.sizeEnd

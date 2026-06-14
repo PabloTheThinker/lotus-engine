@@ -497,6 +497,8 @@ export interface EnvironmentSettings {
   postAces?: boolean
   /** Wave 27 — exposure-linked lift/gamma/gain preset */
   postColorGradingPreset?: 'off' | 'neutral' | 'cinematic' | 'highContrast'
+  /** Wave 28 — per-preset ACES tonemap when a grading preset is active */
+  postPresetAces?: Partial<Record<'neutral' | 'cinematic' | 'highContrast', boolean>>
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
   /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */

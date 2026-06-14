@@ -161,6 +161,8 @@ export interface ParticleUpdateOpts {
   skipSpawn?: boolean
   /** Skip CPU life/color/size — Wave 18 GPU buffers own those channels */
   skipLifeColor?: boolean
+  /** Skip CPU ground bounce — Wave 28 GPU integrate kernel handles terrain bounce */
+  skipGroundBounce?: boolean
 }
 
 export interface ParticleSimBuffers {
@@ -590,7 +592,7 @@ export class ParticleSystem {
     this.cEnd.set(off('colorOverLife') ? p.colorStart : p.colorEnd)
     const gravity = off('forces') ? 0 : p.gravity
     const dragMul = off('forces') ? 1 : Math.max(0, 1 - p.drag * dt)
-    const bounceOn = p.groundBounce && !off('forces') && terrainAt
+    const bounceOn = p.groundBounce && !off('forces') && terrainAt && !opts?.skipGroundBounce
     const se = p.subEmitter
     const subOn = se?.enabled && !off('subEmitter')
     const m = worldMatrix ?? new THREE.Matrix4()

@@ -1929,6 +1929,111 @@ test('wave 27 world resyncActorScript during play', async ({ page }) => {
   expect(result.synced).toBe(true)
 })
 
+test('wave 28 color grading preset thumbnails + presetAces', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        presetThumbnails: () => Record<string, { label: string }>
+        presetAces: (p?: string) => boolean
+      }
+    }
+    const thumbs = v.colorGrading.presetThumbnails()
+    return {
+      keys: Object.keys(thumbs),
+      cinematic: thumbs.cinematic?.label,
+      presetAces: v.colorGrading.presetAces('cinematic'),
+    }
+  })
+
+  expect(result.keys).toContain('cinematic')
+  expect(result.cinematic).toBe('Cinematic')
+  expect(typeof result.presetAces).toBe('boolean')
+})
+
+test('wave 28 GPU particle ground bounce module surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const ps = v.particles.create('gpu')
+    ps.props.groundBounce = true
+    ps.props.bounceFactor = 0.5
+    return { groundBounce: ps.props.groundBounce, bounceFactor: ps.props.bounceFactor }
+  })
+
+  expect(result.groundBounce).toBe(true)
+  expect(result.bounceFactor).toBe(0.5)
+})
+
+test('wave 28 export dofFocusPull runtime surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    return v.export.buildPlayableHTML()
+  })
+
+  expect(html).toContain('resolveExportDofFocus')
+  expect(html).toContain('dofFocusPull')
+})
+
+test('wave 28 BT diff patch + gutter selection bridges', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        exportDiffPatch: (g: import('../src/engine/btGraph').BTGraph, script: string) => string
+        resolveDiffGutterSelection: (
+          g: import('../src/engine/btGraph').BTGraph,
+          ids: string[],
+        ) => { nodeIds: string[]; scrollLeft: number }
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const svc = { id: 'svc28', type: 'SvcPlayerNear', x: 220, y: 220, props: { radius: 5 } }
+    graph.nodes.push(svc)
+    graph.edges.push({ from: root.id, to: svc.id, kind: 'service' })
+    const patch = v.bt.exportDiffPatch(graph, '// stale')
+    const sel = v.bt.resolveDiffGutterSelection(graph, ['svc28'])
+    return { patchLines: patch.split('\n').length, selCount: sel.nodeIds.length }
+  })
+
+  expect(result.patchLines).toBeGreaterThan(3)
+  expect(result.selCount).toBe(1)
+})
+
+test('wave 28 material legend pin-to-minimap surface', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+      ],
+      edges: [{ from: 'c1', to: 'out:baseColor' }],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  const chip = page.locator('.mat-legend-chip', { hasText: 'baseColor' })
+  await chip.click({ modifiers: ['Shift'] })
+  await expect(chip).toHaveClass(/pinned/)
+  await chip.click()
+  await expect(page.locator('.mat-node-upstream-flash')).toHaveCount(2)
+})
+
 test('wave 27 material legend reorder surface', async ({ page }) => {
   await bootEditor(page)
 
