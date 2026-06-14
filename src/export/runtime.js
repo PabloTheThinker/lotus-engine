@@ -101,9 +101,23 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const dofOn = env.postDof === true
     const colorGradingOn = env.postColorGrading === true
     const acesOn = env.postAces === true
-    const lift = env.postLift ?? [0, 0, 0]
-    const gamma = env.postGamma ?? [1, 1, 1]
-    const gain = env.postGain ?? [1, 1, 1]
+    const gradingPreset = env.postColorGradingPreset ?? 'off'
+    const presetTable = {
+      neutral: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] },
+      cinematic: { lift: [0.02, 0.01, 0], gamma: [0.95, 0.98, 1.05], gain: [1.05, 1.02, 0.98] },
+      highContrast: { lift: [-0.02, -0.02, -0.02], gamma: [1.1, 1.1, 1.1], gain: [1.2, 1.15, 1.1] },
+    }
+    const presetRow = presetTable[gradingPreset]
+    const exposure = env.exposure ?? 0.75
+    const gainMul = Math.max(0.25, Math.min(2, exposure)) / 0.75
+    const liftBias = (Math.max(0.25, Math.min(2, exposure)) - 0.75) * 0.06
+    const baseLift = presetRow?.lift ?? env.postLift ?? [0, 0, 0]
+    const baseGamma = presetRow?.gamma ?? env.postGamma ?? [1, 1, 1]
+    const baseGain = presetRow?.gain ?? env.postGain ?? [1, 1, 1]
+    const lift = baseLift.map((v) => v + liftBias)
+    const gamma = baseGamma
+    const gain = baseGain.map((v) => v * gainMul)
+    const colorGradingOnResolved = colorGradingOn || gradingPreset !== 'off'
     const groundReflect = env.postSsrGround === true && ssrOn
     let tslGround = null
     if (groundReflect) {
@@ -119,6 +133,7 @@ async function createExportTSLPipeline(primary, scene, camera) {
       tslGround = { mesh, dispose: () => { geo.dispose(); mat.dispose() } }
     }
     let activeCam = camera
+    let dofFocusDist = env.postDofFocusDistance ?? 5
     const pipeline = new webgpu.RenderPipeline(primary)
     const rebuild = () => {
       const scenePass = pass(scene, activeCam)
@@ -175,11 +190,11 @@ async function createExportTSLPipeline(primary, scene, camera) {
           color = add(color, ssrTex)
         }
       }
-      if (colorGradingOn || acesOn) {
+      if (colorGradingOnResolved || acesOn) {
         const zero = float(0)
         const minGamma = vec3(0.01, 0.01, 0.01)
         let rgb = color.rgb ?? color
-        if (colorGradingOn) {
+        if (colorGradingOnResolved) {
           const liftV = vec3(lift[0], lift[1], lift[2])
           const gammaV = vec3(gamma[0], gamma[1], gamma[2])
           const gainV = vec3(gain[0], gain[1], gain[2])
@@ -187,7 +202,7 @@ async function createExportTSLPipeline(primary, scene, camera) {
           rgb = mul(rgb, gainV)
         }
         if (acesOn) {
-          rgb = acesFilmicToneMapping(rgb, float(env.exposure ?? 0.75))
+          rgb = acesFilmicToneMapping(rgb, float(Math.max(0.35, (env.exposure ?? 0.75) * (acesOn ? 1.02 : 1))))
         }
         color = color.a !== undefined ? vec4(rgb, color.a) : rgb
       }
@@ -198,10 +213,9 @@ async function createExportTSLPipeline(primary, scene, camera) {
       if (dofOn && needsMRT) {
         const depth = scenePass.getTextureNode('depth')
         const viewZ = perspectiveDepthToViewZ(depth, float(activeCam.near), float(activeCam.far))
-        const focusDist = env.postDofFocusDistance ?? 5
         const focalLen = env.postDofFocalLength ?? 2
         const bokeh = env.postDofBokehScale ?? 1.2
-        color = dof(color, viewZ, focusDist, focalLen, bokeh)
+        color = dof(color, viewZ, dofFocusDist, focalLen, bokeh)
       }
       if (fxaaOn) color = fxaa(color)
       pipeline.outputNode = color
@@ -213,6 +227,11 @@ async function createExportTSLPipeline(primary, scene, camera) {
       setCamera(cam) {
         if (activeCam === cam) return
         activeCam = cam
+        rebuild()
+      },
+      setDofFocus(dist) {
+        if (typeof dist !== 'number' || !Number.isFinite(dist)) return
+        dofFocusDist = dist
         rebuild()
       },
       dispose() {
@@ -1322,6 +1341,7 @@ async function boot() {
       }
     }
     const seq = LEVEL.sequence
+    let seqDofFocus = null
     if (seq && seq.autoPlay && seq.tracks.length) {
       const t = clock % seq.duration
       let hasAudio = false
@@ -1329,6 +1349,19 @@ async function boot() {
         if (tr.trackType === 'audio') { hasAudio = true; continue }
         const a = actors.get(tr.actorId)
         if (!a || !tr.keys.length) continue
+        if (tr.property === 'dofFocusDistance' || tr.property === 'fov') {
+          const sv = sampleSeqValue(tr.keys, t)
+          if (typeof sv !== 'number') continue
+          if (tr.property === 'dofFocusDistance') {
+            seqDofFocus = sv
+            if (!a.data.cameraProps) a.data.cameraProps = {}
+            a.data.cameraProps.dofFocusDistance = sv
+          } else if (tr.property === 'fov') {
+            pawnCam.fov = sv
+            pawnCam.updateProjectionMatrix()
+          }
+          continue
+        }
         let v
         const ks = tr.keys
         if (t <= ks[0].t) v = ks[0].v
@@ -1347,6 +1380,7 @@ async function boot() {
       }
       if (hasAudio) updateSeqAudio(t)
     }
+    if (seqDofFocus != null && exportTslPipeline?.setDofFocus) exportTslPipeline.setDofFocus(seqDofFocus)
     for (const ps of particleSystems) ps.update(dt)
     if (particleSystems.some((p) => p.trailLen > 0)) {
       let trailTris = 0

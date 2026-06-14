@@ -273,6 +273,23 @@ export class World {
     clearActorTicks()
   }
 
+  /** Wave 27 — recompile actor script during PIE (BT compile-to-script sync). */
+  resyncActorScript(actorId: string): boolean {
+    if (!this.playing) return false
+    const actor = this.actors.get(actorId)
+    if (!actor?.script?.trim()) return false
+    const loadLevel = (name: string) => this.loadLevelDuringPlay(name)
+    const loadCell = (cx: number, cz: number) => this.loadCellDuringPlay(cx, cz)
+    const api = makeScriptApi(this.actors, () => this.playClock, () => this.pawnPosition, loadLevel, actor, loadCell)
+    try {
+      actor.beginPlay(api)
+      return true
+    } catch (err) {
+      scriptLog('error', `[${actor.name}] resync onBeginPlay: ${(err as Error).message}`)
+      return false
+    }
+  }
+
   /** Restore the editor level after PIE (including mid-play loadLevel switches). */
   async restoreEditorAfterPIE() {
     const snap = this.pieSnapshot

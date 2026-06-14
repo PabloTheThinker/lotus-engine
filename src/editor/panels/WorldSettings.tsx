@@ -1112,6 +1112,22 @@ export function WorldSettings() {
             </label>
           </>
         )}
+        <label className="field">
+          <span>Color grading preset</span>
+          <select
+            value={env.postColorGradingPreset ?? 'off'}
+            onChange={(e) => {
+              const v = e.target.value as 'off' | 'neutral' | 'cinematic' | 'highContrast'
+              set('postColorGradingPreset', v)
+              if (v !== 'off') set('postColorGrading', true)
+            }}
+          >
+            <option value="off">Off (manual sliders)</option>
+            <option value="neutral">Neutral</option>
+            <option value="cinematic">Cinematic</option>
+            <option value="highContrast">High contrast</option>
+          </select>
+        </label>
         <label className="field check">
           <span>Color grading (lift/gamma/gain)</span>
           <input type="checkbox" checked={!!env.postColorGrading} onChange={(e) => set('postColorGrading', e.target.checked)} />

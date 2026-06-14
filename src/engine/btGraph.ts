@@ -304,6 +304,35 @@ export function resolveBTScriptDiffLineNodeId(line: string, graph: BTGraph): str
   return null
 }
 
+/** Wave 27 — batch-resolve gutter diff nodes to a single scroll focal point. */
+export function resolveBTScriptDiffGutter(
+  existingScript: string | undefined,
+  graph: BTGraph,
+  wrapW = 400,
+  wrapH = 280,
+  nodeW = 170,
+  headerH = 24,
+): { nodeIds: string[]; scrollLeft: number; scrollTop: number } {
+  const nodeIds = getBTScriptDiffGutterNodeIds(existingScript, graph)
+  if (!nodeIds.length) return { nodeIds: [], scrollLeft: 0, scrollTop: 0 }
+  let cx = 0
+  let cy = 0
+  let n = 0
+  for (const id of nodeIds) {
+    const node = graph.nodes.find((x) => x.id === id)
+    if (!node) continue
+    cx += node.x + nodeW / 2
+    cy += node.y + headerH / 2
+    n++
+  }
+  if (!n) return { nodeIds, scrollLeft: 0, scrollTop: 0 }
+  return {
+    nodeIds,
+    scrollLeft: Math.max(0, cx / n - wrapW / 2),
+    scrollTop: Math.max(0, cy / n - wrapH / 2),
+  }
+}
+
 /** Wave 26 — scroll offsets to center a node in the BT canvas viewport. */
 export function scrollRectForBTNode(
   node: { x: number; y: number },

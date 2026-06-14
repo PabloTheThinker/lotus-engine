@@ -1355,7 +1355,10 @@ input[type='checkbox'] {
   border: 1px solid var(--border);
   background: #1a1d22;
   color: var(--text-dim, #9aa8b8);
-  cursor: pointer;
+  cursor: grab;
+}
+.mat-legend-chip:active {
+  cursor: grabbing;
 }
 .mat-legend-chip.active {
   border-color: #6eb5ff;

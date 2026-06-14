@@ -40,13 +40,63 @@ const ColorGradingShader = {
   `,
 }
 
-export function getColorGradingSettings(env: EnvironmentSettings): ColorGradingSettings {
+export type ColorGradingPreset = 'off' | 'neutral' | 'cinematic' | 'highContrast'
+
+const COLOR_GRADING_PRESETS: Record<
+  Exclude<ColorGradingPreset, 'off'>,
+  { lift: [number, number, number]; gamma: [number, number, number]; gain: [number, number, number] }
+> = {
+  neutral: { lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] },
+  cinematic: { lift: [0.02, 0.01, 0], gamma: [0.95, 0.98, 1.05], gain: [1.05, 1.02, 0.98] },
+  highContrast: { lift: [-0.02, -0.02, -0.02], gamma: [1.1, 1.1, 1.1], gain: [1.2, 1.15, 1.1] },
+}
+
+/** Wave 27 — scale manual/preset LGG by scene exposure (UE post-process analog). */
+export function applyExposureToColorGrading(
+  settings: Pick<ColorGradingSettings, 'lift' | 'gamma' | 'gain'>,
+  exposure = 0.75,
+): Pick<ColorGradingSettings, 'lift' | 'gamma' | 'gain'> {
+  const e = Math.max(0.25, Math.min(2, exposure))
+  const gainMul = e / 0.75
+  const liftBias = (e - 0.75) * 0.06
   return {
-    enabled: env.postColorGrading === true,
+    lift: [
+      settings.lift[0] + liftBias,
+      settings.lift[1] + liftBias * 0.5,
+      settings.lift[2] + liftBias * 0.25,
+    ],
+    gamma: settings.gamma,
+    gain: [settings.gain[0] * gainMul, settings.gain[1] * gainMul, settings.gain[2] * gainMul],
+  }
+}
+
+export function getColorGradingPreset(env: EnvironmentSettings): ColorGradingPreset {
+  return (env.postColorGradingPreset as ColorGradingPreset) ?? 'off'
+}
+
+export function getColorGradingSettings(env: EnvironmentSettings): ColorGradingSettings {
+  const exposure = env.exposure ?? 0.75
+  const preset = getColorGradingPreset(env)
+  const manual = {
     lift: env.postLift ?? [0, 0, 0],
     gamma: env.postGamma ?? [1, 1, 1],
     gain: env.postGain ?? [1, 1, 1],
   }
+  const base =
+    preset !== 'off' && preset in COLOR_GRADING_PRESETS
+      ? COLOR_GRADING_PRESETS[preset as Exclude<ColorGradingPreset, 'off'>]
+      : manual
+  const scaled = applyExposureToColorGrading(base, exposure)
+  return {
+    enabled: env.postColorGrading === true || preset !== 'off',
+    ...scaled,
+  }
+}
+
+/** Wave 27 — ACES exposure uses scene exposure with mild highlight rolloff bias. */
+export function getACESExposure(env: EnvironmentSettings): number {
+  const e = env.exposure ?? 0.75
+  return Math.max(0.35, Math.min(1.6, e * (env.postAces ? 1.02 : 1)))
 }
 
 export function createColorGradingPass(settings: ColorGradingSettings = { enabled: true, lift: [0, 0, 0], gamma: [1, 1, 1], gain: [1, 1, 1] }): ShaderPass | null {
@@ -95,7 +145,8 @@ export function applyColorGradingTSL(
     rgb = tsl.mul(rgb, gain)
   }
   if (opts.aces) {
-    rgb = tsl.acesFilmicToneMapping(rgb, tsl.float(opts.exposure ?? 0.75))
+    const exp = Math.max(0.35, opts.exposure ?? 0.75)
+    rgb = tsl.acesFilmicToneMapping(rgb, tsl.float(exp))
   }
   if (node.a !== undefined) return tsl.vec4(rgb, node.a)
   return rgb

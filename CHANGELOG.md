@@ -4,6 +4,27 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Wave 27: v1.74–v1.78
+
+### Added
+- **v1.74** Color grading presets — `postColorGradingPreset` (neutral/cinematic/highContrast) + exposure-linked LGG scaling
+- **v1.75** ACES exposure polish — `getACESExposure()` with highlight rolloff bias on TSL + export
+- **v1.76** GPU particle collision — sphere bounce on integrate kernel (`collisionRadius`/`collisionBounce` uniforms)
+- **v1.77** Export DOF sequencer parity — `dofFocusDistance`/`fov` scalar tracks + `setDofFocus()` on TSL pipeline
+- **v1.78** BT gutter batch-resolve + PIE script resync; material minimap wheel zoom + legend drag-reorder — 80 tests passed
+
+### Changed
+- `world.resyncActorScript()` on BT compile-to-script during PIE
+- `bt.resolveDiffGutter` + `colorGrading.preset` / `acesExposure` bridges
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 80 passed
+```
+
+---
+
 ## 2026-06-14 — Wave 26: v1.69–v1.73
 
 ### Added

@@ -5,7 +5,7 @@
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.73 (wave 26).** v0.33–v1.73 shipped; **build clean**, **`npm run test` — 74 passed**.
+- **Last clean commit: v1.78 (wave 27).** v0.33–v1.78 shipped; **build clean**, **`npm run test` — 80 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -308,13 +308,23 @@
 | v1.72 | Export TSL color grading parity — LGG + ACES in `createExportTSLPipeline` |
 | v1.73 | BT diff scroll/jump; material minimap drag-pan + channel legend — 74 tests passed |
 
-## Next up (v1.74+, Wave 27)
+## Shipped (v1.74–v1.78, Wave 27)
 
-1. **TSL post** — ACES polish + exposure-linked grading presets
-2. **GPU particles** — Niagara collision module on GPU path
-3. **Export** — DOF focus-pull sequencer parity in playable runtime
-4. **BT** — diff gutter batch-resolve + PIE sync on compile-to-script
-5. **Material TSL** — minimap zoom wheel + legend channel drag-reorder
+| Ver | What |
+|---|---|
+| v1.74 | Color grading presets — `postColorGradingPreset` + exposure-linked LGG |
+| v1.75 | ACES exposure polish — `getACESExposure()` editor + export |
+| v1.76 | GPU particle collision — sphere bounce on integrate kernel |
+| v1.77 | Export DOF sequencer — `dofFocusDistance` track + `setDofFocus()` |
+| v1.78 | BT gutter batch-resolve + PIE resync; minimap zoom + legend reorder — 80 tests passed |
+
+## Next up (v1.79+, Wave 28)
+
+1. **TSL post** — preset preview thumbnails + per-preset ACES toggle
+2. **GPU particles** — ground bounce module on GPU path
+3. **Export** — cinematic focus-pull (`dofFocusPull`) in playable runtime
+4. **BT** — diff gutter multi-select + compile diff export patch
+5. **Material TSL** — legend channel pin-to-minimap + solo upstream graph flash
 
 ## Remaining gap-list queue (post–wave 7)
 

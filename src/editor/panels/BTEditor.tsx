@@ -19,6 +19,7 @@ import {
   summarizeBTServices,
   diffBTScriptPreview,
   getBTScriptDiffGutterNodeIds,
+  resolveBTScriptDiffGutter,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
   validateBTGraph,
@@ -370,11 +371,36 @@ export function BTEditor() {
                 },
               ),
             )
-            useEditor.getState().setStatus('BT compiled to actor script (Auto-run disabled)')
+            if (useEditor.getState().playing) {
+              const synced = world.resyncActorScript(actor.id)
+              useEditor.getState().setStatus(
+                synced
+                  ? 'BT compiled to script — PIE script resynced'
+                  : 'BT compiled to script (PIE resync skipped)',
+              )
+            } else {
+              useEditor.getState().setStatus('BT compiled to actor script (Auto-run disabled)')
+            }
           }}
         >
           To Script
         </button>
+        {diffGutterIds.size > 0 && (
+          <button
+            type="button"
+            title="Scroll to all script-diff gutter nodes"
+            onClick={() => {
+              const wrap = canvasRef.current
+              if (!wrap) return
+              const batch = resolveBTScriptDiffGutter(actor.script, graph, wrap.clientWidth, wrap.clientHeight)
+              wrap.scrollTo({ left: batch.scrollLeft, top: batch.scrollTop, behavior: 'smooth' })
+              if (batch.nodeIds[0]) setSelectedNode(batch.nodeIds[0])
+              useEditor.getState().setStatus(`Resolved ${batch.nodeIds.length} diff gutter node(s)`)
+            }}
+          >
+            Resolve ≠
+          </button>
+        )}
         {breakpointHit && breakpointHit.actorId === actor.id && (
           <button
             onClick={() => useEditor.getState().continueFromBreakpoint()}

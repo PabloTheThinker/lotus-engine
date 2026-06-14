@@ -1821,6 +1821,143 @@ test('wave 26 BT diff line jump targets', async ({ page }) => {
   expect(result.scrollLeft).toBeGreaterThan(0)
 })
 
+test('wave 27 color grading preset + ACES exposure', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      colorGrading: {
+        preset: () => string
+        settings: () => { enabled: boolean; gain: number[] }
+        acesExposure: () => number
+        exposureScale: (lift: number[], gamma: number[], gain: number[]) => { gain: number[] }
+      }
+    }
+    v.world.environment.postColorGradingPreset = 'cinematic'
+    v.world.environment.exposure = 1
+    return {
+      preset: v.colorGrading.preset(),
+      enabled: v.colorGrading.settings().enabled,
+      gain: v.colorGrading.settings().gain[0],
+      acesExp: v.colorGrading.acesExposure(),
+      scaled: v.colorGrading.exposureScale([0, 0, 0], [1, 1, 1], [1, 1, 1]).gain[0],
+    }
+  })
+
+  expect(result.preset).toBe('cinematic')
+  expect(result.enabled).toBe(true)
+  expect(result.gain).toBeGreaterThan(1)
+  expect(result.acesExp).toBeGreaterThan(0.75)
+  expect(result.scaled).toBeGreaterThan(1)
+})
+
+test('wave 27 GPU particle collision module props', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: { create: (b: 'gpu') => { props: { collisionRadius?: number; collisionBounce?: number } } }
+    }
+    const ps = v.particles.create('gpu')
+    return { radius: ps.props.collisionRadius, bounce: ps.props.collisionBounce }
+  })
+
+  expect(result.radius).toBeGreaterThan(0)
+  expect(result.bounce).toBeGreaterThan(0)
+})
+
+test('wave 27 export DOF sequencer setDofFocus surface', async ({ page }) => {
+  await bootEditor(page)
+
+  const html = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & { export: { buildPlayableHTML: () => string } }
+    return v.export.buildPlayableHTML()
+  })
+
+  expect(html).toContain('setDofFocus')
+  expect(html).toContain('dofFocusDistance')
+})
+
+test('wave 27 BT gutter batch resolve bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        resolveDiffGutter: (
+          g: import('../src/engine/btGraph').BTGraph,
+          script: string,
+        ) => { nodeIds: string[]; scrollLeft: number }
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const svc = { id: 'svc27', type: 'SvcPlayerNear', x: 200, y: 200, props: { radius: 5 } }
+    const sel = { id: 'sel27', type: 'Selector', x: 300, y: 80, props: {} }
+    graph.nodes.push(svc, sel)
+    graph.edges = [
+      { from: root.id, to: sel.id },
+      { from: sel.id, to: svc.id, kind: 'service' },
+    ]
+    const batch = v.bt.resolveDiffGutter(graph, '// stale')
+    return { count: batch.nodeIds.length, scrollLeft: batch.scrollLeft }
+  })
+
+  expect(result.count).toBeGreaterThan(0)
+  expect(result.scrollLeft).toBeGreaterThan(0)
+})
+
+test('wave 27 world resyncActorScript during play', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    actor.script = 'function onBeginPlay() { api.log("v27") }'
+    const play = v.terminal.exec('/play')
+    if (play.error) throw new Error(play.error)
+    await new Promise((r) => setTimeout(r, 80))
+    const synced = v.world.resyncActorScript(actor.id)
+    v.terminal.exec('/stop')
+    return { playing: v.world.playing, synced }
+  })
+
+  expect(result.synced).toBe(true)
+})
+
+test('wave 27 material legend reorder surface', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus!
+    const spawn = v.terminal.exec('/spawn box')
+    if (spawn.error) throw new Error(spawn.error)
+    const actor = [...v.world.actors.values()].find((a) => a.name.toLowerCase().includes('box'))
+    if (!actor) throw new Error('spawned box not found')
+    v.useEditor.getState().select(actor.id)
+    actor.materialGraph = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 400, y: 100, props: {} },
+        { id: 'c1', type: 'Color', x: 100, y: 80, props: { color: '#4488ff' } },
+        { id: 'r1', type: 'Float', x: 100, y: 180, props: { value: 0.4 } },
+      ],
+      edges: [
+        { from: 'c1', to: 'out:baseColor' },
+        { from: 'r1', to: 'out:roughness' },
+      ],
+    }
+  })
+
+  await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
+  const chips = page.locator('.mat-legend-chip')
+  await expect(chips).toHaveCount(2)
+  await expect(chips.first()).toHaveAttribute('draggable', 'true')
+})
+
 test('wave 26 material minimap legend + drag-pan surface', async ({ page }) => {
   await bootEditor(page)
 

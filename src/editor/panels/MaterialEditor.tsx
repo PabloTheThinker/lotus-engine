@@ -108,6 +108,7 @@ function MaterialGraphMinimap({
   viewportW,
   viewportH,
   onPanTo,
+  onZoomAt,
 }: {
   graph: MaterialGraph
   isolateChannel: string | null
@@ -116,6 +117,7 @@ function MaterialGraphMinimap({
   viewportW: number
   viewportH: number
   onPanTo: (gx: number, gy: number) => void
+  onZoomAt?: (factor: number, gx: number, gy: number) => void
 }) {
   const dragPan = useRef(false)
   if (graph.nodes.length < 2) return null
@@ -171,6 +173,14 @@ function MaterialGraphMinimap({
       }}
       onMouseLeave={() => {
         dragPan.current = false
+      }}
+      onWheel={(e) => {
+        if (!onZoomAt) return
+        e.preventDefault()
+        e.stopPropagation()
+        const factor = e.deltaY < 0 ? 1.12 : 0.88
+        const { gx, gy } = mapMinimapPoint(e)
+        onZoomAt(factor, gx, gy)
       }}
     >
       {graph.edges.map((edge, i) => {
@@ -391,6 +401,8 @@ export function MaterialEditor() {
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
   const [previewFlash, setPreviewFlash] = useState<string | null>(null)
   const [isolateChannel, setIsolateChannel] = useState<string | null>(null)
+  const [channelOrder, setChannelOrder] = useState<string[]>([])
+  const legendDrag = useRef<string | null>(null)
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActor = useRef<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -434,6 +446,18 @@ export function MaterialEditor() {
     )
   }, [graph])
 
+  const orderedChannels = channelOrder.length ? channelOrder : wiredChannels
+
+  useEffect(() => {
+    setChannelOrder((prev) => {
+      const next = prev.filter((ch) => wiredChannels.includes(ch))
+      for (const ch of wiredChannels) {
+        if (!next.includes(ch)) next.push(ch)
+      }
+      return next.length ? next : [...wiredChannels]
+    })
+  }, [wiredChannels])
+
   useEffect(() => {
     if (!graph || world.environment.materialBackend !== 'tsl') return
     const onKey = (e: KeyboardEvent) => {
@@ -442,13 +466,13 @@ export function MaterialEditor() {
         return
       }
       if (e.altKey && e.key >= '1' && e.key <= '9') {
-        const ch = wiredChannels[parseInt(e.key, 10) - 1]
+        const ch = orderedChannels[parseInt(e.key, 10) - 1]
         if (ch) setIsolateChannel((prev) => (prev === ch ? null : ch))
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [graph, wiredChannels])
+  }, [graph, orderedChannels])
 
   if (!actor?.mesh || !actor.materialProps) {
     return (
@@ -511,6 +535,29 @@ export function MaterialEditor() {
     setPanOffset({
       x: viewportSize.w / 2 - gx * z,
       y: viewportSize.h / 2 - gy * z,
+    })
+  }
+
+  const zoomAtGraph = (factor: number, gx: number, gy: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const mx = viewportSize.w / 2
+    const my = viewportSize.h / 2
+    const nextZoom = Math.max(0.25, Math.min(2.5, zoom * factor))
+    setZoom(nextZoom)
+    setPanOffset({ x: mx - gx * nextZoom, y: my - gy * nextZoom })
+  }
+
+  const reorderLegendChannel = (from: string, to: string) => {
+    if (from === to) return
+    setChannelOrder((prev) => {
+      const base = prev.length ? [...prev] : [...wiredChannels]
+      const fi = base.indexOf(from)
+      const ti = base.indexOf(to)
+      if (fi < 0 || ti < 0) return base
+      base.splice(fi, 1)
+      base.splice(ti, 0, from)
+      return base
     })
   }
 
@@ -583,8 +630,8 @@ export function MaterialEditor() {
         <button className="apply" onClick={apply}>
           ✓ Apply
         </button>
-        <span className="mat-zoom-hint" title="Pan canvas background · Ctrl+wheel zoom">
-          Ctrl+wheel zoom
+        <span className="mat-zoom-hint" title="Minimap wheel zoom · canvas Ctrl+wheel zoom">
+          Minimap wheel · Ctrl+wheel zoom
         </span>
       </div>
       <div className="mat-editor-body">
@@ -596,17 +643,30 @@ export function MaterialEditor() {
           viewportW={viewportSize.w}
           viewportH={viewportSize.h}
           onPanTo={panToGraph}
+          onZoomAt={zoomAtGraph}
         />
-        {wiredChannels.length > 0 && (
+        {orderedChannels.length > 0 && (
           <div className="mat-channel-legend" aria-label="Wired material channels">
-            {wiredChannels.map((ch) => (
+            {orderedChannels.map((ch) => (
               <button
                 key={ch}
                 type="button"
+                draggable
                 className={`mat-legend-chip${isolateChannel === ch ? ' active' : ''}`}
                 style={{ '--legend-color': CHANNEL_LEGEND_COLORS[ch] ?? '#6eb5ff' } as React.CSSProperties}
-                title={`Solo ${ch} (Alt+${wiredChannels.indexOf(ch) + 1})`}
+                title={`Solo ${ch} (Alt+${orderedChannels.indexOf(ch) + 1}) · drag to reorder`}
                 onClick={() => setIsolateChannel((prev) => (prev === ch ? null : ch))}
+                onDragStart={() => {
+                  legendDrag.current = ch
+                }}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  if (legendDrag.current) reorderLegendChannel(legendDrag.current, ch)
+                  legendDrag.current = null
+                }}
+                onDragEnd={() => {
+                  legendDrag.current = null
+                }}
               >
                 <span className="mat-legend-swatch" />
                 {ch}

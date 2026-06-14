@@ -31,6 +31,9 @@ interface IntegrateKernel {
   rotationSpeedU: UniformSlot
   windOffU: UniformSlot
   rotationOffU: UniformSlot
+  collisionRadiusU: UniformSlot
+  collisionBounceU: UniformSlot
+  collisionOffU: UniformSlot
   sizeStartU: UniformSlot
   sizeEndU: UniformSlot
   opacityEndU: UniformSlot
@@ -127,6 +130,7 @@ export async function bindParticleIntegrateKernel(
       If: (cond: unknown, fn: () => void) => void
       sin: (v: unknown) => ScalarEl
       cos: (v: unknown) => ScalarEl
+      sqrt: (v: unknown) => ScalarEl
       fract: (v: unknown) => ScalarEl
       mix: (a: unknown, b: unknown, f: ScalarEl) => ScalarEl
     }
@@ -154,7 +158,11 @@ export async function bindParticleIntegrateKernel(
     const rotationSpeedU = t.uniform(t.float(0))
     const windOffU = t.uniform(t.float(0))
     const rotationOffU = t.uniform(t.float(0))
+    const collisionRadiusU = t.uniform(t.float(0))
+    const collisionBounceU = t.uniform(t.float(0.55))
+    const collisionOffU = t.uniform(t.float(0))
     const degToRad = t.float(Math.PI / 180)
+    const eps = t.float(1e-5)
     const sizeStartU = t.uniform(t.float(0.2))
     const sizeEndU = t.uniform(t.float(0.04))
     const opacityEndU = t.uniform(t.float(0))
@@ -192,6 +200,28 @@ export async function bindParticleIntegrateKernel(
         p.x.addAssign(v.x.mul(dtU))
         p.y.addAssign(v.y.mul(dtU))
         p.z.addAssign(v.z.mul(dtU))
+        t.If(collisionOffU.lessThan(0.5), () => {
+          t.If(collisionRadiusU.greaterThan(eps), () => {
+            const dist = t.sqrt(p.x.mul(p.x).add(p.y.mul(p.y)).add(p.z.mul(p.z)) as ScalarEl)
+            t.If(dist.greaterThan(eps), () => {
+              t.If(dist.lessThan(collisionRadiusU), () => {
+              const nx = p.x.div(dist)
+              const ny = p.y.div(dist)
+              const nz = p.z.div(dist)
+              p.x.assign(nx.mul(collisionRadiusU))
+              p.y.assign(ny.mul(collisionRadiusU))
+              p.z.assign(nz.mul(collisionRadiusU))
+              const dot = v.x.mul(nx).add(v.y.mul(ny)).add(v.z.mul(nz))
+              t.If(dot.lessThan(t.float(0)), () => {
+                const k = t.float(1).add(collisionBounceU).mul(dot)
+                v.x.subAssign(k.mul(nx))
+                v.y.subAssign(k.mul(ny))
+                v.z.subAssign(k.mul(nz))
+              })
+              })
+            })
+          })
+        })
         const lifeSlot = lifeBuf.element(t.instanceIndex)
         lifeSlot.subAssign(dtU)
         t.If(lifeSlot.lessThanEqual(t.float(0)), () => {
@@ -258,6 +288,9 @@ export async function bindParticleIntegrateKernel(
       rotationSpeedU,
       windOffU,
       rotationOffU,
+      collisionRadiusU,
+      collisionBounceU,
+      collisionOffU,
       sizeStartU,
       sizeEndU,
       opacityEndU,
@@ -355,6 +388,9 @@ export interface ParticleGPUModules {
   rotationSpeed?: number
   windOff?: boolean
   rotationOff?: boolean
+  collisionRadius?: number
+  collisionBounce?: number
+  collisionOff?: boolean
 }
 
 export function runParticleGPUIntegrate(
@@ -378,6 +414,9 @@ export function runParticleGPUIntegrate(
     kernel.rotationSpeedU.value = modules?.rotationSpeed ?? 0
     kernel.windOffU.value = modules?.windOff ? 1 : 0
     kernel.rotationOffU.value = modules?.rotationOff ? 1 : 0
+    kernel.collisionRadiusU.value = modules?.collisionRadius ?? 0
+    kernel.collisionBounceU.value = modules?.collisionBounce ?? 0.55
+    kernel.collisionOffU.value = modules?.collisionOff ? 1 : 0
     if (style) {
       kernel.sizeStartU.value = style.sizeStart
       kernel.sizeEndU.value = style.sizeEnd

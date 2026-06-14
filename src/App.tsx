@@ -46,6 +46,7 @@ import {
   diffBTScriptPreview,
   getBTScriptDiffGutterNodeIds,
   getBTScriptDiffLineTargets,
+  resolveBTScriptDiffGutter,
   scrollRectForBTNode,
   getBTNodeServiceCompileHint,
   validateBTGraph,
@@ -54,7 +55,13 @@ import { getActiveBTPaths, getActiveBTServiceNodeIds } from './engine/behaviorTr
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
 import { getDOFSettings, resolveCameraDOFFocusDistance } from './engine/postStackDOF'
-import { getACESPostEnabled, getColorGradingSettings } from './engine/postStackColorGrading'
+import {
+  applyExposureToColorGrading,
+  getACESExposure,
+  getACESPostEnabled,
+  getColorGradingPreset,
+  getColorGradingSettings,
+} from './engine/postStackColorGrading'
 import { probeExportPerfGate, scheduleExportPerfProbe } from './editor/exportPerfProbe'
 import { getSSRSettings } from './engine/ssrPreset'
 import { runWebGPUQAMatrix } from './engine/webgpuQA'
@@ -233,6 +240,8 @@ const lotusBridge = {
     diffLineTargets: (graph = emptyBTGraph(), script = '') => getBTScriptDiffLineTargets(script, graph),
     scrollRectForNode: (node: { x: number; y: number }, wrapW: number, wrapH: number) =>
       scrollRectForBTNode(node, wrapW, wrapH),
+    resolveDiffGutter: (graph = emptyBTGraph(), script = '', wrapW = 400, wrapH = 280) =>
+      resolveBTScriptDiffGutter(script, graph, wrapW, wrapH),
     serviceCompileHint: (graph = emptyBTGraph(), nodeId = '') => getBTNodeServiceCompileHint(graph, nodeId),
     inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
@@ -258,7 +267,14 @@ const lotusBridge = {
   },
   colorGrading: {
     settings: () => getColorGradingSettings(world.environment),
+    preset: () => getColorGradingPreset(world.environment),
+    exposureScale: (
+      lift: [number, number, number] = [0, 0, 0],
+      gamma: [number, number, number] = [1, 1, 1],
+      gain: [number, number, number] = [1, 1, 1],
+    ) => applyExposureToColorGrading({ lift, gamma, gain }, world.environment.exposure ?? 0.75),
     acesEnabled: () => getACESPostEnabled(world.environment),
+    acesExposure: () => getACESExposure(world.environment),
   },
   projectSettings: {
     load: loadProjectSettings,

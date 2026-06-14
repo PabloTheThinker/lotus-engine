@@ -118,6 +118,7 @@ export class GPUParticleSystem extends ParticleSystem {
       const offSpawn = p.modulesOff?.includes('spawn')
       const offWind = p.modulesOff?.includes('wind')
       const offRotation = p.modulesOff?.includes('rotation')
+      const offCollision = p.modulesOff?.includes('collision')
       const gravity = offForces ? 0 : p.gravity
       const drag = offForces ? 0 : p.drag
 
@@ -151,6 +152,9 @@ export class GPUParticleSystem extends ParticleSystem {
           rotationSpeed: p.rotationSpeed ?? 0,
           windOff: offWind || offForces,
           rotationOff: offRotation || offForces,
+          collisionRadius: p.collisionRadius ?? 0,
+          collisionBounce: p.collisionBounce ?? 0.55,
+          collisionOff: offCollision || offForces,
         }
         if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag, style, modules)) {
           this.computeIntegratedFrames++
