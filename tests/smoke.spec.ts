@@ -486,7 +486,7 @@ test('wave 11 TSL material serialize + crowd after nav bake', async ({ page }) =
     return { tsl, baked, crowdOk, agentOk, count: v.crowd.count() }
   })
 
-  expect(result.tsl).toMatchObject({ backend: 'tsl', version: 1 })
+  expect(result.tsl).toMatchObject({ backend: 'tsl', version: 2 })
   expect(result.baked).toBe(true)
   expect(result.crowdOk).toBe(true)
   expect(result.agentOk).toBe(true)
@@ -634,19 +634,21 @@ test('wave 14 export embeds renderBackend + BT decorators compile', async ({ pag
       props: { seconds: 0.1 },
     }
     graph.nodes.push(repeat, wait)
+    const selector = graph.nodes.find((n) => n.type === 'Selector')!
+    graph.edges = graph.edges.filter((e) => !(e.from === root.id && e.to === selector.id))
     graph.edges.push({ from: root.id, to: repeat.id }, { from: repeat.id, to: wait.id })
     const compiled = v.bt.compile(graph)
-    const seq = compiled?.tree as { sequence?: unknown[] } | undefined
+    const repeatTree = compiled?.tree as { repeat?: { count: number } } | undefined
     return {
       hasExport,
       hasRenderBackend,
-      repeatSeqLen: seq?.sequence?.length ?? 0,
+      repeatCount: repeatTree?.repeat?.count ?? 0,
     }
   })
 
   expect(result.hasExport).toBe(true)
   expect(result.hasRenderBackend).toBe(true)
-  expect(result.repeatSeqLen).toBe(2)
+  expect(result.repeatCount).toBe(2)
 })
 
 test('wave 15 BT validate + compile preview bridge', async ({ page }) => {
@@ -782,6 +784,84 @@ test('wave 16 material TSL preview capability probe', async ({ page }) => {
   })
 
   expect(result.probe).toBe(true)
+})
+
+test('wave 17 BT decorator compile + subtree collapse', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        compile: (g: import('../src/engine/btGraph').BTGraph) => { tree: unknown } | null
+        summarize: (tree: unknown) => string
+        collapseSubtree: (g: import('../src/engine/btGraph').BTGraph, id: string) => import('../src/engine/btGraph').BTGraph
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const root = graph.nodes.find((n) => n.type === 'Root')!
+    const repeat = {
+      id: 'r1',
+      type: 'Repeat',
+      x: 300,
+      y: 80,
+      props: { count: 3 },
+    }
+    const wait = { id: 'w1', type: 'Wait', x: 500, y: 80, props: { seconds: 0.2 } }
+    graph.nodes.push(repeat, wait)
+    graph.edges.push({ from: root.id, to: repeat.id }, { from: repeat.id, to: wait.id })
+    const compiled = v.bt.compile(graph)
+    const summary = compiled ? v.bt.summarize(compiled.tree) : ''
+    const beforeCount = graph.nodes.length
+    const collapsed = v.bt.collapseSubtree(graph, repeat.id)
+    return {
+      hasRepeat: summary.includes('Repeat x3'),
+      stashed: !!collapsed.subtrees?.[repeat.id],
+      beforeCount,
+      nodeCount: collapsed.nodes.length,
+    }
+  })
+
+  expect(result.hasRepeat).toBe(true)
+  expect(result.stashed).toBe(true)
+  expect(result.nodeCount).toBe(result.beforeCount - 1)
+})
+
+test('wave 17 material TSL node graph compile', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: { compileNodes: (g: import('../src/engine/materialGraph').MaterialGraph) => Record<string, unknown> | null }
+    }
+    const g = {
+      nodes: [
+        { id: 'out', type: 'Output', x: 0, y: 0, props: {} },
+        { id: 'c', type: 'Color', x: 0, y: 0, props: { value: '#ff0000' } },
+      ],
+      edges: [{ from: 'c', to: 'out:baseColor' }],
+    }
+    const nodes = v.materialTSL.compileNodes(g)
+    return { hasBase: nodes != null && 'baseColor' in nodes }
+  })
+
+  expect(result.hasBase).toBe(true)
+})
+
+test('wave 17 GPU particle alive mask bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: { create: (b: 'gpu') => { simBuffers: () => { aliveF: Float32Array }; syncAliveMask?: () => void } }
+    }
+    const ps = v.particles.create('gpu')
+    const buf = ps.simBuffers()
+    return { aliveFLen: buf.aliveF.length, hasMask: buf.aliveF instanceof Float32Array }
+  })
+
+  expect(result.hasMask).toBe(true)
+  expect(result.aliveFLen).toBeGreaterThan(0)
 })
 
 test('wave 13 BT editor blackboard panel', async ({ page }) => {

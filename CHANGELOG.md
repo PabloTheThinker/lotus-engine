@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 17: v1.21–v1.26
+
+### Added
+- **v1.21** TSL post TRAA temporal filter + denoise for SSGI stability — velocity MRT, `traa`/`denoise` in `postStackTSLPipeline.ts`; editor + export honor `fx.taa`
+- **v1.22** GPU particle alive mask + emit kernel — `aliveF` buffer, `syncAliveMask`/`applyGPUAliveMask`, `runParticleGPUEmit` in compute tier
+- **v1.23** Export WebGPU particle tier — `bindExportParticleCompute()` in playable `runtime.js`; CPU loop skips forces when `gpuTier`
+- **v1.24** BT decorator compile (no Repeat unroll) + subtree collapse/expand — `collapseBTSubtree`/`expandBTSubtree`, dashed wrap rects in `BTEditor`
+- **v1.25** Material TSL per-node graph compile — `compileMaterialGraphTSLNodes` (Color, Scalar, UV, Sine, Fresnel, Noise, …); serialize `version: 2`, `nodeGraph` flag
+- **v1.26** Playwright wave 17 tests — BT collapse, material TSL nodes, GPU `aliveF` bridge (35 tests)
+
+### Changed
+- `window.lotus.bt` adds `collapseSubtree`, `expandSubtree`; Repeat/Cooldown compile as `{ repeat: { count, child } }` decorators
+- `window.lotus.materialTSL.compileNodes` for live TSL node graph evaluation
+- Viewport binds `bindWorldGPUParticles` when WebGPU active; stats badge reports `fx.taa`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 35 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 16: v1.15–v1.20
 
 ### Added

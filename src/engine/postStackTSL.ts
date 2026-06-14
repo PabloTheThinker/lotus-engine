@@ -18,6 +18,7 @@ export function getTSLPostState(
   fullStack = false,
   ssgiOn = false,
   ssrOn = false,
+  taaOn = false,
 ): TSLPostState {
   if (!webgpuTier) {
     return { tier: 'inactive', note: 'WebGL + EffectComposer' }
@@ -27,6 +28,7 @@ export function getTSLPostState(
   }
   if (pipelineActive && fullStack) {
     let note = 'TSL RenderPipeline GTAO + bloom + FXAA'
+    if (taaOn) note += ' + TRAA'
     if (ssgiOn) note += ' + SSGI'
     if (ssrOn) note += ' + SSR'
     return { tier: 'full', note }

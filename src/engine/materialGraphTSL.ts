@@ -1,19 +1,25 @@
 import * as THREE from 'three'
-import type { MaterialGraph, MatValue } from './materialGraph'
-import { evaluateMaterialGraph } from './materialGraph'
+import type { MaterialGraph, MatNode, MatValue } from './materialGraph'
+import { MAT_NODE_DEFS, evaluateMaterialGraph } from './materialGraph'
 
 const toVec = (v: MatValue): [number, number, number] => (typeof v === 'number' ? [v, v, v] : v)
 const toNum = (v: MatValue): number => (typeof v === 'number' ? v : (v[0] + v[1] + v[2]) / 3)
 
 /**
- * TSL material backend (Wave 11–15) — parallel to materialShader.ts GLSL path.
- * Wave 15: dynamic import from three/webgpu (no static MeshPhysicalNodeMaterial on THREE).
+ * TSL material backend (Wave 11–17) — per-node TSL graph compile on MeshPhysicalNodeMaterial.
  */
 
 export type MaterialBackend = 'glsl' | 'tsl'
 
-type NodeMatCtor = new () => THREE.Material
+type NodeMatCtor = new () => THREE.Material & {
+  colorNode?: unknown
+  emissiveNode?: unknown
+  roughnessNode?: unknown
+  metalnessNode?: unknown
+  opacityNode?: unknown
+}
 let cachedNodeMat: NodeMatCtor | null | undefined
+let cachedTsl: Record<string, unknown> | null = null
 
 async function resolveNodeMaterialCtor(): Promise<NodeMatCtor | null> {
   if (cachedNodeMat !== undefined) return cachedNodeMat
@@ -28,24 +34,148 @@ async function resolveNodeMaterialCtor(): Promise<NodeMatCtor | null> {
 }
 
 void resolveNodeMaterialCtor()
+void import('three/tsl').then((m) => {
+  cachedTsl = m as unknown as Record<string, unknown>
+})
 
-/** Sync probe — true after async webgpu module resolves with NodeMaterial. */
 export function isTSLPreviewAvailable(): boolean {
-  return cachedNodeMat != null
+  return cachedNodeMat != null && cachedTsl != null
 }
 
-/** Async capability check for editor / tests. */
 export async function isTSLPreviewAvailableAsync(): Promise<boolean> {
-  return (await resolveNodeMaterialCtor()) != null
+  await resolveNodeMaterialCtor()
+  if (!cachedTsl) {
+    try {
+      cachedTsl = (await import('three/tsl')) as unknown as Record<string, unknown>
+    } catch {
+      cachedTsl = null
+    }
+  }
+  return cachedNodeMat != null && cachedTsl != null
 }
 
-/** Apply material instance overrides as TSL uniform targets (Wave 10.7 stub). */
-/** Serialize TSL material graph preview state for export / roundtrip. */
+type TSLVal = unknown
+
+function hexColor(tsl: Record<string, unknown>, hex: string): TSLVal {
+  const c = new THREE.Color(hex)
+  const color = tsl.color as (r: number, g?: number, b?: number) => TSLVal
+  return color(c.r, c.g, c.b)
+}
+
+function asFloat(tsl: Record<string, unknown>, v: TSLVal): TSLVal {
+  const f = tsl.float as (n: unknown) => TSLVal
+  return f(v)
+}
+
+/** Wave 17 — compile a material graph node tree to TSL node values. */
+export function compileMaterialGraphTSLNodes(graph: MaterialGraph): Record<string, TSLVal> | null {
+  const tsl = cachedTsl
+  if (!tsl) return null
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const memo = new Map<string, TSLVal>()
+  const float = tsl.float as (n: number) => TSLVal
+  const sin = tsl.sin as (n: TSLVal) => TSLVal
+  const mul = tsl.mul as (a: TSLVal, b: TSLVal) => TSLVal
+  const add = tsl.add as (a: TSLVal, b: TSLVal) => TSLVal
+  const mix = tsl.mix as (a: TSLVal, b: TSLVal, t: TSLVal) => TSLVal
+  const time = tsl.time as TSLVal
+  const uv = tsl.uv as () => TSLVal
+  const vec3n = tsl.vec3 as (a: TSLVal, b?: TSLVal, c?: TSLVal) => TSLVal
+
+  const inputOf = (node: MatNode, port: string): TSLVal | undefined => {
+    const edge = graph.edges.find((e) => e.to === `${node.id}:${port}`)
+    if (!edge) return undefined
+    return compileNode(edge.from, 0)
+  }
+
+  const compileNode = (id: string, depth: number): TSLVal => {
+    if (memo.has(id)) return memo.get(id)!
+    if (depth > 32) return float(0)
+    const node = byId.get(id)
+    if (!node) return float(0)
+    let out: TSLVal = float(0)
+    switch (node.type) {
+      case 'Color':
+        out = hexColor(tsl, String(node.props.value ?? '#5b8def'))
+        break
+      case 'Scalar':
+        out = float(Number(node.props.value ?? 1))
+        break
+      case 'Time':
+        out = time
+        break
+      case 'UV':
+        out = uv()
+        break
+      case 'Sine': {
+        const inp = inputOf(node, 'in') ?? time
+        const freq = float(Number(node.props.frequency ?? 1) * Math.PI * 2)
+        out = sin(mul(inp, freq))
+        break
+      }
+      case 'Pulse': {
+        const inp = inputOf(node, 'in') ?? time
+        const spd = float(Number(node.props.speed ?? 1) * Math.PI * 2)
+        const wave = sin(mul(inp, spd))
+        out = add(float(0.5), mul(wave, float(0.5)))
+        break
+      }
+      case 'Multiply':
+        out = mul(inputOf(node, 'a') ?? float(1), inputOf(node, 'b') ?? float(1))
+        break
+      case 'Add':
+        out = add(inputOf(node, 'a') ?? float(0), inputOf(node, 'b') ?? float(0))
+        break
+      case 'Lerp':
+        out = mix(
+          inputOf(node, 'a') ?? float(0),
+          inputOf(node, 'b') ?? float(1),
+          inputOf(node, 't') ?? float(0.5),
+        )
+        break
+      case 'Fresnel': {
+        const bias = float(Number(node.props.bias ?? 0.1))
+        const scale = float(Number(node.props.scale ?? 1))
+        out = mul(add(bias, float(0.4)), scale)
+        break
+      }
+      case 'Noise': {
+        const uvin = inputOf(node, 'uv') ?? uv()
+        const scale = float(Number(node.props.scale ?? 4))
+        out = mul(sin(mul(uvin, scale)), float(0.5))
+        break
+      }
+      case 'TextureSample':
+        out = hexColor(tsl, String(node.props.color ?? '#808080'))
+        break
+      case 'WorldPosition':
+      case 'ObjectPosition':
+        out = vec3n(float(0))
+        break
+      default:
+        out = float(0)
+    }
+    memo.set(id, out)
+    return out
+  }
+
+  const output = graph.nodes.find((n) => n.type === 'Output')
+  if (!output) return null
+  const channels: Record<string, TSLVal> = {}
+  for (const inp of MAT_NODE_DEFS.Output.inputs) {
+    const edge = graph.edges.find((e) => e.to === `${output.id}:${inp}`)
+    if (edge) channels[inp] = compileNode(edge.from, 0)
+  }
+  return Object.keys(channels).length ? channels : null
+}
+
 export function serializeMaterialGraphTSL(graph: MaterialGraph, t: number): object {
+  const nodes = compileMaterialGraphTSLNodes(graph)
   const out = evaluateMaterialGraph(graph, t)
   return {
     backend: 'tsl',
-    version: 1,
+    version: 2,
+    nodeGraph: !!nodes,
     preview: {
       baseColor: out.baseColor,
       emissive: out.emissive,
@@ -59,7 +189,6 @@ export function serializeMaterialGraphTSL(graph: MaterialGraph, t: number): obje
   }
 }
 
-/** Restore TSL preview from serialized blob (preview channels only). */
 export function deserializeMaterialGraphTSL(
   blob: { preview?: Record<string, MatValue> },
   graph: MaterialGraph,
@@ -99,34 +228,53 @@ export function applyMaterialInstanceTSL(
   mat.userData.lotusInstanceOverrides = overrides
 }
 
-/** Compile a Lotus material graph to a TSL-backed preview material (preview only). */
+/** Compile material graph to TSL node material (Wave 17 per-node path + CPU fallback). */
 export function compileMaterialGraphTSL(
   graph: MaterialGraph,
-  t: number,
+  _t: number,
   instanceOverrides?: { color?: string; roughness?: number; metalness?: number; emissive?: string },
 ): THREE.Material | null {
   const NodeMaterial = cachedNodeMat
   if (!NodeMaterial) return null
   try {
-    const mat = new NodeMaterial() as THREE.MeshPhysicalMaterial
-    const out = evaluateMaterialGraph(graph, t)
+    const mat = new NodeMaterial()
+    const channels = compileMaterialGraphTSLNodes(graph)
+    if (channels) {
+      if (channels.baseColor !== undefined) mat.colorNode = channels.baseColor
+      if (channels.emissive !== undefined) mat.emissiveNode = channels.emissive
+      if (channels.emissiveInt !== undefined) (mat as THREE.MeshPhysicalMaterial).emissiveIntensity = 1
+      if (channels.roughness !== undefined) mat.roughnessNode = asFloat(cachedTsl!, channels.roughness)
+      if (channels.metalness !== undefined) mat.metalnessNode = asFloat(cachedTsl!, channels.metalness)
+      if (channels.opacity !== undefined) {
+        mat.opacityNode = asFloat(cachedTsl!, channels.opacity)
+        mat.transparent = true
+      }
+      mat.userData.lotusMaterialBackend = 'tsl'
+      mat.userData.lotusGraphPreview = true
+      mat.userData.lotusTSLNodeGraph = true
+      if (instanceOverrides) applyMaterialInstanceTSL(mat as THREE.MeshPhysicalMaterial, instanceOverrides)
+      return mat
+    }
+
+    const out = evaluateMaterialGraph(graph, _t)
+    const std = mat as THREE.MeshPhysicalMaterial
     if (out.baseColor !== undefined) {
       const [cr, cg, cb] = toVec(out.baseColor)
-      mat.color.setRGB(cr, cg, cb)
+      std.color.setRGB(cr, cg, cb)
     }
     if (out.emissive !== undefined) {
       const [er, eg, eb] = toVec(out.emissive)
-      mat.emissive.setRGB(er, eg, eb)
+      std.emissive.setRGB(er, eg, eb)
     }
-    if (out.emissiveInt !== undefined) mat.emissiveIntensity = Math.max(0, toNum(out.emissiveInt))
-    if (out.roughness !== undefined) mat.roughness = Math.max(0, Math.min(1, toNum(out.roughness)))
-    if (out.metalness !== undefined) mat.metalness = Math.max(0, Math.min(1, toNum(out.metalness)))
+    if (out.emissiveInt !== undefined) std.emissiveIntensity = Math.max(0, toNum(out.emissiveInt))
+    if (out.roughness !== undefined) std.roughness = Math.max(0, Math.min(1, toNum(out.roughness)))
+    if (out.metalness !== undefined) std.metalness = Math.max(0, Math.min(1, toNum(out.metalness)))
     if (out.opacity !== undefined) {
       const op = Math.max(0, Math.min(1, toNum(out.opacity)))
-      mat.opacity = op
-      mat.transparent = op < 0.999
+      std.opacity = op
+      std.transparent = op < 0.999
     }
-    if (instanceOverrides) applyMaterialInstanceTSL(mat, instanceOverrides)
+    if (instanceOverrides) applyMaterialInstanceTSL(std, instanceOverrides)
     mat.userData.lotusMaterialBackend = 'tsl'
     mat.userData.lotusGraphPreview = true
     return mat

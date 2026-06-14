@@ -33,9 +33,11 @@ import { ProjectSettingsModal } from './editor/ProjectSettingsModal'
 import { loadProjectSettings } from './editor/projectSettings'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
 import {
+  collapseBTSubtree,
   compileBTGraph,
   compileBTGraphToScript,
   emptyBTGraph,
+  expandBTSubtree,
   inferBlackboardTypes,
   summarizeBTTree,
   validateBTGraph,
@@ -58,7 +60,11 @@ import {
 } from './engine/characterController'
 import { crowdAddAgent, crowdAgentCount, crowdGetPosition, initCrowd } from './engine/navCrowd'
 import { mpIsDedicatedServer, mpLagCompensatedTransform, mpNetSettings } from './engine/multiplayer'
-import { isTSLPreviewAvailableAsync, serializeMaterialGraphTSL } from './engine/materialGraphTSL'
+import {
+  compileMaterialGraphTSLNodes,
+  isTSLPreviewAvailableAsync,
+  serializeMaterialGraphTSL,
+} from './engine/materialGraphTSL'
 import { emptyMaterialGraph } from './engine/materialGraph'
 import { bakeLightProbeGrid } from './engine/ssrProbeGI'
 
@@ -148,6 +154,7 @@ const lotusBridge = {
   materialTSL: {
     serialize: (graph = emptyMaterialGraph()) => serializeMaterialGraphTSL(graph, 0),
     previewAvailable: () => isTSLPreviewAvailableAsync(),
+    compileNodes: (graph = emptyMaterialGraph()) => compileMaterialGraphTSLNodes(graph),
   },
   bakeGIProbes: async () => {
     const gfx = (window as unknown as { lotusGfx?: { renderer?: THREE.WebGLRenderer } }).lotusGfx
@@ -179,6 +186,8 @@ const lotusBridge = {
     emptyGraph: emptyBTGraph,
     compile: compileBTGraph,
     compileScript: compileBTGraphToScript,
+    collapseSubtree: collapseBTSubtree,
+    expandSubtree: expandBTSubtree,
     validate: validateBTGraph,
     summarize: summarizeBTTree,
     inferBBTypes: inferBlackboardTypes,

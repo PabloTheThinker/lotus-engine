@@ -3,7 +3,7 @@ import type { PostFxSettings } from './renderBackend'
 import type { LotusPrimaryRenderer } from './lotusRenderer'
 import type { SSGISettings, SSGIPreset } from './ssgiPreset'
 
-/** Wave 14–16 — TSL RenderPipeline (GTAO, SSGI, SSR, bloom, FXAA) for WebGPURenderer canvas. */
+/** Wave 14–17 — TSL RenderPipeline (GTAO, SSGI+TRAA/denoise, SSR, bloom, FXAA). */
 
 export interface TSLPipelineStack {
   active: boolean
@@ -31,6 +31,7 @@ export interface TSLPipelineOptions {
   bloomRadius?: number
   ssao?: boolean
   fxaa?: boolean
+  taa?: boolean
   ssr?: boolean
   ssgi?: SSGISettings
 }
@@ -58,6 +59,8 @@ export async function createTSLRenderPipeline(
     const { ao } = await import('three/addons/tsl/display/GTAONode.js')
     const { ssgi } = await import('three/addons/tsl/display/SSGINode.js')
     const { ssr } = await import('three/addons/tsl/display/SSRNode.js')
+    const { traa } = await import('three/addons/tsl/display/TRAANode.js')
+    const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js')
 
     const RenderPipeline = (webgpu as {
       RenderPipeline: new (r: LotusPrimaryRenderer) => {
@@ -75,12 +78,14 @@ export async function createTSLRenderPipeline(
     const mrt = (tsl as { mrt: (o: Record<string, unknown>) => unknown }).mrt
     const output = (tsl as { output: unknown }).output
     const normalView = (tsl as { normalView: unknown }).normalView
+    const velocity = (tsl as { velocity: unknown }).velocity
     const metalness = (tsl as { metalness: unknown }).metalness
     const roughness = (tsl as { roughness: unknown }).roughness
     const vec3 = (tsl as { vec3: (n: unknown) => unknown }).vec3
     const vec4 = (tsl as { vec4: (a: unknown, b?: unknown) => unknown }).vec4
     const mul = (tsl as { mul: (a: unknown, b: unknown) => unknown }).mul
     const add = (tsl as { add: (a: unknown, b: unknown) => unknown }).add
+
     const pipeline = new RenderPipeline(primary)
     let bloomOn = opts.bloomEnabled !== false
     let bloomStrength = opts.bloomStrength ?? 0.35
@@ -88,6 +93,7 @@ export async function createTSLRenderPipeline(
     let bloomRadius = opts.bloomRadius ?? 0.6
     let ssaoOn = opts.ssao ?? false
     let fxaaOn = opts.fxaa ?? false
+    let taaOn = opts.taa ?? false
     let ssrOn = opts.ssr ?? false
     let ssgiOn = opts.ssgi?.enabled ?? false
     let ssgiSettings = opts.ssgi
@@ -96,9 +102,10 @@ export async function createTSLRenderPipeline(
     type TSLNode = unknown
     const rebuildOutput = () => {
       const scenePass = pass(scene, activeCam)
-      const needsMRT = ssaoOn || ssgiOn || ssrOn
+      const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn
       if (needsMRT) {
         const mrtOut: Record<string, unknown> = { output, normal: normalView }
+        if (taaOn || ssgiOn) mrtOut.velocity = velocity
         if (ssrOn) {
           mrtOut.metalness = metalness
           mrtOut.roughness = roughness
@@ -106,44 +113,62 @@ export async function createTSLRenderPipeline(
         scenePass.setMRT(mrt(mrtOut))
       }
       let colorNode = scenePass.getTextureNode('output') as TSLNode
+      const cam = activeCam as THREE.PerspectiveCamera
 
       if (needsMRT) {
         const depth = scenePass.getTextureNode('depth') as TSLNode
         const normal = scenePass.getTextureNode('normal') as TSLNode
 
+        if (taaOn) {
+          const vel = scenePass.getTextureNode('velocity') as TSLNode
+          const traaPass = traa(
+            colorNode as Parameters<typeof traa>[0],
+            depth as Parameters<typeof traa>[1],
+            vel as Parameters<typeof traa>[2],
+            cam,
+          ) as unknown as { getTextureNode: () => TSLNode }
+          colorNode = traaPass.getTextureNode()
+        }
+
         if (ssaoOn) {
           const aoPass = ao(
             depth as Parameters<typeof ao>[0],
             normal as Parameters<typeof ao>[1],
-            activeCam,
+            cam,
           ) as { getTextureNode: () => TSLNode }
           const aoTex = aoPass.getTextureNode() as { r: unknown }
           colorNode = mul(colorNode, vec4(vec3(aoTex.r), 1))
         }
 
         if (ssgiOn && ssgiSettings?.enabled) {
-          const cam = activeCam as THREE.PerspectiveCamera
           const ssgiPass = ssgi(
             colorNode as Parameters<typeof ssgi>[0],
             depth as Parameters<typeof ssgi>[1],
             normal as Parameters<typeof ssgi>[2],
             cam,
           ) as unknown as {
-            getTextureNode: () => { r: unknown; g: unknown; b: unknown; a: unknown }
+            getTextureNode: () => TSLNode
             sliceCount: { value: number }
             stepCount: { value: number }
             giIntensity: { value: number }
             radius: { value: number }
+            useTemporalFiltering: boolean
           }
+          ssgiPass.useTemporalFiltering = taaOn
           ssgiPass.sliceCount.value = SSGI_SLICE[ssgiSettings.preset] ?? 1
           ssgiPass.stepCount.value = Math.max(4, ssgiSettings.samples)
           ssgiPass.giIntensity.value = Math.max(1, ssgiSettings.intensity * 12)
           ssgiPass.radius.value = Math.max(2, ssgiSettings.radius * 14)
-          const giTex = ssgiPass.getTextureNode()
-          colorNode = add(colorNode, giTex as TSLNode)
-          if (!ssaoOn) {
-            colorNode = mul(colorNode, vec4(vec3(giTex.a), 1))
+          let giTex = ssgiPass.getTextureNode()
+          if (!taaOn) {
+            giTex = denoise(
+              giTex as Parameters<typeof denoise>[0],
+              depth as Parameters<typeof denoise>[1],
+              normal as Parameters<typeof denoise>[2],
+              cam,
+            ) as TSLNode
           }
+          colorNode = add(colorNode, giTex)
         }
 
         if (ssrOn) {
@@ -155,7 +180,7 @@ export async function createTSLRenderPipeline(
             normal as Parameters<typeof ssr>[2],
             metalnessTex as Parameters<typeof ssr>[3],
             roughnessTex as Parameters<typeof ssr>[4],
-            activeCam,
+            cam,
           ) as { getTextureNode: () => TSLNode }
           colorNode = add(colorNode, ssrPass.getTextureNode())
         }
@@ -203,6 +228,7 @@ export async function createTSLRenderPipeline(
       applyPostFx(fx, bloom, ssgi) {
         ssaoOn = fx.ssao
         fxaaOn = fx.fxaa
+        taaOn = fx.taa
         ssrOn = fx.ssr
         ssgiOn = ssgi?.enabled ?? false
         ssgiSettings = ssgi

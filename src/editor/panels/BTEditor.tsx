@@ -5,9 +5,11 @@ import {
   BT_DECORATOR_TYPES,
   BT_MAX_DECORATOR_DEPTH,
   BT_NODE_DEFS,
+  collapseBTSubtree,
   compileBTGraph,
   compileBTGraphToScript,
   emptyBTGraph,
+  expandBTSubtree,
   inferBlackboardTypes,
   newBTNodeId,
   summarizeBTTree,
@@ -372,7 +374,35 @@ export function BTEditor() {
                 />
               )
             })()}
-            {graph.edges.map((edge) => {
+            {graph.nodes
+              .filter((n) => BT_DECORATOR_TYPES.has(n.type))
+              .map((dec) => {
+                const childId = graph.edges.find((e) => e.from === dec.id)?.to
+                const child = childId ? graph.nodes.find((n) => n.id === childId) : null
+                if (!child || dec.props.collapsed) return null
+                const pad = 10
+                return (
+                  <rect
+                    key={`wrap-${dec.id}`}
+                    x={child.x - pad}
+                    y={child.y - pad}
+                    width={NODE_W + pad * 2}
+                    height={HEADER_H + 18 + pad * 2}
+                    fill="none"
+                    stroke="#8a7aff"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                    rx={6}
+                  />
+                )
+              })}
+            {graph.edges
+              .filter((edge) => {
+                const a = graph.nodes.find((n) => n.id === edge.from)
+                const b = graph.nodes.find((n) => n.id === edge.to)
+                return !a?.props.collapsed && !b?.props.collapsed
+              })
+              .map((edge) => {
               const a = graph.nodes.find((n) => n.id === edge.from)
               const b = graph.nodes.find((n) => n.id === edge.to)
               if (!a || !b) return null
@@ -388,7 +418,14 @@ export function BTEditor() {
                 />
               )
             })}
-            {graph.nodes.map((n) => {
+            {graph.nodes
+              .filter((n) => {
+                if (n.props.collapsed) return true
+                const parent = graph.edges.find((e) => e.to === n.id)?.from
+                const pnode = parent ? graph.nodes.find((x) => x.id === parent) : null
+                return !pnode?.props.collapsed
+              })
+              .map((n) => {
               const def = BT_NODE_DEFS[n.type] ?? { title: n.type, color: '#555', maxChildren: 0 }
               const active = liveNode === n.id
               const selected = selectedNode === n.id
@@ -628,6 +665,12 @@ export function BTEditor() {
                       onChange={(e) => updateNodeProp(node.id, 'seconds', parseFloat(e.target.value) || 0)}
                     />
                   </label>
+                )}
+                {BT_DECORATOR_TYPES.has(node.type) && !node.props.collapsed && (
+                  <button onClick={() => commit(collapseBTSubtree(graph, node.id))}>Collapse subtree</button>
+                )}
+                {node.props.collapsed && graph.subtrees?.[node.id] && (
+                  <button onClick={() => commit(expandBTSubtree(graph, node.id))}>Expand subtree</button>
                 )}
                 {node.type !== 'Root' && (
                   <button

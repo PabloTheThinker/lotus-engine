@@ -14,6 +14,7 @@ import { createLotusRenderer, rendererTriangleCount, type LotusRendererBundle } 
 import { getSSGISettings, ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { createTSLRenderPipeline, type TSLPipelineStack } from '../engine/postStackTSLPipeline'
+import { bindWorldGPUParticles } from '../engine/particlesGPU'
 import { ensureLightProbeGrid } from '../engine/ssrProbeGI'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
 import { computeBlendedPost } from '../engine/postProcess'
@@ -412,10 +413,12 @@ export function Viewport() {
           bloomRadius: world.environment.bloomRadius,
           ssao: postFx.ssao,
           fxaa: postFx.fxaa,
+          taa: postFx.taa,
           ssr: postFx.ssr,
           ssgi: ssgiSettings,
         },
       )
+      void bindWorldGPUParticles(world.actors.values(), primaryRenderer)
     }
     if (import.meta.env.DEV) {
       const winGfx = window as unknown as Record<string, unknown>
@@ -1934,6 +1937,7 @@ export function Viewport() {
           tslFull,
           ssgiFx.enabled,
           fx.ssr,
+          fx.taa,
         )
         const tslBadge = tsl.tier === 'full' ? 'F' : tsl.tier === 'pipeline' ? 'P' : tsl.tier === 'active' ? '+' : ''
         const ssgi = ssgiStatusLabel(world.environment, webgpuOk)

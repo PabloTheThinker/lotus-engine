@@ -1,6 +1,7 @@
 /**
- * Wave 14–16 — TSL ComputeNode particle sim (WebGPU path).
+ * Wave 14–17 — TSL ComputeNode particle sim (WebGPU path).
  * Wave 16: StorageBufferAttribute kernel writes position/velocity buffers on GPU.
+ * Wave 17: alive-mask integrate + probabilistic GPU emit kernel.
  */
 
 export interface ParticleComputeState {
@@ -12,6 +13,7 @@ export interface ParticleComputeState {
 let computeReady = false
 let computeNote = 'not initialized'
 let gpuKernelReady = false
+let gpuEmitReady = false
 
 interface UniformSlot {
   value: number
@@ -24,14 +26,24 @@ interface IntegrateKernel {
   dragU: UniformSlot
 }
 
+interface EmitKernel {
+  computeNode: unknown
+  spawnProbU: UniformSlot
+  speedU: UniformSlot
+  seedU: UniformSlot
+}
+
 let kernel: IntegrateKernel | null = null
+let emitKernel: EmitKernel | null = null
 let kernelCap = 0
 
 /** Probe + mark compute path available when WebGPU renderer is active. */
 export async function initParticleCompute(renderer: unknown): Promise<ParticleComputeState> {
   computeReady = false
   gpuKernelReady = false
+  gpuEmitReady = false
   kernel = null
+  emitKernel = null
   computeNote = 'WebGPU renderer required'
   try {
     const r = renderer as { isWebGPURenderer?: boolean; compute?: (n: unknown) => void }
@@ -43,7 +55,7 @@ export async function initParticleCompute(renderer: unknown): Promise<ParticleCo
     const t = tsl as unknown as {
       Fn: (fn: () => void) => { compute: (n: number) => unknown }
       float: (n: number) => unknown
-      instanceIndex: unknown
+      instanceIndex: ScalarEl
     }
     t.Fn(() => {
       void t.float(0)
@@ -58,17 +70,19 @@ export async function initParticleCompute(renderer: unknown): Promise<ParticleCo
   }
 }
 
-/** Wave 16 — bind integrate kernel to sim buffer arrays (same backing store as Points attrs). */
+/** Wave 17 — bind integrate + emit kernels to sim buffer arrays. */
 export async function bindParticleIntegrateKernel(
   renderer: unknown,
   positions: Float32Array,
   velocities: Float32Array,
+  aliveF: Float32Array,
   cap: number,
 ): Promise<boolean> {
   const r = renderer as { compute?: (n: unknown) => void }
   if (!r?.compute || !computeReady) return false
-  if (kernel && kernelCap === cap) {
+  if (kernel && emitKernel && kernelCap === cap) {
     gpuKernelReady = true
+    gpuEmitReady = true
     return true
   }
   try {
@@ -81,38 +95,74 @@ export async function bindParticleIntegrateKernel(
       storage: (a: object, ty: string, c: number) => StorageEl
       Fn: (fn: () => void) => { compute: (n: number) => unknown }
       float: (n: number) => ScalarEl
-      instanceIndex: unknown
+      instanceIndex: ScalarEl
       uniform: (n: ScalarEl) => ScalarEl & UniformSlot
+      If: (cond: unknown, fn: () => void) => void
+      sin: (v: unknown) => ScalarEl
+      cos: (v: unknown) => ScalarEl
+      fract: (v: unknown) => ScalarEl
     }
 
     const posAttr = new StorageBufferAttribute(positions, 3)
     const velAttr = new StorageBufferAttribute(velocities, 3)
+    const aliveAttr = new StorageBufferAttribute(aliveF, 1)
     const posBuf = t.storage(posAttr, 'vec3', cap)
     const velBuf = t.storage(velAttr, 'vec3', cap)
+    const aliveBuf = t.storage(aliveAttr, 'float', cap)
     const dtU = t.uniform(t.float(0))
     const gravityU = t.uniform(t.float(0))
     const dragU = t.uniform(t.float(0))
 
     const computeNode = t.Fn(() => {
-      const p = posBuf.element(t.instanceIndex)
-      const v = velBuf.element(t.instanceIndex)
-      const drag = t.float(1).sub(dragU.mul(dtU) as ScalarEl)
-      v.y.addAssign(gravityU)
-      v.x.mulAssign(drag)
-      v.y.mulAssign(drag)
-      v.z.mulAssign(drag)
-      p.x.addAssign(v.x.mul(dtU))
-      p.y.addAssign(v.y.mul(dtU))
-      p.z.addAssign(v.z.mul(dtU))
+      const alive = aliveBuf.element(t.instanceIndex)
+      t.If(alive.greaterThan(0.5), () => {
+        const p = posBuf.element(t.instanceIndex)
+        const v = velBuf.element(t.instanceIndex)
+        const drag = t.float(1).sub(dragU.mul(dtU) as ScalarEl)
+        v.y.addAssign(gravityU)
+        v.x.mulAssign(drag)
+        v.y.mulAssign(drag)
+        v.z.mulAssign(drag)
+        p.x.addAssign(v.x.mul(dtU))
+        p.y.addAssign(v.y.mul(dtU))
+        p.z.addAssign(v.z.mul(dtU))
+      })
+    }).compute(cap)
+
+    const spawnProbU = t.uniform(t.float(0))
+    const speedU = t.uniform(t.float(1))
+    const seedU = t.uniform(t.float(0))
+    const emitNode = t.Fn(() => {
+      const alive = aliveBuf.element(t.instanceIndex)
+      t.If(alive.lessThan(0.5), () => {
+        const h = t.fract(t.sin(t.instanceIndex.add(seedU)).mul(43758.5453) as ScalarEl)
+        t.If(h.lessThan(spawnProbU), () => {
+          alive.assign(1)
+          const p = posBuf.element(t.instanceIndex)
+          const v = velBuf.element(t.instanceIndex)
+          const a = h.mul(6.283)
+          const sp = speedU.mul(t.float(0.5).add(h.mul(0.5)))
+          p.x.assign(t.sin(a).mul(0.05))
+          p.y.assign(0)
+          p.z.assign(t.cos(a).mul(0.05))
+          v.x.assign(t.sin(a).mul(sp))
+          v.y.assign(sp.mul(0.6))
+          v.z.assign(t.cos(a).mul(sp))
+        })
+      })
     }).compute(cap)
 
     kernel = { computeNode, dtU, gravityU, dragU }
+    emitKernel = { computeNode: emitNode, spawnProbU, speedU, seedU }
     kernelCap = cap
     gpuKernelReady = true
+    gpuEmitReady = true
     return true
   } catch {
     gpuKernelReady = false
+    gpuEmitReady = false
     kernel = null
+    emitKernel = null
     return false
   }
 }
@@ -120,8 +170,12 @@ export async function bindParticleIntegrateKernel(
 interface ScalarEl {
   mul: (v: unknown) => ScalarEl
   sub: (v: unknown) => ScalarEl
+  add: (v: unknown) => ScalarEl
   addAssign: (v: unknown) => void
   mulAssign: (v: unknown) => void
+  assign: (v: unknown) => void
+  greaterThan: (v: unknown) => unknown
+  lessThan: (v: unknown) => unknown
 }
 
 interface VecEl {
@@ -130,10 +184,32 @@ interface VecEl {
   z: ScalarEl
   addAssign: (v: unknown) => void
   mulAssign: (v: unknown) => void
+  assign: (v: unknown) => void
 }
 
 interface StorageEl {
-  element: (i: unknown) => VecEl
+  element: (i: unknown) => VecEl & ScalarEl
+}
+
+/** Wave 17 — probabilistic GPU emit for dead slots (rate * dt / cap). */
+export function runParticleGPUEmit(
+  renderer: unknown,
+  spawnProb: number,
+  speed: number,
+  seed: number,
+): boolean {
+  if (!gpuEmitReady || !emitKernel) return false
+  const r = renderer as { compute?: (n: unknown) => void }
+  if (!r?.compute) return false
+  try {
+    emitKernel.spawnProbU.value = Math.max(0, Math.min(1, spawnProb))
+    emitKernel.speedU.value = speed
+    emitKernel.seedU.value = seed
+    r.compute(emitKernel.computeNode)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** Dispatch GPU integrate kernel (writes positions/velocities storage buffers). */
@@ -165,8 +241,14 @@ export function isParticleGpuKernelReady(): boolean {
   return gpuKernelReady
 }
 
+export function isParticleGpuEmitReady(): boolean {
+  return gpuEmitReady
+}
+
 export function particleComputeNote(): string {
-  return gpuKernelReady ? `${computeNote} + GPU integrate kernel` : computeNote
+  if (gpuKernelReady && gpuEmitReady) return `${computeNote} + GPU integrate + emit`
+  if (gpuKernelReady) return `${computeNote} + GPU integrate kernel`
+  return computeNote
 }
 
 /**

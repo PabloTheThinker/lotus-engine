@@ -20,6 +20,8 @@ export interface BTGraphEdge {
 export interface BTGraph {
   nodes: BTGraphNode[]
   edges: BTGraphEdge[]
+  /** Wave 17 — collapsed decorator subtrees (node id → detached fragment) */
+  subtrees?: Record<string, { nodes: BTGraphNode[]; edges: BTGraphEdge[] }>
 }
 
 export interface CompiledBTGraph {
@@ -105,14 +107,12 @@ function compileNode(graph: BTGraph, id: string, path: string, pathIndex: Record
     case 'Repeat': {
       const count = Math.max(1, Math.min(32, Number(node.props.count ?? 3)))
       const child = kids[0] ?? { task: 'log', text: 'repeat empty' }
-      return {
-        sequence: Array.from({ length: count }, () => JSON.parse(JSON.stringify(child)) as BTNode),
-      }
+      return { repeat: { count, child } }
     }
     case 'Cooldown': {
       const secs = Number(node.props.seconds ?? 2)
       const child = kids[0] ?? { task: 'log', text: 'cooldown empty' }
-      return { sequence: [{ task: 'wait', seconds: secs }, child] }
+      return { cooldown: { seconds: secs, child } }
     }
     case 'PlayerNear':
       return { condition: 'playerNear', distance: Number(node.props.distance ?? 8) }
@@ -257,6 +257,64 @@ function inferBBValueType(value: unknown): BTBlackboardType {
   return 'bool'
 }
 
+function collectDescendants(graph: BTGraph, rootId: string): Set<string> {
+  const out = new Set<string>()
+  const stack = childrenOf(graph, rootId)
+  while (stack.length) {
+    const id = stack.pop()!
+    if (out.has(id)) continue
+    out.add(id)
+    stack.push(...childrenOf(graph, id))
+  }
+  return out
+}
+
+/** Wave 17 — collapse a decorator subtree into graph.subtrees storage. */
+export function collapseBTSubtree(graph: BTGraph, nodeId: string): BTGraph {
+  const node = graph.nodes.find((n) => n.id === nodeId)
+  if (!node || !BT_DECORATOR_TYPES.has(node.type)) return graph
+  const desc = collectDescendants(graph, nodeId)
+  if (!desc.size) return graph
+  const subtreeNodes = graph.nodes.filter((n) => desc.has(n.id))
+  const subtreeEdges = graph.edges.filter((e) => desc.has(e.from) || desc.has(e.to))
+  const nextNodes = graph.nodes
+    .filter((n) => !desc.has(n.id))
+    .map((n) => (n.id === nodeId ? { ...n, props: { ...n.props, collapsed: 1 } } : n))
+  const nextEdges = graph.edges.filter((e) => !desc.has(e.from) && !desc.has(e.to))
+  return {
+    ...graph,
+    nodes: nextNodes,
+    edges: nextEdges,
+    subtrees: {
+      ...(graph.subtrees ?? {}),
+      [nodeId]: { nodes: subtreeNodes, edges: subtreeEdges },
+    },
+  }
+}
+
+/** Restore a previously collapsed decorator subtree. */
+export function expandBTSubtree(graph: BTGraph, nodeId: string): BTGraph {
+  const stash = graph.subtrees?.[nodeId]
+  if (!stash) return graph
+  const nextSubtrees = { ...(graph.subtrees ?? {}) }
+  delete nextSubtrees[nodeId]
+  const nextNodes: BTGraphNode[] = [
+    ...graph.nodes.map((n) => {
+      if (n.id !== nodeId) return n
+      const props = { ...n.props }
+      delete props.collapsed
+      return { ...n, props }
+    }),
+    ...stash.nodes,
+  ]
+  return {
+    ...graph,
+    nodes: nextNodes,
+    edges: [...graph.edges, ...stash.edges],
+    subtrees: Object.keys(nextSubtrees).length ? nextSubtrees : undefined,
+  }
+}
+
 /** Infer blackboard key types from SetBB / Blackboard nodes (Wave 16). */
 export function inferBlackboardTypes(graph: BTGraph): Record<string, BTBlackboardType> {
   const types: Record<string, BTBlackboardType> = {}
@@ -308,6 +366,12 @@ export function summarizeBTTree(tree: BTNode, depth = 0): string {
     return `${pad}Selector\n${tree.selector.map((c) => summarizeBTTree(c, depth + 1)).join('\n')}`
   }
   if ('invert' in tree && tree.invert) return `${pad}Invert\n${summarizeBTTree(tree.invert, depth + 1)}`
+  if ('repeat' in tree && tree.repeat) {
+    return `${pad}Repeat x${tree.repeat.count}\n${summarizeBTTree(tree.repeat.child, depth + 1)}`
+  }
+  if ('cooldown' in tree && tree.cooldown) {
+    return `${pad}Cooldown ${tree.cooldown.seconds}s\n${summarizeBTTree(tree.cooldown.child, depth + 1)}`
+  }
   if ('condition' in tree && tree.condition) return `${pad}Condition: ${tree.condition}`
   if ('task' in tree && tree.task) return `${pad}Task: ${tree.task}`
   return `${pad}?`

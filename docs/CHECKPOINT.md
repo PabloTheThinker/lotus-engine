@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 16)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 17)
 
 > Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.14.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.20 (wave 16).** v0.33–v1.20 shipped; **build clean**, **`npm run test` — 32 passed**.
+- **Last clean commit: v1.26 (wave 17).** v0.33–v1.26 shipped; **build clean**, **`npm run test` — 35 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -205,13 +205,24 @@
 | v1.19 | Material Editor WebGPU TSL live preview sphere (`MaterialEditor.tsx`) |
 | v1.20 | Playwright wave 16 tests — 32 passed |
 
-## Next up (v1.21+, Wave 17)
+## Shipped wave 17 (v1.21 → v1.26)
 
-1. **TSL post** — TRAA temporal filter + denoise for SSGI stability
-2. **GPU particles** — alive-mask in compute kernel + spawn/emit on GPU
-3. **Export** — WebGPU particle tier in playable HTML
-4. **BT** — subtree collapse, decorator visual wrap (not Repeat unroll)
-5. **Material TSL** — per-node TSL graph compile (not evaluateMaterialGraph stub)
+| Ver | What |
+|---|---|
+| v1.21 | TSL post TRAA + denoise for SSGI — velocity MRT, `fx.taa` in editor + export (`postStackTSLPipeline.ts`, `runtime.js`) |
+| v1.22 | GPU particle alive mask + emit kernel — `aliveF`, `runParticleGPUEmit`, `bindWorldGPUParticles` |
+| v1.23 | Export WebGPU particle tier — `bindExportParticleCompute`, `gpuTier` CPU skip in playable runtime |
+| v1.24 | BT decorator compile (Repeat/Cooldown wrap, no unroll) + subtree collapse/expand + visual wrap (`btGraph.ts`, `BTEditor.tsx`) |
+| v1.25 | Material TSL per-node graph compile — `compileMaterialGraphTSLNodes`, serialize v2 + `nodeGraph` |
+| v1.26 | Playwright wave 17 tests — 35 passed |
+
+## Next up (v1.27+, Wave 18)
+
+1. **TSL post** — full temporal denoise chain on SSR + motion-vector polish
+2. **GPU particles** — GPU life/color/trail buffers (reduce CPU `super.update` sync)
+3. **Export** — particle GPU tier QA matrix + playable perf badge
+4. **BT** — collapsed subtree PIE tick + expand-in-place editor UX
+5. **Material TSL** — Material Editor live node-graph preview (not just compile probe)
 
 ## Remaining gap-list queue (post–wave 7)
 

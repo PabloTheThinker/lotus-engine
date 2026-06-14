@@ -142,12 +142,16 @@ export type TerrainHeightFn = (worldX: number, worldZ: number) => number | null
 export interface ParticleUpdateOpts {
   /** Skip gravity/drag integration — used when GPU compute tier already integrated motion */
   skipForces?: boolean
+  /** Skip CPU spawn accumulator — GPU emit kernel already ran */
+  skipSpawn?: boolean
 }
 
 export interface ParticleSimBuffers {
   positions: Float32Array
   velocities: Float32Array
   alive: boolean[]
+  /** Wave 17 — GPU storage buffer mask (1 = alive, 0 = dead) */
+  aliveF: Float32Array
 }
 
 export class ParticleSystem {
@@ -163,6 +167,7 @@ export class ParticleSystem {
   private life: Float32Array
   private maxLife: Float32Array
   private alive: boolean[]
+  private aliveF: Float32Array
   private trail: Float32Array
   private trailLen: number
   private spawnAcc = 0
@@ -194,6 +199,7 @@ export class ParticleSystem {
     this.life = new Float32Array(this.cap)
     this.maxLife = new Float32Array(this.cap)
     this.alive = new Array(this.cap).fill(false)
+    this.aliveF = new Float32Array(this.cap)
     this.trail = new Float32Array(this.cap * this.trailLen * 3)
 
     const geo = new THREE.BufferGeometry()
@@ -286,7 +292,23 @@ export class ParticleSystem {
 
   /** Wave 15 — sim buffer accessors for GPU compute integration */
   simBuffers(): ParticleSimBuffers {
-    return { positions: this.positions, velocities: this.vel, alive: this.alive }
+    return { positions: this.positions, velocities: this.vel, alive: this.alive, aliveF: this.aliveF }
+  }
+
+  /** Sync float alive mask from boolean slots (Wave 17 GPU path). */
+  syncAliveMask(): void {
+    for (let i = 0; i < this.cap; i++) this.aliveF[i] = this.alive[i] ? 1 : 0
+  }
+
+  /** Promote GPU-emitted slots (aliveF) into CPU sim state for color/size/trail. */
+  applyGPUAliveMask(defaultLife: number): void {
+    for (let i = 0; i < this.cap; i++) {
+      if (this.aliveF[i] > 0.5 && !this.alive[i]) {
+        this.alive[i] = true
+        this.life[i] = defaultLife
+        this.maxLife[i] = defaultLife
+      }
+    }
   }
 
   private sizeAt(t: number, offSize: boolean) {
@@ -302,6 +324,7 @@ export class ParticleSystem {
       const idx = this.alive.indexOf(false)
       if (idx === -1) return
       this.alive[idx] = true
+      this.aliveF[idx] = 1
       this.maxLife[idx] = Math.max(0.05, se.lifetime)
       this.life[idx] = this.maxLife[idx]
       const i3 = idx * 3
@@ -327,6 +350,7 @@ export class ParticleSystem {
     if (idx === -1) return
     const p = this.props
     this.alive[idx] = true
+    this.aliveF[idx] = 1
     const jitter = 1 - p.lifetimeJitter * Math.random()
     this.maxLife[idx] = Math.max(0.05, p.lifetime * jitter)
     this.life[idx] = this.maxLife[idx]
@@ -503,7 +527,7 @@ export class ParticleSystem {
   ) {
     const p = this.props
     const off = (m: string) => p.modulesOff?.includes(m)
-    if (emitting && !off('spawn')) {
+    if (emitting && !off('spawn') && !opts?.skipSpawn) {
       this.spawnAcc += p.rate * dt
       while (this.spawnAcc >= 1) {
         this.spawnAcc -= 1
@@ -531,6 +555,7 @@ export class ParticleSystem {
           this.spawnBurstAt(this.positions[i3], this.positions[i3 + 1], this.positions[i3 + 2], se!)
         }
         this.alive[i] = false
+        this.aliveF[i] = 0
         this.sizes[i] = 0
         continue
       }

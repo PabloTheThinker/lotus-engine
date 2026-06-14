@@ -14,6 +14,8 @@ export type BTNode =
   | { selector: BTNode[] }
   | { sequence: BTNode[] }
   | { invert: BTNode }
+  | { repeat: { count: number; child: BTNode } }
+  | { cooldown: { seconds: number; child: BTNode } }
   | { condition: 'playerNear'; distance: number }
   | { condition: 'blackboard'; key: string; equals?: unknown; greaterThan?: number }
   | { task: 'moveToPlayer'; speed?: number; stopAt?: number }
@@ -42,6 +44,8 @@ export interface BTContext {
 interface BTState {
   waitUntil?: number
   elapsed: number
+  repeatIndex?: number
+  cooldownReady?: boolean
 }
 
 const states = new WeakMap<object, BTState>()
@@ -118,6 +122,36 @@ export function tickBT(node: BTNode, ctx: BTContext, path = ''): BTStatus {
   if ('invert' in node) {
     const r = tickBT(node.invert, ctx, `${path}/inv`)
     return r === 'running' ? 'running' : r === 'success' ? 'failure' : 'success'
+  }
+  if ('repeat' in node) {
+    const st = stateFor(node)
+    if (st.repeatIndex === undefined) st.repeatIndex = 0
+    while (st.repeatIndex < node.repeat.count) {
+      const r = tickBT(node.repeat.child, ctx, `${path}/r${st.repeatIndex}`)
+      if (r === 'running') return 'running'
+      if (r === 'failure') {
+        st.repeatIndex = 0
+        return 'failure'
+      }
+      st.repeatIndex++
+    }
+    st.repeatIndex = 0
+    return 'success'
+  }
+  if ('cooldown' in node) {
+    const st = stateFor(node)
+    if (!st.cooldownReady) {
+      st.elapsed += ctx.dt
+      if (st.elapsed < node.cooldown.seconds) return 'running'
+      st.cooldownReady = true
+      st.elapsed = 0
+    }
+    const r = tickBT(node.cooldown.child, ctx, `${path}/cd`)
+    if (r !== 'running') {
+      st.cooldownReady = false
+      st.elapsed = 0
+    }
+    return r
   }
   if ('condition' in node) {
     if (node.condition === 'playerNear') {

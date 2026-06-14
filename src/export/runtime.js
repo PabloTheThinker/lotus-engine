@@ -57,7 +57,7 @@ let playRenderTier = 'webgl'
 /** @type {{ render: () => void, setCamera: (cam: import('three').Camera) => void } | null} */
 let exportTslPipeline = null
 
-/** Wave 15–16 — TSL GTAO + SSGI + SSR + bloom + FXAA for WebGPU export tier. */
+/** Wave 15–17 — TSL GTAO + SSGI/TRAA/denoise + SSR + bloom + FXAA for WebGPU export tier. */
 async function createExportTSLPipeline(primary, scene, camera) {
   if (playRenderTier !== 'webgpu') return null
   try {
@@ -68,7 +68,9 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const { ao } = await import('three/addons/tsl/display/GTAONode.js')
     const { ssgi } = await import('three/addons/tsl/display/SSGINode.js')
     const { ssr } = await import('three/addons/tsl/display/SSRNode.js')
-    const { pass, add, mul, mrt, output, normalView, metalness, roughness, vec3, vec4, float } = tsl
+    const { traa } = await import('three/addons/tsl/display/TRAANode.js')
+    const { denoise } = await import('three/addons/tsl/display/DenoiseNode.js')
+    const { pass, add, mul, mrt, output, normalView, velocity, metalness, roughness, vec3, vec4, float } = tsl
     const env = LEVEL.environment ?? {}
     const bloomOn = env.bloomEnabled !== false
     const strength = env.bloomStrength ?? 0.35
@@ -76,6 +78,7 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const radius = env.bloomRadius ?? 0.6
     const ssaoOn = env.postSsao === true || env.renderBackend === 'webgpu'
     const fxaaOn = env.postFxaa !== false
+    const taaOn = env.postTaa === true
     const ssrOn = env.postSsr === true
     const ssgiPreset = env.postSsgiPreset ?? 'off'
     const ssgiOn = env.postSsgi === true || (ssgiPreset !== 'off' && env.renderBackend === 'webgpu')
@@ -90,9 +93,10 @@ async function createExportTSLPipeline(primary, scene, camera) {
     const pipeline = new webgpu.RenderPipeline(primary)
     const rebuild = () => {
       const scenePass = pass(scene, activeCam)
-      const needsMRT = ssaoOn || ssgiOn || ssrOn
+      const needsMRT = ssaoOn || ssgiOn || ssrOn || taaOn
       if (needsMRT) {
         const mrtOut = { output, normal: normalView }
+        if (taaOn || ssgiOn) mrtOut.velocity = velocity
         if (ssrOn) {
           mrtOut.metalness = metalness
           mrtOut.roughness = roughness
@@ -103,6 +107,11 @@ async function createExportTSLPipeline(primary, scene, camera) {
       if (needsMRT) {
         const depth = scenePass.getTextureNode('depth')
         const normal = scenePass.getTextureNode('normal')
+        if (taaOn) {
+          const vel = scenePass.getTextureNode('velocity')
+          const traaPass = traa(color, depth, vel, activeCam)
+          color = traaPass.getTextureNode()
+        }
         if (ssaoOn) {
           const aoPass = ao(depth, normal, activeCam)
           const aoTex = aoPass.getTextureNode()
@@ -110,13 +119,14 @@ async function createExportTSLPipeline(primary, scene, camera) {
         }
         if (ssgiOn) {
           const ssgiPass = ssgi(color, depth, normal, activeCam)
+          ssgiPass.useTemporalFiltering = taaOn
           ssgiPass.sliceCount.value = ssgiRow.slices
           ssgiPass.stepCount.value = Math.max(4, ssgiRow.samples)
           ssgiPass.giIntensity.value = Math.max(1, ssgiRow.intensity * 12)
           ssgiPass.radius.value = Math.max(2, ssgiRow.radius * 14)
-          const giTex = ssgiPass.getTextureNode()
-          color = add(color, vec4(vec3(giTex.r, giTex.g, giTex.b), float(1)))
-          if (!ssaoOn) color = mul(color, vec4(vec3(giTex.a), 1))
+          let giTex = ssgiPass.getTextureNode()
+          if (!taaOn) giTex = denoise(giTex, depth, normal, activeCam)
+          color = add(color, giTex)
         }
         if (ssrOn) {
           const metal = scenePass.getTextureNode('metalness')
@@ -349,11 +359,80 @@ async function loadAssets(level) {
   }
 }
 
-// minimal particle sim
+let particleGpuKernels = null
+
+async function bindExportParticleCompute() {
+  if (playRenderTier !== 'webgpu' || (LEVEL.environment?.particleBackend ?? 'cpu') !== 'gpu' || !renderer?.compute) return
+  try {
+    const webgpu = await import('three/webgpu')
+    const tsl = await import('three/tsl')
+    const { storage, Fn, float, instanceIndex, uniform, If, sin, cos, fract } = tsl
+    const StorageBufferAttribute = webgpu.StorageBufferAttribute
+    particleGpuKernels = []
+    for (const ps of particleSystems) {
+      if (!ps.aliveF) continue
+      const cap = ps.cap
+      const posAttr = new StorageBufferAttribute(ps.pos, 3)
+      const velAttr = new StorageBufferAttribute(ps.vel, 3)
+      const aliveAttr = new StorageBufferAttribute(ps.aliveF, 1)
+      const posBuf = storage(posAttr, 'vec3', cap)
+      const velBuf = storage(velAttr, 'vec3', cap)
+      const aliveBuf = storage(aliveAttr, 'float', cap)
+      const dtU = uniform(float(0))
+      const gravityU = uniform(float(0))
+      const dragU = uniform(float(0))
+      const spawnProbU = uniform(float(0))
+      const speedU = uniform(float(1))
+      const seedU = uniform(float(0))
+      const integrate = Fn(() => {
+        const alive = aliveBuf.element(instanceIndex)
+        If(alive.greaterThan(0.5), () => {
+          const p = posBuf.element(instanceIndex)
+          const v = velBuf.element(instanceIndex)
+          const drag = float(1).sub(dragU.mul(dtU))
+          v.y.addAssign(gravityU)
+          v.x.mulAssign(drag)
+          v.y.mulAssign(drag)
+          v.z.mulAssign(drag)
+          p.x.addAssign(v.x.mul(dtU))
+          p.y.addAssign(v.y.mul(dtU))
+          p.z.addAssign(v.z.mul(dtU))
+        })
+      }).compute(cap)
+      const emit = Fn(() => {
+        const alive = aliveBuf.element(instanceIndex)
+        If(alive.lessThan(0.5), () => {
+          const h = fract(sin(instanceIndex.add(seedU)).mul(43758.5453))
+          If(h.lessThan(spawnProbU), () => {
+            alive.assign(1)
+            const p = posBuf.element(instanceIndex)
+            const v = velBuf.element(instanceIndex)
+            const a = h.mul(6.283)
+            const sp = speedU.mul(float(0.5).add(h.mul(0.5)))
+            p.x.assign(sin(a).mul(0.05))
+            p.y.assign(0)
+            p.z.assign(cos(a).mul(0.05))
+            v.x.assign(sin(a).mul(sp))
+            v.y.assign(sp.mul(0.6))
+            v.z.assign(cos(a).mul(sp))
+          })
+        })
+      }).compute(cap)
+      particleGpuKernels.push({ ps, dtU, gravityU, dragU, spawnProbU, speedU, seedU, integrate, emit, seed: 0 })
+      ps.gpuTier = true
+    }
+  } catch (e) {
+    console.warn('export particle GPU bind failed', e)
+    particleGpuKernels = null
+  }
+}
+
+// minimal particle sim (CPU + optional WebGPU compute tier)
 function makeParticles(props) {
   const cap = Math.min(props.maxParticles ?? 500, 3000)
   const pos = new Float32Array(cap * 3), col = new Float32Array(cap * 3)
   const vel = new Float32Array(cap * 3), life = new Float32Array(cap), maxLife = new Float32Array(cap)
+  const aliveF = new Float32Array(cap)
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3))
@@ -382,17 +461,51 @@ function makeParticles(props) {
   }
   return {
     points,
+    cap,
+    pos,
+    vel,
+    life,
+    aliveF,
+    gpuTier: false,
     update(dt) {
-      acc += (props.rate ?? 40) * dt
-      while (acc >= 1) { acc -= 1; spawn() }
+      if (this.gpuTier && particleGpuKernels) {
+        const k = particleGpuKernels.find((x) => x.ps === this)
+        if (k) {
+          const prob = Math.min(1, ((props.rate ?? 40) * dt) / cap)
+          if (prob > 0) {
+            k.spawnProbU.value = prob
+            k.speedU.value = props.speed ?? 2.5
+            k.seedU.value = k.seed++
+            renderer.compute(k.emit)
+            for (let i = 0; i < cap; i++) {
+              if (aliveF[i] > 0.5 && life[i] <= 0) {
+                life[i] = props.lifetime ?? 1.6
+                maxLife[i] = life[i]
+              }
+            }
+          }
+          for (let i = 0; i < cap; i++) aliveF[i] = life[i] > 0 ? 1 : 0
+          k.dtU.value = dt
+          k.gravityU.value = (props.gravity ?? -1) * dt
+          k.dragU.value = props.drag ?? 0.5
+          renderer.compute(k.integrate)
+          geo.attributes.position.needsUpdate = true
+        }
+      }
+      if (!this.gpuTier) {
+        acc += (props.rate ?? 40) * dt
+        while (acc >= 1) { acc -= 1; spawn() }
+      }
       const drag = Math.max(0, 1 - (props.drag ?? 0.5) * dt)
       for (let i = 0; i < cap; i++) {
         if (life[i] <= 0) continue
         life[i] -= dt
         const i3 = i * 3
-        vel[i3 + 1] += (props.gravity ?? -1) * dt
-        vel[i3] *= drag; vel[i3 + 1] *= drag; vel[i3 + 2] *= drag
-        pos[i3] += vel[i3] * dt; pos[i3 + 1] += vel[i3 + 1] * dt; pos[i3 + 2] += vel[i3 + 2] * dt
+        if (!this.gpuTier) {
+          vel[i3 + 1] += (props.gravity ?? -1) * dt
+          vel[i3] *= drag; vel[i3 + 1] *= drag; vel[i3 + 2] *= drag
+          pos[i3] += vel[i3] * dt; pos[i3 + 1] += vel[i3 + 1] * dt; pos[i3 + 2] += vel[i3 + 2] * dt
+        }
         const f = 1 - life[i] / maxLife[i]
         tmp.copy(c1).lerp(c2, f)
         col[i3] = tmp.r; col[i3 + 1] = tmp.g; col[i3 + 2] = tmp.b
@@ -937,6 +1050,7 @@ async function boot() {
   await startPhysics()
   compileScripts()
   exportTslPipeline = await createExportTSLPipeline(renderer, scene, pawnCam)
+  await bindExportParticleCompute()
   overlay.textContent =
     (playRenderTier === 'webgpu' ? (exportTslPipeline ? 'WebGPU TSL · ' : 'WebGPU · ') : '') +
     'Click to play — WASD + mouse · Space jump · Shift sprint'

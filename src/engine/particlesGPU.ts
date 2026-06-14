@@ -1,15 +1,18 @@
+import type { Actor } from './Actor'
 import type { ParticleProps } from './particles'
 import { ParticleSystem } from './particles'
 import {
   bindParticleIntegrateKernel,
   initParticleCompute,
   integrateParticleBuffers,
+  isParticleGpuEmitReady,
   isParticleGpuKernelReady,
+  runParticleGPUEmit,
   runParticleGPUIntegrate,
 } from './particlesCompute'
 
 /**
- * GPU particles (Wave 13–16) — compute-tier sim when WebGPU backend is available.
+ * GPU particles (Wave 13–17) — compute-tier sim when WebGPU backend is available.
  * Falls back to proven CPU ParticleSystem when unavailable.
  */
 
@@ -23,19 +26,32 @@ export function shouldUseGPUParticles(backend: ParticleBackend | undefined): boo
   return backend === 'gpu' && isGPUParticlesAvailable()
 }
 
+/** Bind all GPU-tier particle systems on actors to a WebGPU renderer. */
+export async function bindWorldGPUParticles(actors: Iterable<Actor>, renderer: unknown): Promise<number> {
+  let bound = 0
+  for (const a of actors) {
+    const ps = a.particleSystem
+    if (ps && 'bindComputeRenderer' in ps) {
+      await (ps as GPUParticleSystem).bindComputeRenderer(renderer)
+      bound++
+    }
+  }
+  return bound
+}
+
 /** Batched sim step — same physics as CPU but flagged compute-tier for profiling. */
 export class GPUParticleSystem extends ParticleSystem {
   readonly backend: ParticleBackend
   readonly gpuTier: boolean
   readonly computeSim: boolean
-  /** Wave 14–15 — true when TSL ComputeNode path initialized */
   usesComputeNode = false
-  /** Wave 16 — true when GPU integrate kernel bound to sim buffers */
   gpuKernelActive = false
-  /** Wave 15–16 — frames integrated via compute-tier buffer path */
+  gpuEmitActive = false
   computeIntegratedFrames = 0
+  gpuEmitFrames = 0
   private batchDt = 0
   private computeRenderer: unknown = null
+  private emitSeed = 0
 
   constructor(props: ParticleProps, backend: ParticleBackend = 'cpu') {
     super(props)
@@ -44,7 +60,6 @@ export class GPUParticleSystem extends ParticleSystem {
     this.computeSim = this.gpuTier
   }
 
-  /** Bind WebGPU renderer for TSL compute sim (Wave 14–16). */
   async bindComputeRenderer(renderer: unknown) {
     if (!this.gpuTier) return
     this.computeRenderer = renderer
@@ -52,13 +67,16 @@ export class GPUParticleSystem extends ParticleSystem {
     this.usesComputeNode = st.ready
     if (!this.usesComputeNode) {
       this.gpuKernelActive = false
+      this.gpuEmitActive = false
       return
     }
-    const { positions, velocities, alive } = this.simBuffers()
-    this.gpuKernelActive = await bindParticleIntegrateKernel(renderer, positions, velocities, alive.length)
+    this.syncAliveMask()
+    const { positions, velocities, aliveF, alive } = this.simBuffers()
+    const ok = await bindParticleIntegrateKernel(renderer, positions, velocities, aliveF, alive.length)
+    this.gpuKernelActive = ok
+    this.gpuEmitActive = ok && isParticleGpuEmitReady()
   }
 
-  /** Wave 13–16 — GPU tier: TSL kernel integration or CPU fallback. */
   update(
     dt: number,
     emitting: boolean,
@@ -73,15 +91,26 @@ export class GPUParticleSystem extends ParticleSystem {
     if (this.usesComputeNode && this.computeRenderer) {
       const p = this.props
       const offForces = p.modulesOff?.includes('forces')
+      const offSpawn = p.modulesOff?.includes('spawn')
       const gravity = offForces ? 0 : p.gravity
       const drag = offForces ? 0 : p.drag
+
+      if (emitting && !offSpawn && isParticleGpuEmitReady()) {
+        const prob = Math.min(1, (p.rate * dt) / Math.max(1, this.simBuffers().alive.length))
+        if (prob > 0 && runParticleGPUEmit(this.computeRenderer, prob, p.speed, this.emitSeed++)) {
+          this.gpuEmitFrames++
+          this.applyGPUAliveMask(p.lifetime)
+        }
+      }
+
+      this.syncAliveMask()
 
       if (isParticleGpuKernelReady()) {
         if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag)) {
           this.computeIntegratedFrames++
           const posAttr = this.points.geometry.getAttribute('position')
           if (posAttr) posAttr.needsUpdate = true
-          super.update(dt, emitting, worldMatrix, terrainAt, { skipForces: true })
+          super.update(dt, emitting, worldMatrix, terrainAt, { skipForces: true, skipSpawn: true })
           return
         }
       }
