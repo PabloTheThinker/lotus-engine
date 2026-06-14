@@ -412,6 +412,8 @@ export function Viewport() {
           bloomRadius: world.environment.bloomRadius,
           ssao: postFx.ssao,
           fxaa: postFx.fxaa,
+          ssr: postFx.ssr,
+          ssgi: ssgiSettings,
         },
       )
     }
@@ -484,12 +486,16 @@ export function Viewport() {
     function applyPostSettings(post: ReturnType<typeof computeBlendedPost>) {
       postStack.applySettings(post)
       postStack.applySSGI(getSSGISettings(world.environment))
-      tslPipeline?.applyPostFx(getPostFxSettings(world.environment), {
-        bloomEnabled: post.bloomEnabled,
-        bloomStrength: post.bloomStrength,
-        bloomThreshold: post.bloomThreshold,
-        bloomRadius: post.bloomRadius,
-      })
+      tslPipeline?.applyPostFx(
+        getPostFxSettings(world.environment),
+        {
+          bloomEnabled: post.bloomEnabled,
+          bloomStrength: post.bloomStrength,
+          bloomThreshold: post.bloomThreshold,
+          bloomRadius: post.bloomRadius,
+        },
+        getSSGISettings(world.environment),
+      )
     }
 
     // editor-only chrome
@@ -1919,8 +1925,16 @@ export function Viewport() {
         const fps = Math.round(frames / fpsTimer)
         const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
         const fx = getPostFxSettings(world.environment)
+        const ssgiFx = getSSGISettings(world.environment)
         const tslFull = (tslPipeline?.active ?? false) && fx.ssao && fx.fxaa
-        const tsl = getTSLPostState(backend === 'webgpu', webgpuOk, tslPipeline?.active ?? false, tslFull)
+        const tsl = getTSLPostState(
+          backend === 'webgpu',
+          webgpuOk,
+          tslPipeline?.active ?? false,
+          tslFull,
+          ssgiFx.enabled,
+          fx.ssr,
+        )
         const tslBadge = tsl.tier === 'full' ? 'F' : tsl.tier === 'pipeline' ? 'P' : tsl.tier === 'active' ? '+' : ''
         const ssgi = ssgiStatusLabel(world.environment, webgpuOk)
         const tris = rendererTriangleCount(primaryRenderer)

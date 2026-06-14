@@ -4,6 +4,29 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 16: v1.15–v1.20
+
+### Added
+- **v1.15** TSL post stack SSGI + SSR on WebGPURenderer — MRT metalness/roughness, `applyPostFx` SSGI settings (`postStackTSLPipeline.ts`)
+- **v1.16** GPU particle TSL compute kernel — `storage()` + `bindParticleIntegrateKernel` / `runParticleGPUIntegrate` wired in `GPUParticleSystem`
+- **v1.17** Export runtime TSL GTAO + FXAA + SSGI + SSR when `renderBackend: webgpu` (`createExportTSLPipeline`)
+- **v1.18** BT `compileBTGraphToScript`, `inferBlackboardTypes`, PIE breakpoints (`__btBreakpoint`, editor gutter + To Script)
+- **v1.19** Material Editor WebGPU TSL live preview sphere when `materialBackend: 'tsl'`
+- **v1.20** Playwright wave 16 tests — BT script compile, particle compute bind, TSL preview probe (32 tests)
+
+### Changed
+- `getTSLPostState` notes SSGI/SSR on full TSL tier; `window.lotus.bt` adds `compileScript`, `inferBBTypes`
+- `api.runBTWithPaths` for compiled BT script attach with live path index
+- Viewport TSL pipeline passes `ssr` + `ssgi` settings; WebGPU single-pane path avoids WebGL composer aux
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 32 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 15: v1.09–v1.14
 
 ### Added

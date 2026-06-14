@@ -6,7 +6,9 @@ import {
   BT_MAX_DECORATOR_DEPTH,
   BT_NODE_DEFS,
   compileBTGraph,
+  compileBTGraphToScript,
   emptyBTGraph,
+  inferBlackboardTypes,
   newBTNodeId,
   summarizeBTTree,
   validateBTGraph,
@@ -56,9 +58,50 @@ export function BTEditor() {
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState<{ x: number; y: number } | null>(null)
   const [pendingWire, setPendingWire] = useState<{ from: string; x: number; y: number } | null>(null)
+  const [breakpointHitNode, setBreakpointHitNode] = useState<string | null>(null)
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
+  const graphRef = useRef<BTGraph | null>(null)
   const lastActor = useRef<string | null>(null)
+  const breakpointHit = useEditor((s) => s.breakpointHit)
+
+  useEffect(() => {
+    graphRef.current = graph
+  }, [graph])
+
+  useEffect(() => {
+    if (!breakpointHit || breakpointHit.actorId !== actor?.id) {
+      setBreakpointHitNode(null)
+      return
+    }
+    setBreakpointHitNode(breakpointHit.nodeId)
+  }, [breakpointHit, actor?.id])
+
+  useEffect(() => {
+    if (!actor) return
+    const aid = actor.id
+    const g = globalThis as typeof globalThis & {
+      __btBreakpoint?: (actorId: string, nodeId: string) => boolean
+    }
+    g.__btBreakpoint = (actorId: string, nodeId: string) => {
+      const st = useEditor.getState()
+      if (!st.playing || (st.paused && st.breakpointHit)) return false
+      const target = world.actors.get(actorId)
+      if (!target) return false
+      const liveGraph = actorId === aid ? graphRef.current : target.btGraph ?? null
+      const node = liveGraph?.nodes.find((n) => n.id === nodeId)
+      if (!node?.breakpoint) return false
+      const title = BT_NODE_DEFS[node.type]?.title ?? node.type
+      st.setPaused(true)
+      st.setBreakpointHit({ actorId, nodeId })
+      setBreakpointHitNode(nodeId)
+      st.setStatus(`BT breakpoint: ${title} · ${target.name}`)
+      return true
+    }
+    return () => {
+      delete g.__btBreakpoint
+    }
+  }, [actor?.id])
 
   useEffect(() => {
     if (!actor) {
@@ -201,6 +244,7 @@ export function BTEditor() {
   const compiledPreview = compileBTGraph(graph)
   const treePreview = compiledPreview ? summarizeBTTree(compiledPreview.tree) : ''
   const validationErrors = validation.filter((v) => v.level === 'error')
+  const bbTypes = inferBlackboardTypes(graph)
 
   return (
     <div className="bt-editor">
@@ -222,6 +266,43 @@ export function BTEditor() {
         >
           Compile
         </button>
+        <button
+          onClick={() => {
+            if (validationErrors.length) {
+              useEditor.getState().setStatus(validationErrors[0]!.message)
+              return
+            }
+            const code = compileBTGraphToScript(graph)
+            if (!code) {
+              useEditor.getState().setStatus('BT script compile failed')
+              return
+            }
+            const prev = actor.script
+            runCommand(
+              new PropertyCommand(
+                'BT compile to script',
+                () => {
+                  actor.script = code
+                  actor.btAutoRun = false
+                },
+                () => {
+                  actor.script = prev
+                },
+              ),
+            )
+            useEditor.getState().setStatus('BT compiled to actor script (Auto-run disabled)')
+          }}
+        >
+          To Script
+        </button>
+        {breakpointHit && breakpointHit.actorId === actor.id && (
+          <button
+            onClick={() => useEditor.getState().continueFromBreakpoint()}
+            title="Continue from breakpoint (F5)"
+          >
+            ▶ Continue
+          </button>
+        )}
         <label className="field check bt-auto">
           <span>Auto-run on Play</span>
           <input
@@ -311,6 +392,7 @@ export function BTEditor() {
               const def = BT_NODE_DEFS[n.type] ?? { title: n.type, color: '#555', maxChildren: 0 }
               const active = liveNode === n.id
               const selected = selectedNode === n.id
+              const isBpHit = breakpointHitNode === n.id
               const showIn = n.type !== 'Root'
               const showOut = def.maxChildren > 0
               return (
@@ -324,13 +406,16 @@ export function BTEditor() {
                     dragRef.current = { id: n.id, dx: p.x - n.x, dy: p.y - n.y }
                   }}
                 >
+                  {n.breakpoint && (
+                    <circle cx={-8} cy={HEADER_H / 2} r={5} fill={isBpHit ? '#ff4466' : '#e5484d'} />
+                  )}
                   <rect
                     width={NODE_W}
                     height={HEADER_H + 18}
                     rx={4}
                     fill={def.color}
-                    stroke={active ? '#ffe066' : selected ? '#6eb5ff' : '#222'}
-                    strokeWidth={active || selected ? 3 : 1}
+                    stroke={isBpHit ? '#ff4466' : active ? '#ffe066' : selected ? '#6eb5ff' : '#222'}
+                    strokeWidth={isBpHit || active || selected ? 3 : 1}
                   />
                   <text x={8} y={16} fill="#fff" fontSize={11}>
                     {def.title}
@@ -406,7 +491,10 @@ export function BTEditor() {
               )}
               {Object.entries(bb).map(([k, v]) => (
                 <label className="field" key={k}>
-                  <span>{k}</span>
+                  <span>
+                    {k}
+                    {bbTypes[k] && <em className="bt-bb-type"> ({bbTypes[k]})</em>}
+                  </span>
                   <input
                     value={String(v)}
                     onChange={(e) => {
@@ -434,6 +522,22 @@ export function BTEditor() {
             <details className="details-section" open>
               <summary>Node: {BT_NODE_DEFS[node.type]?.title ?? node.type}</summary>
               <div className="details-grid">
+                <label className="field check">
+                  <span>Breakpoint</span>
+                  <input
+                    type="checkbox"
+                    checked={!!node.breakpoint}
+                    onChange={() => {
+                      const next = {
+                        ...graph,
+                        nodes: graph.nodes.map((n) =>
+                          n.id === node.id ? { ...n, breakpoint: !n.breakpoint } : n,
+                        ),
+                      }
+                      commit(next)
+                    }}
+                  />
+                </label>
                 {Object.entries(node.props).map(([k, v]) => (
                   <label className="field" key={k}>
                     <span>{k}</span>

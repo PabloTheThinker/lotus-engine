@@ -57,30 +57,80 @@ let playRenderTier = 'webgl'
 /** @type {{ render: () => void, setCamera: (cam: import('three').Camera) => void } | null} */
 let exportTslPipeline = null
 
-/** Wave 15 — TSL bloom RenderPipeline for WebGPU export tier. */
+/** Wave 15–16 — TSL GTAO + SSGI + SSR + bloom + FXAA for WebGPU export tier. */
 async function createExportTSLPipeline(primary, scene, camera) {
   if (playRenderTier !== 'webgpu') return null
   try {
     const webgpu = await import('three/webgpu')
     const tsl = await import('three/tsl')
     const { bloom } = await import('three/addons/tsl/display/BloomNode.js')
-    const { pass, add } = tsl
+    const { fxaa } = await import('three/addons/tsl/display/FXAANode.js')
+    const { ao } = await import('three/addons/tsl/display/GTAONode.js')
+    const { ssgi } = await import('three/addons/tsl/display/SSGINode.js')
+    const { ssr } = await import('three/addons/tsl/display/SSRNode.js')
+    const { pass, add, mul, mrt, output, normalView, metalness, roughness, vec3, vec4, float } = tsl
     const env = LEVEL.environment ?? {}
     const bloomOn = env.bloomEnabled !== false
     const strength = env.bloomStrength ?? 0.35
     const threshold = env.bloomThreshold ?? 0.9
     const radius = env.bloomRadius ?? 0.6
+    const ssaoOn = env.postSsao === true || env.renderBackend === 'webgpu'
+    const fxaaOn = env.postFxaa !== false
+    const ssrOn = env.postSsr === true
+    const ssgiPreset = env.postSsgiPreset ?? 'off'
+    const ssgiOn = env.postSsgi === true || (ssgiPreset !== 'off' && env.renderBackend === 'webgpu')
+    const ssgiTable = {
+      off: { intensity: 0, radius: 0, samples: 0, slices: 1 },
+      low: { intensity: 0.35, radius: 0.4, samples: 4, slices: 1 },
+      medium: { intensity: 0.55, radius: 0.65, samples: 8, slices: 2 },
+      high: { intensity: 0.75, radius: 0.9, samples: 12, slices: 3 },
+    }
+    const ssgiRow = ssgiTable[ssgiPreset] ?? ssgiTable.off
     let activeCam = camera
     const pipeline = new webgpu.RenderPipeline(primary)
     const rebuild = () => {
       const scenePass = pass(scene, activeCam)
-      const color = scenePass.getTextureNode('output')
+      const needsMRT = ssaoOn || ssgiOn || ssrOn
+      if (needsMRT) {
+        const mrtOut = { output, normal: normalView }
+        if (ssrOn) {
+          mrtOut.metalness = metalness
+          mrtOut.roughness = roughness
+        }
+        scenePass.setMRT(mrt(mrtOut))
+      }
+      let color = scenePass.getTextureNode('output')
+      if (needsMRT) {
+        const depth = scenePass.getTextureNode('depth')
+        const normal = scenePass.getTextureNode('normal')
+        if (ssaoOn) {
+          const aoPass = ao(depth, normal, activeCam)
+          const aoTex = aoPass.getTextureNode()
+          color = mul(color, vec4(vec3(aoTex.r), 1))
+        }
+        if (ssgiOn) {
+          const ssgiPass = ssgi(color, depth, normal, activeCam)
+          ssgiPass.sliceCount.value = ssgiRow.slices
+          ssgiPass.stepCount.value = Math.max(4, ssgiRow.samples)
+          ssgiPass.giIntensity.value = Math.max(1, ssgiRow.intensity * 12)
+          ssgiPass.radius.value = Math.max(2, ssgiRow.radius * 14)
+          const giTex = ssgiPass.getTextureNode()
+          color = add(color, vec4(vec3(giTex.r, giTex.g, giTex.b), float(1)))
+          if (!ssaoOn) color = mul(color, vec4(vec3(giTex.a), 1))
+        }
+        if (ssrOn) {
+          const metal = scenePass.getTextureNode('metalness')
+          const rough = scenePass.getTextureNode('roughness')
+          const ssrPass = ssr(color, depth, normal, metal, rough, activeCam)
+          color = add(color, ssrPass.getTextureNode())
+        }
+      }
       if (bloomOn) {
         const bp = bloom(color, strength, radius, threshold)
-        pipeline.outputNode = add(color, bp)
-      } else {
-        pipeline.outputNode = color
+        color = add(color, bp)
       }
+      if (fxaaOn) color = fxaa(color)
+      pipeline.outputNode = color
       pipeline.needsUpdate = true
     }
     rebuild()

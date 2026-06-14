@@ -32,7 +32,14 @@ import { PreferencesModal } from './editor/Preferences'
 import { ProjectSettingsModal } from './editor/ProjectSettingsModal'
 import { loadProjectSettings } from './editor/projectSettings'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
-import { compileBTGraph, emptyBTGraph, summarizeBTTree, validateBTGraph } from './engine/btGraph'
+import {
+  compileBTGraph,
+  compileBTGraphToScript,
+  emptyBTGraph,
+  inferBlackboardTypes,
+  summarizeBTTree,
+  validateBTGraph,
+} from './engine/btGraph'
 import { getActiveBTPaths } from './engine/behaviorTree'
 import { evaluateCurve, emptyCurve } from './engine/curveAssets'
 import { getSSGISettings } from './engine/ssgiPreset'
@@ -51,7 +58,7 @@ import {
 } from './engine/characterController'
 import { crowdAddAgent, crowdAgentCount, crowdGetPosition, initCrowd } from './engine/navCrowd'
 import { mpIsDedicatedServer, mpLagCompensatedTransform, mpNetSettings } from './engine/multiplayer'
-import { serializeMaterialGraphTSL } from './engine/materialGraphTSL'
+import { isTSLPreviewAvailableAsync, serializeMaterialGraphTSL } from './engine/materialGraphTSL'
 import { emptyMaterialGraph } from './engine/materialGraph'
 import { bakeLightProbeGrid } from './engine/ssrProbeGI'
 
@@ -140,6 +147,7 @@ const lotusBridge = {
   },
   materialTSL: {
     serialize: (graph = emptyMaterialGraph()) => serializeMaterialGraphTSL(graph, 0),
+    previewAvailable: () => isTSLPreviewAvailableAsync(),
   },
   bakeGIProbes: async () => {
     const gfx = (window as unknown as { lotusGfx?: { renderer?: THREE.WebGLRenderer } }).lotusGfx
@@ -170,8 +178,10 @@ const lotusBridge = {
   bt: {
     emptyGraph: emptyBTGraph,
     compile: compileBTGraph,
+    compileScript: compileBTGraphToScript,
     validate: validateBTGraph,
     summarize: summarizeBTTree,
+    inferBBTypes: inferBlackboardTypes,
     activePaths: getActiveBTPaths,
   },
   curve: {

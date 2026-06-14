@@ -58,6 +58,13 @@ export interface ScriptApi {
   runBT: (actor: Actor, tree: import('./behaviorTree').BTNode) => void
   /** Run a visual BT graph (compiles + attaches path index for live debug) */
   runBTGraph: (actor: Actor, graph: BTGraph, bb?: Record<string, unknown>) => boolean
+  /** Run a compiled BT tree with path index (from compileBTGraphToScript) */
+  runBTWithPaths: (
+    actor: Actor,
+    tree: BTNode,
+    pathIndex: Record<string, string>,
+    bb?: Record<string, unknown>,
+  ) => void
   /** per-actor blackboard (shared with its behavior tree) */
   blackboard: (actor: Actor) => Record<string, unknown>
   /** Sample a named curve data asset at t */
@@ -214,6 +221,9 @@ export function makeScriptApi(
       if (!compiled) return false
       runBTGraph(actor, compiled, bb ?? blackboardFor(actor))
       return true
+    },
+    runBTWithPaths: (actor, tree, pathIndex, bb) => {
+      runBT(actor, tree, bb ?? blackboardFor(actor), pathIndex)
     },
     blackboard: (actor) => blackboardFor(actor),
     evaluateCurve: (name, t) => {

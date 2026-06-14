@@ -90,6 +90,13 @@ function visit(ctx: BTContext, path: string) {
   if (!ctx.pathPrefix) return
   const full = path ? `${ctx.pathPrefix}/${path}` : ctx.pathPrefix
   activePaths.set(ctx.actor.id, full)
+  if (ctx.pathIndex) {
+    const nodeId = ctx.pathIndex[full]
+    if (nodeId) {
+      const g = globalThis as { __btBreakpoint?: (actorId: string, nodeId: string) => boolean }
+      g.__btBreakpoint?.(ctx.actor.id, nodeId)
+    }
+  }
 }
 
 export function tickBT(node: BTNode, ctx: BTContext, path = ''): BTStatus {

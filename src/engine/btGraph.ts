@@ -8,6 +8,8 @@ export interface BTGraphNode {
   x: number
   y: number
   props: Record<string, string | number>
+  /** PIE breakpoint — pauses when this node ticks (Wave 16) */
+  breakpoint?: boolean
 }
 
 export interface BTGraphEdge {
@@ -242,6 +244,61 @@ export function validateBTGraph(graph: BTGraph): BTValidationIssue[] {
 }
 
 /** Summarize compiled tree for BT editor preview. */
+export type BTBlackboardType = 'bool' | 'number' | 'string' | 'vec3'
+
+function inferBBValueType(value: unknown): BTBlackboardType {
+  if (typeof value === 'number') return 'number'
+  if (typeof value === 'boolean') return 'bool'
+  if (typeof value === 'string') {
+    const parts = value.split(',').map((s) => parseFloat(s.trim()))
+    if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) return 'vec3'
+    return 'string'
+  }
+  return 'bool'
+}
+
+/** Infer blackboard key types from SetBB / Blackboard nodes (Wave 16). */
+export function inferBlackboardTypes(graph: BTGraph): Record<string, BTBlackboardType> {
+  const types: Record<string, BTBlackboardType> = {}
+  for (const n of graph.nodes) {
+    if (n.type === 'SetBB') {
+      const key = String(n.props.key ?? 'flag')
+      types[key] = inferBBValueType(n.props.value ?? true)
+    }
+    if (n.type === 'Blackboard') {
+      const key = String(n.props.key ?? 'flag')
+      if (n.props.greaterThan !== undefined) types[key] = 'number'
+      else if (n.props.equals !== undefined) types[key] = inferBBValueType(n.props.equals)
+      else types[key] = 'bool'
+    }
+  }
+  return types
+}
+
+/** Compile BT graph to per-actor script JS (Wave 16). */
+export function compileBTGraphToScript(graph: BTGraph): string | null {
+  const compiled = compileBTGraph(graph)
+  if (!compiled) return null
+  const types = inferBlackboardTypes(graph)
+  const typeLines = Object.entries(types)
+    .map(([k, t]) => `// bb ${k}: ${t}`)
+    .join('\n')
+  const treeJson = JSON.stringify(compiled.tree)
+  const pathJson = JSON.stringify(compiled.pathIndex)
+
+  return `// ── compiled from Behavior Tree — edits overwritten on next compile ──
+${typeLines}
+const __btTree = ${treeJson}
+const __btPaths = ${pathJson}
+
+function onBeginPlay() {
+  const bb = api.blackboard(actor)
+  Object.assign(bb, actor.scriptVars ?? {})
+  api.runBTWithPaths(actor, __btTree, __btPaths, bb)
+}
+`
+}
+
 export function summarizeBTTree(tree: BTNode, depth = 0): string {
   const pad = '  '.repeat(depth)
   if ('sequence' in tree && tree.sequence) {

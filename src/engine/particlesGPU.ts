@@ -1,9 +1,15 @@
 import type { ParticleProps } from './particles'
 import { ParticleSystem } from './particles'
-import { initParticleCompute, integrateParticleBuffers } from './particlesCompute'
+import {
+  bindParticleIntegrateKernel,
+  initParticleCompute,
+  integrateParticleBuffers,
+  isParticleGpuKernelReady,
+  runParticleGPUIntegrate,
+} from './particlesCompute'
 
 /**
- * GPU particles (Wave 13–15) — compute-tier sim when WebGPU backend is available.
+ * GPU particles (Wave 13–16) — compute-tier sim when WebGPU backend is available.
  * Falls back to proven CPU ParticleSystem when unavailable.
  */
 
@@ -24,9 +30,12 @@ export class GPUParticleSystem extends ParticleSystem {
   readonly computeSim: boolean
   /** Wave 14–15 — true when TSL ComputeNode path initialized */
   usesComputeNode = false
-  /** Wave 15 — frames integrated via compute-tier buffer path */
+  /** Wave 16 — true when GPU integrate kernel bound to sim buffers */
+  gpuKernelActive = false
+  /** Wave 15–16 — frames integrated via compute-tier buffer path */
   computeIntegratedFrames = 0
   private batchDt = 0
+  private computeRenderer: unknown = null
 
   constructor(props: ParticleProps, backend: ParticleBackend = 'cpu') {
     super(props)
@@ -35,14 +44,21 @@ export class GPUParticleSystem extends ParticleSystem {
     this.computeSim = this.gpuTier
   }
 
-  /** Bind WebGPU renderer for TSL compute sim (Wave 14). */
+  /** Bind WebGPU renderer for TSL compute sim (Wave 14–16). */
   async bindComputeRenderer(renderer: unknown) {
     if (!this.gpuTier) return
+    this.computeRenderer = renderer
     const st = await initParticleCompute(renderer)
     this.usesComputeNode = st.ready
+    if (!this.usesComputeNode) {
+      this.gpuKernelActive = false
+      return
+    }
+    const { positions, velocities, alive } = this.simBuffers()
+    this.gpuKernelActive = await bindParticleIntegrateKernel(renderer, positions, velocities, alive.length)
   }
 
-  /** Wave 13–15 — GPU tier: compute integration or fixed-substep CPU fallback. */
+  /** Wave 13–16 — GPU tier: TSL kernel integration or CPU fallback. */
   update(
     dt: number,
     emitting: boolean,
@@ -54,14 +70,27 @@ export class GPUParticleSystem extends ParticleSystem {
       return
     }
 
-    if (this.usesComputeNode) {
+    if (this.usesComputeNode && this.computeRenderer) {
       const p = this.props
       const offForces = p.modulesOff?.includes('forces')
       const gravity = offForces ? 0 : p.gravity
       const drag = offForces ? 0 : p.drag
+
+      if (isParticleGpuKernelReady()) {
+        if (runParticleGPUIntegrate(this.computeRenderer, dt, gravity, drag)) {
+          this.computeIntegratedFrames++
+          const posAttr = this.points.geometry.getAttribute('position')
+          if (posAttr) posAttr.needsUpdate = true
+          super.update(dt, emitting, worldMatrix, terrainAt, { skipForces: true })
+          return
+        }
+      }
+
       const { positions, velocities, alive } = this.simBuffers()
       if (integrateParticleBuffers(positions, velocities, alive, dt, gravity, drag)) {
         this.computeIntegratedFrames++
+        const posAttr = this.points.geometry.getAttribute('position')
+        if (posAttr) posAttr.needsUpdate = true
         super.update(dt, emitting, worldMatrix, terrainAt, { skipForces: true })
         return
       }

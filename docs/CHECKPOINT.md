@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 15)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 16)
 
 > Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v1.14.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v1.14 (wave 15).** v0.33–v1.14 shipped; **build clean**, **`npm run test` — 29 passed**.
+- **Last clean commit: v1.20 (wave 16).** v0.33–v1.20 shipped; **build clean**, **`npm run test` — 32 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -194,13 +194,24 @@
 | v1.13 | Material TSL dynamic `three/webgpu` import (no build warnings) |
 | v1.14 | Playwright wave 15 tests — 29 passed |
 
-## Next up (v1.15+, Wave 16)
+## Shipped wave 16 (v1.15 → v1.20)
 
-1. **TSL post stack** — SSGI/SSR nodes on WebGPU path (retire WebGL composer aux on WebGPU tier)
-2. **GPU particles** — full TSL compute shader writing position buffers (not CPU integrate stub)
-3. **Export runtime** — GTAO + FXAA in standalone HTML when tier is webgpu
-4. **BT editor** — compile-to-script, blackboard type hints, PIE breakpoint on node
-5. **Material TSL** — live node graph preview on WebGPU viewport sphere
+| Ver | What |
+|---|---|
+| v1.15 | TSL post stack SSGI + SSR on WebGPURenderer (`postStackTSLPipeline.ts`, Viewport `applyPostFx`) |
+| v1.16 | GPU particle TSL compute kernel — `bindParticleIntegrateKernel` / `runParticleGPUIntegrate` |
+| v1.17 | Export runtime TSL GTAO + FXAA + SSGI + SSR (`createExportTSLPipeline` in `runtime.js`) |
+| v1.18 | BT compile-to-script, `inferBlackboardTypes`, PIE breakpoints (`__btBreakpoint`, BTEditor) |
+| v1.19 | Material Editor WebGPU TSL live preview sphere (`MaterialEditor.tsx`) |
+| v1.20 | Playwright wave 16 tests — 32 passed |
+
+## Next up (v1.21+, Wave 17)
+
+1. **TSL post** — TRAA temporal filter + denoise for SSGI stability
+2. **GPU particles** — alive-mask in compute kernel + spawn/emit on GPU
+3. **Export** — WebGPU particle tier in playable HTML
+4. **BT** — subtree collapse, decorator visual wrap (not Repeat unroll)
+5. **Material TSL** — per-node TSL graph compile (not evaluateMaterialGraph stub)
 
 ## Remaining gap-list queue (post–wave 7)
 

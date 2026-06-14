@@ -704,6 +704,86 @@ test('wave 15 GPU particle simBuffers + material TSL serialize', async ({ page }
   expect(result.backend === 'gpu' || result.backend === 'cpu').toBe(true)
 })
 
+test('wave 16 BT compile-to-script + blackboard type hints', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: {
+        emptyGraph: () => import('../src/engine/btGraph').BTGraph
+        compileScript: (g: import('../src/engine/btGraph').BTGraph) => string | null
+        inferBBTypes: (g: import('../src/engine/btGraph').BTGraph) => Record<string, string>
+      }
+    }
+    const graph = v.bt.emptyGraph()
+    const setBb = graph.nodes.find((n) => n.type === 'SetBB')
+    if (setBb) {
+      setBb.type = 'SetBB'
+      setBb.props = { key: 'alerted', value: true }
+    } else {
+      graph.nodes.push({
+        id: 'setbb-test',
+        type: 'SetBB',
+        x: 400,
+        y: 200,
+        props: { key: 'alerted', value: true },
+      })
+    }
+    const script = v.bt.compileScript(graph)
+    const types = v.bt.inferBBTypes(graph)
+    return {
+      hasScript: !!script && script.includes('runBTWithPaths'),
+      alertedType: types.alerted,
+    }
+  })
+
+  expect(result.hasScript).toBe(true)
+  expect(result.alertedType).toBe('bool')
+})
+
+test('wave 16 GPU particle compute exports + TSL post bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      particles: {
+        create: (b: 'cpu' | 'gpu') => {
+          backend: string
+          usesComputeNode?: boolean
+          gpuKernelActive?: boolean
+          bindComputeRenderer?: (r: unknown) => Promise<void>
+        }
+      }
+      renderer: { ssgi: () => { enabled: boolean; preset: string } }
+    }
+    const gpu = v.particles.create('gpu')
+    const ssgi = v.renderer.ssgi()
+    return {
+      backend: gpu.backend,
+      hasBind: typeof gpu.bindComputeRenderer === 'function',
+      ssgiPreset: ssgi.preset,
+    }
+  })
+
+  expect(result.hasBind).toBe(true)
+  expect(result.ssgiPreset).toBeDefined()
+  expect(result.backend === 'gpu' || result.backend === 'cpu').toBe(true)
+})
+
+test('wave 16 material TSL preview capability probe', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      materialTSL: { previewAvailable: () => Promise<boolean> }
+    }
+    const ok = await v.materialTSL.previewAvailable()
+    return { probe: typeof ok === 'boolean' }
+  })
+
+  expect(result.probe).toBe(true)
+})
+
 test('wave 13 BT editor blackboard panel', async ({ page }) => {
   await bootEditor(page)
 

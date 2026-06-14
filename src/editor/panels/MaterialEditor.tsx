@@ -10,6 +10,10 @@ import {
   type MaterialGraph,
   type MaterialGraphMode,
 } from '../../engine/materialGraph'
+import {
+  compileMaterialGraphTSL,
+  isTSLPreviewAvailableAsync,
+} from '../../engine/materialGraphTSL'
 import { PropertyCommand, runCommand } from '../commands'
 import { useEditor } from '../store'
 
@@ -35,66 +39,130 @@ function wirePath(x1: number, y1: number, x2: number, y2: number): string {
   return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
-/** Live preview sphere — mirrors CPU/GPU material graph on a small Three.js viewport. */
+/** Live preview sphere — WebGL or WebGPU (TSL) depending on material backend. */
 function MaterialPreview({ graph, mode }: { graph: MaterialGraph; mode: MaterialGraphMode }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const graphSnapshot = JSON.stringify(graph)
+  const tslBackend = world.environment.materialBackend === 'tsl'
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
 
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#1a1d24')
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50)
-    camera.position.set(0, 0.15, 2.4)
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.outputColorSpace = THREE.SRGBColorSpace
-    host.appendChild(renderer.domElement)
-
-    const mat = new THREE.MeshStandardMaterial({ color: '#5b8def', roughness: 0.35, metalness: 0.1 })
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.85, 96, 72), mat)
-    scene.add(mesh)
-
-    const key = new THREE.DirectionalLight(0xffffff, 1.4)
-    key.position.set(2, 3, 2)
-    scene.add(key)
-    scene.add(new THREE.AmbientLight(0x404860, 0.55))
-
-    const ro = new ResizeObserver(() => {
-      const w = host.clientWidth
-      const h = host.clientHeight
-      if (w < 8 || h < 8) return
-      renderer.setSize(w, h, false)
-      camera.aspect = w / h
-      camera.updateProjectionMatrix()
-    })
-    ro.observe(host)
-
+    let disposed = false
     let raf = 0
-    const loop = () => {
-      const t = performance.now() / 1000
-      mesh.rotation.y = t * 0.35
-      mesh.rotation.x = 0.15
-      applyMaterialGraphToMaterial(mat, graph, t, mode, world.environment.materialBackend ?? 'glsl')
-      renderer.render(scene, camera)
-      raf = requestAnimationFrame(loop)
-    }
-    loop()
+    let ro: ResizeObserver | null = null
+    let cleanup = () => {}
 
+    const boot = async () => {
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color('#1a1d24')
+      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 50)
+      camera.position.set(0, 0.15, 2.4)
+
+      const key = new THREE.DirectionalLight(0xffffff, 1.4)
+      key.position.set(2, 3, 2)
+      scene.add(key)
+      scene.add(new THREE.AmbientLight(0x404860, 0.55))
+
+      const geo = new THREE.SphereGeometry(0.85, 96, 72)
+      let mesh: THREE.Mesh
+      let renderer: { domElement: HTMLCanvasElement; setSize: (w: number, h: number, u?: boolean) => void; render: (s: THREE.Scene, c: THREE.Camera) => void; dispose: () => void }
+
+      const useTSL = tslBackend && (await isTSLPreviewAvailableAsync())
+      if (useTSL) {
+        const webgpu = await import('three/webgpu')
+        const WebGPURenderer = webgpu.WebGPURenderer as new (p: { antialias?: boolean }) => {
+          domElement: HTMLCanvasElement
+          setSize: (w: number, h: number, u?: boolean) => void
+          render: (s: THREE.Scene, c: THREE.Camera) => void
+          dispose: () => void
+        }
+        renderer = new WebGPURenderer({ antialias: true })
+        const tslMat = compileMaterialGraphTSL(graph, 0)
+        mesh = new THREE.Mesh(geo, tslMat ?? new THREE.MeshStandardMaterial({ color: '#5b8def' }))
+      } else {
+        renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+        ;(renderer as THREE.WebGLRenderer).outputColorSpace = THREE.SRGBColorSpace
+        const mat = new THREE.MeshStandardMaterial({ color: '#5b8def', roughness: 0.35, metalness: 0.1 })
+        mesh = new THREE.Mesh(geo, mat)
+      }
+
+      if (disposed) {
+        geo.dispose()
+        mesh.geometry.dispose()
+        const m = mesh.material
+        if (Array.isArray(m)) m.forEach((x) => x.dispose())
+        else m.dispose()
+        renderer.dispose()
+        return
+      }
+
+      host.appendChild(renderer.domElement)
+      scene.add(mesh)
+
+      ro = new ResizeObserver(() => {
+        const w = host.clientWidth
+        const h = host.clientHeight
+        if (w < 8 || h < 8) return
+        renderer.setSize(w, h, false)
+        camera.aspect = w / h
+        camera.updateProjectionMatrix()
+      })
+      ro.observe(host)
+
+      const loop = () => {
+        const t = performance.now() / 1000
+        mesh.rotation.y = t * 0.35
+        mesh.rotation.x = 0.15
+        if (useTSL) {
+          const next = compileMaterialGraphTSL(graph, t)
+          if (next) {
+            const prev = mesh.material
+            mesh.material = next
+            if (Array.isArray(prev)) prev.forEach((x) => x.dispose())
+            else prev.dispose()
+          }
+        } else {
+          applyMaterialGraphToMaterial(
+            mesh.material as THREE.MeshStandardMaterial,
+            graph,
+            t,
+            mode,
+            world.environment.materialBackend ?? 'glsl',
+          )
+        }
+        renderer.render(scene, camera)
+        raf = requestAnimationFrame(loop)
+      }
+      loop()
+
+      cleanup = () => {
+        cancelAnimationFrame(raf)
+        ro?.disconnect()
+        mesh.geometry.dispose()
+        const m = mesh.material
+        if (Array.isArray(m)) m.forEach((x) => x.dispose())
+        else m.dispose()
+        renderer.dispose()
+        if (host.contains(renderer.domElement)) host.removeChild(renderer.domElement)
+      }
+    }
+
+    void boot()
     return () => {
-      cancelAnimationFrame(raf)
-      ro.disconnect()
-      mesh.geometry.dispose()
-      mat.dispose()
-      renderer.dispose()
-      host.removeChild(renderer.domElement)
+      disposed = true
+      cleanup()
     }
-  }, [graphSnapshot, mode])
+  }, [graphSnapshot, mode, tslBackend])
 
-  return <div className="mat-preview-viewport" ref={hostRef} title="Live material preview" />
+  return (
+    <div
+      className="mat-preview-viewport"
+      ref={hostRef}
+      title={tslBackend ? 'Live TSL preview (WebGPU)' : 'Live material preview'}
+    />
+  )
 }
 
 /**
