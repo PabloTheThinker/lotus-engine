@@ -1002,6 +1002,24 @@ export function WorldSettings() {
           <input type="checkbox" checked={!!env.postSsr} onChange={(e) => set('postSsr', e.target.checked)} />
         </label>
         <label className="field check">
+          <span>Post SSGI (WebGPU opt-in)</span>
+          <input type="checkbox" checked={!!env.postSsgi} onChange={(e) => set('postSsgi', e.target.checked)} />
+        </label>
+        {(env.postSsgi || env.renderBackend === 'webgpu') && (
+          <label className="field">
+            <span>SSGI quality preset</span>
+            <select
+              value={env.postSsgiPreset ?? 'off'}
+              onChange={(e) => set('postSsgiPreset', e.target.value as 'off' | 'low' | 'medium' | 'high')}
+            >
+              <option value="off">Off</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </label>
+        )}
+        <label className="field check">
           <span>LightProbeGrid GI (approx)</span>
           <input type="checkbox" checked={!!env.lightProbeGrid} onChange={(e) => set('lightProbeGrid', e.target.checked)} />
         </label>

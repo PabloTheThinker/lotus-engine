@@ -29,7 +29,13 @@ import {
 } from './editor/plugins'
 import { PluginManagerModal } from './editor/PluginManager'
 import { PreferencesModal } from './editor/Preferences'
+import { ProjectSettingsModal } from './editor/ProjectSettingsModal'
+import { loadProjectSettings } from './editor/projectSettings'
 import { ShortcutEditor } from './editor/panels/ShortcutEditor'
+import { compileBTGraph, emptyBTGraph } from './engine/btGraph'
+import { getActiveBTPaths } from './engine/behaviorTree'
+import { evaluateCurve, emptyCurve } from './engine/curveAssets'
+import { getSSGISettings } from './engine/ssgiPreset'
 import { isTypingTarget, matchesShortcutId } from './editor/shortcuts'
 import { bakeNavMesh, isRecastNavReady } from './engine/nav'
 import { compileBlueprint, emptyGraph } from './engine/blueprint'
@@ -157,6 +163,22 @@ const lotusBridge = {
       }
     },
   },
+  /** Wave 12 — behavior tree editor + live paths */
+  bt: {
+    emptyGraph: emptyBTGraph,
+    compile: compileBTGraph,
+    activePaths: getActiveBTPaths,
+  },
+  curve: {
+    evaluate: evaluateCurve,
+    sample: () => evaluateCurve(emptyCurve('e2e'), 0.5),
+  },
+  ssgi: {
+    settings: () => getSSGISettings(world.environment),
+  },
+  projectSettings: {
+    load: loadProjectSettings,
+  },
 }
 const win = window as unknown as Record<string, unknown>
 win.lotus = lotusBridge
@@ -258,6 +280,7 @@ export default function App() {
       <PrefsHost />
       <ShortcutEditorHost />
       <PluginManagerHost />
+      <ProjectSettingsHost />
     </div>
   )
 }
@@ -281,4 +304,11 @@ function PluginManagerHost() {
   const setShow = useEditor((s) => s.setShowPluginManager)
   if (!show) return null
   return <PluginManagerModal onClose={() => setShow(false)} />
+}
+
+function ProjectSettingsHost() {
+  const show = useEditor((s) => s.showProjectSettings)
+  const setShow = useEditor((s) => s.setShowProjectSettings)
+  if (!show) return null
+  return <ProjectSettingsModal onClose={() => setShow(false)} />
 }

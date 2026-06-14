@@ -1,11 +1,11 @@
-# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 9)
+# CHECKPOINT — 2026-06-13 (Lotus Engine — wave 12)
 
-> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v0.78.
+> Working doc: `docs/LOTUS-ENGINE-RESEARCH.md` + `docs/UE5.7-GAP-LIST.md` — synced through v0.96.
 
 ## State
 
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v0.78 (wave 9).** v0.33–v0.78 shipped; **build clean**, **`npm run test` — 14 passed**.
+- **Last clean commit: v0.96 (wave 12).** v0.33–v0.96 shipped; **build clean**, **`npm run test` — 23 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -150,18 +150,24 @@
 | v0.89 | TSL material editor serialize path |
 | v0.90 | DetourCrowd + landscape splat textures |
 
-## Next up (v0.91+, Wave 12)
+## Shipped wave 12 (v0.91 → v0.96)
 
-1. **Behavior Tree editor** — visual graph + live highlight
-2. **Data table grid editor + curve assets**
-3. **Project Settings modal** (global, not just World Settings)
-4. **Nested prefab-in-prefab**
-5. **Voronoi fracture + strain**
-6. **SSGI quality preset** (desktop WebGPU opt-in)
-7. **Command palette asset search**
-8. **Full WebGPURenderer swap** — after QA matrix
-9. **GPU particles compute** — full TSL `ComputeNode` sim
-10. **Expanded E2E** — export playable roundtrip
+| Ver | What |
+|---|---|
+| v0.91 | Behavior Tree editor — visual graph + live PIE highlight |
+| v0.92 | Data table grid + curve assets (`DataTableEditor`, `evaluateCurve`) |
+| v0.93 | Project Settings modal — global defaults + export branding |
+| v0.94 | Nested prefab-in-prefab (`prefabRef`, `expandPrefabRefs`) |
+| v0.95 | Voronoi fracture + strain multiplier on breakable physics |
+| v0.96 | SSGI quality preset (WebGPU) + command palette asset search |
+
+## Next up (v0.97+, Wave 13)
+
+1. **Full WebGPURenderer swap** — after QA matrix
+2. **GPU particles compute** — full TSL `ComputeNode` sim
+3. **Expanded E2E** — export playable roundtrip
+4. **BT editor** — edge delete, property pins, blackboard panel
+5. **SSGI** — real screen-space pass hook when WebGPU renderer lands
 
 ## Remaining gap-list queue (post–wave 7)
 

@@ -4,6 +4,30 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-13 — Wave 12: v0.91–v0.96
+
+### Added
+- **v0.91** Behavior Tree editor — visual graph canvas, auto-wire on add, live PIE node highlight (`btGraph.ts`, `BTEditor.tsx`)
+- **v0.92** Data table grid + curve assets — `DataTableEditor`, `curveAssets.ts`, `api.evaluateCurve`
+- **v0.93** Project Settings modal — global render/physics/material defaults + export branding (`projectSettings.ts`, File menu)
+- **v0.94** Nested prefab-in-prefab — `prefabRef` on save, `expandPrefabRefs` on instantiate (`prefabs.ts`)
+- **v0.95** Voronoi fracture + strain — `buildVoronoiFragments`, Details **Fracture Strain** field (`voronoiFracture.ts`, `physics.ts`)
+- **v0.96** SSGI quality preset (WebGPU opt-in) + command palette asset search — materials, prefabs, data, imports (`ssgiPreset.ts`, `palette.tsx`)
+
+### Changed
+- Viewport stats badge shows `SSGI(preset)` when enabled on WebGPU tier
+- Playable export respects **Lotus branding on export** project setting
+- `window.lotus` bridge: `bt`, `curve`, `ssgi`, `projectSettings`
+- Scripts gain `api.runBTGraph(graph)` for visual BT graphs
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 23 passed
+```
+
+---
+
 ## 2026-06-13 — Wave 11: v0.85–v0.90
 
 ### Added

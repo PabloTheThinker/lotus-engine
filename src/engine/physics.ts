@@ -5,6 +5,7 @@ import { disposeCharacterController, initCharacterController } from './character
 import { createPhysicsJoints } from './physicsJoints'
 import { disposeRaycastVehicle } from './physicsVehicle'
 import type { PhysicsJointDef } from './types'
+import { buildVoronoiFragments } from './voronoiFracture'
 
 /**
  * Physics — the Chaos analog, backed by Rapier (WASM). The simulation only
@@ -157,28 +158,29 @@ export class PhysicsSim {
     actor.root.getWorldPosition(pos)
     const scale = new THREE.Vector3()
     actor.root.getWorldScale(scale)
-    const color = (actor.mesh!.material as THREE.MeshStandardMaterial).color?.clone() ?? new THREE.Color(0x888888)
     actor.root.visible = false
     // drop the original body from simulation
     this.world.removeRigidBody(binding.body)
     this.bindings = this.bindings.filter((b) => b !== binding)
-    const n = 8
-    const frag = Math.max(0.12, (scale.x + scale.y + scale.z) / 3 / 4)
-    for (let i = 0; i < n; i++) {
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(frag, frag, frag),
-        new THREE.MeshStandardMaterial({ color, roughness: 0.7 }),
+    const strain = binding.actor.physicsProps?.fractureStrain ?? 1
+    const pieces = buildVoronoiFragments(actor.mesh!, 12 + Math.floor(strain * 4), strain)
+    for (const piece of pieces) {
+      piece.mesh.position.copy(pos).add(piece.offset)
+      scene.add(piece.mesh)
+      const g = piece.mesh.geometry as THREE.BoxGeometry
+      const ps = g.parameters
+      const hx = (ps.width ?? 0.2) / 2
+      const hy = (ps.height ?? 0.2) / 2
+      const hz = (ps.depth ?? 0.2) / 2
+      const desc = RAPIER.RigidBodyDesc.dynamic().setTranslation(
+        piece.mesh.position.x,
+        piece.mesh.position.y,
+        piece.mesh.position.z,
       )
-      mesh.castShadow = true
-      mesh.userData.isEditorOnly = true
-      const off = new THREE.Vector3((Math.random() - 0.5), Math.random(), (Math.random() - 0.5)).multiplyScalar(0.4)
-      mesh.position.copy(pos).add(off)
-      scene.add(mesh)
-      const desc = RAPIER.RigidBodyDesc.dynamic().setTranslation(mesh.position.x, mesh.position.y, mesh.position.z)
       const body = this.world.createRigidBody(desc)
-      this.world.createCollider(RAPIER.ColliderDesc.cuboid(frag / 2, frag / 2, frag / 2).setRestitution(0.4), body)
-      body.applyImpulse({ x: off.x * 3, y: 1.5 + Math.random() * 2, z: off.z * 3 }, true)
-      this.fragments.push({ mesh, body })
+      this.world.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setRestitution(0.4), body)
+      body.applyImpulse({ x: piece.impulse.x, y: piece.impulse.y, z: piece.impulse.z }, true)
+      this.fragments.push({ mesh: piece.mesh, body })
     }
   }
 

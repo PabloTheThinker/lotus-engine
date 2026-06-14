@@ -34,6 +34,9 @@ export interface BTContext {
   log: (msg: string) => void
   dt: number
   activateAbility: (abilityId: string) => boolean
+  /** Maps runtime path → graph node id (Wave 12 live highlight) */
+  pathPrefix?: string
+  pathIndex?: Record<string, string>
 }
 
 interface BTState {
@@ -63,23 +66,50 @@ function moveToward(actor: Actor, target: THREE.Vector3, speed: number, stopAt: 
   return 'running'
 }
 
-export function tickBT(node: BTNode, ctx: BTContext): BTStatus {
+const activePaths = new Map<string, string>()
+
+export function getActiveBTPath(actorId: string): string | null {
+  return activePaths.get(actorId) ?? null
+}
+
+export function getActiveBTPaths(): Record<string, string> {
+  return Object.fromEntries(activePaths)
+}
+
+/** Resolve live runtime path to editor graph node id. */
+export function getActiveBTGraphNodeId(
+  actorId: string,
+  pathIndex?: Record<string, string>,
+): string | null {
+  const p = activePaths.get(actorId)
+  if (!p || !pathIndex) return null
+  return pathIndex[p] ?? null
+}
+
+function visit(ctx: BTContext, path: string) {
+  if (!ctx.pathPrefix) return
+  const full = path ? `${ctx.pathPrefix}/${path}` : ctx.pathPrefix
+  activePaths.set(ctx.actor.id, full)
+}
+
+export function tickBT(node: BTNode, ctx: BTContext, path = ''): BTStatus {
+  visit(ctx, path)
   if ('selector' in node) {
-    for (const child of node.selector) {
-      const r = tickBT(child, ctx)
+    for (let i = 0; i < node.selector.length; i++) {
+      const r = tickBT(node.selector[i], ctx, `${path}/${i}`)
       if (r !== 'failure') return r
     }
     return 'failure'
   }
   if ('sequence' in node) {
-    for (const child of node.sequence) {
-      const r = tickBT(child, ctx)
+    for (let i = 0; i < node.sequence.length; i++) {
+      const r = tickBT(node.sequence[i], ctx, `${path}/${i}`)
       if (r !== 'success') return r
     }
     return 'success'
   }
   if ('invert' in node) {
-    const r = tickBT(node.invert, ctx)
+    const r = tickBT(node.invert, ctx, `${path}/inv`)
     return r === 'running' ? 'running' : r === 'success' ? 'failure' : 'success'
   }
   if ('condition' in node) {
@@ -142,16 +172,32 @@ interface ActiveBT {
   actor: Actor
   tree: BTNode
   bb: Record<string, unknown>
+  pathIndex?: Record<string, string>
 }
 let active: ActiveBT[] = []
 
 export function resetBTs() {
   active = []
+  activePaths.clear()
 }
 
-export function runBT(actor: Actor, tree: BTNode, bb: Record<string, unknown>) {
+export function runBT(
+  actor: Actor,
+  tree: BTNode,
+  bb: Record<string, unknown>,
+  pathIndex?: Record<string, string>,
+) {
   active = active.filter((a) => a.actor !== actor)
-  active.push({ actor, tree, bb })
+  active.push({ actor, tree, bb, pathIndex })
+}
+
+/** Start a compiled behavior tree graph on an actor. */
+export function runBTGraph(
+  actor: Actor,
+  compiled: { tree: BTNode; pathIndex: Record<string, string> },
+  bb: Record<string, unknown> = {},
+) {
+  runBT(actor, compiled.tree, bb, compiled.pathIndex)
 }
 
 export function tickBTs(
@@ -171,6 +217,8 @@ export function tickBTs(
       log: (m) => log(m),
       dt,
       activateAbility: (id) => activateAbility(a.actor, id),
+      pathPrefix: a.pathIndex ? 'root' : undefined,
+      pathIndex: a.pathIndex,
     })
   }
 }

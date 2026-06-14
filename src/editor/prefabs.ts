@@ -38,10 +38,24 @@ export function getPrefabByName(name: string): Prefab | undefined {
 export function savePrefab(rootActorId: string): Prefab | null {
   const root = world.actors.get(rootActorId)
   if (!root) return null
-  const collect = (id: string): SerializedActor[] => {
+  const collect = (id: string, isRoot = true): SerializedActor[] => {
     const a = world.actors.get(id)
     if (!a) return []
-    return [a.serialize(), ...world.childrenOf(id).flatMap((c) => collect(c.id))]
+    if (!isRoot && a.prefabSource) {
+      return [
+        {
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          parentId: a.parentId,
+          visible: a.visible,
+          transform: { ...a.transform },
+          prefabRef: a.prefabSource,
+          behaviors: [],
+        },
+      ]
+    }
+    return [a.serialize(), ...world.childrenOf(id).flatMap((c) => collect(c.id, false))]
   }
   const actors = collect(rootActorId)
   actors[0] = { ...actors[0], parentId: null }
@@ -358,11 +372,37 @@ export function runPrefabAwareCommand(
   })
 }
 
+function expandPrefabRefs(actors: SerializedActor[], parentId: string | null, position?: [number, number, number]): SerializedActor[] {
+  const out: SerializedActor[] = []
+  for (const sa of actors) {
+    if (sa.prefabRef) {
+      const nested = getPrefabByName(sa.prefabRef)
+      if (!nested) continue
+      const idMap = new Map<string, string>()
+      for (const na of nested.actors) idMap.set(na.id, nextActorId())
+      const nestedRemapped = nested.actors.map((na, i) => ({
+        ...na,
+        id: idMap.get(na.id)!,
+        parentId: na.parentId ? (idMap.get(na.parentId) ?? sa.parentId ?? parentId) : sa.parentId ?? parentId,
+        prefabActorId: nested.actors[i].id,
+        transform: i === 0 && position ? { ...na.transform, position } : na.transform,
+        ...(i === 0
+          ? { prefabSource: nested.name, prefabOverrides: {} as Record<string, Partial<SerializedActor>> }
+          : {}),
+      }))
+      out.push(...expandPrefabRefs(nestedRemapped, sa.parentId ?? parentId))
+    } else {
+      out.push({ ...sa, parentId: sa.parentId ?? parentId })
+    }
+  }
+  return out
+}
+
 /** Instance a prefab at a position — ids remapped, hierarchy preserved. */
 export function instantiatePrefab(prefab: Prefab, position: [number, number, number]) {
   const idMap = new Map<string, string>()
   for (const sa of prefab.actors) idMap.set(sa.id, nextActorId())
-  const remapped = prefab.actors.map((sa, i) => ({
+  let remapped: SerializedActor[] = prefab.actors.map((sa, i) => ({
     ...sa,
     id: idMap.get(sa.id)!,
     parentId: sa.parentId ? (idMap.get(sa.parentId) ?? null) : null,
@@ -372,6 +412,7 @@ export function instantiatePrefab(prefab: Prefab, position: [number, number, num
       : {}),
   }))
   remapped[0] = { ...remapped[0], transform: { ...remapped[0].transform, position } }
+  remapped = expandPrefabRefs(remapped, null)
 
   const cmds: Command[] = remapped.map((sa) => new AddActorCommand(sa))
   runCommand({

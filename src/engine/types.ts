@@ -134,6 +134,8 @@ export interface PhysicsProps {
   /** collision layer (0-7) and bitmask of layers this collides with */
   layer?: number
   collidesWith?: number
+  /** Voronoi fracture strain multiplier (Wave 12) */
+  fractureStrain?: number
 }
 
 export const DEFAULT_PHYSICS: PhysicsProps = {
@@ -171,6 +173,11 @@ export interface SerializedActor {
   behaviors: Behavior[]
   castShadow?: boolean
   receiveShadow?: boolean
+  /** Nested prefab reference (Wave 12) — instantiate nested prefab instead of inline actors */
+  prefabRef?: string
+  /** Visual behavior tree graph */
+  btGraph?: import('./btGraph').BTGraph
+  btAutoRun?: boolean
   /** per-actor JavaScript (onBeginPlay / onTick hooks) */
   script?: string
   /** saved @export variable overrides */
@@ -451,6 +458,9 @@ export interface EnvironmentSettings {
   postSsr?: boolean
   /** LightProbeGrid interior GI approx (Wave 11) */
   lightProbeGrid?: boolean
+  /** Screen-space global illumination approx (Wave 12, WebGPU opt-in) */
+  postSsgi?: boolean
+  postSsgiPreset?: 'off' | 'low' | 'medium' | 'high'
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
   /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */
@@ -500,6 +510,8 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSettings = {
   postTaa: false,
   postSsr: false,
   lightProbeGrid: false,
+  postSsgi: false,
+  postSsgiPreset: 'off',
   useRapierCharacter: true,
   useRaycastVehicle: false,
   exportBatchStatic: false,

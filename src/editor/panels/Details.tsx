@@ -1756,7 +1756,10 @@ function PhysicsSection({ actor }: { actor: Actor }) {
         <>
           <Check label="Breakable" value={!!props.breakable} onToggle={(v) => { props.breakable = v; touch() }} />
           {props.breakable && (
-            <Num label="Break Force" value={props.breakThreshold ?? 6} step={0.5} min={1} onLive={(v) => { props.breakThreshold = v; touch() }} onCommit={() => {}} />
+            <>
+              <Num label="Break Force" value={props.breakThreshold ?? 6} step={0.5} min={1} onLive={(v) => { props.breakThreshold = v; touch() }} onCommit={() => {}} />
+              <Num label="Fracture Strain" value={props.fractureStrain ?? 1} step={0.1} min={0.1} max={4} onLive={(v) => { props.fractureStrain = v; touch() }} onCommit={() => {}} />
+            </>
           )}
         </>
       )}

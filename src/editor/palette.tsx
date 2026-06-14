@@ -7,11 +7,15 @@ import { useEditor } from './store'
 import { runCSG } from './csg'
 import { bakeAO, bakeAOMapUV2 } from '../engine/lightmapBake'
 import { world } from '../engine/World'
-import { getPluginPaletteCommands, type PaletteCommand } from './plugins'
+import { listMaterials } from '../engine/materialAssets'
+import { listAssetBlobs } from '../engine/assetStore'
+import { getPrefabByName, instantiatePrefab, listPrefabs } from './prefabs'
+import { assignMaterialAsset } from './materialCommands'
+import { getPluginPaletteCommands } from './plugins'
 import { isTypingTarget, matchesShortcutId } from './shortcuts'
 
 /**
- * Command palette (Ctrl+Shift+P) — built-in commands + plugin-registered commands.
+ * Command palette (Ctrl+Shift+P) — built-in commands + plugin-registered commands + asset search (Wave 12).
  * Plugin API lives in `src/editor/plugins.ts` and `window.lotus`.
  */
 
@@ -39,31 +43,41 @@ const SPAWNABLES: Array<[string, AssetPayload]> = [
   ['Player Start', { kind: 'playerstart' }],
 ]
 
-function buildCommands(): PaletteCommand[] {
+interface PaletteEntry {
+  label: string
+  kind: 'command' | 'asset'
+  run: () => void
+}
+
+function buildCommands(): PaletteEntry[] {
   const s = useEditor.getState()
   return [
-    { label: 'Play In Editor', run: () => s.startPlay('pie') },
-    { label: 'Simulate', run: () => s.startPlay('simulate') },
-    { label: 'Stop', run: () => s.stopPlay() },
-    { label: 'New Level', run: newLevel },
-    { label: 'Open Level…', run: openLevelFromFile },
-    { label: 'Save Level', run: saveLevelToFile },
-    { label: 'Export Playable HTML', run: () => exportPlayable() },
-    { label: 'Export Playable HTML (PWA)', run: exportPlayablePWA },
-    { label: 'Undo', run: undo },
-    { label: 'Redo', run: redo },
-    { label: 'Toggle Game View', run: () => s.toggleGameView() },
-    { label: 'Open Console', run: () => s.openConsole() },
-    { label: 'Open Sequencer', run: () => s.setBottomTab('sequencer') },
-    { label: 'Open Blueprint Editor', run: () => s.setBottomTab('blueprint') },
-    { label: 'Open AI Copilot', run: () => s.setBottomTab('ai') },
-    { label: 'Open Debug Panel', run: () => s.setBottomTab('debug') },
-    { label: 'Open Plugin Manager', run: () => s.setShowPluginManager(true) },
-    { label: 'CSG: Union (2 selected)', run: () => runCSG('union') },
-    { label: 'CSG: Subtract (2 selected)', run: () => runCSG('subtract') },
-    { label: 'CSG: Intersect (2 selected)', run: () => runCSG('intersect') },
+    { label: 'Play In Editor', kind: 'command', run: () => s.startPlay('pie') },
+    { label: 'Simulate', kind: 'command', run: () => s.startPlay('simulate') },
+    { label: 'Stop', kind: 'command', run: () => s.stopPlay() },
+    { label: 'New Level', kind: 'command', run: newLevel },
+    { label: 'Open Level…', kind: 'command', run: openLevelFromFile },
+    { label: 'Save Level', kind: 'command', run: saveLevelToFile },
+    { label: 'Export Playable HTML', kind: 'command', run: () => exportPlayable() },
+    { label: 'Export Playable HTML (PWA)', kind: 'command', run: exportPlayablePWA },
+    { label: 'Undo', kind: 'command', run: undo },
+    { label: 'Redo', kind: 'command', run: redo },
+    { label: 'Toggle Game View', kind: 'command', run: () => s.toggleGameView() },
+    { label: 'Open Console', kind: 'command', run: () => s.openConsole() },
+    { label: 'Open Sequencer', kind: 'command', run: () => s.setBottomTab('sequencer') },
+    { label: 'Open Blueprint Editor', kind: 'command', run: () => s.setBottomTab('blueprint') },
+    { label: 'Open Behavior Tree Editor', kind: 'command', run: () => s.setBottomTab('bt') },
+    { label: 'Open Data Editor', kind: 'command', run: () => s.setBottomTab('data') },
+    { label: 'Open AI Copilot', kind: 'command', run: () => s.setBottomTab('ai') },
+    { label: 'Open Debug Panel', kind: 'command', run: () => s.setBottomTab('debug') },
+    { label: 'Open Plugin Manager', kind: 'command', run: () => s.setShowPluginManager(true) },
+    { label: 'Project Settings…', kind: 'command', run: () => s.setShowProjectSettings(true) },
+    { label: 'CSG: Union (2 selected)', kind: 'command', run: () => runCSG('union') },
+    { label: 'CSG: Subtract (2 selected)', kind: 'command', run: () => runCSG('subtract') },
+    { label: 'CSG: Intersect (2 selected)', kind: 'command', run: () => runCSG('intersect') },
     {
       label: 'Bake Reflection Probes',
+      kind: 'command',
       run: () => {
         for (const a of world.actors.values()) if (a.type === 'ReflectionProbe') world.probeBakeQueue.push(a.id)
         s.setStatus('Probe bake queued')
@@ -71,6 +85,7 @@ function buildCommands(): PaletteCommand[] {
     },
     {
       label: 'Bake AO (approx)',
+      kind: 'command',
       run: () => {
         s.setStatus('Baking AO (approx)…')
         void bakeAO(world.actors, {
@@ -89,6 +104,7 @@ function buildCommands(): PaletteCommand[] {
     },
     {
       label: 'Bake AO Map (UV2)',
+      kind: 'command',
       run: () => {
         s.setStatus('AO Map Bake (UV2, approx)…')
         void bakeAOMapUV2(world.actors, {
@@ -106,15 +122,89 @@ function buildCommands(): PaletteCommand[] {
         })
       },
     },
-    ...SPAWNABLES.map(([label, payload]): PaletteCommand => ({ label: `Place: ${label}`, run: () => spawnAsset(payload) })),
-    ...getPluginPaletteCommands(),
+    ...SPAWNABLES.map(
+      ([label, payload]): PaletteEntry => ({
+        label: `Place: ${label}`,
+        kind: 'command',
+        run: () => spawnAsset(payload),
+      }),
+    ),
+    ...getPluginPaletteCommands().map(
+      (c): PaletteEntry => ({
+        label: c.label,
+        kind: 'command',
+        run: c.run,
+      }),
+    ),
   ]
+}
+
+function buildAssetEntries(importNames: string[]): PaletteEntry[] {
+  const s = useEditor.getState()
+  const out: PaletteEntry[] = []
+
+  for (const m of listMaterials()) {
+    out.push({
+      label: `Asset: Material / ${m.name}`,
+      kind: 'asset',
+      run: () => {
+        const id = s.selectedId
+        const actor = id ? world.actors.get(id) : null
+        if (actor?.mesh) {
+          assignMaterialAsset(actor.id, m.id)
+          s.setStatus(`Assigned material: ${m.name}`)
+        } else {
+          s.setStatus(`Select a mesh actor to assign material: ${m.name}`)
+        }
+        s.setBottomTab('material')
+      },
+    })
+  }
+
+  for (const p of listPrefabs()) {
+    out.push({
+      label: `Asset: Prefab / ${p.name}`,
+      kind: 'asset',
+      run: () => {
+        const prefab = getPrefabByName(p.name)
+        if (!prefab) return
+        const y = prefab.actors[0]?.transform.position[1] ?? 0
+        instantiatePrefab(prefab, [0, y, 0])
+        s.setStatus(`Spawned prefab: ${p.name}`)
+      },
+    })
+  }
+
+  for (const name of Object.keys(world.dataTables)) {
+    out.push({
+      label: `Asset: Data / ${name}`,
+      kind: 'asset',
+      run: () => {
+        s.setBottomTab('data')
+        s.setStatus(`Data asset: ${name}`)
+      },
+    })
+  }
+
+  for (const name of importNames) {
+    out.push({
+      label: `Asset: Import / ${name}`,
+      kind: 'asset',
+      run: () => {
+        s.openContentDrawer()
+        s.setStatus(`Imported asset: ${name} — open Content Drawer`)
+      },
+    })
+  }
+
+  return out
 }
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [sel, setSel] = useState(0)
+  const [importNames, setImportNames] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const sceneVersion = useEditor((s) => s.sceneVersion)
 
@@ -133,11 +223,18 @@ export function CommandPalette() {
   }, [])
 
   useEffect(() => {
-    if (open) inputRef.current?.focus()
+    if (open) {
+      inputRef.current?.focus()
+      void listAssetBlobs().then((blobs) => setImportNames(blobs.map((b) => b.name)))
+    }
   }, [open])
 
-  const commands = useMemo(buildCommands, [open, sceneVersion])
-  const filtered = commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
+  const entries = useMemo(
+    () => [...buildCommands(), ...buildAssetEntries(importNames)],
+    [open, sceneVersion, importNames],
+  )
+  const q = query.toLowerCase()
+  const filtered = entries.filter((c) => c.label.toLowerCase().includes(q))
 
   if (!open) return null
   return (
@@ -146,7 +243,7 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           value={query}
-          placeholder="Type a command…"
+          placeholder="Type a command or asset…"
           onChange={(e) => {
             setQuery(e.target.value)
             setSel(0)
@@ -163,7 +260,7 @@ export function CommandPalette() {
           }}
         />
         <div className="palette-list">
-          {filtered.slice(0, 12).map((c, i) => (
+          {filtered.slice(0, 14).map((c, i) => (
             <button
               key={c.label}
               className={i === sel ? 'active' : ''}
@@ -173,10 +270,11 @@ export function CommandPalette() {
                 c.run()
               }}
             >
+              {c.kind === 'asset' ? '◆ ' : ''}
               {c.label}
             </button>
           ))}
-          {filtered.length === 0 && <div className="panel-empty">No matching command.</div>}
+          {filtered.length === 0 && <div className="panel-empty">No matching command or asset.</div>}
         </div>
       </div>
     </div>

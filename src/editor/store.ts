@@ -21,7 +21,20 @@ export function deriveEditorMode(s: {
 export type ViewMode = 'lit' | 'unlit' | 'wireframe' | 'detail' | 'pathtraced'
 /** UE Buffer Visualization view modes (v0.68) */
 export type BufferViz = 'none' | 'baseColor' | 'worldNormal' | 'depth' | 'roughness' | 'metallic' | 'ao' | 'emissive'
-export type BuiltinBottomTab = 'content' | 'script' | 'blueprint' | 'material' | 'metasound' | 'anim' | 'sequencer' | 'console' | 'ai' | 'debug' | 'pcg'
+export type BuiltinBottomTab =
+  | 'content'
+  | 'script'
+  | 'blueprint'
+  | 'bt'
+  | 'data'
+  | 'material'
+  | 'metasound'
+  | 'anim'
+  | 'sequencer'
+  | 'console'
+  | 'ai'
+  | 'debug'
+  | 'pcg'
 export type BottomTab = BuiltinBottomTab | `plugin:${string}`
 
 export interface ConsoleEntry {
@@ -199,6 +212,8 @@ interface EditorState {
   // preferences modal
   showPrefs: boolean
   setShowPrefs: (v: boolean) => void
+  showProjectSettings: boolean
+  setShowProjectSettings: (v: boolean) => void
 
   // keyboard shortcuts editor
   showShortcutEditor: boolean
@@ -430,6 +445,8 @@ export const useEditor = create<EditorState>((set) => ({
 
   showPrefs: false,
   setShowPrefs: (v) => set({ showPrefs: v }),
+  showProjectSettings: false,
+  setShowProjectSettings: (v) => set({ showProjectSettings: v }),
 
   showShortcutEditor: false,
   setShowShortcutEditor: (v) => set({ showShortcutEditor: v }),

@@ -3,6 +3,7 @@ import { splitLevelByCells } from '../engine/streaming'
 import { sanitizeLevelKey, world } from '../engine/World'
 import type { SerializedLevel } from '../engine/types'
 import { loadPrefs, type ExportQuality } from './Preferences'
+import { loadProjectSettings } from './projectSettings'
 import { useEditor } from './store'
 
 export interface ExportOptions {
@@ -97,6 +98,10 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const exportJSON = escapeJsonForScript(JSON.stringify({ quality, pixelRatio: quality === 'mobile' ? 1 : undefined }))
   const title = s.levelName || 'Lotus Level'
   const pwa = !!opts.pwa
+  const branding = loadProjectSettings().showLotusBranding
+  const badgeHtml = branding
+    ? `<div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>`
+    : ''
 
   return `<!doctype html>
 <html lang="en">
@@ -130,7 +135,7 @@ ${pwa ? pwaHeadExtras(title) : ''}
 </head>
 <body>
 <div id="overlay">Loading…</div>
-<div id="badge">LOTUS ENGINE${pwa ? ' · PWA' : ''}</div>
+${badgeHtml}
 <script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">

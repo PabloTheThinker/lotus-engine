@@ -78,6 +78,8 @@ export function MenuBar() {
           { label: '', divider: true },
           { label: 'Export Playable HTML', action: () => exportPlayable() },
           { label: 'Export Playable HTML (PWA)', action: exportPlayablePWA },
+          { label: '', divider: true },
+          { label: 'Project Settings…', action: () => useEditor.getState().setShowProjectSettings(true) },
         ]}
       />
       <Menu

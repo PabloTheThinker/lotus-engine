@@ -12,11 +12,15 @@ import { MaterialEditor } from './MaterialEditor'
 import { AnimStateEditor } from './AnimStateEditor'
 import { MetaSoundEditor } from './MetaSoundEditor'
 import { PCGEditor } from './PCGEditor'
+import { BTEditor } from './BTEditor'
+import { DataTableEditor } from './DataTableEditor'
 
 const TABS: Array<{ id: BottomTab; label: string }> = [
   { id: 'content', label: '🗄 Content' },
   { id: 'script', label: '𝒇 Script' },
   { id: 'blueprint', label: '⬡ Blueprint' },
+  { id: 'bt', label: '🌳 BT' },
+  { id: 'data', label: '📊 Data' },
   { id: 'material', label: '⚛ Material' },
   { id: 'metasound', label: '♪ MetaSound' },
   { id: 'anim', label: '🎬 Anim' },
@@ -82,6 +86,8 @@ export function BottomDock() {
           {tab === 'content' && docked && <ContentDrawer />}
           {tab === 'script' && <ScriptEditor />}
           {tab === 'blueprint' && <BlueprintEditor />}
+          {tab === 'bt' && <BTEditor />}
+          {tab === 'data' && <DataTableEditor />}
           {tab === 'material' && <MaterialEditor />}
           {tab === 'metasound' && <MetaSoundEditor />}
           {tab === 'anim' && <AnimStateEditor />}

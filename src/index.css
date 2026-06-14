@@ -1637,6 +1637,24 @@ input[type='checkbox'] {
 .palette.plugin-manager .panel-header { padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .palette.shortcut-editor { width: min(640px, 96vw); padding: 0; overflow: hidden; }
 .palette.shortcut-editor .panel-header { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.bt-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.bt-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.bt-toolbar .bt-auto { margin: 0; gap: 6px; font-size: 12px; }
+.bt-canvas-wrap { position: relative; flex: 1; min-height: 200px; background: var(--bg-1); overflow: hidden; }
+.bt-canvas { display: block; background: repeating-linear-gradient(0deg, transparent, transparent 15px, rgba(255,255,255,.03) 15px, rgba(255,255,255,.03) 16px), repeating-linear-gradient(90deg, transparent, transparent 15px, rgba(255,255,255,.03) 15px, rgba(255,255,255,.03) 16px); }
+.bt-wire { fill: none; stroke: #7a8a9a; stroke-width: 2; }
+.bt-add-menu { position: absolute; z-index: 5; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; padding: 4px; display: flex; flex-direction: column; min-width: 140px; box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.bt-add-menu button { text-align: left; padding: 5px 8px; background: transparent; border: none; border-radius: 4px; font-size: 12px; }
+.bt-add-menu button:hover { background: var(--accent); color: #fff; }
+.data-editor { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.data-toolbar { display: flex; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+.data-grid-wrap { padding: 8px; overflow: auto; flex: 1; }
+.data-grid { width: 100%; border-collapse: collapse; font-size: 12px; }
+.data-grid th, .data-grid td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; }
+.data-grid input { width: 100%; min-width: 60px; padding: 3px 5px; font-size: 12px; }
+.data-curve-wrap { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.data-curve-svg { width: 100%; max-width: 320px; height: 120px; background: var(--bg-1); border: 1px solid var(--border); border-radius: 4px; }
+.palette.prefs.project-settings { width: min(480px, 96vw); padding: 0; }
 .shortcut-editor-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
 .shortcut-editor-body > input { width: 100%; padding: 7px 10px; font-size: 14px; }
 .shortcut-editor-msg { font-size: 12px; color: var(--accent); padding: 0 2px; }

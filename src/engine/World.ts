@@ -23,7 +23,8 @@ import { createPCGVolumeActor } from './pcg'
 import { syncPropsFromGraph } from './pcgGraph'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
 import { hud, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
-import { resetBTs, tickBTs } from './behaviorTree'
+import { resetBTs, runBTGraph, tickBTs } from './behaviorTree'
+import { compileBTGraph } from './btGraph'
 import { resetCrowd, tickCrowd } from './navCrowd'
 import { playMetaSound, registerSound, setReverbZone, setSoundAttenuationDefaults, stopAllSounds, type ReverbPreset } from './audio'
 import {
@@ -231,6 +232,10 @@ export class World {
       a.beginPlay(api)
       if (a.particleSystem && a.particleProps && a.particleProps.burst > 0) {
         a.particleSystem.burst(a.particleProps.burst)
+      }
+      if (a.btGraph && a.btAutoRun) {
+        const compiled = compileBTGraph(a.btGraph)
+        if (compiled) runBTGraph(a, compiled, a.scriptVars ?? {})
       }
       if (a.type === 'SoundEmitter' && a.soundEmitterProps?.autoPlay && a.soundEmitterProps.metaSoundName) {
         const p = a.root.getWorldPosition(new THREE.Vector3())
@@ -807,6 +812,8 @@ export class World {
       applyActorMaterial(actor)
     }
     if (sa.blueprint) actor.blueprint = JSON.parse(JSON.stringify(sa.blueprint))
+    if (sa.btGraph) actor.btGraph = JSON.parse(JSON.stringify(sa.btGraph))
+    if (sa.btAutoRun) actor.btAutoRun = true
     if (sa.mobility) actor.mobility = sa.mobility
     if (sa.tags?.length) actor.tags = [...sa.tags]
     if (sa.attributeSetId) actor.attributeSetId = sa.attributeSetId

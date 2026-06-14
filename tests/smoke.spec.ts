@@ -207,7 +207,7 @@ test('command palette opens (Ctrl+Shift+P)', async ({ page }) => {
 
   await page.keyboard.press('Control+Shift+KeyP')
   await expect(page.locator('.palette')).toBeVisible()
-  await expect(page.locator('.palette input')).toHaveAttribute('placeholder', 'Type a command…')
+  await expect(page.locator('.palette input')).toHaveAttribute('placeholder', 'Type a command or asset…')
   await expect(page.locator('.palette-list button').first()).toBeVisible()
 })
 
@@ -490,4 +490,54 @@ test('wave 11 TSL material serialize + crowd after nav bake', async ({ page }) =
   expect(result.crowdOk).toBe(true)
   expect(result.agentOk).toBe(true)
   expect(result.count).toBe(1)
+})
+
+test('wave 12 BT graph compile + curve evaluate via lotus bridge', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      bt: { emptyGraph: () => unknown; compile: (g: unknown) => { tree: unknown; pathIndex: Record<string, string> } | null }
+      curve: { sample: () => number }
+      projectSettings: { load: () => { showLotusBranding: boolean; defaultPostSsgi: boolean } }
+    }
+    const graph = v.bt.emptyGraph()
+    const compiled = v.bt.compile(graph)
+    return {
+      compiled: !!compiled?.tree,
+      pathKeys: compiled ? Object.keys(compiled.pathIndex).length : 0,
+      curveSample: v.curve.sample(),
+      branding: v.projectSettings.load().showLotusBranding,
+    }
+  })
+
+  expect(result.compiled).toBe(true)
+  expect(result.pathKeys).toBeGreaterThan(0)
+  expect(result.curveSample).toBe(0.5)
+  expect(result.branding).toBe(true)
+})
+
+test('wave 12 command palette asset search', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    window.lotus!.world.dataTables['E2E_Table'] = {
+      name: 'E2E_Table',
+      columns: [{ name: 'id', type: 'string' }],
+      rows: [{ id: 'a' }],
+    }
+  })
+
+  await page.keyboard.press('Control+Shift+KeyP')
+  await page.locator('.palette input').fill('E2E_Table')
+  await expect(page.locator('.palette-list button').first()).toContainText('Asset: Data / E2E_Table')
+})
+
+test('wave 12 project settings modal opens from File menu', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.locator('.menu-title', { hasText: 'File' }).click()
+  await page.locator('.menu-item', { hasText: 'Project Settings…' }).click()
+  await expect(page.locator('.project-settings')).toBeVisible()
+  await expect(page.locator('.project-settings .panel-header')).toContainText('Project Settings')
 })

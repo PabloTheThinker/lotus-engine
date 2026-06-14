@@ -65,6 +65,9 @@ export class Actor {
   /** saved @export variable overrides */
   scriptVars?: Record<string, unknown>
   blueprint?: import('./blueprint').BlueprintGraph
+  /** Visual behavior tree graph (Wave 12) */
+  btGraph?: import('./btGraph').BTGraph
+  btAutoRun?: boolean
   pawnMode?: PawnMode
   mobility: Mobility
   tags: string[]
@@ -307,6 +310,8 @@ export class Actor {
       script: this.script,
       scriptVars: this.scriptVars ? { ...this.scriptVars } : undefined,
       blueprint: this.blueprint ? JSON.parse(JSON.stringify(this.blueprint)) : undefined,
+      btGraph: this.btGraph ? JSON.parse(JSON.stringify(this.btGraph)) : undefined,
+      btAutoRun: this.btAutoRun || undefined,
       pawnMode: this.pawnMode,
       mobility: this.mobility,
       tags: [...this.tags],

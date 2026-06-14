@@ -3,7 +3,9 @@ import { Input } from './Input'
 import { isActionDown, actionJustPressed, actionHeldTime } from './inputActions'
 import { activateAbility, applyEffect, getAttribute, removeEffect, setAttribute } from './gameplayAbilities'
 import { cameraShake, canSeePoint, hud, queryBestPoint, raycastActors, setTimer, setViewCamera } from './gameplay'
-import { runBT, type BTNode } from './behaviorTree'
+import { runBT, runBTGraph, type BTNode } from './behaviorTree'
+import { compileBTGraph, type BTGraph } from './btGraph'
+import { evaluateCurve, isCurveAsset } from './curveAssets'
 import { findPath } from './nav'
 import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, initCrowd } from './navCrowd'
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
@@ -54,8 +56,12 @@ export interface ScriptApi {
   setViewCamera: (actorName: string | null) => void
   /** UE Behavior Tree: attach a JSON tree to this actor, ticked every frame */
   runBT: (actor: Actor, tree: import('./behaviorTree').BTNode) => void
+  /** Run a visual BT graph (compiles + attaches path index for live debug) */
+  runBTGraph: (actor: Actor, graph: BTGraph, bb?: Record<string, unknown>) => boolean
   /** per-actor blackboard (shared with its behavior tree) */
   blackboard: (actor: Actor) => Record<string, unknown>
+  /** Sample a named curve data asset at t */
+  evaluateCurve: (name: string, t: number) => number | null
   /** EQS-lite: best ring point around a location by score */
   queryBestPoint: (opts: import('./gameplay').EQSOpts) => [number, number, number] | null
   /** AI sight: can this actor see the player? (FOV cone + occlusion raycast) */
@@ -203,7 +209,18 @@ export function makeScriptApi(
     },
     setTimer: (seconds, fn, loop) => setTimer(seconds, fn, !!loop),
     runBT: (actor, tree) => runBT(actor, tree as BTNode, blackboardFor(actor)),
+    runBTGraph: (actor, graph, bb) => {
+      const compiled = compileBTGraph(graph)
+      if (!compiled) return false
+      runBTGraph(actor, compiled, bb ?? blackboardFor(actor))
+      return true
+    },
     blackboard: (actor) => blackboardFor(actor),
+    evaluateCurve: (name, t) => {
+      const asset = dataStore[name]
+      if (!isCurveAsset(asset)) return null
+      return evaluateCurve(asset, t)
+    },
     findPath: (from, to) => findPath(actors, from, to),
     crowdSpawn: (id, position, target) => {
       initCrowd()

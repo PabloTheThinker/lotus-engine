@@ -10,6 +10,7 @@ import {
   getPostFxSettings,
   isWebGPUAvailable,
 } from '../engine/renderBackend'
+import { ssgiStatusLabel } from '../engine/ssgiPreset'
 import { getTSLPostState } from '../engine/postStackTSL'
 import { ensureLightProbeGrid } from '../engine/ssrProbeGI'
 import { WebGLPathTracer } from 'three-gpu-pathtracer'
@@ -1852,7 +1853,8 @@ export function Viewport() {
         const fps = Math.round(frames / fpsTimer)
         const backend = getEffectiveRenderBackend(world.environment, webgpuOk)
         const tsl = getTSLPostState(backend === 'webgpu', webgpuOk)
-        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris · ${backend.toUpperCase()}${tsl.tier === 'active' ? '+' : ''}`
+        const ssgi = ssgiStatusLabel(world.environment, webgpuOk)
+        statsRef.current.textContent = `${fps} FPS · ${world.actors.size} actors · ${renderer.info.render.triangles.toLocaleString()} tris · ${backend.toUpperCase()}${tsl.tier === 'active' ? '+' : ''}${ssgi}`
         frames = 0
         fpsTimer = 0
       }
