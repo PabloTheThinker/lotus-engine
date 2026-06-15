@@ -256,8 +256,9 @@ function ensureActorGAS(actor: Actor): ActorGASState | null {
   return actorStates.get(actor) ?? null
 }
 
-export function initActorGAS(actor: Actor) {
+export function initActorGAS(actor: Actor, force = false) {
   if (!actor.attributeSetId) return
+  if (!force && actorStates.has(actor)) return
   const set = getAttributeSet(actor.attributeSetId)
   if (!set) return
   actorStates.set(actor, {
@@ -268,7 +269,7 @@ export function initActorGAS(actor: Actor) {
 }
 
 export function initAllActorGAS(actors: Iterable<Actor>) {
-  for (const a of actors) initActorGAS(a)
+  for (const a of actors) initActorGAS(a, true)
 }
 
 export function getAttribute(actor: Actor, name: string): number | null {

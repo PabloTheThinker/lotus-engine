@@ -4,6 +4,35 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 91–95: v4.94–v5.18 (3D RPG swarm)
+
+### Wave 91 (v4.94–v4.98) — 3D RPG camera rig
+- `cameraRig.ts` — spring arm collision pull-in; `/rpg3d` third-person RPG greybox
+
+### Wave 92 (v4.99–v5.03) — RPG stats + inventory
+- `rpgInventory.ts` — slots, gold, GAS Health/Mana; `/inventory`; save checkpoint persistence
+
+### Wave 93 (v5.04–v5.08) — RPG dialogue system
+- `rpgDialogue.ts` + overlay UI; `DialogueNPC` interact; `__LOTUS_DIALOGUE__` export
+
+### Wave 94 (v5.09–v5.13) — RPG quest system
+- `rpgQuests.ts` — quest log + objectives; `/quest start`; HUD tracker
+
+### Wave 95 (v5.14–v5.18) — 3D RPG export pack
+- `rpg3dExportPack.ts` — full template with HUD, elder dialogue, find_herbs quest; `/exportrpg`
+
+### Fixed
+- `initActorInventory` / `initActorGAS` no longer reset state on every bridge call
+- `playerStart()` prefers `StarterPlayerStart` when multiple spawns exist
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 419 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 86–90: v4.69–v4.93 (indie swarm)
 
 ### Wave 86 (v4.69–v4.73) — Grid nav path debug

@@ -67,6 +67,7 @@ import { AttenuationFields } from './AttenuationFields'
 import { createMetaSound, deleteMetaSound, listMetaSounds } from '../../engine/metaSoundAssets'
 import { loadMPSettings, saveMPSettings } from '../../engine/multiplayer'
 import { TOUCH_LAYOUT_PRESET_IDS, TOUCH_LAYOUT_PRESET_LABELS } from '../../engine/touchLayoutPresets'
+import { DEFAULT_INVENTORY_SLOTS, listItems } from '../../engine/rpgInventory'
 import { useEditor } from '../store'
 
 function HudDesignerSection() {
@@ -785,6 +786,32 @@ function LinkedLevelsSection() {
   )
 }
 
+function RpgInventorySection() {
+  const items = listItems()
+  return (
+    <details className="details-section">
+      <summary>RPG Inventory (lite)</summary>
+      <div className="details-grid">
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Godot-style inventory on the PlayerStart actor — {DEFAULT_INVENTORY_SLOTS} slots, stackable items, gold
+          currency. Pairs with GAS-lite <code>Health</code>/<code>Mana</code> on the default AttributeSet. Scripts:{' '}
+          <code>api.addItem('health_potion')</code> · <code>api.getGold()</code> ·{' '}
+          <code>api.saveGame('slot1')</code> persists inventory + gold in checkpoint JSON / IndexedDB cloud backup.
+          Terminal: <code>/inventory</code> · Bridge: <code>lotus.rpg.inventory</code> ·{' '}
+          <code>lotus.rpg.stats.getHealth()</code>
+        </div>
+        <strong style={{ fontSize: 11 }}>Default items</strong>
+        {items.map((item) => (
+          <div key={item.id} className="panel-empty" style={{ padding: '2px 0', fontSize: 11 }}>
+            <code>{item.id}</code> — {item.name}
+            {item.stackable ? ` (stack ×${item.maxStack})` : ' (unique)'}
+          </div>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 function AbilitiesLibrarySection() {
   const [, bump] = useState(0)
   const refresh = () => bump((n) => n + 1)
@@ -1475,6 +1502,15 @@ export function WorldSettings() {
             onChange={(e) => set('useRapierCharacter', e.target.checked)}
           />
         </label>
+        <label className="field check" title="SpringArm3D-style third-person camera: boom length, shoulder offset, collision pull-in">
+          <span>RPG camera rig (spring arm)</span>
+          <input
+            type="checkbox"
+            data-lotus-rpg-camera-rig
+            checked={!!env.rpgCameraRig}
+            onChange={(e) => set('rpgCameraRig', e.target.checked)}
+          />
+        </label>
         <label className="field check">
           <span>Rapier raycast vehicle</span>
           <input
@@ -1691,6 +1727,7 @@ export function WorldSettings() {
       <MultiplayerSection />
       <HudDesignerSection />
       <AbilitiesLibrarySection />
+      <RpgInventorySection />
     </details>
   )
 }

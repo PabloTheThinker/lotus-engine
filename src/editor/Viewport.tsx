@@ -52,6 +52,12 @@ import {
   unmountMiniGameHudForPlay,
 } from './miniGameHud'
 import {
+  hasRpg3dManager,
+  isRpg3dHudEnabled,
+  mountRpg3dHudForPlay,
+  unmountRpg3dHudForPlay,
+} from './rpg3dHud'
+import {
   mpConnect,
   mpDisconnect,
   mpHostPose,
@@ -79,11 +85,22 @@ import {
   toggleSaveMenu,
   unmountExportSaveMenu,
 } from './exportSaveMenu'
+import { setRpgDialogueUiListener } from '../engine/rpgDialogue'
+import {
+  mountRpgDialogueUi,
+  renderRpgDialogueUi,
+  unmountRpgDialogueUi,
+} from './rpgDialogueUi'
+import {
+  mountRpgQuestHudForPlay,
+  unmountRpgQuestHudForPlay,
+} from './rpgQuestHud'
 import {
   downloadCloudSaveJsonFile,
   exportCloudSaveManifest,
   importCloudSaveJson,
 } from '../engine/cloudSaveSync'
+import { applyRpgCheckpointExtras, mergeRpgIntoCheckpoint } from '../engine/rpgInventory'
 import { loadCheckpoint, listSlots, saveCheckpoint, setSaveContext } from '../engine/saveSystem'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
@@ -1686,6 +1703,8 @@ export function Viewport() {
           touchOverlay.mount(mount, world.environment.touchLayoutPreset)
         }
         world.beginPlay()
+        mountRpgDialogueUi(mount)
+        setRpgDialogueUiListener((snap) => renderRpgDialogueUi(snap, mount))
         if (world.environment.saveSlotsEnabled === true) {
           const cloudSyncEnabled = world.environment.cloudSaveBackup === true
           mountExportSaveMenu({
@@ -1694,12 +1713,16 @@ export function Viewport() {
             handlers: {
               getCheckpointData: () => {
                 const pos = pawn.position
-                return { playTime: world.playClock, pawn: [pos.x, pos.y, pos.z] }
+                return mergeRpgIntoCheckpoint(
+                  { playTime: world.playClock, pawn: [pos.x, pos.y, pos.z] },
+                  world.playerStart(),
+                )
               },
               onLoadCheckpoint: (data) => {
                 const row = data as { pawn?: number[]; playTime?: number }
                 pawn.restoreCheckpoint(row)
                 if (typeof row.playTime === 'number') world.playClock = row.playTime
+                applyRpgCheckpointExtras(world.playerStart(), data)
               },
               saveSlot: (slot, data) => saveCheckpoint(slot, data),
               loadSlot: (slot) => loadCheckpoint(slot),
@@ -1746,10 +1769,17 @@ export function Viewport() {
         if (world.playApi && (isMiniGameHudEnabled() || hasMiniGameManager(world.actors.values()))) {
           mountMiniGameHudForPlay(mount, world.playApi)
         }
+        if (world.playApi && (isRpg3dHudEnabled() || hasRpg3dManager(world.actors.values()))) {
+          mountRpg3dHudForPlay(mount, world.playApi)
+        }
+        if (world.playApi) {
+          mountRpgQuestHudForPlay(mount, world.playApi)
+        }
         mpConnect(world, (m) => useEditor.getState().setStatus(m))
         if (!s.simulate) {
           pawn.useRapierCharacter = world.environment.useRapierCharacter !== false
           pawn.useRaycastVehicle = world.environment.useRaycastVehicle === true
+          pawn.useRpgCameraRig = world.environment.rpgCameraRig === true
           pawn.setGamepadControls(world.environment)
           if (mpSpectatorMode()) {
             const spec = world.spectatorStart()
@@ -1772,9 +1802,13 @@ export function Viewport() {
         pawn.unpossess()
         touchOverlay.unmount()
         unmountExportSaveMenu()
+        setRpgDialogueUiListener(null)
+        unmountRpgDialogueUi()
         resetGamepadInput()
         unmountHud()
         unmountMiniGameHudForPlay()
+        unmountRpg3dHudForPlay()
+        unmountRpgQuestHudForPlay()
         mpDisconnect()
         s.touch()
       }

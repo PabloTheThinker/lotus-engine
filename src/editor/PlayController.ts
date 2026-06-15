@@ -8,6 +8,7 @@ import { ensurePlayVehicle, isRaycastVehicleReady, updateRaycastVehicle } from '
 import { getGamepadMoveAxis, isGamepadJumpDown, pollGamepadInput, shouldEnableGamepadControls } from '../engine/gamepadInput'
 import { getTouchMoveAxis, isTouchJumpDown } from '../engine/touchInput'
 import type { EnvironmentSettings } from '../engine/types'
+import { playCameraRig } from '../engine/cameraRig'
 
 /**
  * PlayController — the pawn possessed during Play-In-Editor.
@@ -49,6 +50,8 @@ export class PlayController {
   /** When true, use Rapier move_and_slide instead of raycast character (World Settings). */
   useRapierCharacter = true
   useRaycastVehicle = false
+  /** Wave 91 — Godot SpringArm3D analog when World Settings rpgCameraRig is enabled */
+  useRpgCameraRig = false
   /** Wave 44 — poll Gamepad API each frame when enabled. */
   gamepadControls = true
   /** Wave 69 — dual-rumble env flag (default on when unset). */
@@ -58,7 +61,9 @@ export class PlayController {
   private spawnPoint = new THREE.Vector3()
   private readonly eyeHeight = 1.65
   private readonly boomLength = 4.5
+  private readonly headOffset = new THREE.Vector3(0, 1.6, 0)
   private ray = new THREE.Raycaster()
+  private lastRigDt = 1 / 60
   private orbitRadius = 10
   private orbitTarget = new THREE.Vector3()
   private hostPose: SpectatorHostPose | null = null
@@ -162,6 +167,7 @@ export class PlayController {
       this.yaw = 0
     }
     this.pitch = this.mode === 'thirdperson' || this.mode === 'vehicle' ? -0.25 : 0
+    if (this.mode === 'thirdperson' && this.useRpgCameraRig) playCameraRig.reset(this.yaw, this.pitch)
     this.carSpeed = 0
     this.carHeading = this.yaw
     this.spawnPoint.copy(pos)
@@ -345,10 +351,22 @@ export class PlayController {
       return
     }
     if (this.mode === 'thirdperson') {
-      const head = this.feet.clone().add(new THREE.Vector3(0, 1.6, 0))
-      const back = new THREE.Vector3(0, 0, 1).applyEuler(this.euler).multiplyScalar(this.boomLength)
-      this.camera.position.copy(head).add(back)
-      this.camera.lookAt(head)
+      const head = this.feet.clone().add(this.headOffset)
+      if (this.useRpgCameraRig) {
+        const rig = playCameraRig.update({
+          head,
+          yaw: this.yaw,
+          pitch: this.pitch,
+          collidables: this.collidables(),
+          dt: this.lastRigDt,
+        })
+        this.camera.position.copy(rig.position)
+        this.camera.lookAt(rig.lookAt)
+      } else {
+        const back = new THREE.Vector3(0, 0, 1).applyEuler(this.euler).multiplyScalar(this.boomLength)
+        this.camera.position.copy(head).add(back)
+        this.camera.lookAt(head)
+      }
     } else if (this.mode === 'firstperson') {
       this.camera.position.copy(this.feet).add(new THREE.Vector3(0, this.eyeHeight, 0))
       this.camera.quaternion.setFromEuler(this.euler)
@@ -515,6 +533,7 @@ export class PlayController {
     }
 
     this.body.position.copy(this.feet)
+    this.lastRigDt = dt
     this.syncCamera()
   }
 

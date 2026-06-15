@@ -6,7 +6,8 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v4.93 (waves 86–90).** v0.33–v4.93 shipped; **build clean**, **`npm run test` — 394 passed**.
+- **Last clean commit: v5.18 (waves 91–95).** v0.33–v5.18 shipped; **build clean**, **`npm run test` — 419 passed**.
+- **Strategic expansion:** 3D RPG + Godot/Unreal-class workflows on three.js (camera, inventory, dialogue, quests, export pack) — see `docs/INDIE-GAME-ROADMAP.md`.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -509,12 +510,22 @@
 | 89 | v4.84–v4.88 | Cloud save import/export — JSON download/upload |
 | 90 | v4.89–v4.93 | Achievement progress — partial unlock + HUD ring — 394 tests |
 
-## Next up (indie roadmap)
+## Shipped (v4.94–v5.18, Waves 91–95 — 3D RPG swarm)
 
-1. **Grid agent flee/wander** — extra AI behaviors on navmesh layer
-2. **itch.io page generator** — full itch description markdown from pack meta
-3. **MP CTF polish** — flag return-on-death + team pad visuals
-4. **Cloud save QR/deep link stub** — shareable import URL hint
+| Wave | Ver | What |
+|---|---|---|
+| 91 | v4.94–v4.98 | 3D RPG camera rig — spring arm; `/rpg3d` greybox |
+| 92 | v4.99–v5.03 | RPG inventory + stats — slots, gold, GAS; `/inventory` |
+| 93 | v5.04–v5.08 | RPG dialogue — trees, overlay, NPC interact |
+| 94 | v5.09–v5.13 | RPG quests — objectives, tracker; `/quest start` |
+| 95 | v5.14–v5.18 | 3D RPG export pack — HUD + elder + herbs quest; `/exportrpg` — 419 tests |
+
+## Next up (3D RPG + engine parity)
+
+1. **Combat system lite** — melee/ranged hitboxes, damage, enemy AI on navmesh
+2. **Equipment slots** — weapon/armor paper-doll + stat modifiers
+3. **Scene streaming RPG** — multi-cell overworld + interior portals
+4. **Animation combat blend** — attack montage + root motion stub
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

@@ -39,7 +39,24 @@ import {
   setAchievementProgress,
   unlockAchievement,
 } from '../editor/exportAchievements'
+import {
+  addGold,
+  addItem,
+  getGold,
+  getItemCount,
+  hasItem,
+  mergeRpgIntoCheckpoint,
+  removeItem,
+} from './rpgInventory'
 import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
+import {
+  completeQuest,
+  getQuestState,
+  restoreQuestsFromSavePayload,
+  startQuest,
+  updateObjective,
+  type QuestStateView,
+} from './rpgQuests'
 
 /**
  * Scripting — per-actor JavaScript, the Blueprint/GDScript analog.
@@ -245,6 +262,26 @@ export interface ScriptApi {
   setAchievementProgress: (id: string, current: number, max?: number) => boolean
   /** Wave 90 — read achievement progress counter */
   getAchievementProgress: (id: string) => { current: number; max: number } | null
+  /** Wave 92 — add item to this actor's inventory (stackable slots, default 20) */
+  addItem: (itemId: string, quantity?: number) => boolean
+  /** Wave 92 — remove item from this actor's inventory */
+  removeItem: (itemId: string, quantity?: number) => boolean
+  /** Wave 92 — whether this actor has at least one of the item */
+  hasItem: (itemId: string) => boolean
+  /** Wave 92 — total count of an item in this actor's inventory */
+  getItemCount: (itemId: string) => number
+  /** Wave 92 — gold currency on this actor */
+  getGold: () => number
+  /** Wave 92 — add gold delta (floored, never below 0) */
+  addGold: (amount: number) => number
+  /** Wave 94 — start a quest by id (inactive → active) */
+  startQuest: (id: string) => boolean
+  /** Wave 94 — set objective progress (auto-completes when all objectives met) */
+  updateQuestObjective: (questId: string, objectiveId: string, current: number) => boolean
+  /** Wave 94 — force-complete an active quest */
+  completeQuest: (id: string) => boolean
+  /** Wave 94 — read quest runtime state (title + objective descriptions) */
+  getQuestState: (id: string) => QuestStateView | null
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -272,6 +309,12 @@ type LogSink = (level: 'log' | 'error', message: string) => void
 let logSink: LogSink = (level, msg) => console[level](msg)
 export function setScriptLogSink(sink: LogSink) {
   logSink = sink
+}
+
+function emitQuestSignal(api: ScriptApi, questId: string, signal: 'quest_started' | 'quest_updated' | 'quest_completed' | 'quest_failed') {
+  const view = getQuestState(questId)
+  if (!view) return
+  api.emit(signal, view)
 }
 export function scriptLog(level: 'log' | 'error', msg: string) {
   logSink(level, msg)
@@ -468,18 +511,29 @@ export function makeScriptApi(
       return addMpCtfCapture(actors, flagTeam, scoringTeam, undefined, emit)
     },
     mpReportPlayerKill: (victimId) => mpReportPlayerKill(victimId),
+    addItem: (itemId, quantity) => (boundActor ? addItem(boundActor, itemId, quantity) : false),
+    removeItem: (itemId, quantity) => (boundActor ? removeItem(boundActor, itemId, quantity) : false),
+    hasItem: (itemId) => (boundActor ? hasItem(boundActor, itemId) : false),
+    getItemCount: (itemId) => (boundActor ? getItemCount(boundActor, itemId) : 0),
+    getGold: () => (boundActor ? getGold(boundActor) : 0),
+    addGold: (amount) => (boundActor ? addGold(boundActor, amount) : 0),
     saveGame: (slot, data) => {
       if (!isSaveEnabled()) return false
-      const payload =
+      const base =
         data !== undefined
-          ? data
+          ? (typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : { data })
           : {
               playTime: clock(),
               pawn: pawnPosition() ? [pawnPosition()!.x, pawnPosition()!.y, pawnPosition()!.z] : null,
             }
+      const payload = mergeRpgIntoCheckpoint(base, boundActor)
       return saveCheckpoint(slot, payload)
     },
-    loadGame: (slot) => loadCheckpoint(slot),
+    loadGame: (slot) => {
+      const data = loadCheckpoint(slot)
+      restoreQuestsFromSavePayload(data)
+      return data
+    },
     listSaveSlots: () => listSlots(),
     unlockAchievement: (id) => {
       const result = unlockAchievement(id)
@@ -503,6 +557,26 @@ export function makeScriptApi(
       return result.newlyUnlocked
     },
     getAchievementProgress: (id) => getAchievementProgress(id),
+    startQuest: (id) => {
+      const ok = startQuest(id)
+      if (ok) emitQuestSignal(api, id, 'quest_started')
+      return ok
+    },
+    updateQuestObjective: (questId, objectiveId, current) => {
+      const before = getQuestState(questId)
+      const ok = updateObjective(questId, objectiveId, current)
+      if (!ok) return false
+      const after = getQuestState(questId)
+      if (after?.state === 'completed') emitQuestSignal(api, questId, 'quest_completed')
+      else if (before?.state === 'active') emitQuestSignal(api, questId, 'quest_updated')
+      return true
+    },
+    completeQuest: (id) => {
+      const ok = completeQuest(id)
+      if (ok) emitQuestSignal(api, id, 'quest_completed')
+      return ok
+    },
+    getQuestState: (id) => getQuestState(id),
   }
   return api
 }

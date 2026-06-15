@@ -66,11 +66,15 @@ function onTick(_dt) {
 `
 
 /** v2.51 — collect ${RPG_NPC_GOAL} NPC tags or enter quest zone → game_won. */
+/** Wave 94 — find_herbs quest tracks Herb tag collection via api.updateQuestObjective. */
 export const RPG_MINIGAME_SCRIPT = `// rpg minigame — collect NPCs or reach quest zone
 // @export npcGoal = ${RPG_NPC_GOAL}
 // @export collectRadius = 1.5
+// @export herbQuestId = 'find_herbs'
+// @export herbObjectiveId = 'collect_herbs'
 ${MINIGAME_TIMEOUT_EXPORT}
 const _collected = new Set()
+const _herbs = new Set()
 function onBeginPlay() {
 ${miniGameTimeoutBlock()}
   api.on('enter:RpgQuestZone', () => {
@@ -93,6 +97,20 @@ function onTick(_dt) {
     _collected.add(npc.name)
     api.log('Collected ' + npc.name + ' (' + _collected.size + '/' + vars.npcGoal + ')')
     api.setAchievementProgress('rpg_collect', _collected.size, vars.npcGoal)
+  }
+  for (const herb of api.getActorsByTag('Herb')) {
+    if (!herb.root.visible) continue
+    const hp = herb.root.getWorldPosition(new THREE.Vector3())
+    const dx = hp.x - p.x
+    const dz = hp.z - p.z
+    if (dx * dx + dz * dz > r2) continue
+    herb.root.visible = false
+    _herbs.add(herb.name)
+    api.log('Herb collected (' + _herbs.size + '/3)')
+    const q = api.getQuestState(vars.herbQuestId)
+    if (q && q.state === 'active') {
+      api.updateQuestObjective(vars.herbQuestId, vars.herbObjectiveId, _herbs.size)
+    }
   }
   if (_collected.size >= vars.npcGoal) {
     api.emit('game_won')
@@ -168,6 +186,32 @@ function buildExtraRpgNpc(name: string, position: [number, number, number]): Ser
   const empty = buildSerializedActor({ kind: 'empty' }, position)
   empty.name = name
   empty.tags = ['NPC']
+  return empty
+}
+
+const RPG_HERB_POSITIONS: [string, [number, number, number]][] = [
+  ['RpgHerbA', [-2, 0, -3]],
+  ['RpgHerbB', [4, 0, 1]],
+  ['RpgHerbC', [-4, 0, 4]],
+]
+
+function buildRpgHerb(name: string, position: [number, number, number]): SerializedActor {
+  const empty = buildSerializedActor({ kind: 'empty' }, position)
+  empty.name = name
+  empty.tags = ['Herb']
+  return empty
+}
+
+/** Wave 93 — quest giver with DialogueNPC tag + dialogueId scriptVar. */
+function buildDialogueNpc(
+  name: string,
+  position: [number, number, number],
+  dialogueId: string,
+): SerializedActor {
+  const empty = buildSerializedActor({ kind: 'empty' }, position)
+  empty.name = name
+  empty.tags = ['DialogueNPC', 'NPC']
+  empty.scriptVars = { dialogueId }
   return empty
 }
 
@@ -249,6 +293,11 @@ export function attachMiniGameScripts(mode: MiniGameMode) {
       }
 
       if (mode === 'rpg') {
+        if (!findActorByName('VillageElder')) {
+          const elder = buildDialogueNpc('VillageElder', [-2, 0, 2], 'village_elder')
+          addedSerialized.push(elder)
+          new AddActorCommand(elder).execute()
+        }
         const npcCount = [...world.actors.values()].filter((a) => a.tags.includes('NPC')).length
         let missing = RPG_NPC_GOAL - npcCount
         const candidates: [string, [number, number, number]][] = [
@@ -262,6 +311,12 @@ export function attachMiniGameScripts(mode: MiniGameMode) {
           addedSerialized.push(npc)
           new AddActorCommand(npc).execute()
           missing--
+        }
+        for (const [name, pos] of RPG_HERB_POSITIONS) {
+          if (findActorByName(name)) continue
+          const herb = buildRpgHerb(name, pos)
+          addedSerialized.push(herb)
+          new AddActorCommand(herb).execute()
         }
       }
 

@@ -7,6 +7,22 @@
 - **Playable HTML / PWA export** — one-file or offline-capable games in the browser
 - **Zero install** — share a link, play immediately
 - **JavaScript scripting** with `@export` → Details inspector bridge
+- **3D RPG stack on three.js** — third-person camera, inventory, dialogue, quests, exportable RPG packs (Godot/Unreal workflows, web runtime)
+
+## Parity target (honest)
+
+Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows indie 3D/RPG devs actually use**, remade on three.js + Rapier + Recast:
+
+| Godot / Unreal | Lotus (three.js) | Status |
+|---|---|---|
+| CharacterBody3D + move_and_slide | Rapier kinematic + `api.moveAndSlide` | Shipped |
+| SpringArm3D / camera boom | `cameraRig.ts` RPG spring arm | Wave 91 |
+| Inventory + attributes | `rpgInventory.ts` + GAS-lite | Wave 92 |
+| Dialogue / quest systems | `rpgDialogue.ts` + `rpgQuests.ts` | Waves 93–94 |
+| Third-person 3D RPG template | `/rpg3d` + `/exportrpg` | Wave 95 |
+| NavigationAgent3D | Grid navmesh + `gridNavAgents` AI | Waves 71–81 |
+| Multiplayer | Relay host-authoritative MP | Waves 38–88 |
+| Play-in-browser export | itch packs + PWA | Waves 52–87 |
 
 ## Shipped (Wave 33, v2.04–v2.08)
 
@@ -148,19 +164,29 @@
 | 89 | v4.84–v4.88 | **Cloud save import/export** — JSON download/upload |
 | 90 | v4.89–v4.93 | **Achievement progress** — partial unlock + HUD ring — **394 tests** |
 
+## Shipped (Waves 91–95, v4.94–v5.18) — 3D RPG focus
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 91 | v4.94–v4.98 | **3D RPG camera rig** — spring arm collision; `/rpg3d` |
+| 92 | v4.99–v5.03 | **RPG inventory + stats** — slots, gold, GAS Health/Mana |
+| 93 | v5.04–v5.08 | **RPG dialogue** — trees, overlay, NPC Interact |
+| 94 | v5.09–v5.13 | **RPG quests** — objectives, HUD tracker |
+| 95 | v5.14–v5.18 | **3D RPG export pack** — full HUD template; `/exportrpg` — **419 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
 - `api.setTimer`, `api.raycast`, `move_and_slide`, prefabs, level links + `api.loadLevel`
 - Autoload (tag or Project Settings names), TriggerVolume, sequencer, plugins, HUD widgets
 
-## Next priority queue (Godot census order)
+## Next priority queue (3D RPG + parity)
 
-1. **Grid agent flee/wander** — extra AI behaviors on navmesh layer
-2. **itch.io page generator** — full itch description markdown from pack meta
-3. **MP CTF polish** — flag return-on-death + team pad visuals
-4. **Cloud save QR/deep link stub** — shareable import URL hint
-5. **Achievement leaderboard stub** — local high-score + trophy summary export
+1. **Combat system lite** — melee/ranged, damage, enemy AI chase on navmesh
+2. **Equipment slots** — weapon/armor + stat modifiers on paper-doll HUD
+3. **Scene streaming RPG** — multi-cell overworld + interior `changeScene` portals
+4. **Animation combat blend** — attack montage + AnimationTree OneShot stub
+5. **Crafting + loot tables** — recipe resources + drop rolls on enemy defeat
 
 ## Non-goals (honest skip)
 
@@ -171,5 +197,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **394** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **419** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

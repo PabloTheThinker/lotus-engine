@@ -1,7 +1,10 @@
 /** Wave 85 (v4.64–v4.68) — localStorage trophy unlocks in mini-game export packs. */
 /** Wave 90 (v4.89–v4.93) — partial unlock progress counters + HUD progress ring. */
+/** Wave 95 (v5.14–v5.18) — 3D RPG export pack trophies. */
 
 import type { MiniGameMode } from './starterMiniGames'
+
+export type AchievementPackId = MiniGameMode | 'rpg3d'
 
 export const ACHIEVEMENT_STORAGE_PREFIX = 'lotus-engine.achievements'
 export const ACHIEVEMENT_PROGRESS_STORAGE_PREFIX = 'lotus-engine.achievements.progress'
@@ -31,7 +34,7 @@ export interface ExportAchievementProgressPayload {
 }
 
 /** Trophy catalog per mini-game genre — embedded in pack HTML as __LOTUS_ACHIEVEMENTS__. */
-export const ACHIEVEMENTS: Record<MiniGameMode, AchievementDef[]> = {
+export const ACHIEVEMENTS: Record<AchievementPackId, AchievementDef[]> = {
   platformer: [
     {
       id: 'platformer_win',
@@ -77,9 +80,23 @@ export const ACHIEVEMENTS: Record<MiniGameMode, AchievementDef[]> = {
       progressMax: 2,
     },
   ],
+  rpg3d: [
+    {
+      id: 'quest_complete',
+      title: 'Herbalist',
+      description: 'Complete the find_herbs quest',
+      icon: '🌿',
+    },
+    {
+      id: 'talk_to_elder',
+      title: 'Village Welcome',
+      description: 'Talk to the village elder',
+      icon: '🧙',
+    },
+  ],
 }
 
-let activePackId: MiniGameMode | null = null
+let activePackId: AchievementPackId | null = null
 
 export function achievementStorageKey(packId: string): string {
   const safe = String(packId ?? '')
@@ -99,11 +116,15 @@ export function achievementProgressStorageKey(packId: string): string {
   return `${ACHIEVEMENT_PROGRESS_STORAGE_PREFIX}.${safe || 'pack'}`
 }
 
-export function setAchievementPackId(packId: MiniGameMode | string | null | undefined): string | null {
+function isAchievementPackId(id: string): id is AchievementPackId {
+  return id === 'platformer' || id === 'rpg' || id === 'fps' || id === 'rpg3d'
+}
+
+export function setAchievementPackId(packId: AchievementPackId | string | null | undefined): string | null {
   const id = String(packId ?? '')
     .trim()
     .toLowerCase()
-  if (id === 'platformer' || id === 'rpg' || id === 'fps') {
+  if (isAchievementPackId(id)) {
     activePackId = id
     return id
   }
@@ -111,7 +132,7 @@ export function setAchievementPackId(packId: MiniGameMode | string | null | unde
   return null
 }
 
-export function getAchievementPackId(): MiniGameMode | null {
+export function getAchievementPackId(): AchievementPackId | null {
   return activePackId
 }
 
@@ -119,7 +140,7 @@ export function achievementsForPack(packId?: string | null): AchievementDef[] {
   const id = String(packId ?? activePackId ?? '')
     .trim()
     .toLowerCase()
-  if (id === 'platformer' || id === 'rpg' || id === 'fps') return [...ACHIEVEMENTS[id]]
+  if (isAchievementPackId(id)) return [...ACHIEVEMENTS[id]]
   return []
 }
 
@@ -282,11 +303,11 @@ export function getAchievementProgress(id: string, packId?: string | null): Achi
   return null
 }
 
-export function buildExportAchievementsPayload(packId: MiniGameMode): ExportAchievementsPayload {
+export function buildExportAchievementsPayload(packId: AchievementPackId): ExportAchievementsPayload {
   return { packId, achievements: [...ACHIEVEMENTS[packId]] }
 }
 
-export function buildExportAchievementProgressPayload(packId: MiniGameMode): ExportAchievementProgressPayload {
+export function buildExportAchievementProgressPayload(packId: AchievementPackId): ExportAchievementProgressPayload {
   const defaults: Record<string, { max: number }> = {}
   for (const a of ACHIEVEMENTS[packId]) {
     if (typeof a.progressMax === 'number' && a.progressMax > 0) {

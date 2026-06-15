@@ -22,7 +22,9 @@ import { createWaterActor, buildWaterMesh, updateWater } from './water'
 import { createPCGVolumeActor } from './pcg'
 import { syncPropsFromGraph } from './pcgGraph'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
+import { ensurePlayerRpgActor, resetRpgInventories } from './rpgInventory'
 import { hud, raycastActors, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
+import { resetQuests } from './rpgQuests'
 import { buildPathCurve } from './path3d'
 import { resetBTs, runBTGraph, tickBTs } from './behaviorTree'
 import { compileBTGraph } from './btGraph'
@@ -69,6 +71,7 @@ import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
 import { resolveAnimParams, tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
 import { applyActorIK, hasActorSkeleton } from './ik'
 import { clearActorTicks, recordActorTick } from './profiler'
+import { resetRpgDialogue, tickRpgDialogueInteract } from './rpgDialogue'
 
 /**
  * World — the Unreal UWorld analog. Owns the Three.js scene graph,
@@ -228,7 +231,13 @@ export class World {
 
   playerStart(): Actor | undefined {
     const starts = [...this.actors.values()].filter((a) => a.type === 'PlayerStart')
-    if (starts.length <= 1) return starts[0]
+    if (!starts.length) return undefined
+    if (starts.length === 1) return starts[0]
+    const preferred =
+      starts.find((a) => a.name === 'StarterPlayerStart') ??
+      starts.find((a) => a.name === 'RpgPlayerStart') ??
+      starts.find((a) => a.name.endsWith('PlayerStart') && a.name !== 'PlayerStart')
+    if (preferred) return preferred
     if (mpConnected()) {
       if (mpIsHost()) {
         return starts.find((a) => a.tags.includes('mp_host') || a.name === 'HostSpawn') ?? starts[0]
@@ -250,7 +259,10 @@ export class World {
     this.physicsAccumulator = 0
     resetSignals()
     resetGameplay()
+    resetQuests()
+    resetRpgDialogue()
     resetAbilities()
+    resetRpgInventories()
     resetBTs()
     resetCrowd()
     resetGridNavAgents()
@@ -285,6 +297,7 @@ export class World {
       () => this.pawnPitch,
     )
     initAllActorGAS(this.actors.values())
+    ensurePlayerRpgActor(this.playerStart())
     for (const a of this.actors.values()) {
       const api = makeScriptApi(
         this.actors,
@@ -380,6 +393,7 @@ export class World {
     stopAllSounds()
     this.physics.stop()
     for (const a of this.actors.values()) a.endPlay()
+    resetRpgDialogue()
     clearActorTicks()
   }
 
@@ -462,7 +476,9 @@ export class World {
     clearActorTicks()
     resetSignals()
     resetGameplay()
+    resetQuests()
     resetAbilities()
+    resetRpgInventories()
     resetBTs()
     resetCrowd()
     resetGridNavAgents()
@@ -646,6 +662,9 @@ export class World {
       recordActorTick(a.id, a.name, performance.now() - t0)
     }
     tickGameplay(dt, scriptLog)
+    if (this.pawnPosition) {
+      tickRpgDialogueInteract(this.actors.values(), this.pawnPosition)
+    }
     if (this.playApi) {
       tickBTs(
         dt,

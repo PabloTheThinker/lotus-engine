@@ -99,6 +99,791 @@ function isExportOverlayReady(): boolean {
   return /Click to play|click canvas|Touch stick|WASD/i.test(t)
 }
 
+test('wave 93 rpgDialogue startDialogue advance choose isActive tree navigation', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const d = (window.lotus! as typeof window.lotus & {
+      rpg: {
+        dialogue: {
+          reset: () => void
+          startDialogue: (id: string) => boolean
+          isActive: () => boolean
+          getCurrentNode: () => { id: string; text: string; choices?: { text: string }[] } | null
+          choose: (i: number) => boolean
+          advance: () => boolean
+        }
+      }
+    }).rpg.dialogue
+    d.reset()
+    const started = d.startDialogue('village_elder')
+    const greet = d.getCurrentNode()
+    const activeGreet = d.isActive()
+    const choseQuest = d.choose(0)
+    const quest = d.getCurrentNode()
+    const advanced = d.advance()
+    const accept = d.getCurrentNode()
+    const closed = d.advance()
+    const stillActive = d.isActive()
+    return {
+      started,
+      greetId: greet?.id,
+      activeGreet,
+      choseQuest,
+      questId: quest?.id,
+      advanced,
+      acceptId: accept?.id,
+      closed,
+      stillActive,
+    }
+  })
+
+  expect(result.started).toBe(true)
+  expect(result.greetId).toBe('greet')
+  expect(result.activeGreet).toBe(true)
+  expect(result.choseQuest).toBe(true)
+  expect(result.questId).toBe('quest')
+  expect(result.advanced).toBe(true)
+  expect(result.acceptId).toBe('accept')
+  expect(result.closed).toBe(true)
+  expect(result.stillActive).toBe(false)
+})
+
+test('wave 93 lotus.rpg.dialogue bridge exposes startDialogue advance choose isActive', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const d = (window.lotus! as typeof window.lotus & { rpg: { dialogue: Record<string, unknown> } }).rpg.dialogue
+    return {
+      startDialogue: typeof d.startDialogue === 'function',
+      advance: typeof d.advance === 'function',
+      choose: typeof d.choose === 'function',
+      isActive: typeof d.isActive === 'function',
+      villageElder: (d.villageElder as { id?: string })?.id,
+      exportPayload: typeof d.exportPayload === 'function',
+    }
+  })
+
+  expect(result.startDialogue).toBe(true)
+  expect(result.advance).toBe(true)
+  expect(result.choose).toBe(true)
+  expect(result.isActive).toBe(true)
+  expect(result.villageElder).toBe('village_elder')
+  expect(result.exportPayload).toBe(true)
+})
+
+test('wave 93 buildPackHTML embeds __LOTUS_DIALOGUE__ with village_elder nodes for rpg pack', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'rpg') => void
+          buildPackHTML: (m: 'rpg') => string
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('rpg')
+    const html = v.indie.minigame.buildPackHTML('rpg')
+    const marker = 'window.__LOTUS_DIALOGUE__ = '
+    const idx = html.indexOf(marker)
+    let parsed: { trees?: Record<string, { startId?: string; nodes?: { id: string }[] }> } | null = null
+    if (idx >= 0) {
+      const rest = html.slice(idx + marker.length)
+      const end = rest.indexOf('; window.')
+      const jsonStr = end >= 0 ? rest.slice(0, end) : rest.split(';')[0]
+      parsed = JSON.parse(jsonStr)
+    }
+    const elder = parsed?.trees?.village_elder
+    return {
+      hasTag: html.includes('__LOTUS_DIALOGUE__'),
+      dialogueCss: html.includes('lotus-dialogue-overlay'),
+      startId: elder?.startId,
+      nodeIds: elder?.nodes?.map((n) => n.id) ?? [],
+      runtimeInit: html.includes('initExportDialogue'),
+      runtimeTick: html.includes('tickExportDialogueInteract'),
+    }
+  })
+
+  expect(result.hasTag).toBe(true)
+  expect(result.dialogueCss).toBe(true)
+  expect(result.startId).toBe('greet')
+  expect(result.nodeIds).toEqual(expect.arrayContaining(['greet', 'quest', 'accept', 'bye']))
+  expect(result.runtimeInit).toBe(true)
+  expect(result.runtimeTick).toBe(true)
+})
+
+test('wave 93 terminal /dialogue village_elder mounts lotus-dialogue-overlay', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/dialogue village_elder')
+    const overlay = document.getElementById('lotus-dialogue-overlay')
+    const speaker = overlay?.querySelector('[data-dialogue-speaker]')?.textContent ?? ''
+    const body = overlay?.querySelector('[data-dialogue-body]')?.textContent ?? ''
+    const active = (v as typeof window.lotus & { rpg: { dialogue: { isActive: () => boolean } } }).rpg.dialogue.isActive()
+    return { output: out.output, error: out.error, overlay: !!overlay, speaker, body, active }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('village_elder')
+  expect(result.overlay).toBe(true)
+  expect(result.speaker).toContain('Elder Maren')
+  expect(result.body.length).toBeGreaterThan(10)
+  expect(result.active).toBe(true)
+})
+
+test('wave 93 rpg mini-game spawn adds VillageElder DialogueNPC with dialogueId scriptVar', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'rpg') => void } }
+      world: {
+        actors: {
+          values: () => IterableIterator<{
+            name: string
+            tags: string[]
+            scriptVars?: Record<string, unknown>
+          }>
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('rpg')
+    const elder = [...v.world.actors.values()].find((a) => a.name === 'VillageElder')
+    return {
+      found: !!elder,
+      tags: elder?.tags ?? [],
+      dialogueId: elder?.scriptVars?.dialogueId,
+    }
+  })
+
+  expect(result.found).toBe(true)
+  expect(result.tags).toEqual(expect.arrayContaining(['DialogueNPC', 'NPC']))
+  expect(result.dialogueId).toBe('village_elder')
+})
+
+test('wave 94 rpgQuests startQuest updateObjective completeQuest checkpoint round-trip', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      rpg: {
+        quests: {
+          reset: () => void
+          start: (id: string) => boolean
+          updateObjective: (q: string, o: string, c: number) => boolean
+          complete: (id: string) => boolean
+          getState: (id: string) => { state: string; objectives: { current: number; count: number }[] } | null
+          serialize: () => { version: number; quests: Record<string, unknown> }
+          restore: (data: unknown) => boolean
+        }
+      }
+      save: { checkpoint: (slot: string, data: unknown) => boolean; load: (slot: string) => unknown }
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean } }
+    }
+    v.world.levelName = 'Wave94Quest'
+    v.world.environment.saveSlotsEnabled = true
+    const q = v.rpg.quests
+    q.reset()
+    const started = q.start('find_herbs')
+    const partial = q.updateObjective('find_herbs', 'collect_herbs', 2)
+    const mid = q.getState('find_herbs')
+    const payload = { hp: 94, quests: q.serialize() }
+    const saved = v.save.checkpoint('wave94-quest', payload)
+    q.reset()
+    const empty = q.getState('find_herbs')
+    const loaded = v.save.load('wave94-quest') as { quests?: unknown }
+    q.restore(loaded?.quests)
+    const restored = q.getState('find_herbs')
+    const done = q.complete('find_herbs')
+    const completed = q.getState('find_herbs')
+    return {
+      started,
+      partial,
+      mid,
+      saved,
+      empty,
+      restored,
+      done,
+      completed,
+    }
+  })
+
+  expect(result.started).toBe(true)
+  expect(result.partial).toBe(true)
+  expect(result.mid?.state).toBe('active')
+  expect(result.mid?.objectives[0]).toMatchObject({ id: 'collect_herbs', current: 2, count: 3 })
+  expect(result.saved).toBe(true)
+  expect(result.empty).toBeNull()
+  expect(result.restored?.objectives[0]?.current).toBe(2)
+  expect(result.done).toBe(true)
+  expect(result.completed?.state).toBe('completed')
+})
+
+test('wave 94 lotus.rpg.quests bridge exposes start updateObjective complete getState getActive', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const quests = (window.lotus! as typeof window.lotus & { rpg: { quests: Record<string, unknown> } }).rpg.quests
+    return {
+      start: typeof quests.start === 'function',
+      updateObjective: typeof quests.updateObjective === 'function',
+      complete: typeof quests.complete === 'function',
+      getState: typeof quests.getState === 'function',
+      getActive: typeof quests.getActive === 'function',
+      refreshTracker: typeof quests.refreshTracker === 'function',
+      findHerbs: (quests.defs as () => { id: string }[])().some((d) => d.id === 'find_herbs'),
+    }
+  })
+
+  expect(result.start).toBe(true)
+  expect(result.updateObjective).toBe(true)
+  expect(result.complete).toBe(true)
+  expect(result.getState).toBe(true)
+  expect(result.getActive).toBe(true)
+  expect(result.refreshTracker).toBe(true)
+  expect(result.findHerbs).toBe(true)
+})
+
+test('wave 94 /quest start find_herbs terminal demo command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      rpg: { quests: { reset: () => void; getState: (id: string) => { state: string; title: string } | null } }
+    }
+    v.rpg.quests.reset()
+    const out = v.terminal.exec('/quest start find_herbs')
+    const state = v.rpg.quests.getState('find_herbs')
+    return {
+      error: out.error,
+      output: out.output,
+      state: state?.state,
+      title: state?.title,
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Quest started: Find Herbs')
+  expect(result.output).toContain('find_herbs')
+  expect(result.state).toBe('active')
+  expect(result.title).toBe('Find Herbs')
+})
+
+test('wave 94 RPG minigame script integrates find_herbs via api.updateQuestObjective', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const m = (window.lotus! as typeof window.lotus).indie.minigame as {
+      rpgScript: string
+      attachMiniGameScripts: (m: 'rpg') => void
+    }
+    m.attachMiniGameScripts('rpg')
+    const herbs = [...(window.lotus! as typeof window.lotus).world.actors.values()].filter((a) =>
+      a.tags.includes('Herb'),
+    ).length
+    return {
+      hasUpdate: m.rpgScript.includes("api.updateQuestObjective(vars.herbQuestId, vars.herbObjectiveId"),
+      hasGetState: m.rpgScript.includes("api.getQuestState(vars.herbQuestId)"),
+      herbQuestId: m.rpgScript.includes("herbQuestId = 'find_herbs'"),
+      herbs,
+    }
+  })
+
+  expect(result.hasUpdate).toBe(true)
+  expect(result.hasGetState).toBe(true)
+  expect(result.herbQuestId).toBe(true)
+  expect(result.herbs).toBeGreaterThanOrEqual(3)
+})
+
+test('wave 94 rpgQuestHud renders active quest tracker via refreshTracker', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      rpg: { quests: { reset: () => void; start: (id: string) => boolean; refreshTracker: () => void } }
+    }
+    v.rpg.quests.reset()
+    v.rpg.quests.start('find_herbs')
+    v.rpg.quests.refreshTracker()
+    const tracker = document.querySelector('.lotus-rpg-quest-tracker')
+    return {
+      tracker: !!tracker,
+      title: tracker?.querySelector('.lotus-rpg-quest-title')?.textContent ?? '',
+      progress: tracker?.querySelector('.lotus-rpg-quest-progress')?.textContent ?? '',
+      bar: !!tracker?.querySelector('.lotus-rpg-quest-bar-fill'),
+    }
+  })
+
+  expect(result.tracker).toBe(true)
+  expect(result.title).toContain('Find Herbs')
+  expect(result.progress).toBe('0 / 3')
+  expect(result.bar).toBe(true)
+})
+
+test('wave 95 spawnRpg3dGame creates village scene + GameManager with inventory dialogue quest script', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        rpg3d: {
+          spawn: () => void
+          managerName: string
+          villageElderName: string
+          gameScript: string
+        }
+      }
+      world: {
+        actors: {
+          values: () => IterableIterator<{ name: string; tags?: string[]; script?: string }>
+        }
+      }
+    }
+    v.indie.rpg3d.spawn()
+    const actors = [...v.world.actors.values()]
+    const mgr = actors.find((a) => a.name === v.indie.rpg3d.managerName)
+    const elder = actors.find((a) => a.name === v.indie.rpg3d.villageElderName)
+    const herbs = actors.filter((a) => a.tags?.includes('Herb'))
+    return {
+      ground: actors.some((a) => a.name === 'Rpg3dGround'),
+      elderTags: elder?.tags ?? [],
+      elderDialogue: (elder as { scriptVars?: { dialogueId?: string } })?.scriptVars?.dialogueId,
+      herbCount: herbs.length,
+      script: mgr?.script ?? '',
+    }
+  })
+
+  expect(result.ground).toBe(true)
+  expect(result.elderTags).toContain('DialogueNPC')
+  expect(result.elderDialogue).toBe('village_elder')
+  expect(result.herbCount).toBeGreaterThanOrEqual(3)
+  expect(result.script).toMatch(/inventory/)
+  expect(result.script).toMatch(/village_elder|talk_to_elder/)
+  expect(result.script).toMatch(/find_herbs/)
+  expect(result.script).toMatch(/KeyI/)
+})
+
+test('wave 95 indie.rpg3d bridge exposes spawn exportPack buildPackHTML', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        rpg3d: {
+          spawn: () => void
+          exportPack: () => void
+          buildPackHTML: () => string
+          packId: string
+        }
+      }
+    }
+    return {
+      hasSpawn: typeof v.indie.rpg3d.spawn === 'function',
+      hasExport: typeof v.indie.rpg3d.exportPack === 'function',
+      hasBuild: typeof v.indie.rpg3d.buildPackHTML === 'function',
+      packId: v.indie.rpg3d.packId,
+      htmlLen: v.indie.rpg3d.buildPackHTML().length,
+    }
+  })
+
+  expect(result.hasSpawn).toBe(true)
+  expect(result.hasExport).toBe(true)
+  expect(result.hasBuild).toBe(true)
+  expect(result.packId).toBe('rpg3d')
+  expect(result.htmlLen).toBeGreaterThan(1000)
+})
+
+test('wave 95 buildPackHTML embeds __LOTUS_RPG_3D__ and __LOTUS_RPG_HUD__', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { rpg3d: { buildPackHTML: () => string } }
+    }
+    const html = v.indie.rpg3d.buildPackHTML()
+    return {
+      rpg3d: html.includes('__LOTUS_RPG_3D__'),
+      rpgHud: html.includes('__LOTUS_RPG_HUD__'),
+      dialogue: html.includes('__LOTUS_DIALOGUE__'),
+      achievements: html.includes('talk_to_elder') && html.includes('quest_complete'),
+      runtimeHud: html.includes('wireExportRpg3dHud'),
+      runtimeInv: html.includes('exportAddItem'),
+    }
+  })
+
+  expect(result.rpg3d).toBe(true)
+  expect(result.rpgHud).toBe(true)
+  expect(result.dialogue).toBe(true)
+  expect(result.achievements).toBe(true)
+  expect(result.runtimeHud).toBe(true)
+  expect(result.runtimeInv).toBe(true)
+})
+
+test('wave 95 /exportrpg terminal spawns 3D RPG scene with export hint', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (s: string) => { output: string | null } }
+      world: { actors: { values: () => IterableIterator<{ name: string }> } }
+    }
+    const out = v.terminal.exec('/exportrpg')
+    const actors = [...v.world.actors.values()]
+    return {
+      output: out.output ?? '',
+      manager: actors.some((a) => a.name === 'Rpg3dGameManager'),
+      elder: actors.some((a) => a.name === 'VillageElder'),
+      ground: actors.some((a) => a.name === 'Rpg3dGround'),
+    }
+  })
+
+  expect(result.output).toMatch(/3D RPG/i)
+  expect(result.output).toMatch(/rpg3dexport|exportPack/i)
+  expect(result.manager).toBe(true)
+  expect(result.elder).toBe(true)
+  expect(result.ground).toBe(true)
+})
+
+test('wave 95 exportAchievements rpg3d trophies quest_complete talk_to_elder', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        achievements: {
+          list: (packId?: string) => { id: string }[]
+          unlock: (id: string, packId?: string) => boolean
+          unlocked: (id?: string, packId?: string) => boolean | string[]
+        }
+      }
+    }
+    const list = v.indie.achievements.list('rpg3d')
+    const ids = list.map((a) => a.id)
+    const talk = v.indie.achievements.unlock('talk_to_elder', 'rpg3d')
+    const quest = v.indie.achievements.unlock('quest_complete', 'rpg3d')
+    return {
+      ids,
+      talk,
+      quest,
+      unlocked: v.indie.achievements.unlocked(undefined, 'rpg3d') as string[],
+    }
+  })
+
+  expect(result.ids).toContain('talk_to_elder')
+  expect(result.ids).toContain('quest_complete')
+  expect(result.talk).toBe(true)
+  expect(result.quest).toBe(true)
+  expect(result.unlocked).toContain('talk_to_elder')
+  expect(result.unlocked).toContain('quest_complete')
+})
+
+test('wave 92 rpgInventory addItem removeItem hasItem count and stackable slots', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const rpg = (window.lotus! as typeof window.lotus & {
+      rpg: {
+        player: () => { name: string } | null
+        inventory: {
+          addItem: (id: string, qty?: number, actor?: { name: string }) => boolean
+          removeItem: (id: string, qty?: number, actor?: { name: string }) => boolean
+          hasItem: (id: string, actor?: { name: string }) => boolean
+          getItemCount: (id: string, actor?: { name: string }) => number
+          get: (actor?: { name: string }) => { slots: unknown[]; gold: number }
+        }
+      }
+    }).rpg
+    const player = rpg.player()
+    const stacked = rpg.inventory.addItem('health_potion', 3, player ?? undefined)
+    const count = rpg.inventory.getItemCount('health_potion', player ?? undefined)
+    const has = rpg.inventory.hasItem('health_potion', player ?? undefined)
+    const removed = rpg.inventory.removeItem('health_potion', 2, player ?? undefined)
+    const after = rpg.inventory.getItemCount('health_potion', player ?? undefined)
+    const inv = rpg.inventory.get(player ?? undefined)
+    const filled = inv.slots.filter((s: { itemId?: string; quantity?: number } | null) => s?.itemId === 'health_potion')
+    return {
+      playerName: player?.name ?? null,
+      stacked,
+      count,
+      has,
+      removed,
+      after,
+      slots: inv.slots.length,
+      filled,
+      gold: inv.gold,
+    }
+  })
+
+  expect(result.playerName).toBe('StarterPlayerStart')
+  expect(result.stacked).toBe(true)
+  expect(result.count).toBe(3)
+  expect(result.has).toBe(true)
+  expect(result.removed).toBe(true)
+  expect(result.after).toBe(1)
+  expect(result.slots).toBe(20)
+})
+
+test('wave 92 rpgInventory gold addGold getGold never below zero', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        player: () => object | null
+        inventory: {
+          addGold: (n: number, actor?: object) => number
+          getGold: (actor?: object) => number
+          setGold: (n: number, actor?: object) => number
+        }
+      }
+    }
+    const player = lotus.rpg.player()
+    const inv = lotus.rpg.inventory
+    inv.setGold(0, player ?? undefined)
+    const first = inv.addGold(75, player ?? undefined)
+    const second = inv.addGold(-20, player ?? undefined)
+    const clamped = inv.addGold(-999, player ?? undefined)
+    return { first, second, clamped, get: inv.getGold(player ?? undefined) }
+  })
+
+  expect(result.first).toBe(75)
+  expect(result.second).toBe(55)
+  expect(result.clamped).toBe(0)
+  expect(result.get).toBe(0)
+})
+
+test('wave 92 lotus.rpg.inventory bridge exposes addItem removeItem getGold', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const inv = (window.lotus! as typeof window.lotus & { rpg: { inventory: Record<string, unknown> } }).rpg
+      .inventory
+    return {
+      addItem: typeof inv.addItem === 'function',
+      removeItem: typeof inv.removeItem === 'function',
+      hasItem: typeof inv.hasItem === 'function',
+      getItemCount: typeof inv.getItemCount === 'function',
+      getGold: typeof inv.getGold === 'function',
+      addGold: typeof inv.addGold === 'function',
+      get: typeof inv.get === 'function',
+    }
+  })
+
+  expect(result.addItem).toBe(true)
+  expect(result.removeItem).toBe(true)
+  expect(result.hasItem).toBe(true)
+  expect(result.getItemCount).toBe(true)
+  expect(result.getGold).toBe(true)
+  expect(result.addGold).toBe(true)
+  expect(result.get).toBe(true)
+})
+
+test('wave 92 lotus.rpg.stats bridge getHealth getMana setAttribute on player', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        player: () => object | null
+        stats: {
+          getHealth: (actor?: object) => number | null
+          getMana: (actor?: object) => number | null
+          setAttribute: (n: string, v: number, actor?: object) => boolean
+        }
+      }
+    }
+    const player = lotus.rpg.player()
+    const stats = lotus.rpg.stats
+    const health0 = stats.getHealth(player ?? undefined)
+    const mana0 = stats.getMana(player ?? undefined)
+    const ok = stats.setAttribute('Health', 42, player ?? undefined)
+    const health1 = stats.getHealth(player ?? undefined)
+    return { health0, mana0, ok, health1 }
+  })
+
+  expect(result.health0).toBe(100)
+  expect(result.mana0).toBe(50)
+  expect(result.ok).toBe(true)
+  expect(result.health1).toBe(42)
+})
+
+test('wave 92 save checkpoint persists inventory gold and /inventory terminal demo', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      save: { checkpoint: (slot: string, data: unknown) => boolean; load: (slot: string) => unknown | null }
+      terminal: { exec: (cmd: string) => { output: string | null; error: string | null } }
+      rpg: {
+        inventory: { get: () => { gold: number }; getItemCount: (id: string) => number }
+        checkpointExtras: () => { inventory?: { gold: number }; attributes?: Record<string, number> }
+      }
+    }
+    v.world.levelName = 'Wave92Rpg'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const term = v.terminal.exec('/inventory')
+    const before = {
+      potions: v.rpg.inventory.getItemCount('health_potion'),
+      gold: v.rpg.inventory.get().gold,
+    }
+    const extras = v.rpg.checkpointExtras()
+    const saved = v.save.checkpoint('wave92-rpg', {
+      playTime: 92,
+      pawn: [1, 2, 3],
+      ...extras,
+    })
+    const loaded = v.save.load('wave92-rpg') as {
+      inventory?: { gold: number; slots?: { itemId: string; quantity: number }[] }
+      attributes?: Record<string, number>
+    } | null
+    return {
+      termOk: !term.error && (term.output?.includes('health_potion') ?? false),
+      before,
+      saved,
+      gold: loaded?.inventory?.gold,
+      potionQty: loaded?.inventory?.slots?.find((s) => s?.itemId === 'health_potion')?.quantity,
+      health: loaded?.attributes?.Health,
+    }
+  })
+
+  expect(result.termOk).toBe(true)
+  expect(result.before.potions).toBe(1)
+  expect(result.before.gold).toBe(50)
+  expect(result.saved).toBe(true)
+  expect(result.gold).toBe(50)
+  expect(result.potionQty).toBe(1)
+  expect(result.health).toBe(100)
+})
+
+test('wave 91 lotus.cameraRig bridge exposes getBoomLength setBoomLength collisionEnabled shoulderOffset', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const rig = (window.lotus! as typeof window.lotus & { cameraRig: Record<string, unknown> }).cameraRig
+    return {
+      getBoomLength: typeof rig.getBoomLength === 'function',
+      setBoomLength: typeof rig.setBoomLength === 'function',
+      collisionEnabled: typeof rig.collisionEnabled === 'function',
+      shoulderOffset: typeof rig.shoulderOffset === 'function',
+    }
+  })
+
+  expect(result.getBoomLength).toBe(true)
+  expect(result.setBoomLength).toBe(true)
+  expect(result.collisionEnabled).toBe(true)
+  expect(result.shoulderOffset).toBe(true)
+})
+
+test('wave 91 cameraRig setBoomLength updates boom length', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const rig = (window.lotus! as typeof window.lotus & {
+      cameraRig: { getBoomLength: () => number; setBoomLength: (n: number) => number }
+    }).cameraRig
+    const before = rig.getBoomLength()
+    const set = rig.setBoomLength(6.25)
+    const after = rig.getBoomLength()
+    return { before, set, after }
+  })
+
+  expect(result.set).toBe(6.25)
+  expect(result.after).toBe(6.25)
+  expect(result.before).not.toBe(6.25)
+})
+
+test('wave 91 3D RPG starter template (small)', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawnRpg3dStarter: (mode: 'small') => void }
+      world: { environment: { rpgCameraRig?: boolean; useRapierCharacter?: boolean } }
+    }
+    const before = v.world.actors.size
+    v.indie.spawnRpg3dStarter('small')
+    const ground = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dGround')
+    const hill = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dHill')
+    const cottage = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dCottageA')
+    const npc = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dNpcA')
+    const quest = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dQuestZone')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dPlayerStart')
+    return {
+      added: v.world.actors.size > before,
+      ground: !!ground,
+      hill: !!hill,
+      cottage: !!cottage,
+      npcTag: npc?.tags.includes('NPC'),
+      quest: quest?.type === 'TriggerVolume',
+      startPawn: start?.pawnMode,
+      rpgCameraRig: v.world.environment.rpgCameraRig === true,
+      rapier: v.world.environment.useRapierCharacter === true,
+    }
+  })
+
+  expect(result.added).toBe(true)
+  expect(result.ground).toBe(true)
+  expect(result.hill).toBe(true)
+  expect(result.cottage).toBe(true)
+  expect(result.npcTag).toBe(true)
+  expect(result.quest).toBe(true)
+  expect(result.startPawn).toBe('thirdperson')
+  expect(result.rpgCameraRig).toBe(true)
+  expect(result.rapier).toBe(true)
+})
+
+test('wave 91 /rpg3d terminal command', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus!
+    const out = v.terminal.exec('/rpg3d small')
+    const ground = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dGround')
+    const start = [...v.world.actors.values()].find((a) => a.name === 'Rpg3dPlayerStart')
+    return { output: out?.output, ground: !!ground, startPawn: start?.pawnMode }
+  })
+
+  expect(result.output).toContain('3D RPG starter')
+  expect(result.ground).toBe(true)
+  expect(result.startPawn).toBe('thirdperson')
+})
+
+test('wave 91 World Settings RPG camera rig toggles environment.rpgCameraRig', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { rpgCameraRig?: boolean } }
+    }
+    v.world.environment.rpgCameraRig = true
+    const on = v.world.environment.rpgCameraRig === true
+    v.world.environment.rpgCameraRig = false
+    const off = v.world.environment.rpgCameraRig === false
+    return { on, off }
+  })
+
+  expect(result.on).toBe(true)
+  expect(result.off).toBe(true)
+})
+
 test('wave 89 exportCloudSaveJson includes IndexedDB checkpoint data in entries', async ({ page }) => {
   await bootEditor(page)
 
@@ -8806,9 +9591,9 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
       hasTitle: notes.includes('# Lotus Platformer Pack'),
       hasBlurb: notes.includes('Jump to the goal'),
       hasWhatsNew: notes.includes("## What's new"),
-      hasWavesHeader: notes.includes('Waves 86–90'),
-      hasWave87: notes.includes('Wave 87'),
-      hasReleaseNotesFeature: notes.includes('itch.io embed widget'),
+      hasWavesHeader: notes.includes('Waves 91–95'),
+      hasWave92: notes.includes('Wave 92'),
+      hasReleaseNotesFeature: notes.includes('rpgInventory'),
     }
   })
 
@@ -8816,7 +9601,7 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
   expect(result.hasBlurb).toBe(true)
   expect(result.hasWhatsNew).toBe(true)
   expect(result.hasWavesHeader).toBe(true)
-  expect(result.hasWave87).toBe(true)
+  expect(result.hasWave92).toBe(true)
   expect(result.hasReleaseNotesFeature).toBe(true)
 })
 
@@ -8877,13 +9662,13 @@ test('wave 77 buildPackHTML embeds __LOTUS_PACK_RELEASE_NOTES__ with platformer 
       embedded,
       expected,
       match: embedded === expected,
-      hasWave87: embedded.includes('Wave 87'),
+      hasWave92: embedded.includes('Wave 92'),
     }
   })
 
   expect(result.hasTag).toBe(true)
   expect(result.match).toBe(true)
-  expect(result.hasWave87).toBe(true)
+  expect(result.hasWave92).toBe(true)
 })
 
 test('wave 77 buildItchZip includes RELEASE_NOTES.md with genre markdown', async ({ page }) => {
@@ -8934,14 +9719,14 @@ test('wave 77 /releasenotes platformer terminal prints release notes markdown', 
       expected,
       match: out?.output === expected,
       hasTitle: out?.output?.includes('# Lotus Platformer Pack') ?? false,
-      hasWave87: out?.output?.includes('Wave 87') ?? false,
+      hasWave92: out?.output?.includes('Wave 92') ?? false,
     }
   })
 
   expect(result.error).toBeNull()
   expect(result.match).toBe(true)
   expect(result.hasTitle).toBe(true)
-  expect(result.hasWave87).toBe(true)
+  expect(result.hasWave92).toBe(true)
 })
 
 test('wave 78 indie.mp.killcam bridge exposes trigger, active, durationSec', async ({ page }) => {
@@ -9721,7 +10506,7 @@ test('wave 82 renderPackChangelogHtml returns styled section with pack title and
       hasStyle: html.includes('.lotus-pack-changelog'),
       hasTitle: html.includes('Lotus Platformer Pack'),
       hasWhatsNew: html.includes("What's new"),
-      hasWaves: html.includes('Waves 86–90'),
+      hasWaves: html.includes('Waves 91–95'),
       notesHasTitle: notes.includes('# Lotus Platformer Pack'),
     }
   })

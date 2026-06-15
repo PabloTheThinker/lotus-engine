@@ -27,8 +27,10 @@ import { buildItchEmbedWidgetSections, ITCH_EMBED_WIDGET_FILENAME } from './itch
 import { buildPackChangelogHtml } from './packChangelogHtml'
 import { exportItchUploadPack, itchPackZipFilename } from './itchUploadPack'
 import { exportMiniGamePack } from './miniGameExportPack'
+import { buildRpg3dPackHTML, spawnRpg3dGame } from './rpg3dExportPack'
 import { spawnMainMenu } from './mainMenuFlow'
 import { spawnMiniGame } from './starterMiniGames'
+import { spawnRpg3dStarter } from './rpg3dStarter'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './starterTemplates'
 import {
   bakeNavMeshLayers,
@@ -49,6 +51,10 @@ import {
   importCloudSaveJson,
 } from '../engine/cloudSaveSync'
 import { setSaveContext } from '../engine/saveSystem'
+import { addGold, addItem, ensurePlayerRpgActor, getGold, getItemCount, getInventory } from '../engine/rpgInventory'
+import { startDialogue, setRpgDialogueUiListener } from '../engine/rpgDialogue'
+import { findQuestDef, getQuestState, startQuest } from '../engine/rpgQuests'
+import { mountRpgDialogueUi, renderRpgDialogueUi } from './rpgDialogueUi'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -79,9 +85,12 @@ SLASH COMMANDS
   /starter [mode]    Greybox CharacterBody scene (thirdperson|firstperson|fly)
   /platformer [mode] Greybox platformer scene (side|wide)
   /rpg [mode]        Greybox top-down RPG scene (small|large)
+  /rpg3d [mode]      Greybox 3D third-person RPG scene (small|large)
   /fps               Greybox FPS corridor scene
   /minigame <mode>   Playable mini-game starter (platformer|rpg|fps) with win condition
   /minigameexport <mode>  Export playable HTML for platformer|rpg|fps preset
+  /exportrpg              Spawn 3D RPG village + GameManager (inventory, dialogue, quests)
+  /rpg3dexport            Build 3D RPG pack HTML snippet (__LOTUS_RPG_3D__ + __LOTUS_RPG_HUD__)
   /exportpack <mode>      Export PWA mini-game pack (platformer|rpg|fps) with manifest + icons + meta
   /exportpackmeta <mode>  Show itch.io pack metadata JSON (platformer|rpg|fps)
   /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png + RELEASE_NOTES.md + CHANGELOG.html)
@@ -96,10 +105,13 @@ SLASH COMMANDS
   /mpteams           Indie MP teams deathmatch (red vs blue, friendly fire off)
   /mpctf             Indie MP capture-the-flag (teams template, flag pickup/capture)
   /mainmenu          Main menu → level select (Platformer, RPG, FPS, MP Deathmatch)
+  /dialogue [treeId] Start RPG dialogue overlay (default: village_elder)
+  /quest start <id>    Start RPG quest (demo: find_herbs — collect 3 Herb tags)
   /gridnavmesh [0-3] Bake Recast navmesh from grid tile layers (mask from foliage or layer arg)
   /gridnavagent [0-3] Spawn test crowd agent on grid navmesh layer (Play to tick)
   /gridnavai patrol|chase [0-3] Spawn grid nav agent with patrol or chase AI (tag: grid_nav_target)
   /gridnavpath [0-3]   Bake grid navmesh layer and find test path [0,1,0] → [8,1,8] with debug overlay
+  /inventory           Demo: add Health Potion + 50 gold to player inventory (PlayerStart + GAS)
   /cloudsave export       Print full cloud save JSON (IndexedDB checkpoints)
   /cloudsave import <json> Import cloud save JSON into IndexedDB (same level)
 
@@ -331,6 +343,14 @@ function runSlash(parts: string[]): TerminalResult {
       spawnTopDownRpgStarter(mode as 'small' | 'large')
       return { output: `Top-down RPG starter: ${mode}`, error: null, level: 'log' }
     }
+    case '/rpg3d': {
+      const mode = (args[0] ?? 'small').toLowerCase()
+      if (!['small', 'large'].includes(mode)) {
+        return { output: null, error: 'Usage: /rpg3d small|large', level: 'error' }
+      }
+      spawnRpg3dStarter(mode as 'small' | 'large')
+      return { output: `3D RPG starter: ${mode}`, error: null, level: 'log' }
+    }
     case '/fps': {
       if (args.length) {
         return { output: null, error: 'Usage: /fps', level: 'error' }
@@ -353,6 +373,33 @@ function runSlash(parts: string[]): TerminalResult {
       }
       exportMiniGamePreset(mode as 'platformer' | 'rpg' | 'fps')
       return { output: `Exported mini-game preset: ${mode}`, error: null, level: 'log' }
+    }
+    case '/exportrpg': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /exportrpg', level: 'error' }
+      }
+      spawnRpg3dGame()
+      return {
+        output:
+          '3D RPG scene ready — press Play. Export pack: /rpg3dexport or indie.rpg3d.exportPack()',
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/rpg3dexport': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /rpg3dexport', level: 'error' }
+      }
+      spawnRpg3dGame()
+      const html = buildRpg3dPackHTML()
+      const hasRpg3d = html.includes('__LOTUS_RPG_3D__')
+      const hasRpgHud = html.includes('__LOTUS_RPG_HUD__')
+      const snippet = html.slice(0, 480).replace(/\s+/g, ' ')
+      return {
+        output: `3D RPG pack HTML (${html.length} bytes)\n__LOTUS_RPG_3D__: ${hasRpg3d}\n__LOTUS_RPG_HUD__: ${hasRpgHud}\nSnippet: ${snippet}…`,
+        error: null,
+        level: 'log',
+      }
     }
     case '/exportpack': {
       const mode = (args[0] ?? '').toLowerCase()
@@ -491,6 +538,16 @@ function runSlash(parts: string[]): TerminalResult {
       spawnMainMenu()
       return { output: 'Main menu — Play or indie.flow.selectLevel(kind)', error: null, level: 'log' }
     }
+    case '/dialogue': {
+      const treeId = args[0] ?? 'village_elder'
+      mountRpgDialogueUi(document.body)
+      setRpgDialogueUiListener((snap) => renderRpgDialogueUi(snap, document.body))
+      const ok = startDialogue(treeId)
+      if (!ok) {
+        return { output: null, error: `Unknown dialogue tree: ${treeId}`, level: 'error' }
+      }
+      return { output: `Dialogue started: ${treeId}`, error: null, level: 'log' }
+    }
     case '/gridnavmesh': {
       let mask: number
       if (args.length > 1) {
@@ -539,6 +596,58 @@ function runSlash(parts: string[]): TerminalResult {
       })
       return {
         output: `Grid nav agent spawn started on layer ${layer} (${id} → [8,1,8])`,
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/quest': {
+      const sub = (args[0] ?? '').toLowerCase()
+      const id = args[1] ?? ''
+      if (sub === 'start') {
+        if (!id) return { output: null, error: 'Usage: /quest start <id>', level: 'error' }
+        const def = findQuestDef(id)
+        if (!def) return { output: null, error: `Unknown quest: ${id}`, level: 'error' }
+        const ok = startQuest(id)
+        if (!ok) {
+          return { output: null, error: `Quest not started (already active or completed): ${id}`, level: 'error' }
+        }
+        const state = getQuestState(id)
+        const obj = state?.objectives[0]
+        return {
+          output: [
+            `Quest started: ${def.title} (${id})`,
+            obj ? `  ${obj.description} (0/${obj.count})` : '',
+            'Press Play — collect Herb-tagged actors or use api.updateQuestObjective',
+            'Bridge: lotus.rpg.quests.start / getState',
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          error: null,
+          level: 'log',
+        }
+      }
+      return { output: null, error: 'Usage: /quest start <id>', level: 'error' }
+    }
+    case '/inventory': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /inventory', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — place one or run /rpg small', level: 'error' }
+      }
+      addItem(player, 'health_potion', 1)
+      addGold(player, 50)
+      const inv = getInventory(player)
+      const filled = inv.slots.filter(Boolean).length
+      return {
+        output: [
+          `RPG inventory demo → ${player.name}`,
+          `  health_potion ×${getItemCount(player, 'health_potion')}`,
+          `  gold: ${getGold(player)}`,
+          `  slots used: ${filled}/${inv.slots.length}`,
+          'Scripts: api.addItem / api.getGold · bridge: lotus.rpg.inventory',
+        ].join('\n'),
         error: null,
         level: 'log',
       }
@@ -768,7 +877,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

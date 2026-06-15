@@ -58,6 +58,20 @@ import {
   showLoseOverlay,
   showWinOverlay,
 } from './editor/miniGameHud'
+import {
+  buildRpg3dPackHTML,
+  exportRpg3dPack,
+  RPG3D_CAMERA_RIG_NAME,
+  RPG3D_DIALOGUE_VILLAGE_ELDER,
+  RPG3D_GAME_MANAGER_SCRIPT,
+  RPG3D_HERB_GOAL,
+  RPG3D_MANAGER_NAME,
+  RPG3D_PACK_ID,
+  RPG3D_QUEST_FIND_HERBS,
+  spawnRpg3dGame,
+  VILLAGE_ELDER_NAME,
+} from './editor/rpg3dExportPack'
+import { enableRpg3dHud } from './editor/rpg3dHud'
 import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
@@ -151,7 +165,9 @@ import {
   type MainMenuLevelKind,
 } from './editor/mainMenuFlow'
 import { sceneTransition, type SceneTransitionKind, type SceneTransitionPhase } from './editor/sceneTransitions'
+import { spawnRpg3dStarter } from './editor/rpg3dStarter'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
+import { cameraRigBridge } from './engine/cameraRig'
 import { resolveAnimParams } from './engine/animStateMachine'
 import {
   atlasIndexForCorner,
@@ -473,6 +489,58 @@ import {
   isSaveMenuPaused,
   showSaveMenu,
 } from './editor/exportSaveMenu'
+import {
+  addGold as rpgAddGold,
+  addItem as rpgAddItem,
+  applyInventory as rpgApplyInventory,
+  buildRpgCheckpointExtras,
+  DEFAULT_INVENTORY_SLOTS,
+  ensurePlayerRpgActor,
+  getActorHealth,
+  getActorMana,
+  getGold as rpgGetGold,
+  getInventory as rpgGetInventory,
+  getItemCount as rpgGetItemCount,
+  hasItem as rpgHasItem,
+  listItems,
+  registerItem,
+  removeItem as rpgRemoveItem,
+  setActorAttribute,
+  setGold as rpgSetGold,
+  useItem as rpgUseItem,
+} from './engine/rpgInventory'
+import {
+  completeQuest,
+  findQuestDef,
+  getActiveQuests,
+  getQuestState,
+  listQuestDefs,
+  resetQuests,
+  restoreQuestState,
+  serializeQuestState,
+  startQuest,
+  updateObjective,
+} from './engine/rpgQuests'
+import { refreshQuestTracker } from './editor/rpgQuestHud'
+import {
+  advance as advanceDialogue,
+  choose as chooseDialogue,
+  buildExportDialoguePayload,
+  getCurrentNode as getDialogueNode,
+  getCurrentSnapshot as getDialogueSnapshot,
+  isActive as isDialogueActive,
+  listDialogueTrees,
+  registerDialogueTree,
+  resetRpgDialogue,
+  setRpgDialogueUiListener,
+  startDialogue,
+} from './engine/rpgDialogue'
+import { VILLAGE_ELDER_DIALOGUE } from './engine/rpgDialogueData'
+import {
+  mountRpgDialogueUi,
+  renderRpgDialogueUi,
+  unmountRpgDialogueUi,
+} from './editor/rpgDialogueUi'
 
 // Global bridge — browser devtools + external tooling can drive the live editor
 const lotusBridge = {
@@ -629,6 +697,8 @@ const lotusBridge = {
     useEditor.getState().setStatus(ok ? 'LightProbeGrid baked (approx)' : 'GI probe bake failed')
     return { ok }
   },
+  /** Wave 91 — SpringArm3D-style third-person camera rig */
+  cameraRig: cameraRigBridge,
   character: {
     ready: isCharacterControllerReady,
     isOnFloor: characterIsOnFloor,
@@ -1032,6 +1102,25 @@ const lotusBridge = {
       releaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
       captureScreenshot: () => captureExportScreenshot(),
     },
+    /** Wave 95 — 3D RPG export pack (camera rig + inventory + dialogue + quests) */
+    rpg3d: {
+      packId: RPG3D_PACK_ID,
+      managerName: RPG3D_MANAGER_NAME,
+      cameraRigName: RPG3D_CAMERA_RIG_NAME,
+      villageElderName: VILLAGE_ELDER_NAME,
+      dialogueId: RPG3D_DIALOGUE_VILLAGE_ELDER,
+      questId: RPG3D_QUEST_FIND_HERBS,
+      herbGoal: RPG3D_HERB_GOAL,
+      gameScript: RPG3D_GAME_MANAGER_SCRIPT,
+      spawnStarter: () => spawnRpg3dStarter('small'),
+      spawn: () => spawnRpg3dGame(),
+      showHud: () => {
+        enableRpg3dHud()
+        return true
+      },
+      buildPackHTML: () => buildRpg3dPackHTML(),
+      exportPack: () => exportRpg3dPack(),
+    },
     achievements: {
       list: (packId?: string) => achievementsForPack(packId),
       unlock: (id: string, packId?: string) => unlockAchievement(id, packId).newlyUnlocked,
@@ -1164,6 +1253,7 @@ const lotusBridge = {
     spawnCharacterStarter,
     spawnPlatformerStarter,
     spawnTopDownRpgStarter,
+    spawnRpg3dStarter,
     spawnFpsStarter,
     spawnIndieMpTemplate,
     spawnIndieMpDeathmatch,
@@ -1512,6 +1602,107 @@ const lotusBridge = {
     showMenu: () => showSaveMenu(),
     hideMenu: () => hideSaveMenu(),
     isPaused: () => isSaveMenuPaused(),
+  },
+  /** Wave 92 — RPG inventory lite + GAS Health/Mana on player actor */
+  rpg: {
+    defaultSlots: DEFAULT_INVENTORY_SLOTS,
+    listItems: () => listItems(),
+    registerItem: (def: import('./engine/rpgInventory').ItemDef) => registerItem(def),
+    player: () => ensurePlayerRpgActor(world.playerStart()),
+    inventory: {
+      get: (actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgGetInventory(p) : { slots: [], gold: 0 }
+      },
+      apply: (snapshot: import('./engine/rpgInventory').InventorySnapshot, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgApplyInventory(p, snapshot) : false
+      },
+      addItem: (itemId: string, quantity?: number, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgAddItem(p, itemId, quantity) : false
+      },
+      removeItem: (itemId: string, quantity?: number, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgRemoveItem(p, itemId, quantity) : false
+      },
+      hasItem: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgHasItem(p, itemId) : false
+      },
+      getItemCount: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgGetItemCount(p, itemId) : 0
+      },
+      getGold: (actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgGetGold(p) : 0
+      },
+      addGold: (amount: number, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgAddGold(p, amount) : 0
+      },
+      setGold: (amount: number, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgSetGold(p, amount) : 0
+      },
+      useItem: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgUseItem(p, itemId) : false
+      },
+    },
+    stats: {
+      getHealth: (actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? getActorHealth(p) : null
+      },
+      getMana: (actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? getActorMana(p) : null
+      },
+      setAttribute: (name: string, value: number, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? setActorAttribute(p, name, value) : false
+      },
+    },
+    checkpointExtras: () => buildRpgCheckpointExtras(world.playerStart()),
+    /** Wave 94 — Godot-style quest log / objective tracker */
+    quests: {
+      defs: () => listQuestDefs(),
+      find: (id: string) => findQuestDef(id),
+      start: (id: string) => startQuest(id),
+      updateObjective: (questId: string, objectiveId: string, current: number) =>
+        updateObjective(questId, objectiveId, current),
+      complete: (id: string) => completeQuest(id),
+      getState: (id: string) => getQuestState(id),
+      getActive: () => getActiveQuests(),
+      serialize: () => serializeQuestState(),
+      restore: (data: unknown) => restoreQuestState(data),
+      reset: () => resetQuests(),
+      refreshTracker: (parent?: HTMLElement) => refreshQuestTracker(parent),
+    },
+    /** Wave 93 — Godot Dialogue Manager / visual novel lite */
+    dialogue: {
+      startDialogue,
+      advance: advanceDialogue,
+      choose: chooseDialogue,
+      isActive: isDialogueActive,
+      getCurrentNode: getDialogueNode,
+      getSnapshot: getDialogueSnapshot,
+      reset: resetRpgDialogue,
+      listTrees: listDialogueTrees,
+      registerTree: registerDialogueTree,
+      villageElder: VILLAGE_ELDER_DIALOGUE,
+      exportPayload: buildExportDialoguePayload,
+      mountUi: (parent?: HTMLElement) => {
+        mountRpgDialogueUi(parent ?? document.body)
+        setRpgDialogueUiListener((snap) => renderRpgDialogueUi(snap, parent ?? document.body))
+      },
+      unmountUi: () => {
+        setRpgDialogueUiListener(null)
+        unmountRpgDialogueUi()
+      },
+    },
   },
   /** Wave 60 — cell load progress (export UX + devtools) */
   streaming: {

@@ -122,6 +122,9 @@ function touchSlotFor(action) {
 const MINIGAME_ENABLED = window.__LOTUS_MINIGAME__ === true || window.__LOTUS_MINIGAME__ === 'true'
 const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
 const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
+const DIALOGUE_CATALOG = window.__LOTUS_DIALOGUE__ ?? null
+const RPG_3D_ENABLED = window.__LOTUS_RPG_3D__ === true || window.__LOTUS_RPG_3D__ === 'true'
+const RPG_HUD_ENABLED = window.__LOTUS_RPG_HUD__ === true || window.__LOTUS_RPG_HUD__ === 'true'
 const ACHIEVEMENTS_DEF = window.__LOTUS_ACHIEVEMENTS__ ?? null
 const ACHIEVEMENT_PROGRESS_DEF = window.__LOTUS_ACHIEVEMENT_PROGRESS__ ?? null
 const ACHIEVEMENT_STORAGE_PREFIX = 'lotus-engine.achievements'
@@ -967,6 +970,60 @@ function exportSetAchievementProgress(id, current, max) {
   return false
 }
 
+/** Wave 95 — export runtime inventory mirror (rpg3d pack scripts). */
+const exportInventory = { gold: 0, slots: [] }
+const EXPORT_INVENTORY_SLOTS = 20
+
+function exportAddItem(itemId, quantity = 1) {
+  const q = Math.max(1, Math.floor(quantity))
+  let remaining = q
+  for (const slot of exportInventory.slots) {
+    if (slot.itemId !== itemId) continue
+    const room = 99 - slot.quantity
+    if (room <= 0) continue
+    const add = Math.min(room, remaining)
+    slot.quantity += add
+    remaining -= add
+    if (remaining <= 0) return true
+  }
+  while (remaining > 0 && exportInventory.slots.length < EXPORT_INVENTORY_SLOTS) {
+    const add = Math.min(99, remaining)
+    exportInventory.slots.push({ itemId, quantity: add })
+    remaining -= add
+  }
+  return remaining <= 0
+}
+
+function exportRemoveItem(itemId, quantity = 1) {
+  let remaining = Math.max(1, Math.floor(quantity))
+  for (let i = exportInventory.slots.length - 1; i >= 0 && remaining > 0; i--) {
+    const slot = exportInventory.slots[i]
+    if (slot.itemId !== itemId) continue
+    const take = Math.min(slot.quantity, remaining)
+    slot.quantity -= take
+    remaining -= take
+    if (slot.quantity <= 0) exportInventory.slots.splice(i, 1)
+  }
+  return remaining <= 0
+}
+
+function exportHasItem(itemId) {
+  return exportInventory.slots.some((s) => s.itemId === itemId && s.quantity > 0)
+}
+
+function exportGetItemCount(itemId) {
+  return exportInventory.slots.reduce((n, s) => (s.itemId === itemId ? n + s.quantity : n), 0)
+}
+
+function exportGetGold() {
+  return exportInventory.gold
+}
+
+function exportAddGold(amount) {
+  exportInventory.gold = Math.max(0, exportInventory.gold + Math.floor(amount))
+  return exportInventory.gold
+}
+
 function wireExportMiniGameHud() {
   api.on('game_won', () => showMiniGameOverlay('win', 'YOU WIN!', '#46a758'))
   api.on('game_lost', () => showMiniGameOverlay('lose', 'GAME OVER', '#e5484d'))
@@ -980,6 +1037,281 @@ function wireExportMiniGameHud() {
     const current = Number(ach?.current ?? 0)
     const max = Number(ach?.max ?? 1)
     showAchievementProgressToast(title, current, max, ach?.icon ?? '🏆')
+  })
+}
+
+/** Wave 93 — RPG dialogue trees (#lotus-dialogue-overlay, __LOTUS_DIALOGUE__). */
+const DIALOGUE_NPC_TAG_W93 = 'DialogueNPC'
+const DIALOGUE_INTERACT_RADIUS_W93 = 2.5
+const DIALOGUE_OVERLAY_ID_W93 = 'lotus-dialogue-overlay'
+let exportDialogueTreeId = null
+let exportDialogueNodeId = null
+let exportDialogueRoot = null
+let exportDialogueKeyHandler = null
+let exportDialogueInteractJust = false
+
+function exportDialogueTrees() {
+  return DIALOGUE_CATALOG?.trees ?? {}
+}
+
+function exportDialogueNode(treeId, nodeId) {
+  const tree = exportDialogueTrees()[treeId]
+  if (!tree?.nodes) return null
+  return tree.nodes.find((n) => n.id === nodeId) ?? null
+}
+
+function exportDialogueEnd() {
+  exportDialogueTreeId = null
+  exportDialogueNodeId = null
+  if (exportDialogueRoot) exportDialogueRoot.classList.remove('visible')
+}
+
+function exportDialogueShow(treeId, nodeId) {
+  const node = exportDialogueNode(treeId, nodeId)
+  if (!node) {
+    exportDialogueEnd()
+    return false
+  }
+  exportDialogueTreeId = treeId
+  exportDialogueNodeId = nodeId
+  exportRenderDialogueUi(node)
+  return true
+}
+
+function exportStartDialogue(treeId) {
+  const tree = exportDialogueTrees()[treeId]
+  if (!tree?.startId) return false
+  return exportDialogueShow(treeId, tree.startId)
+}
+
+function exportAdvanceDialogue() {
+  if (!exportDialogueTreeId || !exportDialogueNodeId) return false
+  const node = exportDialogueNode(exportDialogueTreeId, exportDialogueNodeId)
+  if (!node) {
+    exportDialogueEnd()
+    return false
+  }
+  if (node.choices?.length) return false
+  if (node.nextId) return exportDialogueShow(exportDialogueTreeId, node.nextId)
+  exportDialogueEnd()
+  return true
+}
+
+function exportChooseDialogue(index) {
+  if (!exportDialogueTreeId || !exportDialogueNodeId) return false
+  const node = exportDialogueNode(exportDialogueTreeId, exportDialogueNodeId)
+  const choice = node?.choices?.[index]
+  if (!choice) return false
+  return exportDialogueShow(exportDialogueTreeId, choice.nextId)
+}
+
+function exportDialogueActive() {
+  return exportDialogueTreeId !== null && exportDialogueNodeId !== null
+}
+
+function exportRenderDialogueUi(node) {
+  if (!exportDialogueRoot) return
+  exportDialogueRoot.classList.add('visible')
+  const speaker = exportDialogueRoot.querySelector('[data-dialogue-speaker]')
+  const body = exportDialogueRoot.querySelector('[data-dialogue-body]')
+  const choicesEl = exportDialogueRoot.querySelector('[data-dialogue-choices]')
+  const hint = exportDialogueRoot.querySelector('[data-dialogue-hint]')
+  if (!speaker || !body || !choicesEl || !hint) return
+  speaker.textContent = node.speaker ?? ''
+  speaker.style.display = node.speaker ? 'block' : 'none'
+  body.textContent = node.text ?? ''
+  choicesEl.innerHTML = ''
+  const choices = node.choices ?? []
+  if (choices.length) {
+    choices.forEach((c, i) => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'lotus-dialogue-choice'
+      btn.textContent = `${i + 1}. ${c.text}`
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        exportChooseDialogue(i)
+      })
+      choicesEl.appendChild(btn)
+    })
+    hint.textContent = 'Choose a response · 1–9 keys'
+  } else {
+    hint.textContent = node.nextId ? 'Press E, Space, or Enter to continue' : 'Press E, Space, or Enter to close'
+  }
+}
+
+function initExportDialogue() {
+  if (!DIALOGUE_CATALOG?.trees) return
+  if (exportDialogueRoot) return
+  exportDialogueRoot = document.createElement('div')
+  exportDialogueRoot.id = DIALOGUE_OVERLAY_ID_W93
+  exportDialogueRoot.setAttribute('role', 'dialog')
+  exportDialogueRoot.setAttribute('aria-label', 'Dialogue')
+  exportDialogueRoot.innerHTML = `<div class="lotus-dialogue-panel">
+    <div class="lotus-dialogue-speaker" data-dialogue-speaker></div>
+    <div class="lotus-dialogue-body" data-dialogue-body></div>
+    <div class="lotus-dialogue-choices" data-dialogue-choices></div>
+    <div class="lotus-dialogue-hint" data-dialogue-hint></div>
+  </div>`
+  document.body.appendChild(exportDialogueRoot)
+  if (!exportDialogueKeyHandler) {
+    exportDialogueKeyHandler = (e) => {
+      if (!exportDialogueActive()) return
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault()
+        exportAdvanceDialogue()
+      }
+      const digit = e.code.startsWith('Digit') ? Number(e.code.replace('Digit', '')) : 0
+      if (digit >= 1 && digit <= 9) {
+        const idx = digit - 1
+        const choiceBtns = exportDialogueRoot?.querySelectorAll('.lotus-dialogue-choice') ?? []
+        if (idx < choiceBtns.length) {
+          e.preventDefault()
+          exportChooseDialogue(idx)
+        }
+      }
+    }
+    window.addEventListener('keydown', exportDialogueKeyHandler)
+  }
+}
+
+function tickExportDialogueInteract(pos) {
+  if (!DIALOGUE_CATALOG?.trees || !pos) return
+  const interact = exportDialogueInteractJust || pressed.has('KeyE')
+  exportDialogueInteractJust = false
+  if (exportDialogueActive()) {
+    if (interact) exportAdvanceDialogue()
+    return
+  }
+  if (!interact) return
+  let best = null
+  const r2 = DIALOGUE_INTERACT_RADIUS_W93 * DIALOGUE_INTERACT_RADIUS_W93
+  for (const a of actors.values()) {
+    const tags = a.data.tags ?? []
+    if (!tags.includes(DIALOGUE_NPC_TAG_W93)) continue
+    const treeId = a.data.scriptVars?.dialogueId
+    if (typeof treeId !== 'string' || !treeId.trim() || !exportDialogueTrees()[treeId.trim()]) continue
+    const p = new THREE.Vector3()
+    a.root.getWorldPosition(p)
+    const dx = p.x - pos.x
+    const dz = p.z - pos.z
+    const distSq = dx * dx + dz * dz
+    if (distSq > r2) continue
+    if (!best || distSq < best.distSq) best = { treeId: treeId.trim(), distSq }
+  }
+  if (best) exportStartDialogue(best.treeId)
+}
+
+/** Wave 95 — RPG HUD mirror: health bar, quest tracker, inventory panel, dialogue. */
+let rpgHudRoot = null
+let rpgDialogueLines = []
+let rpgDialogueIndex = 0
+let rpgDialogueSpeaker = ''
+
+function ensureRpgHudRoot() {
+  if (rpgHudRoot) return rpgHudRoot
+  rpgHudRoot = document.createElement('div')
+  rpgHudRoot.id = 'lotus-rpg-hud-root'
+  rpgHudRoot.innerHTML = `<div class="lotus-rpg-hp-wrap">
+    <div class="lotus-rpg-hp-label">HP</div>
+    <div class="lotus-rpg-hp-bar"><div class="lotus-rpg-hp-fill" id="lotus-rpg-hp-fill" style="width:100%"></div></div>
+  </div>
+  <div class="lotus-rpg-quest" id="lotus-rpg-quest">
+    <div class="lotus-rpg-quest-title">QUEST</div>
+    <div id="lotus-rpg-quest-text">Talk to the Village Elder</div>
+  </div>
+  <div class="lotus-rpg-inventory" id="lotus-rpg-inventory">
+    <div class="lotus-rpg-inventory-title">Inventory</div>
+    <ul id="lotus-rpg-inventory-list"></ul>
+    <div class="lotus-rpg-inventory-hint">Press I to close</div>
+  </div>
+  <div class="lotus-rpg-dialogue" id="lotus-rpg-dialogue">
+    <div class="lotus-rpg-dialogue-speaker" id="lotus-rpg-dialogue-speaker"></div>
+    <div class="lotus-rpg-dialogue-text" id="lotus-rpg-dialogue-text"></div>
+    <div class="lotus-rpg-dialogue-hint">Interact / E — next line</div>
+  </div>`
+  document.body.appendChild(rpgHudRoot)
+  return rpgHudRoot
+}
+
+function rpgSetHpFraction(fraction) {
+  const fill = document.getElementById('lotus-rpg-hp-fill')
+  if (fill) fill.style.width = `${Math.max(0, Math.min(1, fraction)) * 100}%`
+}
+
+function rpgSetQuestText(text) {
+  const el = document.getElementById('lotus-rpg-quest-text')
+  if (el) el.textContent = text
+}
+
+function rpgRenderInventory(items) {
+  const list = document.getElementById('lotus-rpg-inventory-list')
+  if (!list) return
+  if (!items?.length) list.innerHTML = '<li><em>Empty</em></li>'
+  else list.innerHTML = items.map((item) => `<li>${item}</li>`).join('')
+}
+
+function rpgShowInventory(open) {
+  const panel = document.getElementById('lotus-rpg-inventory')
+  if (panel) panel.classList.toggle('open', !!open)
+}
+
+function rpgShowDialogueLine() {
+  const panel = document.getElementById('lotus-rpg-dialogue')
+  const speakerEl = document.getElementById('lotus-rpg-dialogue-speaker')
+  const textEl = document.getElementById('lotus-rpg-dialogue-text')
+  if (!panel || !speakerEl || !textEl) return
+  if (rpgDialogueIndex >= rpgDialogueLines.length) {
+    panel.classList.remove('open')
+    rpgDialogueLines = []
+    rpgDialogueIndex = 0
+    api.emit('dialogue_end')
+    return
+  }
+  speakerEl.textContent = rpgDialogueSpeaker
+  textEl.textContent = rpgDialogueLines[rpgDialogueIndex]
+  panel.classList.add('open')
+}
+
+function wireExportRpg3dHud() {
+  ensureRpgHudRoot()
+  api.on('rpg_hud_ready', () => rpgSetHpFraction(1))
+  api.on('hp_update', (frac) => rpgSetHpFraction(Number(frac)))
+  api.on('quest_update', (text) => rpgSetQuestText(String(text ?? '')))
+  api.on('quest_complete', () => rpgSetQuestText('Quest complete: Herbs delivered!'))
+  api.on('inventory_toggle', (open, items) => {
+    rpgRenderInventory(Array.isArray(items) ? items : [])
+    rpgShowInventory(open === true)
+  })
+  api.on('dialogue_start', (id, lines) => {
+    const speaker = String(id ?? '')
+    rpgDialogueSpeaker = speaker === 'village_elder' ? 'Village Elder' : speaker
+    rpgDialogueLines = Array.isArray(lines) ? lines.map((l) => String(l)) : []
+    rpgDialogueIndex = 0
+    rpgShowDialogueLine()
+  })
+  api.on('dialogue_advance', () => {
+    rpgDialogueIndex++
+    rpgShowDialogueLine()
+  })
+  api.on('quest_started', (q) => {
+    const o = q?.objectives?.[0]
+    if (o) rpgSetQuestText(`${q.title}: ${o.description}`)
+  })
+  api.on('quest_updated', (q) => {
+    const o = q?.objectives?.[0]
+    if (o) rpgSetQuestText(`${q.title} (${o.current}/${o.count})`)
+  })
+  api.on('quest_completed', (q) => {
+    rpgSetQuestText(q?.title ? `${q.title} complete!` : 'Quest complete!')
+  })
+  if (MINIGAME_ENABLED || RPG_3D_ENABLED) {
+    api.on('game_won', () => showMiniGameOverlay('win', 'QUEST COMPLETE!', '#46a758'))
+  }
+  api.on('achievement_unlock', (ach) => {
+    const title = ach?.title ?? 'Achievement Unlocked'
+    const subtitle = ach?.description ?? ''
+    showAchievementToast(title, subtitle, ach?.icon ?? '🏆')
   })
 }
 
@@ -2084,6 +2416,7 @@ function exportCheckpointPayload() {
       pawnMode === 'fly'
         ? [pawnCam.position.x, pawnCam.position.y, pawnCam.position.z]
         : [feet.x, feet.y, feet.z],
+    quests: exportSerializeQuestState(),
   }
 }
 
@@ -2095,6 +2428,7 @@ function applyExportCheckpoint(data) {
     else feet.set(pawn[0], pawn[1], pawn[2])
   }
   if (typeof data.playTime === 'number') clock = data.playTime
+  if (data.quests !== undefined) exportRestoreQuestState(data.quests)
 }
 
 function refreshExportSaveMenuHints() {
@@ -2591,6 +2925,134 @@ async function downloadExportCloudSaveJson() {
   return doc
 }
 
+// ---- Wave 94 — RPG quest log lite (mirrors rpgQuests.ts) ----
+const EXPORT_QUEST_DEFS = {
+  find_herbs: {
+    id: 'find_herbs',
+    title: 'Find Herbs',
+    objectives: [{ id: 'collect_herbs', description: 'Collect 3 herbs', count: 3, target: 'Herb' }],
+  },
+}
+const exportQuestRuntime = new Map()
+let exportQuestTrackerEl = null
+
+function exportFindQuestDef(id) {
+  return EXPORT_QUEST_DEFS[id] ?? null
+}
+
+function exportEnrichQuest(runtime) {
+  const def = exportFindQuestDef(runtime.id)
+  if (!def) return null
+  return {
+    ...runtime,
+    title: def.title,
+    objectives: runtime.objectives.map((o) => {
+      const od = def.objectives.find((d) => d.id === o.id)
+      return { ...o, description: od?.description ?? o.id, target: od?.target ?? '' }
+    }),
+  }
+}
+
+function exportSerializeQuestState() {
+  const quests = {}
+  for (const [id, runtime] of exportQuestRuntime) quests[id] = { ...runtime, objectives: runtime.objectives.map((o) => ({ ...o })) }
+  return { version: 1, quests }
+}
+
+function exportRestoreQuestState(data) {
+  if (!data || typeof data !== 'object' || !data.quests) return false
+  exportQuestRuntime.clear()
+  for (const [id, runtime] of Object.entries(data.quests)) {
+    const def = exportFindQuestDef(id)
+    if (!def || !runtime) continue
+    exportQuestRuntime.set(id, {
+      id,
+      state: runtime.state,
+      objectives: def.objectives.map((o) => {
+        const prev = runtime.objectives?.find((p) => p.id === o.id)
+        const current = Math.max(0, Math.min(Math.floor(prev?.current ?? 0), o.count))
+        return { id: o.id, current, count: o.count }
+      }),
+    })
+  }
+  return true
+}
+
+function exportStartQuest(id) {
+  const def = exportFindQuestDef(id)
+  if (!def) return false
+  const existing = exportQuestRuntime.get(id)
+  if (existing?.state === 'active' || existing?.state === 'completed') return false
+  exportQuestRuntime.set(id, {
+    id,
+    state: 'active',
+    objectives: def.objectives.map((o) => ({ id: o.id, current: 0, count: o.count })),
+  })
+  return true
+}
+
+function exportUpdateQuestObjective(questId, objectiveId, current) {
+  const runtime = exportQuestRuntime.get(questId)
+  if (!runtime || runtime.state !== 'active') return false
+  const obj = runtime.objectives.find((o) => o.id === objectiveId)
+  if (!obj) return false
+  obj.current = Math.max(0, Math.min(Math.floor(current), obj.count))
+  if (runtime.objectives.every((o) => o.current >= o.count)) runtime.state = 'completed'
+  return true
+}
+
+function exportCompleteQuest(id) {
+  const runtime = exportQuestRuntime.get(id)
+  if (!runtime || runtime.state !== 'active') return false
+  for (const o of runtime.objectives) o.current = o.count
+  runtime.state = 'completed'
+  return true
+}
+
+function exportGetQuestState(id) {
+  const runtime = exportQuestRuntime.get(id)
+  return runtime ? exportEnrichQuest(runtime) : null
+}
+
+function exportEmitQuestSignal(questId, signal) {
+  const view = exportGetQuestState(questId)
+  if (!view) return
+  for (const h of signalHandlers.get(signal) ?? []) {
+    try { h(view) } catch (e) { console.warn('signal', signal, e) }
+  }
+}
+
+function showExportQuestTracker(quest) {
+  const obj = quest?.objectives?.[0]
+  if (!obj) {
+    exportQuestTrackerEl?.remove()
+    exportQuestTrackerEl = null
+    return
+  }
+  const pct = obj.count > 0 ? Math.round((obj.current / obj.count) * 100) : 0
+  exportQuestTrackerEl?.remove()
+  exportQuestTrackerEl = document.createElement('div')
+  exportQuestTrackerEl.id = 'lotus-rpg-quest-tracker'
+  exportQuestTrackerEl.className = 'lotus-rpg-quest-tracker'
+  exportQuestTrackerEl.innerHTML = `<div class="lotus-rpg-quest-title">📜 ${quest.title}</div>
+    <div class="lotus-rpg-quest-objective">${obj.description}</div>
+    <div class="lotus-rpg-quest-progress">${obj.current} / ${obj.count}</div>
+    <div class="lotus-rpg-quest-bar"><div class="lotus-rpg-quest-bar-fill" style="width:${pct}%"></div></div>`
+  document.body.appendChild(exportQuestTrackerEl)
+}
+
+function wireExportQuestHud() {
+  if (!signalHandlers.has('quest_started')) signalHandlers.set('quest_started', [])
+  if (!signalHandlers.has('quest_updated')) signalHandlers.set('quest_updated', [])
+  if (!signalHandlers.has('quest_completed')) signalHandlers.set('quest_completed', [])
+  signalHandlers.get('quest_started').push((q) => showExportQuestTracker(q))
+  signalHandlers.get('quest_updated').push((q) => showExportQuestTracker(q))
+  signalHandlers.get('quest_completed').push(() => {
+    exportQuestTrackerEl?.remove()
+    exportQuestTrackerEl = null
+  })
+}
+
 // ---- scripts & behaviors ----
 const api = {
   log: (...a) => console.log('[lotus]', ...a),
@@ -2654,27 +3116,61 @@ const api = {
   changeScene: (name) => api.loadLevel(name),
   saveGame: (slot, data) => {
     if (!SAVES_ENABLED) return false
-    const payload =
+    const base =
       data !== undefined
-        ? data
+        ? (typeof data === 'object' && data !== null ? data : { data })
         : {
             playTime: clock,
             pawn: pawnMode === 'fly' ? [pawnCam.position.x, pawnCam.position.y, pawnCam.position.z] : [feet.x, feet.y, feet.z],
           }
+    const payload = { ...base, quests: exportSerializeQuestState() }
     return exportSaveCheckpoint(slot, payload)
   },
-  loadGame: (slot) => exportLoadCheckpoint(slot),
+  loadGame: (slot) => {
+    const row = exportLoadCheckpoint(slot)
+    if (row?.quests !== undefined) exportRestoreQuestState(row.quests)
+    return row
+  },
   listSaveSlots: () => exportListSaveSlots(),
   unlockAchievement: (id) => exportUnlockAchievement(id),
   setAchievementProgress: (id, current, max) => exportSetAchievementProgress(id, current, max),
   getAchievementProgress: (id) => exportGetAchievementProgress(id),
+  startQuest: (id) => {
+    const ok = exportStartQuest(id)
+    if (ok) exportEmitQuestSignal(id, 'quest_started')
+    return ok
+  },
+  updateQuestObjective: (questId, objectiveId, current) => {
+    const before = exportGetQuestState(questId)
+    const ok = exportUpdateQuestObjective(questId, objectiveId, current)
+    if (!ok) return false
+    const after = exportGetQuestState(questId)
+    if (after?.state === 'completed') exportEmitQuestSignal(questId, 'quest_completed')
+    else if (before?.state === 'active') exportEmitQuestSignal(questId, 'quest_updated')
+    return true
+  },
+  completeQuest: (id) => {
+    const ok = exportCompleteQuest(id)
+    if (ok) exportEmitQuestSignal(id, 'quest_completed')
+    return ok
+  },
+  getQuestState: (id) => exportGetQuestState(id),
+  addItem: (itemId, quantity) => exportAddItem(itemId, quantity),
+  removeItem: (itemId, quantity) => exportRemoveItem(itemId, quantity),
+  hasItem: (itemId) => exportHasItem(itemId),
+  getItemCount: (itemId) => exportGetItemCount(itemId),
+  getGold: () => exportGetGold(),
+  addGold: (amount) => exportAddGold(amount),
 }
 function compileScripts() {
   ticks = []
   scriptTimers = []
   triggerState.clear()
+  exportQuestRuntime.clear()
   resetSignals()
+  wireExportQuestHud()
   if (MINIGAME_ENABLED) wireExportMiniGameHud()
+  if (RPG_HUD_ENABLED || RPG_3D_ENABLED) wireExportRpg3dHud()
   for (const a of actors.values()) {
     const src = a.data.script
     if (!src) continue
@@ -2877,6 +3373,7 @@ async function boot() {
   bindPawnInput()
   initExportTouchHud()
   initExportSaveMenu()
+  initExportDialogue()
   if (PACK_CHANGELOG_HTML && PACK_CHANGELOG_BOOT) {
     if (overlay) overlay.textContent = 'Release notes'
     await showPackChangelogBoot()
@@ -3057,6 +3554,7 @@ async function boot() {
       for (const [a, t] of ticks) { try { t(simDt) } catch (e) { /* script error */ } }
     }
     if (simDt > 0) tickTriggerVolumes(pawnMode === 'fly' ? pawnCam.position : feet)
+    if (simDt > 0) tickExportDialogueInteract(pawnMode === 'fly' ? pawnCam.position : feet)
     if (simDt > 0) {
       for (const a of actors.values()) {
         for (const b of a.data.behaviors ?? []) {

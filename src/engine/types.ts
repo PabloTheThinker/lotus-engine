@@ -644,6 +644,8 @@ export interface EnvironmentSettings {
   postGradingCompareB?: 'neutral' | 'cinematic' | 'highContrast'
   /** Use Rapier kinematic character for first/third person pawn */
   useRapierCharacter?: boolean
+  /** Wave 91 — SpringArm3D-style third-person camera rig (boom, collision pull-in, smoothed orbit) */
+  rpgCameraRig?: boolean
   /** Rapier raycast vehicle for pawn vehicle mode (Wave 11) */
   useRaycastVehicle?: boolean
   /** Merge static meshes at export via BatchedMesh payloads */
