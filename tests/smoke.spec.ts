@@ -10744,6 +10744,15 @@ test('wave 70 backupCheckpointToIndexedDB round-trip stores lotus-engine.cloud.{
 }) => {
   await bootEditor(page)
 
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase('lotus-engine-cloud-saves-v1')
+      req.onsuccess = () => resolve()
+      req.onblocked = () => resolve()
+      req.onerror = () => resolve()
+    })
+  })
+
   const result = await page.evaluate(async () => {
     const v = window.lotus! as typeof window.lotus & {
       world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
@@ -10757,12 +10766,7 @@ test('wave 70 backupCheckpointToIndexedDB round-trip stores lotus-engine.cloud.{
     v.world.environment.saveSlotsEnabled = true
     v.world.environment.cloudSaveBackup = true
     const ok = await v.save.backupToCloud('cloud-a', { hp: 99, gems: 3 })
-    let restored: unknown = null
-    for (let i = 0; i < 20; i++) {
-      restored = await v.save.restoreFromCloud('cloud-a')
-      if (restored != null) break
-      await new Promise((r) => setTimeout(r, 25))
-    }
+    const restored = await v.save.restoreFromCloud('cloud-a')
     const slots = await v.save.listCloudSlots()
     return { ok, restored, slots }
   })

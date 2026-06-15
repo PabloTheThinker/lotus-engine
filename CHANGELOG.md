@@ -4,6 +4,15 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — CI fix: material flash + IndexedDB round-trip
+
+### Fixed
+- `MaterialEditor` — reload graph when `actor.materialGraph` changes; re-pulse upstream flash on channel pin click (900ms timer expired before slow CI assertions)
+- `cloudSaveStub` — read-after-write verify on backup; reset cached IDB connection on errors
+- `smoke.spec.ts` — clear cloud IDB before wave 70 round-trip test
+
+---
+
 ## 2026-06-14 — CI fix: flaky Playwright tests on GitHub Actions
 
 ### Fixed

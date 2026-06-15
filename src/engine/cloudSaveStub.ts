@@ -37,7 +37,10 @@ function openDb(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE)
       }
       req.onsuccess = () => resolve(req.result)
-      req.onerror = () => reject(req.error ?? new Error('IndexedDB open failed'))
+      req.onerror = () => {
+        dbPromise = null
+        reject(req.error ?? new Error('IndexedDB open failed'))
+      }
     })
   }
   return dbPromise
@@ -62,14 +65,27 @@ export async function backupCheckpointToIndexedDB(slot: string, data: unknown): 
       slot: sanitizeSlot(slot),
       data,
     }
+    const key = cloudKey(slot)
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite')
-      tx.objectStore(STORE).put(payload, cloudKey(slot))
+      tx.objectStore(STORE).put(payload, key)
       tx.oncomplete = () => resolve()
       tx.onerror = () => reject(tx.error ?? new Error('IDB put failed'))
     })
-    return true
+    // Read-after-write — IDB put can resolve before the row is visible to a follow-up get on slow runners.
+    for (let i = 0; i < 12; i++) {
+      const row = await new Promise<{ data?: unknown } | undefined>((resolve, reject) => {
+        const tx = db.transaction(STORE, 'readonly')
+        const req = tx.objectStore(STORE).get(key)
+        req.onsuccess = () => resolve(req.result as { data?: unknown } | undefined)
+        req.onerror = () => reject(req.error ?? new Error('IDB verify get failed'))
+      })
+      if (row?.data !== undefined) return true
+      await new Promise((r) => setTimeout(r, 25))
+    }
+    return false
   } catch {
+    dbPromise = null
     return false
   }
 }

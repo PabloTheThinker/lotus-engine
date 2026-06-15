@@ -465,6 +465,7 @@ export function MaterialEditor() {
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const upstreamFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastActor = useRef<string | null>(null)
+  const lastGraphSig = useRef<string | null>(null)
   const canvasRef = useRef<HTMLDivElement>(null)
   const dragState = useRef<{ nodeId: string; dx: number; dy: number } | null>(null)
   const panState = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
@@ -485,8 +486,15 @@ export function MaterialEditor() {
   }, [actor?.id])
 
   useEffect(() => {
-    if (actor && actor.id !== lastActor.current) {
+    if (!actor) {
+      lastActor.current = null
+      lastGraphSig.current = null
+      return
+    }
+    const graphSig = JSON.stringify(actor.materialGraph ?? null)
+    if (actor.id !== lastActor.current || graphSig !== lastGraphSig.current) {
       lastActor.current = actor.id
+      lastGraphSig.current = graphSig
       const g = actor.materialGraph
         ? (JSON.parse(JSON.stringify(actor.materialGraph)) as MaterialGraph)
         : emptyMaterialGraph()
@@ -495,7 +503,6 @@ export function MaterialEditor() {
       setDirty(false)
       setPendingFrom(null)
     }
-    if (!actor) lastActor.current = null
   }, [actor])
 
   const wiredChannels = useMemo(() => {
@@ -527,7 +534,7 @@ export function MaterialEditor() {
     const ids = nodesInSoloChannel(graph, isolateChannel)
     setUpstreamFlashIds(ids)
     if (upstreamFlashTimer.current) clearTimeout(upstreamFlashTimer.current)
-    upstreamFlashTimer.current = setTimeout(() => setUpstreamFlashIds(new Set()), 900)
+    upstreamFlashTimer.current = setTimeout(() => setUpstreamFlashIds(new Set()), 2500)
     return () => {
       if (upstreamFlashTimer.current) clearTimeout(upstreamFlashTimer.current)
     }
@@ -660,9 +667,18 @@ export function MaterialEditor() {
     panAnim.current = requestAnimationFrame(tick)
   }
 
+  const pulseUpstreamFlash = (ch: string) => {
+    if (!graph) return
+    const ids = nodesInSoloChannel(graph, ch)
+    setUpstreamFlashIds(ids)
+    if (upstreamFlashTimer.current) clearTimeout(upstreamFlashTimer.current)
+    upstreamFlashTimer.current = setTimeout(() => setUpstreamFlashIds(new Set()), 2500)
+  }
+
   const syncChannelPin = (ch: string) => {
     setIsolateChannel(ch)
     setPinnedMinimapChannel(ch)
+    pulseUpstreamFlash(ch)
   }
 
   const zoomAtGraph = (factor: number, gx: number, gy: number) => {
