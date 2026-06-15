@@ -5,7 +5,14 @@
 
 const KEY = 'lotus-engine.resources'
 
-export type ResourceKind = 'material' | 'curve' | 'shape' | 'recipe' | 'loot_table'
+export type ResourceKind =
+  | 'material'
+  | 'curve'
+  | 'shape'
+  | 'recipe'
+  | 'loot_table'
+  | 'config'
+  | 'scene_preset'
 
 export interface LotusResource<T = Record<string, unknown>> {
   id: string
@@ -58,4 +65,27 @@ export function createResource(
   data: Record<string, unknown> = {},
 ): LotusResource {
   return saveResource({ id: nextResourceId(), name, kind, data })
+}
+
+export function findResourceByName(name: string, kind?: ResourceKind): LotusResource | undefined {
+  const q = String(name ?? '').trim().toLowerCase()
+  if (!q) return undefined
+  return listResources(kind).find((r) => r.name.toLowerCase() === q)
+}
+
+/** Upsert a named engine resource (config / scene preset). */
+export function registerNamedResource(
+  name: string,
+  kind: ResourceKind,
+  data: Record<string, unknown>,
+): LotusResource {
+  const existing = findResourceByName(name, kind)
+  if (existing) return saveResource({ ...existing, data: { ...data } })
+  return createResource(name, kind, data)
+}
+
+export function duplicateResource(id: string, newName?: string): LotusResource | null {
+  const src = getResource(id)
+  if (!src) return null
+  return createResource(newName?.trim() || `${src.name}_copy`, src.kind, { ...src.data })
 }

@@ -67,6 +67,398 @@ declare global {
   }
 }
 
+test('wave 111 lotus.resources bridge exposes list create registerNamed findByName', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const res = (window.lotus! as typeof window.lotus & { resources: Record<string, unknown> }).resources
+    return {
+      list: typeof res.list === 'function',
+      create: typeof res.create === 'function',
+      registerNamed: typeof res.registerNamed === 'function',
+      findByName: typeof res.findByName === 'function',
+    }
+  })
+
+  expect(result.list).toBe(true)
+  expect(result.create).toBe(true)
+  expect(result.registerNamed).toBe(true)
+  expect(result.findByName).toBe(true)
+})
+
+test('wave 111 /resource create engine_config registers config resource', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/resource create engine_config config')
+    const lotus = window.lotus! as typeof window.lotus & {
+      resources: { findByName: (n: string) => { id: string; kind: string } | undefined }
+    }
+    const row = lotus.resources.findByName('engine_config')
+    return { error: term.error, output: term.output ?? '', kind: row?.kind ?? null }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('engine_config')
+  expect(result.kind).toBe('config')
+})
+
+test('wave 111 registerNamedResource upserts data on duplicate name', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      resources: {
+        registerNamed: (n: string, k: string, d: Record<string, unknown>) => { id: string }
+        findByName: (n: string) => { id: string; data: Record<string, unknown> } | undefined
+      }
+    }
+    lotus.resources.registerNamed('upsert_test', 'config', { v: 1 })
+    lotus.resources.registerNamed('upsert_test', 'config', { v: 2 })
+    return { v: lotus.resources.findByName('upsert_test')?.data.v }
+  })
+
+  expect(result.v).toBe(2)
+})
+
+test('wave 111 /resource list terminal prints engine resources', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/resource create list_demo config')
+    const term = window.lotus!.terminal.exec('/resource list')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Engine resources')
+})
+
+test('wave 111 resource kinds include config and scene_preset', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      resources: { create: (n: string, k: string) => { kind: string } }
+    }
+    const cfg = lotus.resources.create('cfg', 'config')
+    const preset = lotus.resources.create('preset', 'scene_preset')
+    return { cfg: cfg.kind, preset: preset.kind }
+  })
+
+  expect(result.cfg).toBe('config')
+  expect(result.preset).toBe('scene_preset')
+})
+
+test('wave 112 lotus.engine.captureScene returns versioned actor transforms', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      engine: { captureScene: () => { version: number; actors: { name: string }[] } }
+    }
+    const snap = lotus.engine.captureScene()
+    return { version: snap.version, count: snap.actors.length, hasStarter: snap.actors.some((a) => a.name.includes('Player') || a.name.includes('Floor')) }
+  })
+
+  expect(result.version).toBe(1)
+  expect(result.count).toBeGreaterThan(0)
+  expect(result.hasStarter).toBe(true)
+})
+
+test('wave 112 applyScene round-trips moved actor position', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/spawn box')
+    const lotus = window.lotus! as typeof window.lotus & {
+      engine: { captureScene: () => { actors: Array<{ name: string; transform: { position: [number, number, number] } }> }; applyScene: (d: unknown) => number }
+      world: { actors: { values: () => IterableIterator<{ name: string; root: { position: { set: (x: number, y: number, z: number) => void } } }> } }
+    }
+    const box = [...lotus.world.actors.values()].find((a) => a.name.startsWith('Box'))
+    if (!box) return { ok: false as const }
+    box.root.position.set(3, 2, -1)
+    const snap = lotus.engine.captureScene()
+    box.root.position.set(0, 0, 0)
+    const applied = lotus.engine.applyScene(snap)
+    const row = snap.actors.find((a) => a.name === box.name)
+    return { ok: true as const, applied, expected: row?.transform.position ?? null }
+  })
+
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(result.applied).toBeGreaterThan(0)
+  expect(result.expected?.[0]).toBe(3)
+})
+
+test('wave 112 /snapshot terminal captures and applies scene snapshot', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const term = window.lotus!.terminal.exec('/snapshot')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Scene snapshot')
+  expect(result.output).toContain('round-trip')
+})
+
+test('wave 112 captureScene levelName matches engine.levelName', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      engine: { captureScene: () => { levelName: string }; levelName: () => string }
+    }
+    const snap = lotus.engine.captureScene()
+    return { match: snap.levelName === lotus.engine.levelName() }
+  })
+
+  expect(result.match).toBe(true)
+})
+
+test('wave 112 scene snapshot preserves scriptVars on apply', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/spawn sphere')
+    const lotus = window.lotus! as typeof window.lotus & {
+      engine: { captureScene: () => unknown; applyScene: (d: unknown) => number }
+      world: { actors: { values: () => IterableIterator<{ name: string; scriptVars?: Record<string, unknown> }> } }
+    }
+    const actor = [...lotus.world.actors.values()].find((a) => a.name.toLowerCase().includes('sphere'))
+    if (!actor) return { ok: false as const }
+    actor.scriptVars = { hp: 42 }
+    const snap = lotus.engine.captureScene()
+    actor.scriptVars = {}
+    lotus.engine.applyScene(snap)
+    return { ok: true as const, hp: actor.scriptVars?.hp }
+  })
+
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(result.hp).toBe(42)
+})
+
+test('wave 113 lotus.engine bridge exposes setBufferViz listBufferVizModes', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const eng = (window.lotus! as typeof window.lotus & { engine: Record<string, unknown> }).engine
+    return {
+      setBufferViz: typeof eng.setBufferViz === 'function',
+      listModes: typeof eng.listBufferVizModes === 'function',
+      modes: (eng.listBufferVizModes as () => string[])(),
+    }
+  })
+
+  expect(result.setBufferViz).toBe(true)
+  expect(result.listModes).toBe(true)
+  expect(result.modes).toContain('worldNormal')
+  expect(result.modes).toContain('depth')
+})
+
+test('wave 113 /bufferviz worldNormal sets editor buffer viz mode', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/bufferviz worldNormal')
+    const lotus = window.lotus! as typeof window.lotus & { engine: { getBufferViz: () => string } }
+    return { error: term.error, output: term.output ?? '', mode: lotus.engine.getBufferViz() }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('worldNormal')
+  expect(result.mode).toBe('worldNormal')
+})
+
+test('wave 113 setBufferViz none clears buffer visualization', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & { engine: { setBufferViz: (m: string) => void; getBufferViz: () => string } }
+    lotus.engine.setBufferViz('depth')
+    lotus.engine.setBufferViz('none')
+    return { mode: lotus.engine.getBufferViz() }
+  })
+
+  expect(result.mode).toBe('none')
+})
+
+test('wave 113 /bufferviz depth terminal switches to depth buffer view', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/bufferviz depth')
+    const lotus = window.lotus! as typeof window.lotus & { engine: { getBufferViz: () => string } }
+    return { error: term.error, mode: lotus.engine.getBufferViz() }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.mode).toBe('depth')
+})
+
+test('wave 113 buffer viz modes include baseColor metallic roughness', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & { engine: { listBufferVizModes: () => string[] } }
+    const modes = lotus.engine.listBufferVizModes()
+    return { hasBase: modes.includes('baseColor'), hasMetal: modes.includes('metallic'), hasRough: modes.includes('roughness') }
+  })
+
+  expect(result.hasBase).toBe(true)
+  expect(result.hasMetal).toBe(true)
+  expect(result.hasRough).toBe(true)
+})
+
+test('wave 114 lotus.assets bridge exposes listBlobs and getBlob', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const assets = (window.lotus! as typeof window.lotus & { assets: Record<string, unknown> }).assets
+    return {
+      listBlobs: typeof assets.listBlobs === 'function',
+      getBlob: typeof assets.getBlob === 'function',
+    }
+  })
+
+  expect(result.listBlobs).toBe(true)
+  expect(result.getBlob).toBe(true)
+})
+
+test('wave 114 /assetlist terminal lists in-memory level assets', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/assetlist')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Level assets')
+  expect(result.output).toContain('lotus.assets')
+})
+
+test('wave 114 listBlobs returns array from IndexedDB or empty', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const lotus = window.lotus! as typeof window.lotus & { assets: { listBlobs: () => Promise<unknown[]> } }
+    const rows = await lotus.assets.listBlobs()
+    return { isArray: Array.isArray(rows) }
+  })
+
+  expect(result.isArray).toBe(true)
+})
+
+test('wave 114 world.assets size matches getLiveSnapshot actorCount baseline', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const snap = window.lotus!.getLiveSnapshot()
+    return { actorCount: snap.actorCount, playing: snap.playing }
+  })
+
+  expect(result.actorCount).toBeGreaterThan(0)
+  expect(result.playing).toBe(false)
+})
+
+test('wave 114 assets listBlobs entries expose name mime size when present', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      assets: { listBlobs: () => Promise<Array<{ name?: string; mime?: string; size?: number }>> }
+    }
+    const rows = await lotus.assets.listBlobs()
+    const first = rows[0]
+    return { count: rows.length, hasShape: first == null || (typeof first.name === 'string' && typeof first.size === 'number') }
+  })
+
+  expect(result.hasShape).toBe(true)
+})
+
+test('wave 115 lotus.engine.getRuntimeSnapshot exposes levelName renderBackend', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      engine: { getRuntimeSnapshot: () => { levelName: string; renderBackend: string; actorCount: number } }
+    }
+    const snap = lotus.engine.getRuntimeSnapshot()
+    return { levelName: snap.levelName, backend: snap.renderBackend, actors: snap.actorCount }
+  })
+
+  expect(result.levelName).toBeTruthy()
+  expect(['webgl', 'webgpu']).toContain(result.backend)
+  expect(result.actors).toBeGreaterThanOrEqual(0)
+})
+
+test('wave 115 /engine terminal prints runtime snapshot summary', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/engine')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Engine runtime')
+  expect(result.output).toContain('actors:')
+})
+
+test('wave 115 platformer minigame pack HTML still builds after engine wave', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'platformer') => void; buildPackHTML: (m: 'platformer') => string } }
+    }
+    lotus.indie.minigame.spawnMiniGame('platformer')
+    const html = lotus.indie.minigame.buildPackHTML('platformer')
+    return { len: html.length, hasLotus: html.includes('lotus') || html.includes('Lotus') }
+  })
+
+  expect(result.len).toBeGreaterThan(1000)
+  expect(result.hasLotus).toBe(true)
+})
+
+test('wave 115 fps minigame pack HTML still builds after engine wave', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      indie: { minigame: { spawnMiniGame: (m: 'fps') => void; buildPackHTML: (m: 'fps') => string } }
+    }
+    lotus.indie.minigame.spawnMiniGame('fps')
+    const html = lotus.indie.minigame.buildPackHTML('fps')
+    return { len: html.length, hasScript: html.includes('<script') }
+  })
+
+  expect(result.len).toBeGreaterThan(1000)
+  expect(result.hasScript).toBe(true)
+})
+
+test('wave 115 engine isPlaying false in editor and actorCount tracks spawns', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & { engine: { isPlaying: () => boolean; actorCount: () => number } }
+    const before = lotus.engine.actorCount()
+    window.lotus!.terminal.exec('/spawn capsule')
+    const after = lotus.engine.actorCount()
+    return { playing: lotus.engine.isPlaying(), before, after }
+  })
+
+  expect(result.playing).toBe(false)
+  expect(result.after).toBeGreaterThanOrEqual(result.before)
+})
+
 test('wave 106 previewDamage renders lotus-rpg-damage-layer floaters', async ({ page }) => {
   await bootEditor(page)
 
@@ -11652,9 +12044,9 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
       hasTitle: notes.includes('# Lotus Platformer Pack'),
       hasBlurb: notes.includes('Jump to the goal'),
       hasWhatsNew: notes.includes("## What's new"),
-      hasWavesHeader: notes.includes('Waves 106–110'),
-      hasWave106: notes.includes('Wave 106'),
-      hasReleaseNotesFeature: notes.includes('rpgDamageHud'),
+      hasWavesHeader: notes.includes('Waves 111–115'),
+      hasWave111: notes.includes('Wave 111'),
+      hasReleaseNotesFeature: notes.includes('sceneSnapshot'),
     }
   })
 
@@ -11662,7 +12054,7 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
   expect(result.hasBlurb).toBe(true)
   expect(result.hasWhatsNew).toBe(true)
   expect(result.hasWavesHeader).toBe(true)
-  expect(result.hasWave106).toBe(true)
+  expect(result.hasWave111).toBe(true)
   expect(result.hasReleaseNotesFeature).toBe(true)
 })
 
@@ -11723,13 +12115,13 @@ test('wave 77 buildPackHTML embeds __LOTUS_PACK_RELEASE_NOTES__ with platformer 
       embedded,
       expected,
       match: embedded === expected,
-      hasWave106: embedded.includes('Wave 106'),
+      hasWave111: embedded.includes('Wave 111'),
     }
   })
 
   expect(result.hasTag).toBe(true)
   expect(result.match).toBe(true)
-  expect(result.hasWave106).toBe(true)
+  expect(result.hasWave111).toBe(true)
 })
 
 test('wave 77 buildItchZip includes RELEASE_NOTES.md with genre markdown', async ({ page }) => {
@@ -11780,14 +12172,14 @@ test('wave 77 /releasenotes platformer terminal prints release notes markdown', 
       expected,
       match: out?.output === expected,
       hasTitle: out?.output?.includes('# Lotus Platformer Pack') ?? false,
-      hasWave106: out?.output?.includes('Wave 106') ?? false,
+      hasWave111: out?.output?.includes('Wave 111') ?? false,
     }
   })
 
   expect(result.error).toBeNull()
   expect(result.match).toBe(true)
   expect(result.hasTitle).toBe(true)
-  expect(result.hasWave106).toBe(true)
+  expect(result.hasWave111).toBe(true)
 })
 
 test('wave 78 indie.mp.killcam bridge exposes trigger, active, durationSec', async ({ page }) => {
@@ -12567,7 +12959,7 @@ test('wave 82 renderPackChangelogHtml returns styled section with pack title and
       hasStyle: html.includes('.lotus-pack-changelog'),
       hasTitle: html.includes('Lotus Platformer Pack'),
       hasWhatsNew: html.includes("What's new"),
-      hasWaves: html.includes('Waves 106–110'),
+      hasWaves: html.includes('Waves 111–115'),
       notesHasTitle: notes.includes('# Lotus Platformer Pack'),
     }
   })

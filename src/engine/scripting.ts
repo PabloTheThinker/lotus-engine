@@ -49,7 +49,8 @@ import {
   removeItem,
 } from './rpgInventory'
 import { equip as rpgEquip, getEquipped as rpgGetEquipped, unequip as rpgUnequip, type EquipmentSlot } from './rpgEquipment'
-import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
+import { getSaveLevelName, isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
+import { applySceneSnapshot, captureSceneSnapshot } from './sceneSnapshot'
 import {
   completeQuest,
   getQuestState,
@@ -261,6 +262,10 @@ export interface ScriptApi {
   loadGame: (slot: string) => unknown | null
   /** Wave 65 — list slots with saved data for this level */
   listSaveSlots: () => string[]
+  /** Wave 112 — capture generic scene snapshot (transforms + script vars) */
+  captureSceneSnapshot: () => import('./sceneSnapshot').SceneSnapshot
+  /** Wave 112 — apply scene snapshot; returns actors updated */
+  applySceneSnapshot: (data: unknown) => number
   /** Wave 85 — unlock export-pack trophy (localStorage lotus-engine.achievements.{packId}) */
   unlockAchievement: (id: string) => boolean
   /** Wave 90 — partial achievement progress counter (unlocks when current >= max) */
@@ -567,6 +572,8 @@ export function makeScriptApi(
       return data
     },
     listSaveSlots: () => listSlots(),
+    captureSceneSnapshot: () => captureSceneSnapshot(actors.values(), getSaveLevelName()),
+    applySceneSnapshot: (data) => applySceneSnapshot(actors, data),
     unlockAchievement: (id) => {
       const result = unlockAchievement(id)
       if (result.newlyUnlocked && result.achievement) {

@@ -1,6 +1,12 @@
 # Indie Game Roadmap — Godot-style focus for Lotus Engine
 
-> Strategic pivot (2026-06): ship a **web-first indie game engine** aligned with Godot's designer/programmer workflow — not UE 5.7 parity. Reference: `docs/GODOT-CENSUS.md`. UE gap list (`docs/UE5.7-GAP-LIST.md`) is background only.
+> Strategic pivot (2026-06): ship a **web-first three.js game engine** aligned with Godot's designer/programmer workflow — not UE 5.7 parity. Reference: `docs/GODOT-CENSUS.md`. UE gap list (`docs/UE5.7-GAP-LIST.md`) is background only.
+
+## Product layers
+
+1. **Engine core (three.js)** — `World`, `Actor`, renderer, physics, scripting, export, `lotus.engine.*`
+2. **Optional gameplay modules** — `lotus.rpg.*` RPG template; same pattern for platformer/FPS packs
+3. **5-wave rule** — each swarm: **≥2 engine waves**, **≤3 module waves**
 
 ## Moat
 
@@ -210,13 +216,23 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 | 109 | v5.84–v5.88 | **Portal cinematic** — slide + preload progress ring |
 | 110 | v5.89–v5.93 | **Quest economy** — find_herbs herb discount — **494 tests** |
 
-## Next priority queue (3D RPG + parity)
+## Shipped (Waves 111–115, v5.94–v6.18) — Engine core
 
-1. **Shop buy UX** — click-to-buy in shop panel + sell tab
-2. **Vendor dialogue** — greet branch before shop opens
-3. **Crit damage pipeline** — gold crit floaters from combat polish
-4. **Cell preload progress** — real streaming % on portal ring
-5. **Reputation unlocks** — shop listings gated by quest completion
+| Wave | Ver | Feature |
+|---|---|---|
+| 111 | v5.94–v5.98 | **Resources** — `config` / `scene_preset` kinds; `lotus.resources` |
+| 112 | v5.99–v6.03 | **Scene snapshot** — capture/apply transforms + scriptVars |
+| 113 | v6.04–v6.08 | **Buffer viz bridge** — `lotus.engine.setBufferViz` |
+| 114 | v6.09–v6.13 | **Asset pipeline** — `lotus.assets.listBlobs` |
+| 115 | v6.14–v6.18 | **Runtime introspection** — `lotus.engine.getRuntimeSnapshot` — **519 tests** |
+
+## Next priority queue (engine core)
+
+1. **Resource inspector UI** — edit `.tres` resources in editor
+2. **Export scene snapshots** — generic save payload in playable HTML
+3. **glTF instance undo** — content-browser spawn through command stack
+4. **WebGPU backend telemetry** — `lotus.engine` reports tier + fallback reason
+5. **Plugin sample** — minimal third-party panel registering via plugin API
 
 ## Non-goals (honest skip)
 
@@ -227,5 +243,5 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **494** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **519** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

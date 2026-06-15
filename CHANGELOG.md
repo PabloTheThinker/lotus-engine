@@ -4,6 +4,37 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 111–115: v5.94–v6.18 (three.js engine core swarm)
+
+> Strategic refocus: engine core first; RPG modules optional.
+
+### Wave 111 (v5.94–v5.98) — Resource registry
+- `resources.ts` — `config` + `scene_preset` kinds, `registerNamedResource`, `findResourceByName`
+- Bridge: `lotus.resources` · `/resource list|create`
+
+### Wave 112 (v5.99–v6.03) — Scene snapshot
+- `sceneSnapshot.ts` — generic capture/apply transforms + scriptVars
+- Bridge: `lotus.engine.captureScene` · `api.captureSceneSnapshot` · `/snapshot`
+
+### Wave 113 (v6.04–v6.08) — Buffer viz bridge
+- `bufferVizModes.ts` — mode registry wired to editor viewport
+- Bridge: `lotus.engine.setBufferViz` · `/bufferviz`
+
+### Wave 114 (v6.09–v6.13) — Asset pipeline bridge
+- Bridge: `lotus.assets.listBlobs` · `/assetlist`
+
+### Wave 115 (v6.14–v6.18) — Engine runtime introspection
+- `engineRuntime.ts` — `getEngineRuntimeSnapshot` (playing, backend, streaming)
+- Bridge: `lotus.engine` · `/engine` · platformer/fps pack regression
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 519 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 106–110: v5.69–v5.93 (3D RPG UX swarm)
 
 ### Wave 106 (v5.69–v5.73) — Damage numbers HUD

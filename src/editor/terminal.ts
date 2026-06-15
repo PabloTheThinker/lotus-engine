@@ -95,6 +95,12 @@ import { priceBreakdown, resolveBuyPrice } from '../engine/rpgShopEconomy'
 import { openVendorShop, VENDOR_NPC_TAG } from '../engine/rpgVendorNpc'
 import { previewRpgDamageHud } from './rpgDamageHud'
 import { previewRpg3dShop } from './rpg3dHud'
+import { listResources, registerNamedResource } from '../engine/resources'
+import { applySceneSnapshot, captureSceneSnapshot } from '../engine/sceneSnapshot'
+import { BUFFER_VIZ_MODES, normalizeBufferVizMode } from '../engine/bufferVizModes'
+import { listAssetBlobs } from '../engine/assetStore'
+// listAssetBlobs is async (IndexedDB) — terminal prints in-memory world.assets synchronously
+import { getEngineRuntimeSnapshot } from '../engine/engineRuntime'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -167,6 +173,11 @@ SLASH COMMANDS
   /armorvisual         Equip leather_helm + leather_chest socket meshes
   /portalcine [level]  Slide portal cinematic + preload progress ring preview
   /shopprice <itemId>  Show quest-linked buy price breakdown (demo: herb with find_herbs)
+  /resource list|create  Engine .tres resources (config / scene_preset)
+  /snapshot            Capture + re-apply generic scene snapshot (transforms)
+  /bufferviz <mode>    Set buffer visualization (worldNormal, depth, baseColor, …)
+  /assetlist           List IndexedDB imported glTF/KTX2 blobs
+  /engine              Print engine runtime snapshot (actors, playing, backend)
   /cloudsave export       Print full cloud save JSON (IndexedDB checkpoints)
   /cloudsave import <json> Import cloud save JSON into IndexedDB (same level)
 
@@ -951,6 +962,110 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/resource': {
+      const sub = args[0]?.toLowerCase()
+      if (sub === 'list') {
+        const rows = listResources()
+        return {
+          output: [
+            `Engine resources (${rows.length})`,
+            ...rows.slice(0, 12).map((r) => `  ${r.kind}: ${r.name} (${r.id})`),
+            'Bridge: lotus.resources',
+          ].join('\n'),
+          error: null,
+          level: 'log',
+        }
+      }
+      if (sub === 'create' && args[1]) {
+        const name = args[1].trim()
+        const kind = (args[2]?.trim() || 'config') as 'config' | 'scene_preset'
+        const res = registerNamedResource(name, kind, { createdBy: 'terminal' })
+        return {
+          output: [`Created resource → ${res.name} (${res.kind}) id=${res.id}`, 'Bridge: lotus.resources'].join('\n'),
+          error: null,
+          level: 'log',
+        }
+      }
+      return { output: null, error: 'Usage: /resource list | /resource create <name> [config|scene_preset]', level: 'error' }
+    }
+    case '/snapshot': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /snapshot', level: 'error' }
+      }
+      const snap = captureSceneSnapshot(world.actors.values(), world.levelName)
+      const first = snap.actors[0]
+      const applied = applySceneSnapshot(world.actors, snap)
+      return {
+        output: [
+          `Scene snapshot → ${snap.actors.length} actors (level: ${snap.levelName})`,
+          `  sample: ${first?.name ?? 'none'} @ [${first?.transform.position.join(', ') ?? ''}]`,
+          `  round-trip apply: ${applied} actors`,
+          'Bridge: lotus.engine.captureScene · api.captureSceneSnapshot',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/bufferviz': {
+      const mode = args[0]?.trim()
+      if (!mode || args.length > 1) {
+        return {
+          output: null,
+          error: `Usage: /bufferviz <${BUFFER_VIZ_MODES.filter((m) => m !== 'none').join('|')}>`,
+          level: 'error',
+        }
+      }
+      const normalized = normalizeBufferVizMode(mode)
+      if (normalized === 'none' && mode !== 'none') {
+        return { output: null, error: `Unknown buffer viz "${mode}"`, level: 'error' }
+      }
+      useEditor.setState({
+        bufferViz: normalized,
+        ...(normalized !== 'none' ? { viewMode: 'lit' as const } : {}),
+      })
+      return {
+        output: [`Buffer viz → ${normalized}`, 'Bridge: lotus.engine.setBufferViz'].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/assetlist': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /assetlist', level: 'error' }
+      }
+      const mem = [...world.assets.values()].map((a) => `  ${a.name} (in-memory template)`)
+      void listAssetBlobs().then((blobs) => {
+        useEditor.getState().setStatus(`IDB asset blobs: ${blobs.length} (see lotus.assets.listBlobs)`)
+      })
+      return {
+        output: [
+          `Level assets (${mem.length})`,
+          ...mem.slice(0, 10),
+          'Async IDB blobs: lotus.assets.listBlobs()',
+          'Bridge: lotus.assets',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/engine': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /engine', level: 'error' }
+      }
+      const s = useEditor.getState()
+      const backend = world.environment.renderBackend ?? 'webgl'
+      const snap = getEngineRuntimeSnapshot(world, s, backend)
+      return {
+        output: [
+          `Engine runtime → ${snap.levelName}`,
+          `  playing: ${snap.playing} · actors: ${snap.actorCount} · backend: ${snap.renderBackend}`,
+          `  saveSlots: ${snap.saveSlotsEnabled} · streaming: ${snap.streamingEnabled}`,
+          'Bridge: lotus.engine.getRuntimeSnapshot',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
     case '/damagehud': {
       if (args.length) {
         return { output: null, error: 'Usage: /damagehud', level: 'error' }
@@ -1369,7 +1484,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/combatpolish', '/equip', '/equipvisual', '/portaltrans', '/rootmotion', '/shop', '/damagehud', '/vendor', '/armorvisual', '/portalcine', '/shopprice', '/craft', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/combatpolish', '/equip', '/equipvisual', '/portaltrans', '/rootmotion', '/shop', '/damagehud', '/vendor', '/armorvisual', '/portalcine', '/shopprice', '/resource', '/snapshot', '/bufferviz', '/assetlist', '/engine', '/craft', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

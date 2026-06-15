@@ -13,6 +13,22 @@ import { bakeAO, bakeAOMapUV2 } from './engine/lightmapBake'
 import { preloadPhysics } from './engine/physics'
 import { world } from './engine/World'
 import { getLiveSnapshot } from './engine/liveSnapshot'
+import { getEngineRuntimeSnapshot } from './engine/engineRuntime'
+import type { RenderBackend } from './engine/renderBackend'
+import { applySceneSnapshot, captureSceneSnapshot } from './engine/sceneSnapshot'
+import { BUFFER_VIZ_MODES, normalizeBufferVizMode } from './engine/bufferVizModes'
+import {
+  createResource,
+  deleteResource,
+  duplicateResource,
+  findResourceByName,
+  getResource,
+  listResources,
+  registerNamedResource,
+  saveResource,
+  type ResourceKind,
+} from './engine/resources'
+import { getAssetBlob, listAssetBlobs } from './engine/assetStore'
 import { executeAICommands, extractCommands } from './editor/ai'
 import { buildPlayableHTML, exportMiniGamePreset } from './editor/exportPlayable'
 import { captureExportScreenshot } from './editor/captureExportScreenshot'
@@ -310,7 +326,7 @@ import {
   profiles,
   saveInputProfile,
 } from './engine/inputProfiles'
-import { createResource, getResource, listResources, saveResource } from './engine/resources'
+
 import { listScriptVarPresets, loadScriptVarPreset, saveScriptVarPreset } from './engine/scriptVarPresets'
 import { applyScriptVarPreset, keyableScriptExports, sampleSequence, setKey } from './engine/sequencer'
 import {
@@ -727,6 +743,43 @@ const lotusBridge = {
     const s = useEditor.getState()
     return getLiveSnapshot(world, s)
   },
+  /** Waves 111–115 — three.js engine core (genre-agnostic) */
+  engine: {
+    getRuntimeSnapshot: () => {
+      const s = useEditor.getState()
+      const backend = (world.environment.renderBackend ?? 'webgl') as RenderBackend
+      return getEngineRuntimeSnapshot(world, s, backend)
+    },
+    captureScene: () => captureSceneSnapshot(world.actors.values(), world.levelName),
+    applyScene: (data: unknown) => applySceneSnapshot(world.actors, data),
+    listBufferVizModes: () => [...BUFFER_VIZ_MODES],
+    getBufferViz: () => useEditor.getState().bufferViz,
+    setBufferViz: (mode: string) => {
+      const normalized = normalizeBufferVizMode(mode)
+      useEditor.setState({
+        bufferViz: normalized,
+        ...(normalized !== 'none' ? { viewMode: 'lit' as const } : {}),
+      })
+    },
+    isPlaying: () => useEditor.getState().playing,
+    levelName: () => world.levelName,
+    actorCount: () => world.actors.size,
+  },
+  resources: {
+    create: createResource,
+    get: getResource,
+    list: (kind?: ResourceKind) => listResources(kind),
+    save: saveResource,
+    findByName: (name: string, kind?: ResourceKind) => findResourceByName(name, kind),
+    registerNamed: (name: string, kind: ResourceKind, data: Record<string, unknown>) =>
+      registerNamedResource(name, kind, data),
+    delete: (id: string) => deleteResource(id),
+    duplicate: (id: string, newName?: string) => duplicateResource(id, newName),
+  },
+  assets: {
+    listBlobs: () => listAssetBlobs(),
+    getBlob: (id: string) => getAssetBlob(id),
+  },
   /** Baked AO (approx) — hemisphere raycast, not Lightmass */
   BakeAO: (opts?: { samples?: number; radius?: number }) =>
     bakeAO(world.actors, {
@@ -1039,8 +1092,13 @@ const lotusBridge = {
     resources: {
       create: createResource,
       get: getResource,
-      list: listResources,
+      list: (kind?: ResourceKind) => listResources(kind),
       save: saveResource,
+      findByName: (name: string, kind?: ResourceKind) => findResourceByName(name, kind),
+      registerNamed: (name: string, kind: ResourceKind, data: Record<string, unknown>) =>
+        registerNamedResource(name, kind, data),
+      delete: (id: string) => deleteResource(id),
+      duplicate: (id: string, newName?: string) => duplicateResource(id, newName),
       scriptVarPresets: {
         list: listScriptVarPresets,
         load: loadScriptVarPreset,
