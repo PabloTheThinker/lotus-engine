@@ -4,6 +4,23 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — CI fix: Playwright webServer build order
+
+### Fixed
+- GitHub Actions `build-test` — Playwright starts `webServer` before `globalSetup`, so `vite preview` served 404 without `dist/` and timed out after 120s
+- `playwright.config.ts` — build before preview locally; CI relies on workflow `npm run build` step; timeout raised to 300s in CI
+- `.github/workflows/ci.yml` — explicit `npm run build` before tests
+
+### Removed
+- `tests/global-setup.ts` — redundant; ran too late to help webServer startup
+
+### Verification
+```bash
+CI=1 npm run build && CI=1 npm run test   # 519 passed
+```
+
+---
+
 ## 2026-06-14 — Public GitHub release
 
 ### Added

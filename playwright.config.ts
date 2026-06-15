@@ -28,11 +28,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  globalSetup: './tests/global-setup.ts',
   webServer: {
-    command: `npm run preview -- --host ${HOST} --port ${PORT}`,
+    // Playwright starts webServer before globalSetup would run; local runs build here, CI builds in workflow.
+    command: process.env.CI
+      ? `npm run preview -- --host ${HOST} --port ${PORT}`
+      : `npm run build && npm run preview -- --host ${HOST} --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: process.env.CI ? 300_000 : 180_000,
   },
 })
