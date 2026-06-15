@@ -27,6 +27,8 @@ export interface AnimState {
   kind?: AnimNodeKind
   /** Wave 99 — play time before returning to the prior FSM state (oneshot only) */
   durationSec?: number
+  /** Wave 104 — forward nudge speed (units/sec) while oneshot is active */
+  rootMotionSpeed?: number
   /** editor canvas position */
   x: number
   y: number
@@ -67,8 +69,17 @@ const smRuntime = new WeakMap<Actor, { current: string; enteredAt: number }>()
 const blendActions = new WeakMap<Actor, Map<string, THREE.AnimationAction>>()
 const oneshotRuntime = new WeakMap<
   Actor,
-  { active: boolean; returnState: string; endsAt: number; clipName: string; crossfade: number }
+  {
+    active: boolean
+    returnState: string
+    endsAt: number
+    clipName: string
+    crossfade: number
+    rootMotionSpeed: number
+  }
 >()
+
+const _rootMotionFwd = new THREE.Vector3()
 
 export function emptyAnimStateMachine(clipName = ''): AnimStateMachine {
   return {
@@ -223,6 +234,7 @@ export function attachSampleCombatOneshot(actor: Actor): { ok: boolean; clipName
     loop: false,
     kind: 'oneshot',
     durationSec,
+    rootMotionSpeed: 1.35,
     x: 260,
     y: 80,
   }
@@ -251,7 +263,12 @@ export function isCombatOneshotActive(actor: Actor): boolean {
  * Wave 99 — trigger a combat montage clip for durationSec, then return to the prior FSM state.
  * AnimationTree OneShot stub: crossfade in, hold for duration, crossfade back.
  */
-export function triggerCombatOneshot(actor: Actor, clipName: string, durationSec: number): boolean {
+export function triggerCombatOneshot(
+  actor: Actor,
+  clipName: string,
+  durationSec: number,
+  rootMotionSpeed?: number,
+): boolean {
   const clip = clipName?.trim()
   const dur = Math.max(0.05, Number(durationSec) || 0)
   if (!clip) return false
@@ -262,6 +279,8 @@ export function triggerCombatOneshot(actor: Actor, clipName: string, durationSec
   const sm = actor.animStateMachine
   const rt = smRuntime.get(actor)
   const returnState = rt?.current ?? sm?.initialState ?? (sm ? firstFsmState(sm)?.name : undefined) ?? 'Idle'
+  const attack = findCombatAttackState(actor)
+  const rm = Math.max(0, Number(rootMotionSpeed ?? attack?.rootMotionSpeed ?? 0) || 0)
 
   oneshotRuntime.set(actor, {
     active: true,
@@ -269,6 +288,7 @@ export function triggerCombatOneshot(actor: Actor, clipName: string, durationSec
     endsAt: performance.now() + dur * 1000,
     clipName: clip,
     crossfade: 0.12,
+    rootMotionSpeed: rm,
   })
 
   action.reset()
@@ -287,10 +307,26 @@ export function triggerCombatOneshot(actor: Actor, clipName: string, durationSec
 }
 
 /** Tick active combat oneshot; returns true while the montage owns the mixer (skip FSM). */
+export function getCombatRootMotionSpeed(actor: Actor): number {
+  const os = oneshotRuntime.get(actor)
+  if (os?.active) return os.rootMotionSpeed ?? 0
+  return findCombatAttackState(actor)?.rootMotionSpeed ?? 0
+}
+
+export function isCombatRootMotionActive(actor: Actor): boolean {
+  const os = oneshotRuntime.get(actor)
+  return os?.active === true && (os.rootMotionSpeed ?? 0) > 0
+}
+
 export function tickCombatOneshot(actor: Actor, dt: number): boolean {
-  void dt
   const os = oneshotRuntime.get(actor)
   if (!os?.active) return false
+
+  const speed = os.rootMotionSpeed ?? 0
+  if (speed > 0 && dt > 0) {
+    _rootMotionFwd.set(0, 0, -1).applyQuaternion(actor.root.quaternion).normalize()
+    actor.root.position.addScaledVector(_rootMotionFwd, speed * dt)
+  }
 
   if (performance.now() < os.endsAt) return true
 

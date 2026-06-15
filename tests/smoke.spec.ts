@@ -67,6 +67,588 @@ declare global {
   }
 }
 
+test('wave 101 dealDamage grants i-frames and queues floating damage numbers', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        combat: {
+          ensureActor: (a: { name: string; tags: string[] }) => unknown
+          ensurePlayer: () => { name: string; tags: string[] } | null
+          dealDamage: (t: { name: string; tags: string[] }, n: number) => boolean
+          getHealth: (a?: { name: string }) => number | null
+          polish: {
+            isInvincible: (a: { name: string }) => boolean
+            listDamageNumbers: () => { amount: number }[]
+          }
+        }
+      }
+      terminal: { exec: (c: string) => { output?: string; error: string | null } }
+    }
+    const player = lotus.rpg.combat.ensurePlayer()
+    if (!player) return { ok: false as const }
+    lotus.rpg.combat.ensureActor(player)
+    const hp0 = lotus.rpg.combat.getHealth(player) ?? 0
+    lotus.rpg.combat.dealDamage(player, 15)
+    const hp1 = lotus.rpg.combat.getHealth(player) ?? 0
+    const blocked = lotus.rpg.combat.dealDamage(player, 15)
+    const hp2 = lotus.rpg.combat.getHealth(player) ?? 0
+    const nums = lotus.rpg.combat.polish.listDamageNumbers()
+    return {
+      ok: true as const,
+      hp0,
+      hp1,
+      hp2,
+      blocked,
+      invincible: lotus.rpg.combat.polish.isInvincible(player),
+      numCount: nums.length,
+      firstAmount: nums[0]?.amount ?? 0,
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  if (!result.ok) return
+  expect(result.hp0).toBe(100)
+  expect(result.hp1).toBe(85)
+  expect(result.hp2).toBe(85)
+  expect(result.blocked).toBe(false)
+  expect(result.invincible).toBe(true)
+  expect(result.numCount).toBeGreaterThanOrEqual(1)
+  expect(result.firstAmount).toBe(15)
+})
+
+test('wave 101 lotus.rpg.combat.polish bridge exposes i-frames and damage numbers', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const polish = (window.lotus! as typeof window.lotus & { rpg: { combat: { polish: Record<string, unknown> } } })
+      .rpg.combat.polish
+    return {
+      isInvincible: typeof polish.isInvincible === 'function',
+      grantIFrames: typeof polish.grantIFrames === 'function',
+      getIFramesRemaining: typeof polish.getIFramesRemaining === 'function',
+      listDamageNumbers: typeof polish.listDamageNumbers === 'function',
+      popDamageNumbers: typeof polish.popDamageNumbers === 'function',
+    }
+  })
+
+  expect(result.isInvincible).toBe(true)
+  expect(result.grantIFrames).toBe(true)
+  expect(result.getIFramesRemaining).toBe(true)
+  expect(result.listDamageNumbers).toBe(true)
+  expect(result.popDamageNumbers).toBe(true)
+})
+
+test('wave 101 /combatpolish terminal applies damage with i-frame block on second hit', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/combatpolish')
+    return { error: term.error, output: term.output ?? '', level: term.level }
+  })
+
+  expect(result.level).toBe('log')
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Combat polish')
+  expect(result.output).toContain('2nd hit blocked')
+  expect(result.output).toContain('damage numbers')
+})
+
+test('wave 101 dealDamage second hit within i-frame window does not reduce health', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const combat = (window.lotus! as typeof window.lotus & {
+      rpg: {
+        combat: {
+          ensureActor: (a: object) => void
+          ensurePlayer: () => { tags: string[] } | null
+          dealDamage: (t: object, n: number) => boolean
+          getHealth: (a?: object) => number | null
+        }
+      }
+    }).rpg.combat
+    const player = combat.ensurePlayer()
+    if (!player) return { error: 'no player' }
+    combat.ensureActor(player)
+    combat.dealDamage(player, 10)
+    const mid = combat.getHealth(player) ?? 0
+    combat.dealDamage(player, 10)
+    const after = combat.getHealth(player) ?? 0
+    return { mid, after }
+  })
+
+  expect(result.mid).toBe(90)
+  expect(result.after).toBe(90)
+})
+
+test('wave 101 combat polish popDamageNumbers drains queued damage number events', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const combat = (window.lotus! as typeof window.lotus & {
+      rpg: {
+        combat: {
+          dealDamage: (t: { tags: string[] }, n: number) => boolean
+          ensureActor: (a: object) => void
+          polish: { listDamageNumbers: () => unknown[]; popDamageNumbers: () => unknown[] }
+        }
+      }
+    }).rpg.combat
+    window.lotus!.terminal.exec('/spawn sphere')
+    const enemy = [...window.lotus!.world.actors.values()].find((a) => a.name.toLowerCase().includes('sphere'))
+    if (!enemy) return { error: 'no sphere' }
+    ;(enemy as { tags: string[] }).tags = ['Enemy']
+    combat.ensureActor(enemy)
+    combat.dealDamage(enemy, 7)
+    const before = combat.polish.listDamageNumbers().length
+    const popped = combat.polish.popDamageNumbers().length
+    const after = combat.polish.listDamageNumbers().length
+    return { before, popped, after }
+  })
+
+  expect(result.before).toBeGreaterThanOrEqual(1)
+  expect(result.popped).toBe(result.before)
+  expect(result.after).toBe(0)
+})
+
+test('wave 102 equip iron_sword attaches weapon visual mesh on player socket', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        equipment: {
+          equip: (id: string) => boolean
+          visuals: { sync: () => string | null; getWeaponId: () => string | null }
+        }
+        inventory: { addItem: (id: string, n?: number) => boolean }
+        player: () => object | null
+      }
+    }
+    const player = lotus.rpg.player()
+    lotus.rpg.inventory.addItem('iron_sword', 1, player ?? undefined)
+    lotus.rpg.equipment.equip('iron_sword')
+    const synced = lotus.rpg.equipment.visuals.sync()
+    const weaponId = lotus.rpg.equipment.visuals.getWeaponId()
+    const socket = player
+      ? [...window.lotus!.world.actors.values()]
+          .find((a) => a.id === (player as { id: string }).id)
+          ?.root?.getObjectByName?.('EquipWeaponSocket')
+      : null
+    return { synced, weaponId, hasSocket: !!socket, childCount: socket?.children?.length ?? 0 }
+  })
+
+  expect(result.synced).toBe('iron_sword')
+  expect(result.weaponId).toBe('iron_sword')
+  expect(result.hasSocket).toBe(true)
+  expect(result.childCount).toBeGreaterThan(0)
+})
+
+test('wave 102 lotus.rpg.equipment.visuals bridge exposes sync getWeaponId attach', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const visuals = (window.lotus! as typeof window.lotus & {
+      rpg: { equipment: { visuals: Record<string, unknown> } }
+    }).rpg.equipment.visuals
+    return {
+      sync: typeof visuals.sync === 'function',
+      getWeaponId: typeof visuals.getWeaponId === 'function',
+      attach: typeof visuals.attach === 'function',
+    }
+  })
+
+  expect(result.sync).toBe(true)
+  expect(result.getWeaponId).toBe(true)
+  expect(result.attach).toBe(true)
+})
+
+test('wave 102 /equipvisual terminal equips sword and reports socket mesh', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const term = window.lotus!.terminal.exec('/equipvisual')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Equipment visual')
+  expect(result.output).toContain('iron_sword')
+})
+
+test('wave 102 unequip weapon removes visual mesh from socket', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        equipment: {
+          equip: (id: string) => boolean
+          unequip: (slot: string) => boolean
+          visuals: { getWeaponId: () => string | null }
+        }
+        inventory: { addItem: (id: string) => boolean }
+      }
+    }
+    lotus.rpg.inventory.addItem('iron_sword', 1)
+    lotus.rpg.equipment.equip('iron_sword')
+    const before = lotus.rpg.equipment.visuals.getWeaponId()
+    lotus.rpg.equipment.unequip('weapon')
+    const after = lotus.rpg.equipment.visuals.getWeaponId()
+    return { before, after }
+  })
+
+  expect(result.before).toBe('iron_sword')
+  expect(result.after).toBeNull()
+})
+
+test('wave 102 equipment visuals attachWeaponVisual rejects non-weapon items', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const visuals = (window.lotus! as typeof window.lotus & {
+      rpg: { equipment: { visuals: { attach: (id: string) => boolean } } }
+    }).rpg.equipment.visuals
+    return { ok: visuals.attach('leather_helm') }
+  })
+
+  expect(result.ok).toBe(false)
+})
+
+test('wave 103 lotus.rpg.portals.transitions bridge exposes loading overlay helpers', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const t = (window.lotus! as typeof window.lotus & {
+      rpg: { portals: { transitions: Record<string, unknown>; interiorKey: string } }
+    }).rpg.portals.transitions
+    return {
+      overlayId: t.overlayId,
+      labelFor: typeof t.labelFor === 'function',
+      showLoading: typeof t.showLoading === 'function',
+      hideLoading: typeof t.hideLoading === 'function',
+      interiorLabel: (t.labelFor as (k: string) => string)('interior'),
+    }
+  })
+
+  expect(result.overlayId).toBe('lotus-portal-loading')
+  expect(result.labelFor).toBe(true)
+  expect(result.showLoading).toBe(true)
+  expect(result.hideLoading).toBe(true)
+  expect(result.interiorLabel).toContain('interior')
+})
+
+test('wave 103 /portaltrans terminal previews portal loading label', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const term = window.lotus!.terminal.exec('/portaltrans interior')
+    const el = document.getElementById('lotus-portal-loading')
+    return {
+      error: term.error,
+      output: term.output ?? '',
+      overlayText: el?.textContent ?? '',
+      overlayVisible: el?.style.display === 'flex',
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Portal transition')
+  expect(result.overlayText).toContain('interior')
+  expect(result.overlayVisible).toBe(true)
+})
+
+test('wave 103 portalLabelForTarget returns overworld copy for overworld key', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const t = (window.lotus! as typeof window.lotus & {
+      rpg: { portals: { transitions: { labelFor: (k: string) => string }; overworldKey: string } }
+    }).rpg.portals
+    return {
+      label: t.transitions.labelFor(t.overworldKey),
+      key: t.overworldKey,
+    }
+  })
+
+  expect(result.key).toBe('overworld')
+  expect(result.label.toLowerCase()).toContain('overworld')
+})
+
+test('wave 103 wireRpgPortals registers interior portal from overworld spawn', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { rpgOverworld: { spawn: () => void } }
+      rpg: { portals: { discover: () => { triggerName: string }[]; getTarget: (n: string) => string | null } }
+    }
+    v.indie.rpgOverworld.spawn()
+    const portals = v.rpg.portals.discover()
+    const interior = portals.find((p) => p.triggerName === 'Portal_Interior')
+    return {
+      count: portals.length,
+      interior: !!interior,
+      target: interior?.targetLevel ?? v.rpg.portals.getTarget('Portal_Interior'),
+    }
+  })
+
+  expect(result.count).toBeGreaterThan(0)
+  expect(result.interior).toBe(true)
+  expect(result.target).toBe('interior')
+})
+
+test('wave 103 hidePortalLoading clears lotus-portal-loading overlay display', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const t = (window.lotus! as typeof window.lotus & {
+      rpg: { portals: { transitions: { showLoading: (l: string) => void; hideLoading: () => void } } }
+    }).rpg.portals.transitions
+    t.showLoading('Test load')
+    t.hideLoading()
+    const el = document.getElementById('lotus-portal-loading')
+    return { display: el?.style.display ?? '' }
+  })
+
+  expect(result.display).toBe('none')
+})
+
+test('wave 104 attachSampleCombatOneshot stores rootMotionSpeed on Attack state', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const player = [...window.lotus!.world.actors.values()].find((a) => a.type === 'PlayerStart')
+    if (!player) return { error: 'no player' }
+    const lotus = window.lotus! as typeof window.lotus & {
+      anim: { attachSampleOneshot: (id: string) => { ok: boolean }; findAttackState: (id: string) => { rootMotionSpeed?: number } | null; getRootMotionSpeed: (id: string) => number }
+    }
+    lotus.anim.attachSampleOneshot(player.id)
+    const attack = lotus.anim.findAttackState(player.id)
+    return {
+      speed: attack?.rootMotionSpeed ?? 0,
+      bridgeSpeed: lotus.anim.getRootMotionSpeed(player.id),
+    }
+  })
+
+  expect((result.speed ?? 0) > 0).toBe(true)
+  expect(result.bridgeSpeed).toBe(result.speed)
+})
+
+test('wave 104 lotus.anim root motion bridge exposes getRootMotionSpeed isRootMotionActive', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const anim = (window.lotus! as typeof window.lotus & { anim: Record<string, unknown> }).anim
+    return {
+      getRootMotionSpeed: typeof anim.getRootMotionSpeed === 'function',
+      isRootMotionActive: typeof anim.isRootMotionActive === 'function',
+    }
+  })
+
+  expect(result.getRootMotionSpeed).toBe(true)
+  expect(result.isRootMotionActive).toBe(true)
+})
+
+test('wave 104 /rootmotion terminal attaches Attack FSM with rootMotionSpeed', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const term = window.lotus!.terminal.exec('/rootmotion')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Root motion')
+  expect(result.output).toContain('rootMotionSpeed')
+})
+
+test('wave 104 combatOneshot sets isRootMotionActive while montage plays', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const player = [...window.lotus!.world.actors.values()].find((a) => a.type === 'PlayerStart')
+    if (!player) return { error: 'no player' }
+    const lotus = window.lotus! as typeof window.lotus & {
+      anim: {
+        attachSampleOneshot: (id: string) => { ok: boolean }
+        combatOneshot: (id: string) => boolean
+        isRootMotionActive: (id: string) => boolean
+        getRootMotionSpeed: (id: string) => number
+      }
+    }
+    lotus.anim.attachSampleOneshot(player.id)
+    const speed = lotus.anim.getRootMotionSpeed(player.id)
+    lotus.anim.combatOneshot(player.id)
+    return { speed, active: lotus.anim.isRootMotionActive(player.id) }
+  })
+
+  expect((result.speed ?? 0) > 0).toBe(true)
+  expect(result.active).toBe(true)
+})
+
+test('wave 104 findAttackState returns rootMotionSpeed field for Attack oneshot', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/combatanim')
+    const player = [...window.lotus!.world.actors.values()].find((a) => a.type === 'PlayerStart')
+    const lotus = window.lotus! as typeof window.lotus & {
+      anim: { findAttackState: (id: string) => { rootMotionSpeed?: number; kind?: string } | null }
+    }
+    const attack = player ? lotus.anim.findAttackState(player.id) : null
+    return { kind: attack?.kind, speed: attack?.rootMotionSpeed ?? 0 }
+  })
+
+  expect(result.kind).toBe('oneshot')
+  expect(result.speed).toBeGreaterThan(0)
+})
+
+test('wave 105 shop buy herb deducts gold and adds item to inventory', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        player: () => object | null
+        shop: {
+          defaultId: string
+          ensureDefaults: () => void
+          buy: (shop: string, item: string) => boolean
+          canBuy: (shop: string, item: string) => boolean
+        }
+        inventory: { getGold: (a?: object) => number; getItemCount: (id: string, a?: object) => number; setGold: (n: number, a?: object) => number }
+      }
+    }
+    lotus.rpg.shop.ensureDefaults()
+    const player = lotus.rpg.player()
+    lotus.rpg.inventory.setGold(100, player ?? undefined)
+    const goldBefore = lotus.rpg.inventory.getGold(player ?? undefined)
+    const herbsBefore = lotus.rpg.inventory.getItemCount('herb', player ?? undefined)
+    const can = lotus.rpg.shop.canBuy(lotus.rpg.shop.defaultId, 'herb')
+    const bought = lotus.rpg.shop.buy(lotus.rpg.shop.defaultId, 'herb')
+    return {
+      can,
+      bought,
+      goldBefore,
+      goldAfter: lotus.rpg.inventory.getGold(player ?? undefined),
+      herbsAfter: lotus.rpg.inventory.getItemCount('herb', player ?? undefined),
+      herbsBefore,
+    }
+  })
+
+  expect(result.can).toBe(true)
+  expect(result.bought).toBe(true)
+  expect(result.goldBefore).toBe(100)
+  expect(result.goldAfter).toBe(92)
+  expect(result.herbsBefore).toBe(0)
+  expect(result.herbsAfter).toBe(1)
+})
+
+test('wave 105 lotus.rpg.shop bridge exposes buy sell canBuy canSell list', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const shop = (window.lotus! as typeof window.lotus & { rpg: { shop: Record<string, unknown> } }).rpg.shop
+    return {
+      list: typeof shop.list === 'function',
+      buy: typeof shop.buy === 'function',
+      sell: typeof shop.sell === 'function',
+      canBuy: typeof shop.canBuy === 'function',
+      canSell: typeof shop.canSell === 'function',
+      defaultId: shop.defaultId,
+    }
+  })
+
+  expect(result.list).toBe(true)
+  expect(result.buy).toBe(true)
+  expect(result.sell).toBe(true)
+  expect(result.canBuy).toBe(true)
+  expect(result.canSell).toBe(true)
+  expect(result.defaultId).toBe('village_vendor')
+})
+
+test('wave 105 /shop buy herb terminal purchases from village vendor', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const term = window.lotus!.terminal.exec('/shop buy herb')
+    return { error: term.error, output: term.output ?? '' }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toContain('Shop buy')
+  expect(result.output).toContain('herb')
+})
+
+test('wave 105 sellItem returns gold when player sells herb to vendor', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    window.lotus!.terminal.exec('/starter thirdperson')
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: {
+        player: () => object | null
+        shop: {
+          defaultId: string
+          ensureDefaults: () => void
+          sell: (shop: string, item: string) => boolean
+          sellPrice: (shop: string, item: string) => number
+        }
+        inventory: { addItem: (id: string, n?: number, a?: object) => boolean; getGold: (a?: object) => number }
+      }
+    }
+    lotus.rpg.shop.ensureDefaults()
+    const player = lotus.rpg.player()
+    lotus.rpg.inventory.addItem('herb', 1, player ?? undefined)
+    const price = lotus.rpg.shop.sellPrice(lotus.rpg.shop.defaultId, 'herb')
+    const goldBefore = lotus.rpg.inventory.getGold(player ?? undefined)
+    const sold = lotus.rpg.shop.sell(lotus.rpg.shop.defaultId, 'herb')
+    return {
+      price,
+      sold,
+      goldBefore,
+      goldAfter: lotus.rpg.inventory.getGold(player ?? undefined),
+    }
+  })
+
+  expect(result.sold).toBe(true)
+  expect(result.price).toBeGreaterThan(0)
+  expect(result.goldAfter).toBeGreaterThan(result.goldBefore)
+})
+
+test('wave 105 listShops returns village_vendor with herb and health_potion listings', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const lotus = window.lotus! as typeof window.lotus & {
+      rpg: { shop: { ensureDefaults: () => void; list: () => { id: string; listings: { itemId: string }[] }[] } }
+    }
+    lotus.rpg.shop.ensureDefaults()
+    const shop = lotus.rpg.shop.list().find((s) => s.id === 'village_vendor')
+    const ids = shop?.listings.map((l) => l.itemId) ?? []
+    return { ids }
+  })
+
+  expect(result.ids).toContain('herb')
+  expect(result.ids).toContain('health_potion')
+  expect(result.ids).toContain('iron_sword')
+})
+
 test('wave 100 rpgCrafting canCraft craft consumes herb inputs produces health_potion', async ({ page }) => {
   await bootEditor(page)
 
@@ -10531,9 +11113,9 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
       hasTitle: notes.includes('# Lotus Platformer Pack'),
       hasBlurb: notes.includes('Jump to the goal'),
       hasWhatsNew: notes.includes("## What's new"),
-      hasWavesHeader: notes.includes('Waves 96–100'),
-      hasWave96: notes.includes('Wave 96'),
-      hasReleaseNotesFeature: notes.includes('rpgCombat'),
+      hasWavesHeader: notes.includes('Waves 101–105'),
+      hasWave101: notes.includes('Wave 101'),
+      hasReleaseNotesFeature: notes.includes('rpgCombatPolish'),
     }
   })
 
@@ -10541,7 +11123,7 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
   expect(result.hasBlurb).toBe(true)
   expect(result.hasWhatsNew).toBe(true)
   expect(result.hasWavesHeader).toBe(true)
-  expect(result.hasWave96).toBe(true)
+  expect(result.hasWave101).toBe(true)
   expect(result.hasReleaseNotesFeature).toBe(true)
 })
 
@@ -10602,13 +11184,13 @@ test('wave 77 buildPackHTML embeds __LOTUS_PACK_RELEASE_NOTES__ with platformer 
       embedded,
       expected,
       match: embedded === expected,
-      hasWave96: embedded.includes('Wave 96'),
+      hasWave101: embedded.includes('Wave 101'),
     }
   })
 
   expect(result.hasTag).toBe(true)
   expect(result.match).toBe(true)
-  expect(result.hasWave96).toBe(true)
+  expect(result.hasWave101).toBe(true)
 })
 
 test('wave 77 buildItchZip includes RELEASE_NOTES.md with genre markdown', async ({ page }) => {
@@ -10659,14 +11241,14 @@ test('wave 77 /releasenotes platformer terminal prints release notes markdown', 
       expected,
       match: out?.output === expected,
       hasTitle: out?.output?.includes('# Lotus Platformer Pack') ?? false,
-      hasWave96: out?.output?.includes('Wave 96') ?? false,
+      hasWave101: out?.output?.includes('Wave 101') ?? false,
     }
   })
 
   expect(result.error).toBeNull()
   expect(result.match).toBe(true)
   expect(result.hasTitle).toBe(true)
-  expect(result.hasWave96).toBe(true)
+  expect(result.hasWave101).toBe(true)
 })
 
 test('wave 78 indie.mp.killcam bridge exposes trigger, active, durationSec', async ({ page }) => {
@@ -11446,7 +12028,7 @@ test('wave 82 renderPackChangelogHtml returns styled section with pack title and
       hasStyle: html.includes('.lotus-pack-changelog'),
       hasTitle: html.includes('Lotus Platformer Pack'),
       hasWhatsNew: html.includes("What's new"),
-      hasWaves: html.includes('Waves 96–100'),
+      hasWaves: html.includes('Waves 101–105'),
       notesHasTitle: notes.includes('# Lotus Platformer Pack'),
     }
   })

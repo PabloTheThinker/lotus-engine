@@ -190,13 +190,23 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 - `api.setTimer`, `api.raycast`, `move_and_slide`, prefabs, level links + `api.loadLevel`
 - Autoload (tag or Project Settings names), TriggerVolume, sequencer, plugins, HUD widgets
 
+## Shipped (Waves 101–105, v5.44–v5.68) — 3D RPG polish
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 101 | v5.44–v5.48 | **Combat polish** — i-frames, hit flash, damage numbers |
+| 102 | v5.49–v5.53 | **Equipment visuals** — weapon socket mesh |
+| 103 | v5.54–v5.58 | **Portal transitions** — loading label overlay |
+| 104 | v5.59–v5.63 | **Root motion** — Attack oneshot forward nudge |
+| 105 | v5.64–v5.68 | **Shops** — village_vendor buy/sell — **469 tests** |
+
 ## Next priority queue (3D RPG + parity)
 
-1. **Combat polish** — hit reactions, i-frames, floating damage numbers
-2. **Equipment visuals** — socket-attached weapon mesh on paper-doll
-3. **Portal transitions** — fade/loading UX for overworld ↔ interior
-4. **Root motion stub** — attack oneshot nudges pawn forward
-5. **Economy / shops** — vendor NPC buy/sell on inventory gold
+1. **Damage numbers HUD** — rpg3dHud screen-space floaters during Play
+2. **Vendor NPC** — Interact-tagged shopkeeper + dialogue hook
+3. **Armor visuals** — head/chest socket meshes on paper-doll
+4. **Portal cinematic** — slide variant + streaming preload UX
+5. **Quest economy** — shop prices vs quest stage / rep stub
 
 ## Non-goals (honest skip)
 
@@ -207,5 +217,5 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **444** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **469** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

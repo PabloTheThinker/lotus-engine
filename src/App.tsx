@@ -187,7 +187,9 @@ import {
   attachSampleCombatOneshot,
   COMBAT_ONESHOT_ATTACK_NAME,
   findCombatAttackState,
+  getCombatRootMotionSpeed,
   isCombatOneshotActive,
+  isCombatRootMotionActive,
   resolveAnimParams,
   triggerCombatOneshot,
 } from './engine/animStateMachine'
@@ -549,6 +551,30 @@ import {
   type EquipmentSlot,
 } from './engine/rpgEquipment'
 import {
+  attachWeaponVisual,
+  getWeaponVisualId,
+  syncEquipmentVisuals,
+} from './engine/rpgEquipmentVisuals'
+import {
+  hidePortalLoading,
+  PORTAL_LOADING_OVERLAY_ID,
+  portalLabelForTarget,
+  showPortalLoading,
+} from './engine/rpgPortalTransitions'
+import {
+  buyItem as shopBuyItem,
+  canBuy as shopCanBuy,
+  canSell as shopCanSell,
+  DEFAULT_SHOP_ID,
+  ensureDefaultShops,
+  getSellPrice,
+  getShop,
+  listShops,
+  registerShop,
+  resetRpgShops,
+  sellItem as shopSellItem,
+} from './engine/rpgShop'
+import {
   completeQuest,
   findQuestDef,
   getActiveQuests,
@@ -595,7 +621,12 @@ import {
   ensurePlayerCombatTag,
   getActorHealth as getCombatHealth,
   isAlive,
+  grantIFrames,
+  getIFramesRemaining,
+  isInvincible,
+  listDamageNumbers,
   meleeAttack,
+  popDamageNumbers,
   rangedAttack,
 } from './engine/rpgCombat'
 import {
@@ -1786,6 +1817,21 @@ const lotusBridge = {
         const p = ensurePlayerRpgActor(actor ?? world.playerStart())
         return p ? applyEquipment(p, snapshot) : false
       },
+      /** Wave 102 — socket-attached weapon mesh */
+      visuals: {
+        sync: (actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? syncEquipmentVisuals(p) : null
+        },
+        getWeaponId: (actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? getWeaponVisualId(p) : null
+        },
+        attach: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? attachWeaponVisual(p, itemId) : false
+        },
+      },
     },
     hud3d: {
       previewInventory: (
@@ -1890,6 +1936,14 @@ const lotusBridge = {
         damage: number,
         source?: import('./engine/Actor').Actor,
       ) => rangedAttack(world.actors, origin, direction, range, damage, source),
+      /** Wave 101 — i-frames, hit flash, floating damage numbers */
+      polish: {
+        isInvincible: (actor: import('./engine/Actor').Actor) => isInvincible(actor),
+        grantIFrames: (actor: import('./engine/Actor').Actor, sec?: number) => grantIFrames(actor, sec),
+        getIFramesRemaining: (actor: import('./engine/Actor').Actor) => getIFramesRemaining(actor),
+        listDamageNumbers: () => listDamageNumbers(),
+        popDamageNumbers: () => popDamageNumbers(),
+      },
     },
     /** Wave 96 — Enemy chase AI on grid navmesh layer 0 */
     enemyAi: {
@@ -1928,6 +1982,42 @@ const lotusBridge = {
         return wireRpgPortals(playApi, world.actors.values())
       },
       reset: () => resetRpgPortals(),
+      /** Wave 103 — loading label overlay during portal changeScene */
+      transitions: {
+        overlayId: PORTAL_LOADING_OVERLAY_ID,
+        labelFor: (targetLevel: string) => portalLabelForTarget(targetLevel),
+        showLoading: (label: string) => showPortalLoading(label),
+        hideLoading: () => hidePortalLoading(),
+      },
+    },
+    /** Wave 105 — vendor buy/sell on inventory gold */
+    shop: {
+      defaultId: DEFAULT_SHOP_ID,
+      list: () => listShops(),
+      get: (id: string) => getShop(id),
+      canBuy: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? shopCanBuy(p, shopId, itemId) : false
+      },
+      buy: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? shopBuyItem(p, shopId, itemId) : false
+      },
+      canSell: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? shopCanSell(p, shopId, itemId) : false
+      },
+      sell: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? shopSellItem(p, shopId, itemId) : false
+      },
+      sellPrice: (shopId: string, itemId: string) => {
+        const shop = getShop(shopId)
+        return shop ? getSellPrice(shop, itemId) : 0
+      },
+      register: (def: import('./engine/rpgShop').ShopDef) => registerShop(def),
+      ensureDefaults: () => ensureDefaultShops(),
+      reset: () => resetRpgShops(),
     },
     /** Wave 93 — Godot Dialogue Manager / visual novel lite */
     dialogue: {
@@ -1980,10 +2070,25 @@ const lotusBridge = {
       if (!actor) return null
       const attack = findCombatAttackState(actor)
       return attack
-        ? { name: attack.name, clipName: attack.clipName, durationSec: attack.durationSec, kind: attack.kind }
+        ? {
+            name: attack.name,
+            clipName: attack.clipName,
+            durationSec: attack.durationSec,
+            kind: attack.kind,
+            rootMotionSpeed: attack.rootMotionSpeed,
+          }
         : null
     },
     attackStateName: COMBAT_ONESHOT_ATTACK_NAME,
+    /** Wave 104 — combat oneshot root motion stub */
+    getRootMotionSpeed: (actorId: string) => {
+      const actor = world.actors.get(actorId)
+      return actor ? getCombatRootMotionSpeed(actor) : 0
+    },
+    isRootMotionActive: (actorId: string) => {
+      const actor = world.actors.get(actorId)
+      return actor ? isCombatRootMotionActive(actor) : false
+    },
   },
   /** Wave 60 — cell load progress (export UX + devtools) */
   streaming: {

@@ -1,6 +1,8 @@
-/** Wave 98 (v5.29–v5.33) — RPG scene portals via TriggerVolume enter:Portal_* → changeScene. */
+/** Wave 98 (v5.29–v5.33) — RPG scene portals via TriggerVolume enter:Portal_* → changeScene.
+ *  Wave 103 (v5.54–v5.58) — loading label overlay during portal changeScene. */
 
 import type { Actor } from './Actor'
+import { hidePortalLoading, portalLabelForTarget, resetPortalTransitions, showPortalLoading } from './rpgPortalTransitions'
 import type { ScriptApi } from './scripting'
 import type { SerializedActor } from './types'
 
@@ -84,6 +86,7 @@ export function resetRpgPortals(): void {
   portalRegistry.clear()
   wiredSignals.clear()
   transitioning = false
+  resetPortalTransitions()
 }
 
 /**
@@ -104,8 +107,10 @@ export function wireRpgPortals(
     api.on(signal, () => {
       if (transitioning) return
       transitioning = true
+      showPortalLoading(portalLabelForTarget(def.targetLevel))
       api.log(`Portal → ${def.targetLevel}`)
       void Promise.resolve(api.changeScene(def.targetLevel)).finally(() => {
+        hidePortalLoading()
         transitioning = false
       })
     })

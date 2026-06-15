@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v5.43 (waves 96–100).** v0.33–v5.43 shipped; **build clean**, **`npm run test` — 444 passed**.
+- **Last clean commit: v5.68 (waves 101–105).** v0.33–v5.68 shipped; **build clean**, **`npm run test` — 469 passed**.
 - **Strategic expansion:** 3D RPG + Godot/Unreal-class workflows on three.js (camera, inventory, dialogue, quests, export pack) — see `docs/INDIE-GAME-ROADMAP.md`.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
@@ -530,13 +530,23 @@
 | 99 | v5.34–v5.38 | Combat anim oneshot — `/combatanim` + melee montage |
 | 100 | v5.39–v5.43 | Crafting + loot — `/craft`, goblin drops — 444 tests |
 
+## Shipped (v5.44–v5.68, Waves 101–105 — 3D RPG polish swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 101 | v5.44–v5.48 | Combat polish — i-frames, hit flash, damage numbers; `/combatpolish` |
+| 102 | v5.49–v5.53 | Equipment visuals — weapon socket mesh; `/equipvisual` |
+| 103 | v5.54–v5.58 | Portal transitions — loading overlay; `/portaltrans` |
+| 104 | v5.59–v5.63 | Root motion stub — Attack oneshot forward nudge; `/rootmotion` |
+| 105 | v5.64–v5.68 | Economy / shops — village_vendor buy/sell; `/shop` — 469 tests |
+
 ## Next up (3D RPG + engine parity)
 
-1. **Combat polish** — hit reactions, i-frames, damage numbers HUD
-2. **Equipment visuals** — attach weapon mesh to socket on paper-doll
-3. **Portal transitions** — fade + loading UX for overworld ↔ interior
-4. **Root motion stub** — oneshot attack drives pawn forward during montage
-5. **Economy / shops** — vendor NPC + buy/sell on inventory gold
+1. **Damage numbers HUD** — screen-space floaters wired into `rpg3dHud` during Play
+2. **Vendor NPC** — interact dialogue + shop panel on tagged `Vendor` actors
+3. **Equipment armor visuals** — head/chest socket meshes (not just weapon)
+4. **Portal cinematic** — slide transition variant + cell preload progress ring
+5. **Quest economy** — shop prices tied to quest stage / reputation stub
 
 ## Gotchas carried forward
 

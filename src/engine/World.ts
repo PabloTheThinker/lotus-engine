@@ -79,8 +79,9 @@ import {
 import { applyActorIK, hasActorSkeleton } from './ik'
 import { clearActorTicks, recordActorTick } from './profiler'
 import { resetRpgDialogue, tickRpgDialogueInteract } from './rpgDialogue'
-import { ensurePlayerCombatTag, resetRpgCombat } from './rpgCombat'
+import { ensurePlayerCombatTag, resetRpgCombat, tickHitReactions } from './rpgCombat'
 import { resetRpgCrafting } from './rpgCrafting'
+import { ensureDefaultShops, resetRpgShops } from './rpgShop'
 import { initRpgEnemyAgents, resetRpgEnemyAi, tickRpgEnemyAi } from './rpgEnemyAi'
 import { resetRpgLoot, setLootRecipientResolver } from './rpgLoot'
 import { resetRpgPortals, wireRpgPortals } from './rpgPortals'
@@ -278,6 +279,7 @@ export class World {
     resetRpgEnemyAi()
     resetRpgCrafting()
     resetRpgLoot()
+    resetRpgShops()
     resetAbilities()
     resetRpgInventories()
     resetRpgEquipment()
@@ -318,6 +320,7 @@ export class World {
     initAllActorGAS(this.actors.values())
     ensurePlayerRpgActor(this.playerStart())
     ensurePlayerCombatTag(this.playerStart())
+    ensureDefaultShops()
     void initRpgEnemyAgents(this.actors)
     for (const a of this.actors.values()) {
       const api = makeScriptApi(
@@ -690,6 +693,7 @@ export class World {
       recordActorTick(a.id, a.name, performance.now() - t0)
     }
     tickGameplay(dt, scriptLog)
+    tickHitReactions(this.actors.values())
     if (this.pawnPosition) {
       tickRpgDialogueInteract(this.actors.values(), this.pawnPosition)
     }

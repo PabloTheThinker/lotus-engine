@@ -8,6 +8,7 @@ import type { Actor } from './Actor'
 import { findCombatAttackState, triggerCombatOneshot } from './animStateMachine'
 import { getAttribute, initActorGAS, setAttribute } from './gameplayAbilities'
 
+import { applyCombatPolishOnDamage, resetRpgCombatPolish } from './rpgCombatPolish'
 import { handleEnemyDefeat, type LootDropResult } from './rpgLoot'
 
 export const COMBAT_TAG_ENEMY = 'Enemy'
@@ -76,7 +77,11 @@ export function dealDamage(target: Actor, amount: number, source?: Actor): boole
   if (!victim) return false
   const health = getAttribute(victim, 'Health')
   if (health == null) return false
-  const damage = Math.max(0, Number(amount) || 0)
+  const polish = applyCombatPolishOnDamage(victim, amount, {
+    useIFrames: actorHasTag(victim, COMBAT_TAG_PLAYER),
+  })
+  if (polish.blocked) return false
+  const damage = polish.applied
   if (damage <= 0) return true
   const wasAlive = health > 0
   const ok = setAttribute(victim, 'Health', Math.max(0, health - damage))
@@ -189,5 +194,18 @@ export function rangedAttack(
 }
 
 export function resetRpgCombat(): void {
-  // Per-play GAS state resets via resetAbilities(); defeat listeners persist.
+  resetRpgCombatPolish()
 }
+
+export {
+  applyCombatPolishOnDamage,
+  grantIFrames,
+  getIFramesRemaining,
+  isInvincible,
+  listDamageNumbers,
+  popDamageNumbers,
+  queueDamageNumber,
+  resetRpgCombatPolish,
+  tickHitReactions,
+  triggerHitReaction,
+} from './rpgCombatPolish'

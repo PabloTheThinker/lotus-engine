@@ -12,6 +12,7 @@ import {
   registerItem,
   removeItem,
 } from './rpgInventory'
+import { syncEquipmentVisuals } from './rpgEquipmentVisuals'
 
 const EQUIP_KEY = 'lotus-engine.rpg-equipment'
 
@@ -165,6 +166,7 @@ export function equip(actor: Actor, itemId: string): boolean {
 
   state.slots[def.slot] = def.id
   applyModifiers(actor, def.modifiers, 1)
+  syncEquipmentVisuals(actor)
   return true
 }
 
@@ -180,7 +182,9 @@ export function unequip(actor: Actor, slot: EquipmentSlot): boolean {
 
   state.slots[slot] = null
   applyModifiers(actor, def.modifiers, -1)
-  return addItem(actor, def.id, 1)
+  const ok = addItem(actor, def.id, 1)
+  syncEquipmentVisuals(actor)
+  return ok
 }
 
 export function applyEquipment(actor: Actor, snapshot: EquipmentSnapshot | undefined): boolean {
@@ -211,6 +215,7 @@ export function applyEquipment(actor: Actor, snapshot: EquipmentSnapshot | undef
     state.slots[slot] = def.id
     applyModifiers(actor, def.modifiers, 1)
   }
+  syncEquipmentVisuals(actor)
   return true
 }
 

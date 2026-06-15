@@ -57,7 +57,16 @@ import { setSaveContext } from '../engine/saveSystem'
 import { addGold, addItem, ensurePlayerRpgActor, getGold, getItemCount, getInventory } from '../engine/rpgInventory'
 import { canCraft, craft, ensureDefaultCraftingItems, findRecipe } from '../engine/rpgCrafting'
 import { ensureDefaultLootTables } from '../engine/rpgLoot'
-import { dealDamage, ensureCombatActor, ensurePlayerCombatTag, getActorHealth, isAlive } from '../engine/rpgCombat'
+import {
+  dealDamage,
+  ensureCombatActor,
+  ensurePlayerCombatTag,
+  getActorHealth,
+  getIFramesRemaining,
+  isAlive,
+  isInvincible,
+  listDamageNumbers,
+} from '../engine/rpgCombat'
 import { registerEnemy } from '../engine/rpgEnemyAi'
 import { buildSerializedActor } from './spawn'
 import { AddActorCommand } from './commands'
@@ -65,7 +74,14 @@ import { equip, getEquipped, getEquipmentDef } from '../engine/rpgEquipment'
 import { startDialogue, setRpgDialogueUiListener } from '../engine/rpgDialogue'
 import { findQuestDef, getQuestState, startQuest } from '../engine/rpgQuests'
 import { mountRpgDialogueUi, renderRpgDialogueUi } from './rpgDialogueUi'
-import { attachSampleCombatOneshot, COMBAT_ONESHOT_ATTACK_NAME } from '../engine/animStateMachine'
+import {
+  attachSampleCombatOneshot,
+  COMBAT_ONESHOT_ATTACK_NAME,
+  getCombatRootMotionSpeed,
+} from '../engine/animStateMachine'
+import { getWeaponVisualId, syncEquipmentVisuals } from '../engine/rpgEquipmentVisuals'
+import { hidePortalLoading, portalLabelForTarget, showPortalLoading } from '../engine/rpgPortalTransitions'
+import { buyItem, canBuy, DEFAULT_SHOP_ID, ensureDefaultShops, getShop } from '../engine/rpgShop'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -128,6 +144,11 @@ SLASH COMMANDS
   /combatanim          Attach sample Attack oneshot FSM to selected actor or PlayerStart
   /combat              Demo: spawn Enemy + deal test damage (GAS Health + nav chase)
   /equip <itemId>      Equip iron_sword / leather_helm (adds item if missing, applies GAS modifiers)
+  /combatpolish        Demo i-frames + floating damage numbers on CombatTestEnemy
+  /equipvisual         Equip iron_sword and attach socket weapon mesh
+  /portaltrans [level] Preview portal loading label overlay
+  /rootmotion          Show Attack oneshot rootMotionSpeed on PlayerStart
+  /shop buy <itemId>   Buy from village_vendor (gold + inventory)
   /cloudsave export       Print full cloud save JSON (IndexedDB checkpoints)
   /cloudsave import <json> Import cloud save JSON into IndexedDB (same level)
 
@@ -808,6 +829,142 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/combatpolish': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /combatpolish', level: 'error' }
+      }
+      const player = ensurePlayerCombatTag(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      const enemyName = 'PolishTestEnemy'
+      let enemy = [...world.actors.values()].find((a) => a.name === enemyName)
+      if (!enemy) {
+        const sa = buildSerializedActor({ kind: 'mesh', geometry: 'capsule' }, [2, 0.9, 0])
+        sa.name = enemyName
+        sa.tags = ['Enemy']
+        sa.attributeSetId = 'default'
+        new AddActorCommand(sa).execute()
+        enemy = [...world.actors.values()].find((a) => a.name === enemyName)
+      }
+      if (!enemy) return { output: null, error: 'Failed to spawn polish enemy', level: 'error' }
+      ensureCombatActor(enemy)
+      const hp0 = getActorHealth(player) ?? 0
+      dealDamage(player, 20, enemy)
+      const hp1 = getActorHealth(player) ?? 0
+      const iframeBlocked = dealDamage(player, 20, enemy)
+      const hp2 = getActorHealth(player) ?? 0
+      const nums = listDamageNumbers()
+      return {
+        output: [
+          `Combat polish → ${player.name} (Player i-frames) vs ${enemyName}`,
+          `  HP: ${hp0} → ${hp1} → ${hp2} (2nd hit blocked: ${!iframeBlocked}, iframeSec≈${getIFramesRemaining(player).toFixed(2)})`,
+          `  invincible: ${isInvincible(player)} · damage numbers queued: ${nums.length}`,
+          'Bridge: lotus.rpg.combat.polish',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/equipvisual': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /equipvisual', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      const def = getEquipmentDef('iron_sword')
+      if (!def) return { output: null, error: 'iron_sword not registered', level: 'error' }
+      if (!getItemCount(player, def.id)) addItem(player, def.id, 1)
+      if (!equip(player, def.id)) {
+        return { output: null, error: 'Failed to equip iron_sword', level: 'error' }
+      }
+      syncEquipmentVisuals(player)
+      const visual = getWeaponVisualId(player)
+      return {
+        output: [
+          `Equipment visual → ${player.name}`,
+          `  socket mesh: ${visual ?? 'none'}`,
+          'Bridge: lotus.rpg.equipment.visuals',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/portaltrans': {
+      const levelKey = args[0]?.trim() || RPG_INTERIOR_LEVEL_KEY
+      if (args.length > 1) {
+        return { output: null, error: 'Usage: /portaltrans [interior|overworld]', level: 'error' }
+      }
+      const label = portalLabelForTarget(levelKey)
+      showPortalLoading(label)
+      window.setTimeout(() => hidePortalLoading(), 900)
+      return {
+        output: [
+          `Portal transition preview → ${levelKey}`,
+          `  label: ${label}`,
+          'Bridge: lotus.rpg.portals.transitions',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/rootmotion': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /rootmotion', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      const result = attachSampleCombatOneshot(player)
+      if (!result.ok) {
+        return { output: null, error: result.error ?? 'Failed to attach combat oneshot', level: 'error' }
+      }
+      const speed = getCombatRootMotionSpeed(player)
+      return {
+        output: [
+          `Root motion stub → ${player.name}`,
+          `  Attack rootMotionSpeed: ${speed} u/s (tick during Play oneshot)`,
+          'Bridge: lotus.anim.getRootMotionSpeed · lotus.anim.isRootMotionActive',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/shop': {
+      const sub = args[0]?.toLowerCase()
+      const itemId = args[1]?.trim()
+      if (sub !== 'buy' || !itemId || args.length > 2) {
+        return { output: null, error: 'Usage: /shop buy <itemId>  (e.g. herb)', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      ensureDefaultShops()
+      const shop = getShop(DEFAULT_SHOP_ID)
+      if (!shop) return { output: null, error: 'Default shop missing', level: 'error' }
+      if (!getGold(player)) addGold(player, 100)
+      const goldBefore = getGold(player)
+      const countBefore = getItemCount(player, itemId)
+      if (!canBuy(player, DEFAULT_SHOP_ID, itemId)) {
+        return { output: null, error: `Cannot buy ${itemId} at ${shop.name}`, level: 'error' }
+      }
+      const ok = buyItem(player, DEFAULT_SHOP_ID, itemId)
+      if (!ok) return { output: null, error: `Buy failed for ${itemId}`, level: 'error' }
+      return {
+        output: [
+          `Shop buy → ${shop.name}`,
+          `  ${itemId}: ${countBefore} → ${getItemCount(player, itemId)}`,
+          `  gold: ${goldBefore} → ${getGold(player)}`,
+          'Bridge: lotus.rpg.shop',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
     case '/equip': {
       const itemId = args[0]?.trim()
       if (!itemId || args.length > 1) {
@@ -1064,7 +1221,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/equip', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/combatpolish', '/equip', '/equipvisual', '/portaltrans', '/rootmotion', '/shop', '/craft', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

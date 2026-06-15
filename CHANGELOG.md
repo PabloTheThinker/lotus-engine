@@ -4,6 +4,40 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 101–105: v5.44–v5.68 (3D RPG polish swarm)
+
+### Wave 101 (v5.44–v5.48) — Combat polish
+- `rpgCombatPolish.ts` — Player-only i-frames after hit, emissive hit flash, floating damage numbers queue
+- Bridge: `lotus.rpg.combat.polish` · `/combatpolish` terminal demo (Player i-frame block)
+
+### Fixed
+- i-frames apply only to `Player`-tagged victims so enemies accept follow-up melee/ranged hits and `/combat` defeat loot still rolls
+
+### Wave 102 (v5.49–v5.53) — Equipment visuals
+- `rpgEquipmentVisuals.ts` — `EquipWeaponSocket` mesh on equip/unequip
+- Bridge: `lotus.rpg.equipment.visuals` · `/equipvisual`
+
+### Wave 103 (v5.54–v5.58) — Portal transitions
+- `rpgPortalTransitions.ts` — loading label overlay during `changeScene` portals
+- `rpgPortals.ts` wires `showPortalLoading` on `enter:Portal_*`
+- Bridge: `lotus.rpg.portals.transitions` · `/portaltrans`
+
+### Wave 104 (v5.59–v5.63) — Root motion stub
+- `animStateMachine.ts` — `rootMotionSpeed` on Attack oneshot; forward nudge during montage
+- Bridge: `lotus.anim.getRootMotionSpeed` · `/rootmotion`
+
+### Wave 105 (v5.64–v5.68) — Economy / shops
+- `rpgShop.ts` — `village_vendor` buy/sell on gold; `api.buyItem` / `api.sellItem`
+- Bridge: `lotus.rpg.shop` · `/shop buy <itemId>`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 469 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 96–100: v5.19–v5.43 (3D RPG combat swarm)
 
 ### Wave 96 (v5.19–v5.23) — Combat system lite

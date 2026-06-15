@@ -61,6 +61,7 @@ import {
 import { dealDamage, isAlive, meleeAttack, rangedAttack } from './rpgCombat'
 import { canCraft as rpgCanCraft, craft as rpgCraft } from './rpgCrafting'
 import { rollLoot as rpgRollLoot, type LootDropResult } from './rpgLoot'
+import { buyItem as shopBuyItem, sellItem as shopSellItem } from './rpgShop'
 
 /**
  * Scripting — per-actor JavaScript, the Blueprint/GDScript analog.
@@ -306,6 +307,10 @@ export interface ScriptApi {
   craft: (recipeId: string) => boolean
   /** Wave 100 — roll a loot table and add drops to this actor's inventory */
   rollLoot: (tableId: string) => LootDropResult[]
+  /** Wave 105 — buy item from shop using gold */
+  buyItem: (shopId: string, itemId: string) => boolean
+  /** Wave 105 — sell item to shop for gold */
+  sellItem: (shopId: string, itemId: string) => boolean
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -625,6 +630,8 @@ export function makeScriptApi(
     canCraft: (recipeId) => (boundActor ? rpgCanCraft(boundActor, recipeId) : false),
     craft: (recipeId) => (boundActor ? rpgCraft(boundActor, recipeId) : false),
     rollLoot: (tableId) => (boundActor ? rpgRollLoot(tableId, boundActor) : []),
+    buyItem: (shopId, itemId) => (boundActor ? shopBuyItem(boundActor, shopId, itemId) : false),
+    sellItem: (shopId, itemId) => (boundActor ? shopSellItem(boundActor, shopId, itemId) : false),
   }
   return api
 }
