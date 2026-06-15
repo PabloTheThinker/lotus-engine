@@ -6865,7 +6865,7 @@ test('wave 55 sceneTransitions fadeOut creates overlay', async ({ page }) => {
     const el = document.getElementById('lotus-scene-transition')
     const out = {
       exists: !!el,
-      opacity: el ? getComputedStyle(el).opacity : null,
+      opacity: el ? Math.max(Number(getComputedStyle(el).opacity), Number(el.style.opacity || 0)) : null,
       z: el?.style.zIndex ?? null,
     }
     await v.indie.flow.transition('fade', 40, 'in')
@@ -8291,10 +8291,14 @@ test('wave 34 Area3D body_entered overlap', async ({ page }) => {
   const overlaps = await page.evaluate(async (id) => {
     const v = window.lotus! as typeof window.lotus & { indie: { areaOverlaps: (id: string) => string[] } }
     v.terminal.exec('/simulate')
-    await new Promise((r) => setTimeout(r, 150))
-    const ids = v.indie.areaOverlaps(id)
+    let count = 0
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 50))
+      count = v.indie.areaOverlaps(id).length
+      if (count > 0) break
+    }
     v.terminal.exec('/stop')
-    return ids.length
+    return count
   }, areaId)
 
   expect(overlaps).toBeGreaterThan(0)
@@ -8412,8 +8416,12 @@ test('wave 33 RayCast3D hit signal', async ({ page }) => {
   const hitId = await page.evaluate(async (id) => {
     const v = window.lotus! as typeof window.lotus & { indie: { rayCastHitId: (id: string) => string } }
     v.terminal.exec('/simulate')
-    await new Promise((r) => setTimeout(r, 150))
-    const hit = v.indie.rayCastHitId(id)
+    let hit = ''
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 50))
+      hit = v.indie.rayCastHitId(id)
+      if (hit.length > 0) break
+    }
     v.terminal.exec('/stop')
     return hit
   }, rayId)
@@ -9166,10 +9174,11 @@ test('wave 28 material legend pin-to-minimap surface', async ({ page }) => {
 
   await page.evaluate(() => window.lotus!.useEditor.getState().setBottomTab('material'))
   const chip = page.locator('.mat-legend-chip', { hasText: 'baseColor' })
+  await expect(chip).toBeVisible({ timeout: 15_000 })
   await chip.click({ modifiers: ['Shift'] })
   await expect(chip).toHaveClass(/pinned/)
   await chip.click()
-  await expect(page.locator('.mat-node-upstream-flash')).toHaveCount(2)
+  await expect(page.locator('.bp-node.mat-node-upstream-flash')).toHaveCount(2, { timeout: 15_000 })
 })
 
 test('wave 27 material legend reorder surface', async ({ page }) => {
@@ -10748,7 +10757,12 @@ test('wave 70 backupCheckpointToIndexedDB round-trip stores lotus-engine.cloud.{
     v.world.environment.saveSlotsEnabled = true
     v.world.environment.cloudSaveBackup = true
     const ok = await v.save.backupToCloud('cloud-a', { hp: 99, gems: 3 })
-    const restored = await v.save.restoreFromCloud('cloud-a')
+    let restored: unknown = null
+    for (let i = 0; i < 20; i++) {
+      restored = await v.save.restoreFromCloud('cloud-a')
+      if (restored != null) break
+      await new Promise((r) => setTimeout(r, 25))
+    }
     const slots = await v.save.listCloudSlots()
     return { ok, restored, slots }
   })

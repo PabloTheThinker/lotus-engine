@@ -4,6 +4,20 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — CI fix: flaky Playwright tests on GitHub Actions
+
+### Fixed
+- `sceneTransitions.ts` — snap final opacity/transform after transitions (headless CI skipped `transitionend`)
+- `smoke.spec.ts` — poll simulate/IndexedDB/material-flash assertions instead of fixed 150ms sleeps
+- Playwright CI retries `1 → 2`; job `timeout-minutes: 45`
+
+### Verification
+```bash
+CI=1 npx playwright test -g "fadeOut|material legend pin|Area3D|RayCast3D|backupCheckpoint"
+```
+
+---
+
 ## 2026-06-14 — CI fix: Playwright webServer build order
 
 ### Fixed

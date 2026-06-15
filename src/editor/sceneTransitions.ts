@@ -94,6 +94,13 @@ export async function transitionOut(kind: SceneTransitionKind, ms = DEFAULT_MS):
   if (kind === 'fade') el.style.opacity = '1'
   else el.style.transform = 'translateX(0)'
   await waitTransition(el, ms)
+  // Snap final frame — headless CI may not fire transitionend or paint intermediate opacity.
+  el.style.transition = 'none'
+  if (kind === 'fade') el.style.opacity = '1'
+  else {
+    el.style.opacity = '1'
+    el.style.transform = 'translateX(0)'
+  }
 }
 
 export async function transitionIn(kind: SceneTransitionKind, ms = DEFAULT_MS): Promise<void> {
@@ -115,8 +122,11 @@ export async function transitionIn(kind: SceneTransitionKind, ms = DEFAULT_MS): 
   else if (kind === 'slideLeft') el.style.transform = 'translateX(-100%)'
   else el.style.transform = 'translateX(100%)'
   await waitTransition(el, ms)
+  el.style.transition = 'none'
   el.style.pointerEvents = 'none'
   if (kind === 'fade') el.style.opacity = '0'
+  else if (kind === 'slideLeft') el.style.transform = 'translateX(-100%)'
+  else el.style.transform = 'translateX(100%)'
 }
 
 /** Fade/slide out → optional work → fade/slide in. */
