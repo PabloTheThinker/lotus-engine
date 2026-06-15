@@ -540,13 +540,23 @@
 | 104 | v5.59–v5.63 | Root motion stub — Attack oneshot forward nudge; `/rootmotion` |
 | 105 | v5.64–v5.68 | Economy / shops — village_vendor buy/sell; `/shop` — 469 tests |
 
+## Shipped (v5.69–v5.93, Waves 106–110 — 3D RPG UX swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 106 | v5.69–v5.73 | Damage numbers HUD — screen-space floaters; `/damagehud` |
+| 107 | v5.74–v5.78 | Vendor NPC — Vendor tag + shop panel; `/vendor` |
+| 108 | v5.79–v5.83 | Armor visuals — head/chest sockets; `/armorvisual` |
+| 109 | v5.84–v5.88 | Portal cinematic — slide + preload ring; `/portalcine` |
+| 110 | v5.89–v5.93 | Quest economy — find_herbs herb discount; `/shopprice` — 494 tests |
+
 ## Next up (3D RPG + engine parity)
 
-1. **Damage numbers HUD** — screen-space floaters wired into `rpg3dHud` during Play
-2. **Vendor NPC** — interact dialogue + shop panel on tagged `Vendor` actors
-3. **Equipment armor visuals** — head/chest socket meshes (not just weapon)
-4. **Portal cinematic** — slide transition variant + cell preload progress ring
-5. **Quest economy** — shop prices tied to quest stage / reputation stub
+1. **Shop buy UX** — click-to-buy rows in shop panel + sell tab
+2. **Vendor dialogue tree** — greet line before shop opens (VN-style branch)
+3. **Damage crit pipeline** — `dealDamage` crit flag → gold floater styling
+4. **Overworld cell preload** — real `loadCellDuringPlay` progress on portal ring
+5. **Reputation quests** — unlock shop listings when quests complete
 
 ## Gotchas carried forward
 

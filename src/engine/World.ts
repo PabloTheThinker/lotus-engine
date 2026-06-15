@@ -81,7 +81,10 @@ import { clearActorTicks, recordActorTick } from './profiler'
 import { resetRpgDialogue, tickRpgDialogueInteract } from './rpgDialogue'
 import { ensurePlayerCombatTag, resetRpgCombat, tickHitReactions } from './rpgCombat'
 import { resetRpgCrafting } from './rpgCrafting'
-import { ensureDefaultShops, resetRpgShops } from './rpgShop'
+import { ensureDefaultShops, getShop, resetRpgShops } from './rpgShop'
+import { resolveBuyPrice } from './rpgShopEconomy'
+import { resetRpgVendorNpc, setVendorOpenListener, tickVendorInteract } from './rpgVendorNpc'
+import { ensurePlayerRpgActor as ensureRpgPlayer, getGold, getItemDef } from './rpgInventory'
 import { initRpgEnemyAgents, resetRpgEnemyAi, tickRpgEnemyAi } from './rpgEnemyAi'
 import { resetRpgLoot, setLootRecipientResolver } from './rpgLoot'
 import { resetRpgPortals, wireRpgPortals } from './rpgPortals'
@@ -280,6 +283,7 @@ export class World {
     resetRpgCrafting()
     resetRpgLoot()
     resetRpgShops()
+    resetRpgVendorNpc()
     resetAbilities()
     resetRpgInventories()
     resetRpgEquipment()
@@ -366,6 +370,29 @@ export class World {
     // authored HUD widgets (UMG designer)
     syncAuthoredHud(this.hudWidgets, (signal) => this.playApi?.emit(signal))
     if (this.playApi) wireRpgPortals(this.playApi, this.actors.values())
+    setVendorOpenListener((payload) => {
+      if (!this.playApi) return
+      const player = ensureRpgPlayer(this.playerStart())
+      const shop = getShop(payload.shopId)
+      if (!player || !shop) return
+      const rows = shop.listings.map((listing) => {
+        const def = getItemDef(listing.itemId)
+        const price = resolveBuyPrice(player, payload.shopId, listing.itemId)
+        return {
+          itemId: listing.itemId,
+          name: def?.name ?? listing.itemId,
+          price,
+          canAfford: getGold(player) >= price,
+        }
+      })
+      this.playApi.emit('shop_toggle', [
+        true,
+        payload.vendorName,
+        payload.greeting,
+        getGold(player),
+        rows,
+      ])
+    })
   }
 
   playClock = 0
@@ -696,6 +723,7 @@ export class World {
     tickHitReactions(this.actors.values())
     if (this.pawnPosition) {
       tickRpgDialogueInteract(this.actors.values(), this.pawnPosition)
+      tickVendorInteract(this.actors.values(), this.pawnPosition)
     }
     if (this.playApi) {
       tickBTs(

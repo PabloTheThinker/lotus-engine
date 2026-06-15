@@ -50,6 +50,12 @@ const DEFAULT_EQUIPMENT: EquipmentItemDef[] = [
     slot: 'head',
     modifiers: [{ attribute: 'Health', value: 5 }],
   },
+  {
+    id: 'leather_chest',
+    name: 'Leather Chest',
+    slot: 'chest',
+    modifiers: [{ attribute: 'Health', value: 8 }],
+  },
 ]
 
 const actorEquipment = new WeakMap<Actor, ActorEquipmentState>()

@@ -57,6 +57,7 @@ import {
   mountRpg3dHudForPlay,
   unmountRpg3dHudForPlay,
 } from './rpg3dHud'
+import { clearRpgDamageHud, tickRpgDamageHud } from './rpgDamageHud'
 import {
   mpConnect,
   mpDisconnect,
@@ -1902,6 +1903,16 @@ export function Viewport() {
       if (simDt > 0) {
         pawn.update(simDt)
         world.tick(simDt * consoleState.timeDilation)
+      }
+      if (
+        s.playing &&
+        (isRpg3dHudEnabled() || hasRpg3dManager(world.actors.values()))
+      ) {
+        const hudW = mount.clientWidth || renderer.domElement.clientWidth
+        const hudH = mount.clientHeight || renderer.domElement.clientHeight
+        tickRpgDamageHud(activeCam, hudW, hudH)
+      } else if (!s.playing) {
+        clearRpgDamageHud(mount)
       }
       if (s.playing) {
         liveBumpAcc += dt

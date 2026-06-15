@@ -79,9 +79,22 @@ import {
   COMBAT_ONESHOT_ATTACK_NAME,
   getCombatRootMotionSpeed,
 } from '../engine/animStateMachine'
-import { getWeaponVisualId, syncEquipmentVisuals } from '../engine/rpgEquipmentVisuals'
-import { hidePortalLoading, portalLabelForTarget, showPortalLoading } from '../engine/rpgPortalTransitions'
+import {
+  getArmorVisualId,
+  getWeaponVisualId,
+  syncEquipmentVisuals,
+} from '../engine/rpgEquipmentVisuals'
+import {
+  hidePortalLoading,
+  portalCinematicOut,
+  portalLabelForTarget,
+  showPortalLoading,
+} from '../engine/rpgPortalTransitions'
 import { buyItem, canBuy, DEFAULT_SHOP_ID, ensureDefaultShops, getShop } from '../engine/rpgShop'
+import { priceBreakdown, resolveBuyPrice } from '../engine/rpgShopEconomy'
+import { openVendorShop, VENDOR_NPC_TAG } from '../engine/rpgVendorNpc'
+import { previewRpgDamageHud } from './rpgDamageHud'
+import { previewRpg3dShop } from './rpg3dHud'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -149,6 +162,11 @@ SLASH COMMANDS
   /portaltrans [level] Preview portal loading label overlay
   /rootmotion          Show Attack oneshot rootMotionSpeed on PlayerStart
   /shop buy <itemId>   Buy from village_vendor (gold + inventory)
+  /damagehud           Preview screen-space damage number floaters on RPG HUD
+  /vendor              Spawn Vendor NPC + preview shop panel (village_vendor)
+  /armorvisual         Equip leather_helm + leather_chest socket meshes
+  /portalcine [level]  Slide portal cinematic + preload progress ring preview
+  /shopprice <itemId>  Show quest-linked buy price breakdown (demo: herb with find_herbs)
   /cloudsave export       Print full cloud save JSON (IndexedDB checkpoints)
   /cloudsave import <json> Import cloud save JSON into IndexedDB (same level)
 
@@ -933,6 +951,136 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/damagehud': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /damagehud', level: 'error' }
+      }
+      const count = previewRpgDamageHud([
+        { amount: 15, x: 320, y: 240 },
+        { amount: 42, x: 480, y: 180, crit: true },
+      ])
+      return {
+        output: [
+          'Damage HUD preview → screen-space floaters',
+          `  rendered: ${count} numbers`,
+          'Bridge: lotus.rpg.hud3d.previewDamage · tickDamage during Play',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/vendor': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /vendor', level: 'error' }
+      }
+      const vendorName = 'VillageVendor'
+      let vendor = [...world.actors.values()].find((a) => a.name === vendorName)
+      if (!vendor) {
+        const sa = buildSerializedActor({ kind: 'mesh', geometry: 'capsule' }, [-2, 0.9, 2])
+        sa.name = vendorName
+        sa.tags = [VENDOR_NPC_TAG]
+        sa.scriptVars = { shopId: DEFAULT_SHOP_ID, greeting: 'Fine wares for brave adventurers!' }
+        new AddActorCommand(sa).execute()
+        vendor = [...world.actors.values()].find((a) => a.name === vendorName)
+      }
+      if (!vendor) return { output: null, error: 'Failed to spawn vendor', level: 'error' }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      ensureDefaultShops()
+      const shop = getShop(DEFAULT_SHOP_ID)
+      if (!shop) return { output: null, error: 'Default shop missing', level: 'error' }
+      if (!getGold(player)) addGold(player, 50)
+      const listings = shop.listings.map((l) => {
+        const price = resolveBuyPrice(player, shop.id, l.itemId)
+        return {
+          itemId: l.itemId,
+          name: l.itemId,
+          price,
+          canAfford: getGold(player) >= price,
+        }
+      })
+      previewRpg3dShop(true, vendorName, String(vendor.scriptVars?.greeting ?? ''), getGold(player), listings)
+      openVendorShop(vendor)
+      return {
+        output: [
+          `Vendor NPC → ${vendorName} (${VENDOR_NPC_TAG})`,
+          `  shop: ${DEFAULT_SHOP_ID} · listings: ${listings.length}`,
+          'Bridge: lotus.rpg.vendor · lotus.rpg.hud3d.previewShop',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/armorvisual': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /armorvisual', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      for (const id of ['leather_helm', 'leather_chest']) {
+        const def = getEquipmentDef(id)
+        if (!def) continue
+        if (!getItemCount(player, id)) addItem(player, id, 1)
+        equip(player, id)
+      }
+      syncEquipmentVisuals(player)
+      return {
+        output: [
+          `Armor visuals → ${player.name}`,
+          `  head: ${getArmorVisualId(player, 'head') ?? 'none'}`,
+          `  chest: ${getArmorVisualId(player, 'chest') ?? 'none'}`,
+          'Bridge: lotus.rpg.equipment.visuals.attachArmor',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/portalcine': {
+      const levelKey = args[0]?.trim() || 'interior'
+      if (args.length > 1) {
+        return { output: null, error: 'Usage: /portalcine [interior|overworld]', level: 'error' }
+      }
+      void portalCinematicOut(levelKey, { preloadSteps: 5 }).then(() => hidePortalLoading())
+      return {
+        output: [
+          `Portal cinematic → ${levelKey}`,
+          `  slide + preload ring (see overlay)`,
+          'Bridge: lotus.rpg.portals.transitions.cinematicOut',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/shopprice': {
+      const itemId = args[0]?.trim() || 'herb'
+      if (args.length > 1) {
+        return { output: null, error: 'Usage: /shopprice <itemId>  (e.g. herb)', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — run /starter thirdperson', level: 'error' }
+      }
+      ensureDefaultShops()
+      startQuest('find_herbs')
+      const breakdown = priceBreakdown(player, DEFAULT_SHOP_ID, itemId)
+      if (!breakdown) {
+        return { output: null, error: `No listing for ${itemId}`, level: 'error' }
+      }
+      return {
+        output: [
+          `Shop price → ${itemId} (find_herbs active)`,
+          `  base: ${breakdown.base}g → resolved: ${breakdown.resolved}g`,
+          `  questMult: ${breakdown.questMult} · repMult: ${breakdown.repMult.toFixed(3)}`,
+          'Bridge: lotus.rpg.shop.economy',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
     case '/shop': {
       const sub = args[0]?.toLowerCase()
       const itemId = args[1]?.trim()
@@ -1221,7 +1369,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/combatpolish', '/equip', '/equipvisual', '/portaltrans', '/rootmotion', '/shop', '/craft', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/combatpolish', '/equip', '/equipvisual', '/portaltrans', '/rootmotion', '/shop', '/damagehud', '/vendor', '/armorvisual', '/portalcine', '/shopprice', '/craft', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

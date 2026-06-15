@@ -14,6 +14,7 @@ import {
 } from './rpgInventory'
 import { registerEquipmentItem } from './rpgEquipment'
 import { ensureDefaultCraftingItems } from './rpgCrafting'
+import { resolveBuyPrice, resolveSellPrice } from './rpgShopEconomy'
 
 const SHOP_KEY = 'lotus-engine.rpg-shops'
 
@@ -88,10 +89,15 @@ export function findListing(shop: ShopDef, itemId: string): ShopListing | null {
   return shop.listings.find((l) => l.itemId.toLowerCase() === q) ?? null
 }
 
-export function getSellPrice(shop: ShopDef, itemId: string): number {
+export function getSellPrice(shop: ShopDef, itemId: string, actor?: Actor): number {
+  if (actor) return resolveSellPrice(actor, shop, itemId)
   const listing = findListing(shop, itemId)
   if (!listing) return 0
   return Math.max(1, Math.floor(listing.price * shop.sellRate))
+}
+
+export function getBuyPrice(actor: Actor | undefined, shopId: string, itemId: string): number {
+  return resolveBuyPrice(actor, shopId, itemId)
 }
 
 export function ensureDefaultShops(): void {
@@ -101,6 +107,12 @@ export function ensureDefaultShops(): void {
     name: 'Iron Sword',
     slot: 'weapon',
     modifiers: [{ attribute: 'damage', value: 10 }],
+  })
+  registerEquipmentItem({
+    id: 'leather_chest',
+    name: 'Leather Chest',
+    slot: 'chest',
+    modifiers: [{ attribute: 'Health', value: 8 }],
   })
   for (const def of Object.values(SHOP_DEFS)) registerShop(def)
 }
@@ -113,7 +125,7 @@ export function canBuy(actor: Actor | undefined, shopId: string, itemId: string)
   const listing = findListing(shop, itemId)
   if (!listing || !getItemDef(listing.itemId)) return false
   if (listing.stock != null && listing.stock <= 0) return false
-  return getGold(player) >= listing.price
+  return getGold(player) >= resolveBuyPrice(player, shopId, itemId)
 }
 
 export function buyItem(actor: Actor | undefined, shopId: string, itemId: string): boolean {
@@ -122,9 +134,10 @@ export function buyItem(actor: Actor | undefined, shopId: string, itemId: string
   const player = ensurePlayerRpgActor(actor ?? undefined)!
   const shop = getShop(shopId)!
   const listing = findListing(shop, itemId)!
-  addGold(player, -listing.price)
+  const price = resolveBuyPrice(player, shopId, itemId)
+  addGold(player, -price)
   if (!addItem(player, listing.itemId, 1)) {
-    addGold(player, listing.price)
+    addGold(player, price)
     return false
   }
   if (listing.stock != null) listing.stock = Math.max(0, listing.stock - 1)
@@ -145,7 +158,7 @@ export function sellItem(actor: Actor | undefined, shopId: string, itemId: strin
   const player = ensurePlayerRpgActor(actor ?? undefined)
   const shop = getShop(shopId)
   if (!player || !shop || !hasItem(player, itemId)) return false
-  const payout = getSellPrice(shop, itemId) || Math.max(1, Math.floor((findListing(shop, itemId)?.price ?? 10) * shop.sellRate))
+  const payout = resolveSellPrice(player, shop, itemId) || Math.max(1, Math.floor((findListing(shop, itemId)?.price ?? 10) * shop.sellRate))
   if (!removeItem(player, itemId, 1)) return false
   addGold(player, payout)
   return true

@@ -200,13 +200,23 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 | 104 | v5.59–v5.63 | **Root motion** — Attack oneshot forward nudge |
 | 105 | v5.64–v5.68 | **Shops** — village_vendor buy/sell — **469 tests** |
 
+## Shipped (Waves 106–110, v5.69–v5.93) — 3D RPG UX
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 106 | v5.69–v5.73 | **Damage HUD** — screen-space floaters during Play |
+| 107 | v5.74–v5.78 | **Vendor NPC** — Vendor tag + shop panel |
+| 108 | v5.79–v5.83 | **Armor visuals** — head/chest socket meshes |
+| 109 | v5.84–v5.88 | **Portal cinematic** — slide + preload progress ring |
+| 110 | v5.89–v5.93 | **Quest economy** — find_herbs herb discount — **494 tests** |
+
 ## Next priority queue (3D RPG + parity)
 
-1. **Damage numbers HUD** — rpg3dHud screen-space floaters during Play
-2. **Vendor NPC** — Interact-tagged shopkeeper + dialogue hook
-3. **Armor visuals** — head/chest socket meshes on paper-doll
-4. **Portal cinematic** — slide variant + streaming preload UX
-5. **Quest economy** — shop prices vs quest stage / rep stub
+1. **Shop buy UX** — click-to-buy in shop panel + sell tab
+2. **Vendor dialogue** — greet branch before shop opens
+3. **Crit damage pipeline** — gold crit floaters from combat polish
+4. **Cell preload progress** — real streaming % on portal ring
+5. **Reputation unlocks** — shop listings gated by quest completion
 
 ## Non-goals (honest skip)
 
@@ -217,5 +227,5 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **469** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **494** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

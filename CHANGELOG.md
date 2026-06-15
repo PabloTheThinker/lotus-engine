@@ -4,6 +4,36 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 106–110: v5.69–v5.93 (3D RPG UX swarm)
+
+### Wave 106 (v5.69–v5.73) — Damage numbers HUD
+- `rpgDamageHud.ts` — screen-space floaters projected from `listDamageNumbers` during Play
+- Bridge: `lotus.rpg.hud3d.previewDamage` · `/damagehud`
+
+### Wave 107 (v5.74–v5.78) — Vendor NPC
+- `rpgVendorNpc.ts` — `Vendor` tag interact opens shop panel via `shop_toggle` signal
+- Shop panel in `rpg3dHud.ts` · Bridge: `lotus.rpg.vendor` · `/vendor`
+
+### Wave 108 (v5.79–v5.83) — Armor visuals
+- `rpgEquipmentVisuals.ts` — `EquipHeadSocket` + `EquipChestSocket` meshes
+- `leather_chest` equipment def · `/armorvisual`
+
+### Wave 109 (v5.84–v5.88) — Portal cinematic
+- `rpgPortalTransitions.ts` — slide variant + preload progress ring
+- Bridge: `lotus.rpg.portals.transitions.cinematicOut` · `/portalcine`
+
+### Wave 110 (v5.89–v5.93) — Quest economy
+- `rpgShopEconomy.ts` — `find_herbs` herb discount + reputation price stub
+- `buyItem` uses `resolveBuyPrice` · Bridge: `lotus.rpg.shop.economy` · `/shopprice`
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 494 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 101–105: v5.44–v5.68 (3D RPG polish swarm)
 
 ### Wave 101 (v5.44–v5.48) — Combat polish

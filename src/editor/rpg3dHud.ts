@@ -1,6 +1,8 @@
 /** Wave 95 (v5.14–v5.18) — 3D RPG HUD overlay (health, quest tracker, inventory, dialogue).
  *  Wave 97 (v5.24–v5.28) — equipment paper-doll row in inventory panel.
- *  Wave 100 (v5.39–v5.43) — crafting panel toggle (C key). */
+ *  Wave 100 (v5.39–v5.43) — crafting panel toggle (C key).
+ *  Wave 106 (v5.69–v5.73) — screen-space damage number floaters (rpgDamageHud).
+ *  Wave 107 (v5.74–v5.78) — vendor shop panel on Vendor NPC interact. */
 
 import type { ScriptApi } from '../engine/scripting'
 import { RPG3D_MANAGER_NAME } from './rpg3dExportPack'
@@ -121,11 +123,42 @@ export const RPG_HUD_OVERLAY_CSS = `
     font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
     color: #79828f; margin-top: 4px;
   }
+  .lotus-rpg-shop {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    min-width: 300px; padding: 16px 20px; border-radius: 10px;
+    background: rgba(13,15,18,.94); border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 12px 36px rgba(0,0,0,.45); display: none;
+    pointer-events: auto;
+  }
+  .lotus-rpg-shop.open { display: block; }
+  .lotus-rpg-shop-title {
+    font-size: 14px; font-weight: 800; color: #f6d365; margin-bottom: 4px;
+  }
+  .lotus-rpg-shop-greeting {
+    font-size: 12px; color: #9aa4b2; margin-bottom: 10px; line-height: 1.4;
+  }
+  .lotus-rpg-shop-gold {
+    font-size: 11px; font-weight: 700; color: #7ec8a4; margin-bottom: 10px;
+  }
+  .lotus-rpg-shop ul {
+    margin: 0; padding-left: 0; list-style: none; font-size: 12px; color: #c8d0d8;
+  }
+  .lotus-rpg-shop li {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .lotus-rpg-shop li:last-child { border-bottom: none; }
+  .lotus-rpg-shop .item-name { font-weight: 700; color: #e8edf4; }
+  .lotus-rpg-shop .item-price { color: #f6d365; font-weight: 800; }
+  .lotus-rpg-shop-hint {
+    font-size: 11px; color: #79828f; margin-top: 10px;
+  }
 `
 
 const HUD_ROOT_ID = 'lotus-rpg-hud-root'
 const INVENTORY_ID = 'lotus-rpg-inventory'
 const CRAFTING_ID = 'lotus-rpg-crafting'
+const SHOP_ID = 'lotus-rpg-shop'
 const DIALOGUE_ID = 'lotus-rpg-dialogue'
 const QUEST_ID = 'lotus-rpg-quest-text'
 const HP_FILL_ID = 'lotus-rpg-hp-fill'
@@ -161,6 +194,13 @@ function ensureHudRoot(parent?: HTMLElement): HTMLElement {
       <div class="lotus-rpg-crafting-title">Crafting</div>
       <ul id="lotus-rpg-crafting-list"></ul>
       <div class="lotus-rpg-crafting-hint">Press C to close · Enter to craft ready recipe</div>
+    </div>
+    <div class="lotus-rpg-shop" id="${SHOP_ID}">
+      <div class="lotus-rpg-shop-title" id="lotus-rpg-shop-title">Shop</div>
+      <div class="lotus-rpg-shop-greeting" id="lotus-rpg-shop-greeting"></div>
+      <div class="lotus-rpg-shop-gold" id="lotus-rpg-shop-gold">Gold: 0</div>
+      <ul id="lotus-rpg-shop-list"></ul>
+      <div class="lotus-rpg-shop-hint">Press Esc to close</div>
     </div>
     <div class="lotus-rpg-dialogue" id="${DIALOGUE_ID}">
       <div class="lotus-rpg-dialogue-speaker" id="lotus-rpg-dialogue-speaker"></div>
@@ -254,6 +294,67 @@ function showCrafting(open: boolean) {
   if (panel) panel.classList.toggle('open', open)
 }
 
+export interface ShopListingRow {
+  itemId: string
+  name: string
+  price: number
+  canAfford: boolean
+}
+
+function renderShop(
+  vendorName: string,
+  greeting: string,
+  gold: number,
+  listings: ShopListingRow[],
+) {
+  const title = document.getElementById('lotus-rpg-shop-title')
+  const greet = document.getElementById('lotus-rpg-shop-greeting')
+  const goldEl = document.getElementById('lotus-rpg-shop-gold')
+  const list = document.getElementById('lotus-rpg-shop-list')
+  if (!title || !greet || !goldEl || !list) return
+  title.textContent = vendorName
+  greet.textContent = greeting
+  goldEl.textContent = `Gold: ${gold}`
+  if (!listings.length) {
+    list.innerHTML = '<li><em>No items</em></li>'
+    return
+  }
+  list.innerHTML = listings
+    .map(
+      (row) => `<li>
+        <span class="item-name">${row.name}</span>
+        <span class="item-price">${row.canAfford ? '' : '✗ '}${row.price}g</span>
+      </li>`,
+    )
+    .join('')
+}
+
+function showShop(open: boolean) {
+  const panel = document.getElementById(SHOP_ID)
+  if (panel) panel.classList.toggle('open', open)
+}
+
+function onShopToggle(payload: unknown) {
+  const row = Array.isArray(payload) ? payload : []
+  const open = row[0] === true
+  const vendorName = String(row[1] ?? 'Shop')
+  const greeting = String(row[2] ?? '')
+  const gold = Math.max(0, Math.floor(Number(row[3]) || 0))
+  const listings = Array.isArray(row[4])
+    ? row[4].map((entry) => {
+        const r = entry as ShopListingRow
+        return {
+          itemId: String(r.itemId ?? ''),
+          name: String(r.name ?? r.itemId ?? ''),
+          price: Math.max(0, Math.floor(Number(r.price) || 0)),
+          canAfford: r.canAfford === true,
+        }
+      })
+    : []
+  renderShop(vendorName, greeting, gold, listings)
+  showShop(open)
+}
+
 function showDialogueLine() {
   const panel = document.getElementById(DIALOGUE_ID)
   const speakerEl = document.getElementById('lotus-rpg-dialogue-speaker')
@@ -337,6 +438,7 @@ export function wireRpg3dHud(api: Pick<ScriptApi, 'on' | 'actionJustPressed'>) {
   api.on('dialogue_advance', onDialogueAdvance)
   api.on('inventory_toggle', onInventoryToggle)
   api.on('crafting_toggle', onCraftingToggle)
+  api.on('shop_toggle', onShopToggle)
   api.on('quest_update', onQuestUpdate)
   api.on('hp_update', onHpUpdate)
   api.on('quest_complete', () => setQuestText('Quest complete: Herbs delivered!'))
@@ -401,6 +503,20 @@ export function previewRpg3dCrafting(
   ensureHudRoot(parent)
   renderCrafting(recipes)
   showCrafting(open)
+}
+
+/** Editor / smoke-test helper — mount vendor shop panel. */
+export function previewRpg3dShop(
+  open: boolean,
+  vendorName: string,
+  greeting: string,
+  gold: number,
+  listings: ShopListingRow[],
+  parent?: HTMLElement,
+) {
+  ensureHudRoot(parent)
+  renderShop(vendorName, greeting, gold, listings)
+  showShop(open)
 }
 
 /** Advance dialogue on Interact while panel is open (called from play loop). */

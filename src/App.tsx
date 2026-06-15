@@ -71,7 +71,18 @@ import {
   spawnRpg3dGame,
   VILLAGE_ELDER_NAME,
 } from './editor/rpg3dExportPack'
-import { enableRpg3dHud, previewRpg3dCrafting, previewRpg3dInventory } from './editor/rpg3dHud'
+import {
+  enableRpg3dHud,
+  previewRpg3dCrafting,
+  previewRpg3dInventory,
+  previewRpg3dShop,
+} from './editor/rpg3dHud'
+import {
+  clearRpgDamageHud,
+  previewRpgDamageHud,
+  RPG_DAMAGE_LAYER_ID,
+  tickRpgDamageHud,
+} from './editor/rpgDamageHud'
 import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
@@ -551,14 +562,19 @@ import {
   type EquipmentSlot,
 } from './engine/rpgEquipment'
 import {
+  attachArmorVisual,
   attachWeaponVisual,
+  getArmorVisualId,
   getWeaponVisualId,
   syncEquipmentVisuals,
 } from './engine/rpgEquipmentVisuals'
 import {
   hidePortalLoading,
   PORTAL_LOADING_OVERLAY_ID,
+  PORTAL_PROGRESS_RING_ID,
+  portalCinematicOut,
   portalLabelForTarget,
+  setPortalPreloadProgress,
   showPortalLoading,
 } from './engine/rpgPortalTransitions'
 import {
@@ -567,6 +583,7 @@ import {
   canSell as shopCanSell,
   DEFAULT_SHOP_ID,
   ensureDefaultShops,
+  getBuyPrice,
   getSellPrice,
   getShop,
   listShops,
@@ -574,6 +591,24 @@ import {
   resetRpgShops,
   sellItem as shopSellItem,
 } from './engine/rpgShop'
+import {
+  getReputation,
+  listQuestPriceRules,
+  priceBreakdown,
+  questPriceMultiplier,
+  resetRpgShopEconomy,
+  resolveBuyPrice,
+  setReputation,
+} from './engine/rpgShopEconomy'
+import {
+  openVendorShop,
+  resetRpgVendorNpc,
+  tickVendorInteract,
+  VENDOR_INTERACT_RADIUS,
+  VENDOR_NPC_TAG,
+  vendorGreetingForActor,
+  vendorShopIdForActor,
+} from './engine/rpgVendorNpc'
 import {
   completeQuest,
   findQuestDef,
@@ -1831,9 +1866,16 @@ const lotusBridge = {
           const p = ensurePlayerRpgActor(actor ?? world.playerStart())
           return p ? attachWeaponVisual(p, itemId) : false
         },
+        attachArmor: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? attachArmorVisual(p, itemId) : false
+        },
+        getArmorId: (actor: import('./engine/Actor').Actor, slot: 'head' | 'chest') =>
+          getArmorVisualId(actor, slot),
       },
     },
     hud3d: {
+      damageLayerId: RPG_DAMAGE_LAYER_ID,
       previewInventory: (
         open: boolean,
         items: string[],
@@ -1845,6 +1887,25 @@ const lotusBridge = {
         recipes: Array<{ id: string; name: string; inputs: string; output: string; canCraft: boolean }>,
         parent?: HTMLElement,
       ) => previewRpg3dCrafting(open, recipes, parent),
+      previewDamage: (
+        events: Array<{ amount: number; x: number; y: number; crit?: boolean }>,
+        parent?: HTMLElement,
+      ) => previewRpgDamageHud(events, parent),
+      previewShop: (
+        open: boolean,
+        vendorName: string,
+        greeting: string,
+        gold: number,
+        listings: Array<{ itemId: string; name: string; price: number; canAfford: boolean }>,
+        parent?: HTMLElement,
+      ) => previewRpg3dShop(open, vendorName, greeting, gold, listings, parent),
+      clearDamage: (parent?: HTMLElement) => clearRpgDamageHud(parent),
+      tickDamage: (
+        camera: import('three').Camera,
+        width: number,
+        height: number,
+        parent?: HTMLElement,
+      ) => tickRpgDamageHud(camera, width, height, performance.now(), parent),
     },
     /** Wave 100 — crafting recipes (inputs → output) */
     crafting: {
@@ -1985,10 +2046,25 @@ const lotusBridge = {
       /** Wave 103 — loading label overlay during portal changeScene */
       transitions: {
         overlayId: PORTAL_LOADING_OVERLAY_ID,
+        progressRingId: PORTAL_PROGRESS_RING_ID,
         labelFor: (targetLevel: string) => portalLabelForTarget(targetLevel),
         showLoading: (label: string) => showPortalLoading(label),
         hideLoading: () => hidePortalLoading(),
+        setPreloadProgress: (pct: number) => setPortalPreloadProgress(pct),
+        cinematicOut: (targetLevel: string, opts?: { ms?: number; preloadSteps?: number }) =>
+          portalCinematicOut(targetLevel, opts),
       },
+    },
+    /** Wave 107 — Vendor NPC interact + shop panel */
+    vendor: {
+      tag: VENDOR_NPC_TAG,
+      interactRadius: VENDOR_INTERACT_RADIUS,
+      shopIdFor: (actor: import('./engine/Actor').Actor) => vendorShopIdForActor(actor),
+      greetingFor: (actor: import('./engine/Actor').Actor) => vendorGreetingForActor(actor),
+      open: (actor: import('./engine/Actor').Actor) => openVendorShop(actor),
+      tickInteract: (pawnPos: import('three').Vector3 | null) =>
+        tickVendorInteract(world.actors.values(), pawnPos),
+      reset: () => resetRpgVendorNpc(),
     },
     /** Wave 105 — vendor buy/sell on inventory gold */
     shop: {
@@ -2011,13 +2087,43 @@ const lotusBridge = {
         const p = ensurePlayerRpgActor(actor ?? world.playerStart())
         return p ? shopSellItem(p, shopId, itemId) : false
       },
-      sellPrice: (shopId: string, itemId: string) => {
+      sellPrice: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
         const shop = getShop(shopId)
-        return shop ? getSellPrice(shop, itemId) : 0
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return shop ? getSellPrice(shop, itemId, p ?? undefined) : 0
+      },
+      buyPrice: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? getBuyPrice(p, shopId, itemId) : 0
       },
       register: (def: import('./engine/rpgShop').ShopDef) => registerShop(def),
       ensureDefaults: () => ensureDefaultShops(),
       reset: () => resetRpgShops(),
+      /** Wave 110 — quest-linked prices + reputation stub */
+      economy: {
+        resolveBuyPrice: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? resolveBuyPrice(p, shopId, itemId) : 0
+        },
+        priceBreakdown: (shopId: string, itemId: string, actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? priceBreakdown(p, shopId, itemId) : null
+        },
+        questMultiplier: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return p ? questPriceMultiplier(p, itemId) : 1
+        },
+        getReputation: (actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return getReputation(p ?? undefined)
+        },
+        setReputation: (value: number, actor?: import('./engine/Actor').Actor) => {
+          const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+          return setReputation(value, p ?? undefined)
+        },
+        listQuestRules: () => listQuestPriceRules(),
+        reset: () => resetRpgShopEconomy(),
+      },
     },
     /** Wave 93 — Godot Dialogue Manager / visual novel lite */
     dialogue: {
