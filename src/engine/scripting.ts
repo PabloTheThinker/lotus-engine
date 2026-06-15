@@ -48,6 +48,7 @@ import {
   mergeRpgIntoCheckpoint,
   removeItem,
 } from './rpgInventory'
+import { equip as rpgEquip, getEquipped as rpgGetEquipped, unequip as rpgUnequip, type EquipmentSlot } from './rpgEquipment'
 import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
 import {
   completeQuest,
@@ -57,6 +58,9 @@ import {
   updateObjective,
   type QuestStateView,
 } from './rpgQuests'
+import { dealDamage, isAlive, meleeAttack, rangedAttack } from './rpgCombat'
+import { canCraft as rpgCanCraft, craft as rpgCraft } from './rpgCrafting'
+import { rollLoot as rpgRollLoot, type LootDropResult } from './rpgLoot'
 
 /**
  * Scripting — per-actor JavaScript, the Blueprint/GDScript analog.
@@ -274,6 +278,12 @@ export interface ScriptApi {
   getGold: () => number
   /** Wave 92 — add gold delta (floored, never below 0) */
   addGold: (amount: number) => number
+  /** Wave 97 — equip an inventory item into its paper-doll slot (applies GAS modifiers) */
+  equip: (itemId: string) => boolean
+  /** Wave 97 — unequip a slot (returns item to inventory, removes modifiers) */
+  unequip: (slot: EquipmentSlot) => boolean
+  /** Wave 97 — read equipped item ids per slot */
+  getEquipped: () => Record<EquipmentSlot, string | null>
   /** Wave 94 — start a quest by id (inactive → active) */
   startQuest: (id: string) => boolean
   /** Wave 94 — set objective progress (auto-completes when all objectives met) */
@@ -282,6 +292,20 @@ export interface ScriptApi {
   completeQuest: (id: string) => boolean
   /** Wave 94 — read quest runtime state (title + objective descriptions) */
   getQuestState: (id: string) => QuestStateView | null
+  /** Wave 96 — apply damage to a target actor via GAS Health */
+  dealDamage: (target: Actor, amount: number, source?: Actor) => boolean
+  /** Wave 96 — whether target actor Health > 0 */
+  isAlive: (target: Actor) => boolean
+  /** Wave 96 — melee sphere hitbox in front of this actor */
+  meleeAttack: (range: number, damage: number) => Actor[]
+  /** Wave 96 — ranged raycast damage along a world direction */
+  rangedAttack: (direction: [number, number, number], range: number, damage: number) => Actor | null
+  /** Wave 100 — whether this actor has recipe inputs in inventory */
+  canCraft: (recipeId: string) => boolean
+  /** Wave 100 — consume inputs and add crafted output to this actor's inventory */
+  craft: (recipeId: string) => boolean
+  /** Wave 100 — roll a loot table and add drops to this actor's inventory */
+  rollLoot: (tableId: string) => LootDropResult[]
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -517,6 +541,9 @@ export function makeScriptApi(
     getItemCount: (itemId) => (boundActor ? getItemCount(boundActor, itemId) : 0),
     getGold: () => (boundActor ? getGold(boundActor) : 0),
     addGold: (amount) => (boundActor ? addGold(boundActor, amount) : 0),
+    equip: (itemId) => (boundActor ? rpgEquip(boundActor, itemId) : false),
+    unequip: (slot) => (boundActor ? rpgUnequip(boundActor, slot) : false),
+    getEquipped: () => (boundActor ? rpgGetEquipped(boundActor) : { weapon: null, head: null, chest: null, legs: null, accessory: null }),
     saveGame: (slot, data) => {
       if (!isSaveEnabled()) return false
       const base =
@@ -577,6 +604,27 @@ export function makeScriptApi(
       return ok
     },
     getQuestState: (id) => getQuestState(id),
+    dealDamage: (target, amount, source) => dealDamage(target, amount, source ?? boundActor),
+    isAlive: (target) => isAlive(target),
+    meleeAttack: (range, damage) =>
+      boundActor ? meleeAttack(actors, boundActor, range, damage, boundActor) : [],
+    rangedAttack: (direction, range, damage) => {
+      if (!boundActor) return null
+      const origin = new THREE.Vector3()
+      boundActor.root.getWorldPosition(origin)
+      origin.y += 1
+      return rangedAttack(
+        actors,
+        [origin.x, origin.y, origin.z],
+        direction,
+        range,
+        damage,
+        boundActor,
+      )
+    },
+    canCraft: (recipeId) => (boundActor ? rpgCanCraft(boundActor, recipeId) : false),
+    craft: (recipeId) => (boundActor ? rpgCraft(boundActor, recipeId) : false),
+    rollLoot: (tableId) => (boundActor ? rpgRollLoot(tableId, boundActor) : []),
   }
   return api
 }

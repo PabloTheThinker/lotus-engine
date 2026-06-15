@@ -54,6 +54,9 @@ export function spawnCharacterStarter(mode: CharacterStarterMode = 'thirdperson'
   runCommand({
     label: `Character starter (${mode})`,
     execute() {
+      for (const a of [...world.actors.values()]) {
+        if (a.type === 'PlayerStart' && a.name !== start.name) world.removeActor(a.id)
+      }
       for (const sa of [floor, start, sun]) new AddActorCommand(sa).execute()
       world.environment.useRapierCharacter = mode !== 'fly'
       world.applyEnvironment()

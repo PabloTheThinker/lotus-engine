@@ -71,7 +71,7 @@ import {
   spawnRpg3dGame,
   VILLAGE_ELDER_NAME,
 } from './editor/rpg3dExportPack'
-import { enableRpg3dHud } from './editor/rpg3dHud'
+import { enableRpg3dHud, previewRpg3dCrafting, previewRpg3dInventory } from './editor/rpg3dHud'
 import { useEditor } from './editor/store'
 import { terminalExec, TERMINAL_HELP } from './editor/terminal'
 import { connectTerminalBridge } from './editor/terminalBridge'
@@ -166,9 +166,31 @@ import {
 } from './editor/mainMenuFlow'
 import { sceneTransition, type SceneTransitionKind, type SceneTransitionPhase } from './editor/sceneTransitions'
 import { spawnRpg3dStarter } from './editor/rpg3dStarter'
+import {
+  buildRpgOverworldPackHTML,
+  exportRpgOverworldPack,
+  RPG_OVERWORLD_PACK_ID,
+} from './editor/rpgOverworldExportPack'
+import {
+  buildRpgInteriorLevel,
+  linkRpgInteriorLevel,
+  PORTAL_INTERIOR_NAME,
+  PORTAL_OVERWORLD_NAME,
+  RPG_OVERWORLD_GRID_SIZE,
+  RPG_OVERWORLD_MANAGER_NAME,
+  RPG_OVERWORLD_STREAMING,
+  spawnRpgOverworldStarter,
+} from './editor/rpgOverworldStarter'
 import { spawnCharacterStarter, spawnFpsStarter, spawnPlatformerStarter, spawnTopDownRpgStarter } from './editor/starterTemplates'
 import { cameraRigBridge } from './engine/cameraRig'
-import { resolveAnimParams } from './engine/animStateMachine'
+import {
+  attachSampleCombatOneshot,
+  COMBAT_ONESHOT_ATTACK_NAME,
+  findCombatAttackState,
+  isCombatOneshotActive,
+  resolveAnimParams,
+  triggerCombatOneshot,
+} from './engine/animStateMachine'
 import {
   atlasIndexForCorner,
   atlasIndexForMask,
@@ -440,7 +462,14 @@ import {
   mpNetSettings,
 } from './engine/multiplayer'
 import { MP_REPLICATION_TIER_PRIORITY, mpReplicationTierForKey } from './engine/mpNet'
-import { applyEffect, getActorEffectStacks, getEffect, initActorGAS, saveEffect } from './engine/gameplayAbilities'
+import {
+  applyEffect,
+  getActorEffectStacks,
+  getAttribute as gasGetAttribute,
+  getEffect,
+  initActorGAS,
+  saveEffect,
+} from './engine/gameplayAbilities'
 import {
   compileMaterialGraphTSLNodes,
   compileMaterialGraphTSLSoloChannel,
@@ -510,6 +539,16 @@ import {
   useItem as rpgUseItem,
 } from './engine/rpgInventory'
 import {
+  applyEquipment,
+  ensureDefaultEquipmentItems,
+  equip as rpgEquip,
+  getEquipped as rpgGetEquipped,
+  listEquipmentItems,
+  registerEquipmentItem,
+  unequip as rpgUnequip,
+  type EquipmentSlot,
+} from './engine/rpgEquipment'
+import {
   completeQuest,
   findQuestDef,
   getActiveQuests,
@@ -521,6 +560,18 @@ import {
   startQuest,
   updateObjective,
 } from './engine/rpgQuests'
+import {
+  discoverPortalsFromActors,
+  getRpgPortalTarget,
+  listRpgPortals,
+  PORTAL_INTERIOR_TAG,
+  PORTAL_OVERWORLD_TAG,
+  registerRpgPortal,
+  resetRpgPortals,
+  RPG_INTERIOR_LEVEL_KEY,
+  RPG_OVERWORLD_LEVEL_KEY,
+  wireRpgPortals,
+} from './engine/rpgPortals'
 import { refreshQuestTracker } from './editor/rpgQuestHud'
 import {
   advance as advanceDialogue,
@@ -536,6 +587,48 @@ import {
   startDialogue,
 } from './engine/rpgDialogue'
 import { VILLAGE_ELDER_DIALOGUE } from './engine/rpgDialogueData'
+import {
+  COMBAT_TAG_ENEMY,
+  COMBAT_TAG_PLAYER,
+  dealDamage,
+  ensureCombatActor,
+  ensurePlayerCombatTag,
+  getActorHealth as getCombatHealth,
+  isAlive,
+  meleeAttack,
+  rangedAttack,
+} from './engine/rpgCombat'
+import {
+  DEFAULT_AGGRO_RANGE,
+  DEFAULT_ENEMY_NAV_LAYER,
+  initRpgEnemyAgents,
+  isEnemyRegistered,
+  listRegisteredEnemies,
+  registerEnemy,
+  resetRpgEnemyAi,
+  syncEnemyActorPositions,
+  tickRpgEnemyAi,
+  unregisterEnemy,
+} from './engine/rpgEnemyAi'
+import {
+  canCraft as rpgCanCraft,
+  craft as rpgCraftItem,
+  ensureDefaultCraftingItems,
+  findRecipe,
+  listRecipes,
+  registerRecipeDef,
+  resetRpgCrafting,
+} from './engine/rpgCrafting'
+import {
+  ensureDefaultLootTables,
+  findLootTable,
+  listLootTables,
+  registerLootTable,
+  resetRpgLoot,
+  resolveLootTableForActor,
+  rollLoot as rpgRollLoot,
+  setLootRecipientResolver,
+} from './engine/rpgLoot'
 import {
   mountRpgDialogueUi,
   renderRpgDialogueUi,
@@ -1102,6 +1195,22 @@ const lotusBridge = {
       releaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
       captureScreenshot: () => captureExportScreenshot(),
     },
+    /** Wave 98 — streaming overworld + interior portals */
+    rpgOverworld: {
+      packId: RPG_OVERWORLD_PACK_ID,
+      managerName: RPG_OVERWORLD_MANAGER_NAME,
+      portalInteriorName: PORTAL_INTERIOR_NAME,
+      portalOverworldName: PORTAL_OVERWORLD_NAME,
+      interiorKey: RPG_INTERIOR_LEVEL_KEY,
+      overworldKey: RPG_OVERWORLD_LEVEL_KEY,
+      gridSize: RPG_OVERWORLD_GRID_SIZE,
+      streaming: RPG_OVERWORLD_STREAMING,
+      spawn: () => spawnRpgOverworldStarter(),
+      buildInteriorLevel: () => buildRpgInteriorLevel(),
+      linkInterior: () => linkRpgInteriorLevel(),
+      buildPackHTML: () => buildRpgOverworldPackHTML(),
+      exportPack: () => exportRpgOverworldPack(),
+    },
     /** Wave 95 — 3D RPG export pack (camera rig + inventory + dialogue + quests) */
     rpg3d: {
       packId: RPG3D_PACK_ID,
@@ -1651,6 +1760,76 @@ const lotusBridge = {
         return p ? rpgUseItem(p, itemId) : false
       },
     },
+    /** Wave 97 — equipment paper-doll slots + GAS stat modifiers */
+    equipment: {
+      slots: ['weapon', 'head', 'chest', 'legs', 'accessory'] as EquipmentSlot[],
+      listItems: () => listEquipmentItems(),
+      registerItem: (def: import('./engine/rpgEquipment').EquipmentItemDef) => registerEquipmentItem(def),
+      equip: (itemId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgEquip(p, itemId) : false
+      },
+      unequip: (slot: EquipmentSlot, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgUnequip(p, slot) : false
+      },
+      getEquipped: (actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p
+          ? rpgGetEquipped(p)
+          : { weapon: null, head: null, chest: null, legs: null, accessory: null }
+      },
+      apply: (
+        snapshot: import('./engine/rpgEquipment').EquipmentSnapshot,
+        actor?: import('./engine/Actor').Actor,
+      ) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? applyEquipment(p, snapshot) : false
+      },
+    },
+    hud3d: {
+      previewInventory: (
+        open: boolean,
+        items: string[],
+        equipment?: Record<string, string | null> | null,
+        parent?: HTMLElement,
+      ) => previewRpg3dInventory(open, items, equipment, parent),
+      previewCrafting: (
+        open: boolean,
+        recipes: Array<{ id: string; name: string; inputs: string; output: string; canCraft: boolean }>,
+        parent?: HTMLElement,
+      ) => previewRpg3dCrafting(open, recipes, parent),
+    },
+    /** Wave 100 — crafting recipes (inputs → output) */
+    crafting: {
+      listRecipes: () => listRecipes(),
+      find: (id: string) => findRecipe(id),
+      canCraft: (recipeId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgCanCraft(p, recipeId) : false
+      },
+      craft: (recipeId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgCraftItem(p, recipeId) : false
+      },
+      registerRecipe: (def: import('./engine/rpgCrafting').RecipeDef) => registerRecipeDef(def),
+      ensureDefaults: () => ensureDefaultCraftingItems(),
+      reset: () => resetRpgCrafting(),
+    },
+    /** Wave 100 — loot tables + enemy tag rolls */
+    loot: {
+      listTables: () => listLootTables(),
+      find: (id: string) => findLootTable(id),
+      resolveForEnemy: (actor: import('./engine/Actor').Actor) => resolveLootTableForActor(actor),
+      roll: (tableId: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? rpgRollLoot(tableId, p) : []
+      },
+      registerTable: (def: import('./engine/rpgLoot').LootTableDef) => registerLootTable(def),
+      ensureDefaults: () => ensureDefaultLootTables(),
+      setRecipient: (fn: () => import('./engine/Actor').Actor | null) => setLootRecipientResolver(fn),
+      reset: () => resetRpgLoot(),
+    },
     stats: {
       getHealth: (actor?: import('./engine/Actor').Actor) => {
         const p = ensurePlayerRpgActor(actor ?? world.playerStart())
@@ -1663,6 +1842,10 @@ const lotusBridge = {
       setAttribute: (name: string, value: number, actor?: import('./engine/Actor').Actor) => {
         const p = ensurePlayerRpgActor(actor ?? world.playerStart())
         return p ? setActorAttribute(p, name, value) : false
+      },
+      getAttribute: (name: string, actor?: import('./engine/Actor').Actor) => {
+        const p = ensurePlayerRpgActor(actor ?? world.playerStart())
+        return p ? gasGetAttribute(p, name) : null
       },
     },
     checkpointExtras: () => buildRpgCheckpointExtras(world.playerStart()),
@@ -1680,6 +1863,71 @@ const lotusBridge = {
       restore: (data: unknown) => restoreQuestState(data),
       reset: () => resetQuests(),
       refreshTracker: (parent?: HTMLElement) => refreshQuestTracker(parent),
+    },
+    /** Wave 96 — Combat system lite (melee/ranged damage, GAS Health) */
+    combat: {
+      tagEnemy: COMBAT_TAG_ENEMY,
+      tagPlayer: COMBAT_TAG_PLAYER,
+      ensureActor: (actor?: import('./engine/Actor').Actor) => ensureCombatActor(actor),
+      ensurePlayer: (actor?: import('./engine/Actor').Actor) => ensurePlayerCombatTag(actor ?? world.playerStart()),
+      isAlive: (actor: import('./engine/Actor').Actor) => isAlive(actor),
+      getHealth: (actor?: import('./engine/Actor').Actor) => {
+        const a = ensureCombatActor(actor ?? world.playerStart())
+        return a ? getCombatHealth(a) : null
+      },
+      dealDamage: (target: import('./engine/Actor').Actor, amount: number, source?: import('./engine/Actor').Actor) =>
+        dealDamage(target, amount, source),
+      meleeAttack: (
+        attacker: import('./engine/Actor').Actor,
+        range: number,
+        damage: number,
+        source?: import('./engine/Actor').Actor,
+      ) => meleeAttack(world.actors, attacker, range, damage, source),
+      rangedAttack: (
+        origin: [number, number, number],
+        direction: [number, number, number],
+        range: number,
+        damage: number,
+        source?: import('./engine/Actor').Actor,
+      ) => rangedAttack(world.actors, origin, direction, range, damage, source),
+    },
+    /** Wave 96 — Enemy chase AI on grid navmesh layer 0 */
+    enemyAi: {
+      defaultLayer: DEFAULT_ENEMY_NAV_LAYER,
+      defaultAggroRange: DEFAULT_AGGRO_RANGE,
+      register: (actor: import('./engine/Actor').Actor, opts?: { layer?: number; aggroRange?: number }) =>
+        registerEnemy(actor, world.actors, opts),
+      unregister: (actorId: string) => unregisterEnemy(actorId),
+      initAll: () => initRpgEnemyAgents(world.actors),
+      list: () => listRegisteredEnemies(),
+      isRegistered: (actorId: string) => isEnemyRegistered(actorId),
+      syncPositions: () => syncEnemyActorPositions(world.actors),
+      tick: (dt: number) => tickRpgEnemyAi(world.actors, dt),
+      reset: () => resetRpgEnemyAi(),
+    },
+    /** Wave 98 — interior/overworld changeScene portals */
+    portals: {
+      interiorTag: PORTAL_INTERIOR_TAG,
+      overworldTag: PORTAL_OVERWORLD_TAG,
+      interiorKey: RPG_INTERIOR_LEVEL_KEY,
+      overworldKey: RPG_OVERWORLD_LEVEL_KEY,
+      discover: (actors?: Iterable<import('./engine/Actor').Actor>) =>
+        discoverPortalsFromActors(actors ?? world.actors.values()),
+      register: (def: import('./engine/rpgPortals').RpgPortalDef) => registerRpgPortal(def),
+      list: () => listRpgPortals(),
+      getTarget: (triggerName: string) => getRpgPortalTarget(triggerName),
+      wire: (api?: import('./engine/scripting').ScriptApi) => {
+        const playApi =
+          api ??
+          makeScriptApi(
+            world.actors,
+            () => world.playClock,
+            () => world.pawnPosition,
+            (n) => world.loadLevelDuringPlay(n),
+          )
+        return wireRpgPortals(playApi, world.actors.values())
+      },
+      reset: () => resetRpgPortals(),
     },
     /** Wave 93 — Godot Dialogue Manager / visual novel lite */
     dialogue: {
@@ -1704,6 +1952,39 @@ const lotusBridge = {
       },
     },
   },
+  /** Wave 99 — AnimationTree OneShot combat blend stub */
+  anim: {
+    combatOneshot: (actorId: string, clipName?: string, durationSec?: number) => {
+      const actor = world.actors.get(actorId)
+      if (!actor) return false
+      if (clipName != null && durationSec != null) {
+        return triggerCombatOneshot(actor, clipName, durationSec)
+      }
+      const attack = findCombatAttackState(actor)
+      if (!attack?.clipName) return false
+      return triggerCombatOneshot(actor, attack.clipName, attack.durationSec ?? 0.45)
+    },
+    attachSampleOneshot: (actorId: string) => {
+      const actor = world.actors.get(actorId)
+      if (!actor) return { ok: false, error: 'Actor not found' }
+      const result = attachSampleCombatOneshot(actor)
+      if (result.ok) useEditor.getState().touch()
+      return result
+    },
+    isOneshotActive: (actorId: string) => {
+      const actor = world.actors.get(actorId)
+      return actor ? isCombatOneshotActive(actor) : false
+    },
+    findAttackState: (actorId: string) => {
+      const actor = world.actors.get(actorId)
+      if (!actor) return null
+      const attack = findCombatAttackState(actor)
+      return attack
+        ? { name: attack.name, clipName: attack.clipName, durationSec: attack.durationSec, kind: attack.kind }
+        : null
+    },
+    attackStateName: COMBAT_ONESHOT_ATTACK_NAME,
+  },
   /** Wave 60 — cell load progress (export UX + devtools) */
   streaming: {
     getProgress: () => getProgress(),
@@ -1723,11 +2004,19 @@ const lotusBridge = {
       return getStreamingProgress()
     },
     tickCell: () => tickStreamProgressCell(),
+    /** Wave 98 — overworld cell streaming preset */
+    overworldPreset: () => ({ ...RPG_OVERWORLD_STREAMING }),
+    applyOverworldPreset: () => {
+      world.streaming = { ...RPG_OVERWORLD_STREAMING }
+      return world.streaming
+    },
   },
 }
 const win = window as unknown as Record<string, unknown>
 win.lotus = lotusBridge
 win.vektra = lotusBridge // legacy alias — plugins/tests may still use window.vektra
+
+ensureDefaultEquipmentItems()
 
 let booted = false
 

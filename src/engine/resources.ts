@@ -5,7 +5,7 @@
 
 const KEY = 'lotus-engine.resources'
 
-export type ResourceKind = 'material' | 'curve' | 'shape'
+export type ResourceKind = 'material' | 'curve' | 'shape' | 'recipe' | 'loot_table'
 
 export interface LotusResource<T = Record<string, unknown>> {
   id: string

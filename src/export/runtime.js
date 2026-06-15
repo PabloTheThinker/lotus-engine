@@ -125,6 +125,11 @@ const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const DIALOGUE_CATALOG = window.__LOTUS_DIALOGUE__ ?? null
 const RPG_3D_ENABLED = window.__LOTUS_RPG_3D__ === true || window.__LOTUS_RPG_3D__ === 'true'
 const RPG_HUD_ENABLED = window.__LOTUS_RPG_HUD__ === true || window.__LOTUS_RPG_HUD__ === 'true'
+const RPG_OVERWORLD_ENABLED = window.__LOTUS_RPG_OVERWORLD__ === true || window.__LOTUS_RPG_OVERWORLD__ === 'true'
+const PORTAL_INTERIOR_TAG = 'portal_interior'
+const PORTAL_OVERWORLD_TAG = 'portal_overworld'
+const RPG_INTERIOR_LEVEL_KEY = 'interior'
+const RPG_OVERWORLD_LEVEL_KEY = 'overworld'
 const ACHIEVEMENTS_DEF = window.__LOTUS_ACHIEVEMENTS__ ?? null
 const ACHIEVEMENT_PROGRESS_DEF = window.__LOTUS_ACHIEVEMENT_PROGRESS__ ?? null
 const ACHIEVEMENT_STORAGE_PREFIX = 'lotus-engine.achievements'
@@ -3162,6 +3167,45 @@ const api = {
   getGold: () => exportGetGold(),
   addGold: (amount) => exportAddGold(amount),
 }
+let portalTransitioning = false
+
+function defaultPortalTarget(tag) {
+  if (tag === PORTAL_INTERIOR_TAG) return RPG_INTERIOR_LEVEL_KEY
+  if (tag === PORTAL_OVERWORLD_TAG) return RPG_OVERWORLD_LEVEL_KEY
+  return RPG_INTERIOR_LEVEL_KEY
+}
+
+function discoverExportPortals() {
+  const found = []
+  for (const a of actors.values()) {
+    if (a.data.type !== 'TriggerVolume') continue
+    const tags = a.data.tags ?? []
+    const interior = tags.includes(PORTAL_INTERIOR_TAG)
+    const overworld = tags.includes(PORTAL_OVERWORLD_TAG)
+    const named = /^Portal_/i.test(a.data.name)
+    if (!interior && !overworld && !named) continue
+    const tag = interior ? PORTAL_INTERIOR_TAG : overworld ? PORTAL_OVERWORLD_TAG : 'portal_named'
+    const raw = a.data.scriptVars?.targetLevel
+    const targetLevel =
+      typeof raw === 'string' && raw.trim() ? raw.trim() : defaultPortalTarget(tag)
+    found.push({ triggerName: a.data.name, targetLevel, tag })
+  }
+  return found
+}
+
+function wireExportRpgPortals() {
+  for (const def of discoverExportPortals()) {
+    api.on(`enter:${def.triggerName}`, () => {
+      if (portalTransitioning) return
+      portalTransitioning = true
+      api.log('Portal →', def.targetLevel)
+      void api.changeScene(def.targetLevel).finally(() => {
+        portalTransitioning = false
+      })
+    })
+  }
+}
+
 function compileScripts() {
   ticks = []
   scriptTimers = []
@@ -3171,6 +3215,7 @@ function compileScripts() {
   wireExportQuestHud()
   if (MINIGAME_ENABLED) wireExportMiniGameHud()
   if (RPG_HUD_ENABLED || RPG_3D_ENABLED) wireExportRpg3dHud()
+  if (RPG_OVERWORLD_ENABLED) wireExportRpgPortals()
   for (const a of actors.values()) {
     const src = a.data.script
     if (!src) continue

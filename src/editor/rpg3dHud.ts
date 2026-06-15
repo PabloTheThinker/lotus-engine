@@ -1,4 +1,6 @@
-/** Wave 95 (v5.14–v5.18) — 3D RPG HUD overlay (health, quest tracker, inventory, dialogue). */
+/** Wave 95 (v5.14–v5.18) — 3D RPG HUD overlay (health, quest tracker, inventory, dialogue).
+ *  Wave 97 (v5.24–v5.28) — equipment paper-doll row in inventory panel.
+ *  Wave 100 (v5.39–v5.43) — crafting panel toggle (C key). */
 
 import type { ScriptApi } from '../engine/scripting'
 import { RPG3D_MANAGER_NAME } from './rpg3dExportPack'
@@ -46,6 +48,23 @@ export const RPG_HUD_OVERLAY_CSS = `
   .lotus-rpg-inventory-hint {
     font-size: 11px; color: #79828f; margin-top: 8px;
   }
+  .lotus-rpg-equipment {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+    margin-bottom: 12px;
+  }
+  .lotus-rpg-equip-slot {
+    min-height: 44px; padding: 4px 6px; border-radius: 6px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14);
+    text-align: center; font-size: 10px; color: #9aa4b2;
+  }
+  .lotus-rpg-equip-slot .label {
+    display: block; font-weight: 800; letter-spacing: 0.04em;
+    text-transform: uppercase; margin-bottom: 2px; color: #79828f;
+  }
+  .lotus-rpg-equip-slot .item {
+    display: block; font-size: 11px; color: #e8edf4; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
   .lotus-rpg-inventory ul {
     margin: 0; padding-left: 18px; font-size: 12px; color: #c8d0d8;
   }
@@ -67,10 +86,46 @@ export const RPG_HUD_OVERLAY_CSS = `
   .lotus-rpg-dialogue-hint {
     margin-top: 10px; font-size: 11px; color: #79828f;
   }
+  .lotus-rpg-crafting {
+    position: absolute; top: 50%; right: 24px; transform: translateY(-50%);
+    min-width: 260px; padding: 16px 20px; border-radius: 10px;
+    background: rgba(13,15,18,.92); border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 12px 36px rgba(0,0,0,.45); display: none;
+    pointer-events: auto;
+  }
+  .lotus-rpg-crafting.open { display: block; }
+  .lotus-rpg-crafting-title {
+    font-size: 14px; font-weight: 800; color: #7ec8a4; margin-bottom: 8px;
+  }
+  .lotus-rpg-crafting-hint {
+    font-size: 11px; color: #79828f; margin-top: 8px;
+  }
+  .lotus-rpg-crafting ul {
+    margin: 0; padding-left: 0; list-style: none; font-size: 12px; color: #c8d0d8;
+  }
+  .lotus-rpg-crafting li {
+    padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .lotus-rpg-crafting li:last-child { border-bottom: none; }
+  .lotus-rpg-crafting .recipe-name {
+    font-weight: 700; color: #e8edf4; margin-bottom: 4px;
+  }
+  .lotus-rpg-crafting .recipe-formula {
+    font-size: 11px; color: #9aa4b2;
+  }
+  .lotus-rpg-crafting .recipe-ready {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+    color: #7ec8a4; margin-top: 4px;
+  }
+  .lotus-rpg-crafting .recipe-locked {
+    font-size: 10px; font-weight: 800; letter-spacing: 0.06em;
+    color: #79828f; margin-top: 4px;
+  }
 `
 
 const HUD_ROOT_ID = 'lotus-rpg-hud-root'
 const INVENTORY_ID = 'lotus-rpg-inventory'
+const CRAFTING_ID = 'lotus-rpg-crafting'
 const DIALOGUE_ID = 'lotus-rpg-dialogue'
 const QUEST_ID = 'lotus-rpg-quest-text'
 const HP_FILL_ID = 'lotus-rpg-hp-fill'
@@ -98,8 +153,14 @@ function ensureHudRoot(parent?: HTMLElement): HTMLElement {
     </div>
     <div class="lotus-rpg-inventory" id="${INVENTORY_ID}">
       <div class="lotus-rpg-inventory-title">Inventory</div>
+      <div class="lotus-rpg-equipment" id="lotus-rpg-equipment-row"></div>
       <ul id="lotus-rpg-inventory-list"></ul>
       <div class="lotus-rpg-inventory-hint">Press I to close</div>
+    </div>
+    <div class="lotus-rpg-crafting" id="${CRAFTING_ID}">
+      <div class="lotus-rpg-crafting-title">Crafting</div>
+      <ul id="lotus-rpg-crafting-list"></ul>
+      <div class="lotus-rpg-crafting-hint">Press C to close · Enter to craft ready recipe</div>
     </div>
     <div class="lotus-rpg-dialogue" id="${DIALOGUE_ID}">
       <div class="lotus-rpg-dialogue-speaker" id="lotus-rpg-dialogue-speaker"></div>
@@ -122,10 +183,33 @@ function setQuestText(text: string) {
   if (el) el.textContent = text
 }
 
-function renderInventory(items: string[]) {
+const EQUIP_SLOT_LABELS: Record<string, string> = {
+  weapon: 'Weapon',
+  head: 'Head',
+  chest: 'Chest',
+  legs: 'Legs',
+  accessory: 'Acc',
+}
+
+function renderEquipmentRow(equipment: Record<string, string | null> | null) {
+  const row = document.getElementById('lotus-rpg-equipment-row')
+  if (!row) return
+  const slots = ['weapon', 'head', 'chest', 'legs', 'accessory']
+  row.innerHTML = slots
+    .map((slot) => {
+      const label = EQUIP_SLOT_LABELS[slot] ?? slot
+      const item = equipment?.[slot]
+      const itemLabel = item ? String(item) : '—'
+      return `<div class="lotus-rpg-equip-slot" data-slot="${slot}"><span class="label">${label}</span><span class="item">${itemLabel}</span></div>`
+    })
+    .join('')
+}
+
+function renderInventory(items: string[], equipment?: Record<string, string | null> | null) {
   const list = document.getElementById('lotus-rpg-inventory-list')
   const panel = document.getElementById(INVENTORY_ID)
   if (!list || !panel) return
+  renderEquipmentRow(equipment ?? null)
   if (!items.length) {
     list.innerHTML = '<li><em>Empty</em></li>'
   } else {
@@ -135,6 +219,38 @@ function renderInventory(items: string[]) {
 
 function showInventory(open: boolean) {
   const panel = document.getElementById(INVENTORY_ID)
+  if (panel) panel.classList.toggle('open', open)
+}
+
+export interface CraftingRecipeRow {
+  id: string
+  name: string
+  inputs: string
+  output: string
+  canCraft: boolean
+}
+
+function renderCrafting(recipes: CraftingRecipeRow[]) {
+  const list = document.getElementById('lotus-rpg-crafting-list')
+  const panel = document.getElementById(CRAFTING_ID)
+  if (!list || !panel) return
+  if (!recipes.length) {
+    list.innerHTML = '<li><em>No recipes</em></li>'
+    return
+  }
+  list.innerHTML = recipes
+    .map(
+      (recipe) => `<li>
+        <div class="recipe-name">${recipe.name}</div>
+        <div class="recipe-formula">${recipe.inputs} → ${recipe.output}</div>
+        <div class="${recipe.canCraft ? 'recipe-ready' : 'recipe-locked'}">${recipe.canCraft ? 'READY' : 'NEED MATERIALS'}</div>
+      </li>`,
+    )
+    .join('')
+}
+
+function showCrafting(open: boolean) {
+  const panel = document.getElementById(CRAFTING_ID)
   if (panel) panel.classList.toggle('open', open)
 }
 
@@ -174,8 +290,31 @@ function onInventoryToggle(payload: unknown) {
   const row = Array.isArray(payload) ? payload : []
   const open = row[0] === true
   const items = Array.isArray(row[1]) ? row[1].map((i) => String(i)) : []
-  renderInventory(items)
+  const equipment =
+    row[2] && typeof row[2] === 'object' && !Array.isArray(row[2])
+      ? (row[2] as Record<string, string | null>)
+      : null
+  renderInventory(items, equipment)
   showInventory(open)
+}
+
+function onCraftingToggle(payload: unknown) {
+  const row = Array.isArray(payload) ? payload : []
+  const open = row[0] === true
+  const recipes = Array.isArray(row[1])
+    ? row[1].map((entry) => {
+        const r = entry as CraftingRecipeRow
+        return {
+          id: String(r.id ?? ''),
+          name: String(r.name ?? r.id ?? ''),
+          inputs: String(r.inputs ?? ''),
+          output: String(r.output ?? ''),
+          canCraft: r.canCraft === true,
+        }
+      })
+    : []
+  renderCrafting(recipes)
+  showCrafting(open)
 }
 
 function onQuestUpdate(payload: unknown) {
@@ -197,6 +336,7 @@ export function wireRpg3dHud(api: Pick<ScriptApi, 'on' | 'actionJustPressed'>) {
   api.on('dialogue_start', onDialogueStart)
   api.on('dialogue_advance', onDialogueAdvance)
   api.on('inventory_toggle', onInventoryToggle)
+  api.on('crafting_toggle', onCraftingToggle)
   api.on('quest_update', onQuestUpdate)
   api.on('hp_update', onHpUpdate)
   api.on('quest_complete', () => setQuestText('Quest complete: Herbs delivered!'))
@@ -238,6 +378,29 @@ export function mountRpg3dHudForPlay(parent: HTMLElement, api: Pick<ScriptApi, '
 export function unmountRpg3dHudForPlay() {
   unwireRpg3dHud()
   resetRpg3dHudState()
+}
+
+/** Editor / smoke-test helper — mount inventory panel with optional equipment row. */
+export function previewRpg3dInventory(
+  open: boolean,
+  items: string[],
+  equipment?: Record<string, string | null> | null,
+  parent?: HTMLElement,
+) {
+  ensureHudRoot(parent)
+  renderInventory(items, equipment ?? null)
+  showInventory(open)
+}
+
+/** Editor / smoke-test helper — mount crafting panel with recipe rows. */
+export function previewRpg3dCrafting(
+  open: boolean,
+  recipes: CraftingRecipeRow[],
+  parent?: HTMLElement,
+) {
+  ensureHudRoot(parent)
+  renderCrafting(recipes)
+  showCrafting(open)
 }
 
 /** Advance dialogue on Interact while panel is open (called from play loop). */

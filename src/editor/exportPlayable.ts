@@ -21,6 +21,7 @@ import {
 import { ACHIEVEMENT_PROGRESS_TOAST_CSS, ACHIEVEMENT_TOAST_CSS, MINIGAME_OVERLAY_CSS } from './miniGameHud'
 import { RPG_HUD_OVERLAY_CSS } from './rpg3dHud'
 import { RPG3D_MANAGER_NAME } from './rpg3dExportPack'
+import { RPG_OVERWORLD_MANAGER_NAME } from './rpgOverworldStarter'
 import type { AchievementPackId } from './exportAchievements'
 import { SAVE_MENU_OVERLAY_CSS } from './exportSaveMenu'
 import { buildExportDialoguePayload, serializeDialogueForExport } from '../engine/rpgDialogue'
@@ -61,6 +62,8 @@ export interface ExportOptions {
   rpg3d?: boolean
   /** v5.15 — RPG HUD overlay in export runtime (__LOTUS_RPG_HUD__) */
   rpgHud?: boolean
+  /** v5.29 — RPG overworld streaming pack flag (__LOTUS_RPG_OVERWORLD__) */
+  rpgOverworld?: boolean
   /** achievement pack id override (e.g. rpg3d) */
   achievementPack?: AchievementPackId
 }
@@ -71,6 +74,10 @@ function levelHasMiniGameManager(level: SerializedLevel): boolean {
 
 function levelHasRpg3dManager(level: SerializedLevel): boolean {
   return level.actors.some((a) => a.name === RPG3D_MANAGER_NAME)
+}
+
+function levelHasRpgOverworldManager(level: SerializedLevel): boolean {
+  return level.actors.some((a) => a.name === RPG_OVERWORLD_MANAGER_NAME)
 }
 
 function escapeJsonForScript(json: string): string {
@@ -153,6 +160,18 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const quality = opts.quality ?? prefs.exportQuality
   world.levelName = s.levelName
   let mainLevel = applyQualityToLevel(world.serialize(), quality)
+  const rpgOverworld = opts.rpgOverworld ?? levelHasRpgOverworldManager(mainLevel)
+  if (rpgOverworld) {
+    mainLevel = {
+      ...mainLevel,
+      streaming: {
+        enabled: true,
+        gridSize: mainLevel.streaming?.gridSize ?? 64,
+        loadRadius: mainLevel.streaming?.loadRadius ?? 1,
+        exportByCell: true,
+      },
+    }
+  }
   let cellsJSON = 'null'
   let streamingExport = false
   if (mainLevel.streaming?.exportByCell) {
@@ -185,6 +204,7 @@ export function buildPlayableHTML(opts: ExportOptions = {}): string {
   const gamepadEnabled = mainLevel.environment?.gamepadControls !== false
   const rpg3d = opts.rpg3d ?? levelHasRpg3dManager(mainLevel)
   const rpgHud = opts.rpgHud ?? rpg3d
+  const rpgOverworldFlag = rpgOverworld
   const minigameHud = opts.minigameHud ?? (levelHasMiniGameManager(mainLevel) || rpg3d)
   const minigamePreset = opts.minigamePreset ?? minigamePack
   const mainMenuBoot = mainMenuBootEnabled()
@@ -272,7 +292,7 @@ ${pwa ? pwaHeadExtras(title, pwaIcons) : ''}
 <body>
 <div id="overlay">Loading…</div>
 ${badgeHtml}
-<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_RPG_3D__ = ${rpg3d ? 'true' : 'false'}; window.__LOTUS_RPG_HUD__ = ${rpgHud ? 'true' : 'false'}; window.__LOTUS_ACHIEVEMENTS__ = ${achievementsJSON}; window.__LOTUS_ACHIEVEMENT_PROGRESS__ = ${achievementProgressJSON}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON}; window.__LOTUS_PACK_RELEASE_NOTES__ = ${packReleaseNotesJSON}; window.__LOTUS_PACK_CHANGELOG_HTML__ = ${packChangelogHtmlJSON}; window.__LOTUS_PACK_CHANGELOG_BOOT__ = ${packChangelogBoot && packChangelogHtml ? 'true' : 'false'}; window.__LOTUS_ITCH_EMBED_WIDGET__ = ${packItchEmbedWidgetJSON}; window.__LOTUS_SAVES__ = ${savesEnabled ? 'true' : 'false'}; window.__LOTUS_SAVE_MENU__ = ${saveMenuEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SAVES__ = ${cloudSavesEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SYNC__ = ${cloudSyncEnabled ? 'true' : 'false'}; window.__LOTUS_CROSS_LEVEL_SAVES__ = ${crossLevelSavesEnabled ? 'true' : 'false'}; window.__LOTUS_DIALOGUE__ = ${dialogueJSON};</script>
+<script>window.__LOTUS_LEVELS__ = ${levelsJSON}; window.__LOTUS_MAIN__ = '${main}'; window.__LOTUS_EXPORT__ = ${exportJSON}; window.__LOTUS_CELLS__ = ${cellsJSON}; window.__LOTUS_STREAMING__ = ${streamingExport ? 'true' : 'false'}; window.__LOTUS_BATCHED__ = ${mainLevel.batchedMeshes?.length ? escapeJsonForScript(JSON.stringify(mainLevel.batchedMeshes)) : 'null'}; window.__LOTUS_LUT__ = ${lutJSON}; window.__LOTUS_TOUCH__ = ${touchEnabled ? 'true' : 'false'}; window.__LOTUS_GAMEPAD__ = ${gamepadEnabled ? 'true' : 'false'}; window.__LOTUS_INPUT_BINDINGS__ = ${bindingsJSON}; window.__LOTUS_INPUT_PROFILE__ = '${inputProfileName}'; window.__LOTUS_MINIGAME__ = ${minigameHud ? 'true' : 'false'}; window.__LOTUS_MINIGAME_PRESET__ = ${minigamePreset ? `'${minigamePreset}'` : 'null'}; window.__LOTUS_MINIGAME_PACK__ = ${minigamePack ? `'${minigamePack}'` : 'null'}; window.__LOTUS_RPG_3D__ = ${rpg3d ? 'true' : 'false'}; window.__LOTUS_RPG_HUD__ = ${rpgHud ? 'true' : 'false'}; window.__LOTUS_RPG_OVERWORLD__ = ${rpgOverworldFlag ? 'true' : 'false'}; window.__LOTUS_ACHIEVEMENTS__ = ${achievementsJSON}; window.__LOTUS_ACHIEVEMENT_PROGRESS__ = ${achievementProgressJSON}; window.__LOTUS_MAIN_MENU__ = ${mainMenuBoot ? 'true' : 'false'}; window.__LOTUS_PACK_META__ = ${packMetaJSON}; window.__LOTUS_PACK_SCREENSHOT__ = ${packScreenshotJSON}; window.__LOTUS_PACK_RELEASE_NOTES__ = ${packReleaseNotesJSON}; window.__LOTUS_PACK_CHANGELOG_HTML__ = ${packChangelogHtmlJSON}; window.__LOTUS_PACK_CHANGELOG_BOOT__ = ${packChangelogBoot && packChangelogHtml ? 'true' : 'false'}; window.__LOTUS_ITCH_EMBED_WIDGET__ = ${packItchEmbedWidgetJSON}; window.__LOTUS_SAVES__ = ${savesEnabled ? 'true' : 'false'}; window.__LOTUS_SAVE_MENU__ = ${saveMenuEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SAVES__ = ${cloudSavesEnabled ? 'true' : 'false'}; window.__LOTUS_CLOUD_SYNC__ = ${cloudSyncEnabled ? 'true' : 'false'}; window.__LOTUS_CROSS_LEVEL_SAVES__ = ${crossLevelSavesEnabled ? 'true' : 'false'}; window.__LOTUS_DIALOGUE__ = ${dialogueJSON};</script>
 ${pwa ? pwaBootScript() : ''}
 <script type="module">
 ${runtimeSource}

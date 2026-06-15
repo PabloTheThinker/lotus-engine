@@ -5,6 +5,11 @@
 
 import type { Actor } from './Actor'
 import { getAttribute, initActorGAS, setAttribute } from './gameplayAbilities'
+import {
+  applyEquipmentCheckpointExtras,
+  buildEquipmentCheckpointExtras,
+  initActorEquipment,
+} from './rpgEquipment'
 import { restoreQuestsFromSavePayload, serializeQuestState } from './rpgQuests'
 
 const ITEM_KEY = 'lotus-engine.rpg-items'
@@ -31,6 +36,7 @@ export interface InventorySnapshot {
 export interface RpgCheckpointExtras {
   inventory?: InventorySnapshot
   attributes?: Record<string, number>
+  equipment?: import('./rpgEquipment').EquipmentSnapshot
 }
 
 interface ActorInventoryState {
@@ -103,6 +109,7 @@ export function ensurePlayerRpgActor(actor: Actor | undefined): Actor | null {
   if (!actor.attributeSetId) actor.attributeSetId = DEFAULT_ATTRIBUTE_SET_ID
   initActorGAS(actor)
   initActorInventory(actor)
+  initActorEquipment(actor)
   return actor
 }
 
@@ -280,7 +287,12 @@ export function buildRpgCheckpointExtras(actor: Actor | undefined): RpgCheckpoin
   const attributes: Record<string, number> = {}
   if (attrs.Health != null) attributes.Health = attrs.Health
   if (attrs.Mana != null) attributes.Mana = attrs.Mana
-  return { inventory, attributes: Object.keys(attributes).length ? attributes : undefined }
+  const equipmentExtras = buildEquipmentCheckpointExtras(player)
+  return {
+    inventory,
+    attributes: Object.keys(attributes).length ? attributes : undefined,
+    ...equipmentExtras,
+  }
 }
 
 export function applyRpgCheckpointExtras(actor: Actor | undefined, data: unknown): void {
@@ -293,6 +305,7 @@ export function applyRpgCheckpointExtras(actor: Actor | undefined, data: unknown
       if (typeof value === 'number' && Number.isFinite(value)) setAttribute(player, name, value)
     }
   }
+  applyEquipmentCheckpointExtras(player, data)
   restoreQuestsFromSavePayload(data)
 }
 

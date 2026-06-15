@@ -23,6 +23,7 @@ import { createPCGVolumeActor } from './pcg'
 import { syncPropsFromGraph } from './pcgGraph'
 import { activateAbility, initAllActorGAS, resetAbilities, setAbilityPlayClock, tickEffects } from './gameplayAbilities'
 import { ensurePlayerRpgActor, resetRpgInventories } from './rpgInventory'
+import { resetRpgEquipment } from './rpgEquipment'
 import { hud, raycastActors, resetGameplay, syncAuthoredHud, tickGameplay } from './gameplay'
 import { resetQuests } from './rpgQuests'
 import { buildPathCurve } from './path3d'
@@ -68,10 +69,21 @@ import { buildBatchedExportMeshes, serializeBatchedMeshes } from './batchExport'
 import { restoreGradingLUTFromEnvironment } from './postColorGradingLut'
 import type { CameraBookmark, EnvironmentSettings, HudWidget, LevelLink, SerializedActor, SerializedLevel, StreamingSettings } from './types'
 import { DEFAULT_ENVIRONMENT, DEFAULT_STREAMING } from './types'
-import { resolveAnimParams, tickAnimSM, tickBlendSpace1D, tickBlendSpace2D } from './animStateMachine'
+import {
+  resolveAnimParams,
+  tickAnimSM,
+  tickBlendSpace1D,
+  tickBlendSpace2D,
+  tickCombatOneshot,
+} from './animStateMachine'
 import { applyActorIK, hasActorSkeleton } from './ik'
 import { clearActorTicks, recordActorTick } from './profiler'
 import { resetRpgDialogue, tickRpgDialogueInteract } from './rpgDialogue'
+import { ensurePlayerCombatTag, resetRpgCombat } from './rpgCombat'
+import { resetRpgCrafting } from './rpgCrafting'
+import { initRpgEnemyAgents, resetRpgEnemyAi, tickRpgEnemyAi } from './rpgEnemyAi'
+import { resetRpgLoot, setLootRecipientResolver } from './rpgLoot'
+import { resetRpgPortals, wireRpgPortals } from './rpgPortals'
 
 /**
  * World — the Unreal UWorld analog. Owns the Three.js scene graph,
@@ -261,8 +273,15 @@ export class World {
     resetGameplay()
     resetQuests()
     resetRpgDialogue()
+    resetRpgPortals()
+    resetRpgCombat()
+    resetRpgEnemyAi()
+    resetRpgCrafting()
+    resetRpgLoot()
     resetAbilities()
     resetRpgInventories()
+    resetRpgEquipment()
+    setLootRecipientResolver(() => ensurePlayerRpgActor(this.playerStart()))
     resetBTs()
     resetCrowd()
     resetGridNavAgents()
@@ -298,6 +317,8 @@ export class World {
     )
     initAllActorGAS(this.actors.values())
     ensurePlayerRpgActor(this.playerStart())
+    ensurePlayerCombatTag(this.playerStart())
+    void initRpgEnemyAgents(this.actors)
     for (const a of this.actors.values()) {
       const api = makeScriptApi(
         this.actors,
@@ -341,6 +362,7 @@ export class World {
     this.physics.start(this.actors.values(), this.physicsJoints)
     // authored HUD widgets (UMG designer)
     syncAuthoredHud(this.hudWidgets, (signal) => this.playApi?.emit(signal))
+    if (this.playApi) wireRpgPortals(this.playApi, this.actors.values())
   }
 
   playClock = 0
@@ -479,6 +501,10 @@ export class World {
     resetQuests()
     resetAbilities()
     resetRpgInventories()
+    resetRpgEquipment()
+    resetRpgPortals()
+    resetRpgCombat()
+    resetRpgEnemyAi()
     resetBTs()
     resetCrowd()
     resetGridNavAgents()
@@ -628,6 +654,7 @@ export class World {
     }
     tickCrowd(dt)
     tickGridNavAgents(dt, this.actors)
+    tickRpgEnemyAi(this.actors, dt)
     // Sequencer auto-play loops during PIE (tracks + camera cuts + events)
     if (this.sequence.autoPlay && (this.sequence.tracks.length > 0 || this.sequence.cameraCuts?.length || this.sequence.events?.length)) {
       const st = this.playClock % this.sequence.duration
@@ -653,7 +680,8 @@ export class World {
       } else if (a.blendSpace1D?.samples.length) {
         tickBlendSpace1D(a, params[a.blendSpace1D.param] ?? 0)
       } else if (a.animStateMachine) {
-        tickAnimSM(a, dt, params)
+        const oneshotActive = tickCombatOneshot(a, dt)
+        if (!oneshotActive) tickAnimSM(a, dt, params)
       }
       a.mixer?.update(dt)
       if (hasActorSkeleton(a) && ((a.ikTargets?.length ?? 0) > 0 || a.lookAtTarget)) {

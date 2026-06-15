@@ -4,6 +4,12 @@ import type { Actor } from './Actor'
 /** FSM transition condition — mirrors UE AnimGraph transition rules (lite). */
 export type AnimTransitionCondition = 'auto' | 'param_gt' | 'param_lt'
 
+/** Wave 99 — FSM node kind; oneshot = AnimationTree OneShot stub (trigger then return). */
+export type AnimNodeKind = 'state' | 'oneshot'
+
+export const COMBAT_ONESHOT_ATTACK_NAME = 'Attack'
+export const DEFAULT_COMBAT_ONESHOT_SEC = 0.45
+
 export interface AnimTransition {
   from: string
   to: string
@@ -17,6 +23,10 @@ export interface AnimState {
   name: string
   clipName: string
   loop: boolean
+  /** Wave 99 — oneshot nodes are triggered externally, not via FSM transitions */
+  kind?: AnimNodeKind
+  /** Wave 99 — play time before returning to the prior FSM state (oneshot only) */
+  durationSec?: number
   /** editor canvas position */
   x: number
   y: number
@@ -55,6 +65,10 @@ type Triangle = [number, number, number]
 
 const smRuntime = new WeakMap<Actor, { current: string; enteredAt: number }>()
 const blendActions = new WeakMap<Actor, Map<string, THREE.AnimationAction>>()
+const oneshotRuntime = new WeakMap<
+  Actor,
+  { active: boolean; returnState: string; endsAt: number; clipName: string; crossfade: number }
+>()
 
 export function emptyAnimStateMachine(clipName = ''): AnimStateMachine {
   return {
@@ -132,11 +146,170 @@ export function collectAnimParams(actor: {
 
 export function resetAnimRuntime(actor: Actor) {
   smRuntime.delete(actor)
+  oneshotRuntime.delete(actor)
   const actions = blendActions.get(actor)
   if (actions) {
     for (const a of actions.values()) a.stop()
     blendActions.delete(actor)
   }
+}
+
+function isOneshotNode(state: AnimState | undefined): boolean {
+  return state?.kind === 'oneshot'
+}
+
+function firstFsmState(sm: AnimStateMachine): AnimState | undefined {
+  return (
+    stateByName(sm, sm.initialState) ??
+    sm.states.find((s) => !isOneshotNode(s)) ??
+    sm.states[0]
+  )
+}
+
+/** Ensure demo clips exist when attaching combat oneshot to primitives without glTF anims. */
+export function ensureAnimTestClips(actor: Actor): void {
+  if (actor.animations?.length) return
+  actor.animations = [
+    new THREE.AnimationClip('Idle', 1, []),
+    new THREE.AnimationClip('Attack', DEFAULT_COMBAT_ONESHOT_SEC, []),
+  ]
+}
+
+function pickIdleClip(clips: THREE.AnimationClip[]): string {
+  return clips.find((c) => /idle/i.test(c.name))?.name ?? clips[0]?.name ?? ''
+}
+
+function pickAttackClip(clips: THREE.AnimationClip[]): string {
+  const names = clips.map((c) => c.name)
+  return (
+    names.find((n) => /attack|punch|slash|hit|swing/i.test(n)) ??
+    names.find((n) => !/idle/i.test(n)) ??
+    names[0] ??
+    ''
+  )
+}
+
+/** Attach Idle + Attack oneshot states for combat montage demos (/combatanim). */
+export function attachSampleCombatOneshot(actor: Actor): { ok: boolean; clipName?: string; error?: string } {
+  ensureAnimTestClips(actor)
+  const clips = actor.animations ?? []
+  if (!clips.length) return { ok: false, error: 'No animation clips' }
+
+  const idleClip = pickIdleClip(clips)
+  const attackClip = pickAttackClip(clips)
+  const clipDur = clips.find((c) => c.name === attackClip)?.duration ?? DEFAULT_COMBAT_ONESHOT_SEC
+  const durationSec = Math.max(0.1, clipDur)
+
+  let sm = actor.animStateMachine
+  if (!sm) {
+    sm = emptyAnimStateMachine(idleClip)
+    actor.animStateMachine = sm
+  }
+
+  let idle = sm.states.find((s) => s.name === 'Idle' && !isOneshotNode(s))
+  if (!idle) {
+    idle = { name: 'Idle', clipName: idleClip, loop: true, kind: 'state', x: 80, y: 80 }
+    sm.states.unshift(idle)
+  } else {
+    idle.clipName = idleClip
+    idle.kind = 'state'
+    idle.loop = true
+  }
+  if (!sm.initialState || isOneshotNode(stateByName(sm, sm.initialState))) sm.initialState = 'Idle'
+
+  const attackState: AnimState = {
+    name: COMBAT_ONESHOT_ATTACK_NAME,
+    clipName: attackClip,
+    loop: false,
+    kind: 'oneshot',
+    durationSec,
+    x: 260,
+    y: 80,
+  }
+  const existing = sm.states.find((s) => s.name === COMBAT_ONESHOT_ATTACK_NAME)
+  if (existing) Object.assign(existing, attackState)
+  else sm.states.push(attackState)
+
+  return { ok: true, clipName: attackClip }
+}
+
+/** Find the authored Attack oneshot (or first oneshot) on an actor FSM. */
+export function findCombatAttackState(actor: Actor): AnimState | undefined {
+  const sm = actor.animStateMachine
+  if (!sm) return undefined
+  return (
+    sm.states.find((s) => isOneshotNode(s) && s.name === COMBAT_ONESHOT_ATTACK_NAME) ??
+    sm.states.find((s) => isOneshotNode(s) && !!s.clipName)
+  )
+}
+
+export function isCombatOneshotActive(actor: Actor): boolean {
+  return oneshotRuntime.get(actor)?.active === true
+}
+
+/**
+ * Wave 99 — trigger a combat montage clip for durationSec, then return to the prior FSM state.
+ * AnimationTree OneShot stub: crossfade in, hold for duration, crossfade back.
+ */
+export function triggerCombatOneshot(actor: Actor, clipName: string, durationSec: number): boolean {
+  const clip = clipName?.trim()
+  const dur = Math.max(0.05, Number(durationSec) || 0)
+  if (!clip) return false
+
+  const action = clipAction(actor, clip)
+  if (!action) return false
+
+  const sm = actor.animStateMachine
+  const rt = smRuntime.get(actor)
+  const returnState = rt?.current ?? sm?.initialState ?? (sm ? firstFsmState(sm)?.name : undefined) ?? 'Idle'
+
+  oneshotRuntime.set(actor, {
+    active: true,
+    returnState,
+    endsAt: performance.now() + dur * 1000,
+    clipName: clip,
+    crossfade: 0.12,
+  })
+
+  action.reset()
+  action.loop = THREE.LoopOnce
+  action.clampWhenFinished = true
+  action.enabled = true
+  const fade = 0.12
+  if (actor.currentAction && actor.currentAction !== action) {
+    action.crossFadeFrom(actor.currentAction, fade, true)
+  } else if (fade > 0) {
+    action.fadeIn(fade)
+  }
+  action.play()
+  actor.currentAction = action
+  return true
+}
+
+/** Tick active combat oneshot; returns true while the montage owns the mixer (skip FSM). */
+export function tickCombatOneshot(actor: Actor, dt: number): boolean {
+  void dt
+  const os = oneshotRuntime.get(actor)
+  if (!os?.active) return false
+
+  if (performance.now() < os.endsAt) return true
+
+  os.active = false
+  oneshotRuntime.delete(actor)
+
+  const sm = actor.animStateMachine
+  if (!sm) return false
+
+  const rt = smRuntime.get(actor)
+  const returnSt =
+    stateByName(sm, os.returnState) ??
+    stateByName(sm, sm.initialState) ??
+    firstFsmState(sm)
+  if (rt && returnSt && !isOneshotNode(returnSt)) {
+    rt.current = returnSt.name
+    enterState(actor, returnSt, os.crossfade)
+  }
+  return false
 }
 
 function ensureMixer(actor: Actor): THREE.AnimationMixer | null {
@@ -198,12 +371,13 @@ function stateByName(sm: AnimStateMachine, name: string): AnimState | undefined 
 export function tickAnimSM(actor: Actor, dt: number, params: Record<string, number>) {
   const sm = actor.animStateMachine
   if (!sm?.states.length || actor.blendSpace2D?.samples.length || actor.blendSpace1D?.samples.length) return
+  if (isCombatOneshotActive(actor)) return
   void dt
 
   let rt = smRuntime.get(actor)
   if (!rt) {
-    const initial = stateByName(sm, sm.initialState) ?? sm.states[0]
-    if (!initial?.clipName) return
+    const initial = firstFsmState(sm)
+    if (!initial?.clipName || isOneshotNode(initial)) return
     rt = { current: initial.name, enteredAt: performance.now() }
     smRuntime.set(actor, rt)
     enterState(actor, initial, 0)
@@ -223,7 +397,7 @@ export function tickAnimSM(actor: Actor, dt: number, params: Record<string, numb
     if (t.from !== rt.current) continue
     if (!transitionMatches(t, params, finished)) continue
     const next = stateByName(sm, t.to)
-    if (!next?.clipName) break
+    if (!next?.clipName || isOneshotNode(next)) break
     rt.current = next.name
     rt.enteredAt = performance.now()
     enterState(actor, next, t.crossfade)

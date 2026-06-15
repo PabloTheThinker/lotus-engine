@@ -28,6 +28,9 @@ import { buildPackChangelogHtml } from './packChangelogHtml'
 import { exportItchUploadPack, itchPackZipFilename } from './itchUploadPack'
 import { exportMiniGamePack } from './miniGameExportPack'
 import { buildRpg3dPackHTML, spawnRpg3dGame } from './rpg3dExportPack'
+import { buildRpgOverworldPackHTML } from './rpgOverworldExportPack'
+import { spawnRpgOverworldStarter } from './rpgOverworldStarter'
+import { RPG_INTERIOR_LEVEL_KEY } from '../engine/rpgPortals'
 import { spawnMainMenu } from './mainMenuFlow'
 import { spawnMiniGame } from './starterMiniGames'
 import { spawnRpg3dStarter } from './rpg3dStarter'
@@ -52,9 +55,17 @@ import {
 } from '../engine/cloudSaveSync'
 import { setSaveContext } from '../engine/saveSystem'
 import { addGold, addItem, ensurePlayerRpgActor, getGold, getItemCount, getInventory } from '../engine/rpgInventory'
+import { canCraft, craft, ensureDefaultCraftingItems, findRecipe } from '../engine/rpgCrafting'
+import { ensureDefaultLootTables } from '../engine/rpgLoot'
+import { dealDamage, ensureCombatActor, ensurePlayerCombatTag, getActorHealth, isAlive } from '../engine/rpgCombat'
+import { registerEnemy } from '../engine/rpgEnemyAi'
+import { buildSerializedActor } from './spawn'
+import { AddActorCommand } from './commands'
+import { equip, getEquipped, getEquipmentDef } from '../engine/rpgEquipment'
 import { startDialogue, setRpgDialogueUiListener } from '../engine/rpgDialogue'
 import { findQuestDef, getQuestState, startQuest } from '../engine/rpgQuests'
 import { mountRpgDialogueUi, renderRpgDialogueUi } from './rpgDialogueUi'
+import { attachSampleCombatOneshot, COMBAT_ONESHOT_ATTACK_NAME } from '../engine/animStateMachine'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -91,6 +102,7 @@ SLASH COMMANDS
   /minigameexport <mode>  Export playable HTML for platformer|rpg|fps preset
   /exportrpg              Spawn 3D RPG village + GameManager (inventory, dialogue, quests)
   /rpg3dexport            Build 3D RPG pack HTML snippet (__LOTUS_RPG_3D__ + __LOTUS_RPG_HUD__)
+  /rpgoverworld           Spawn 2×2 streaming overworld + interior portal (changeScene)
   /exportpack <mode>      Export PWA mini-game pack (platformer|rpg|fps) with manifest + icons + meta
   /exportpackmeta <mode>  Show itch.io pack metadata JSON (platformer|rpg|fps)
   /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png + RELEASE_NOTES.md + CHANGELOG.html)
@@ -112,6 +124,10 @@ SLASH COMMANDS
   /gridnavai patrol|chase [0-3] Spawn grid nav agent with patrol or chase AI (tag: grid_nav_target)
   /gridnavpath [0-3]   Bake grid navmesh layer and find test path [0,1,0] → [8,1,8] with debug overlay
   /inventory           Demo: add Health Potion + 50 gold to player inventory (PlayerStart + GAS)
+  /craft <recipeId>    Craft item from recipe (demo: health_potion — 2× herb)
+  /combatanim          Attach sample Attack oneshot FSM to selected actor or PlayerStart
+  /combat              Demo: spawn Enemy + deal test damage (GAS Health + nav chase)
+  /equip <itemId>      Equip iron_sword / leather_helm (adds item if missing, applies GAS modifiers)
   /cloudsave export       Print full cloud save JSON (IndexedDB checkpoints)
   /cloudsave import <json> Import cloud save JSON into IndexedDB (same level)
 
@@ -401,6 +417,23 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/rpgoverworld': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /rpgoverworld', level: 'error' }
+      }
+      spawnRpgOverworldStarter()
+      const html = buildRpgOverworldPackHTML()
+      const hasOverworld = html.includes('__LOTUS_RPG_OVERWORLD__')
+      const hasStreaming = html.includes('__LOTUS_STREAMING__ = true')
+      return {
+        output:
+          `RPG overworld ready — 2×2 cells, streaming on. Interior linked: ${RPG_INTERIOR_LEVEL_KEY}.\n` +
+          `Press Play, walk to Portal_Interior → api.changeScene('${RPG_INTERIOR_LEVEL_KEY}').\n` +
+          `Export: indie.rpgOverworld.exportPack() · __LOTUS_RPG_OVERWORLD__: ${hasOverworld} · streaming: ${hasStreaming}`,
+        error: null,
+        level: 'log',
+      }
+    }
     case '/exportpack': {
       const mode = (args[0] ?? '').toLowerCase()
       if (!['platformer', 'rpg', 'fps'].includes(mode)) {
@@ -652,6 +685,160 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/combatanim': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /combatanim', level: 'error' }
+      }
+      const selectedId = useEditor.getState().selectedId
+      const selected = selectedId ? world.actors.get(selectedId) : undefined
+      const canUseSelected =
+        selected &&
+        (selected.type === 'PlayerStart' ||
+          selected.type === 'StaticMesh' ||
+          selected.type === 'CustomMesh' ||
+          !!selected.mesh)
+      const actor =
+        (canUseSelected ? selected : undefined) ??
+        ensurePlayerRpgActor(world.playerStart()) ??
+        world.playerStart()
+      if (!actor) {
+        return { output: null, error: 'No selected actor or PlayerStart — select a mesh or run /starter', level: 'error' }
+      }
+      const result = attachSampleCombatOneshot(actor)
+      if (!result.ok) {
+        return { output: null, error: result.error ?? 'Failed to attach combat oneshot', level: 'error' }
+      }
+      useEditor.getState().touch()
+      return {
+        output: [
+          `Combat oneshot → ${actor.name}`,
+          `  FSM: Idle + ${COMBAT_ONESHOT_ATTACK_NAME} (kind=oneshot, clip=${result.clipName})`,
+          'Press Play — api.meleeAttack / lotus.anim.combatOneshot(actorId) triggers montage',
+          'Bridge: lotus.anim.combatOneshot · lotus.anim.attachSampleOneshot',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/combat': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /combat', level: 'error' }
+      }
+      const player = ensurePlayerCombatTag(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — place one or run /starter thirdperson', level: 'error' }
+      }
+      const enemyName = 'CombatTestEnemy'
+      let enemy = [...world.actors.values()].find((a) => a.name === enemyName)
+      if (!enemy) {
+        const sa = buildSerializedActor({ kind: 'mesh', geometry: 'capsule' }, [3, 0.9, 0])
+        sa.name = enemyName
+        sa.tags = ['Enemy']
+        sa.attributeSetId = 'default'
+        new AddActorCommand(sa).execute()
+        enemy = [...world.actors.values()].find((a) => a.name === enemyName)
+      }
+      if (!enemy) {
+        return { output: null, error: 'Failed to spawn CombatTestEnemy', level: 'error' }
+      }
+      ensureCombatActor(enemy)
+      const beforeEnemy = getActorHealth(enemy) ?? 0
+      const beforePlayer = getActorHealth(player) ?? 0
+      dealDamage(enemy, 25, player)
+      dealDamage(player, 10, enemy)
+      const afterEnemy = getActorHealth(enemy) ?? 0
+      const afterPlayer = getActorHealth(player) ?? 0
+      void registerEnemy(enemy, world.actors).then((ok) => {
+        useEditor.getState().setStatus(
+          ok
+            ? `${enemyName} registered — Play to see navmesh chase (Player tag)`
+            : 'Enemy spawned; nav chase registers on Play (bake /gridnavmesh first)',
+        )
+        useEditor.getState().touch()
+      })
+      return {
+        output: [
+          `Combat demo → ${enemyName} (Enemy) vs ${player.name} (Player)`,
+          `  enemy HP: ${beforeEnemy} → ${afterEnemy} (alive: ${isAlive(enemy)})`,
+          `  player HP: ${beforePlayer} → ${afterPlayer} (alive: ${isAlive(player)})`,
+          'Scripts: api.dealDamage / api.meleeAttack / api.rangedAttack',
+          'Bridge: lotus.rpg.combat · lotus.rpg.enemyAi.register',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/craft': {
+      const recipeId = args[0]?.trim()
+      if (!recipeId || args.length > 1) {
+        return { output: null, error: 'Usage: /craft <recipeId>  (e.g. health_potion)', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — place one or run /rpg3d small', level: 'error' }
+      }
+      ensureDefaultCraftingItems()
+      ensureDefaultLootTables()
+      const recipe = findRecipe(recipeId)
+      if (!recipe) {
+        return { output: null, error: `Unknown recipe "${recipeId}"`, level: 'error' }
+      }
+      for (const input of recipe.inputs) {
+        if (!getItemCount(player, input.itemId)) addItem(player, input.itemId, input.quantity)
+      }
+      if (!canCraft(player, recipe.id)) {
+        const need = recipe.inputs.map((i) => `${i.quantity}× ${i.itemId}`).join(', ')
+        return { output: null, error: `Cannot craft ${recipe.id} — need: ${need}`, level: 'error' }
+      }
+      const before = getItemCount(player, recipe.output.itemId)
+      const ok = craft(player, recipe.id)
+      if (!ok) {
+        return { output: null, error: `Failed to craft "${recipe.id}"`, level: 'error' }
+      }
+      const after = getItemCount(player, recipe.output.itemId)
+      const inputs = recipe.inputs.map((i) => `${i.quantity}× ${i.itemId}`).join(' + ')
+      return {
+        output: [
+          `Crafted ${recipe.name} → ${player.name}`,
+          `  recipe: ${inputs} → ${recipe.output.quantity}× ${recipe.output.itemId}`,
+          `  ${recipe.output.itemId}: ${before} → ${after}`,
+          'Scripts: api.craft / api.canCraft · bridge: lotus.rpg.crafting',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/equip': {
+      const itemId = args[0]?.trim()
+      if (!itemId || args.length > 1) {
+        return { output: null, error: 'Usage: /equip <itemId>  (e.g. iron_sword, leather_helm)', level: 'error' }
+      }
+      const player = ensurePlayerRpgActor(world.playerStart())
+      if (!player) {
+        return { output: null, error: 'No PlayerStart — place one or run /rpg3d small', level: 'error' }
+      }
+      const def = getEquipmentDef(itemId)
+      if (!def) {
+        return { output: null, error: `Unknown equipment item "${itemId}"`, level: 'error' }
+      }
+      if (!getItemCount(player, def.id)) addItem(player, def.id, 1)
+      const ok = equip(player, def.id)
+      if (!ok) {
+        return { output: null, error: `Failed to equip "${def.id}"`, level: 'error' }
+      }
+      const equipped = getEquipped(player)
+      const mods = def.modifiers.map((m) => `${m.attribute}${m.value >= 0 ? '+' : ''}${m.value}`).join(', ')
+      return {
+        output: [
+          `Equipped ${def.name} → ${player.name} (${def.slot})`,
+          `  modifiers: ${mods || 'none'}`,
+          `  slots: weapon=${equipped.weapon ?? '—'} head=${equipped.head ?? '—'}`,
+          'Scripts: api.equip / api.getEquipped · bridge: lotus.rpg.equipment',
+        ].join('\n'),
+        error: null,
+        level: 'log',
+      }
+    }
     case '/cloudsave': {
       const sub = args[0]?.toLowerCase()
       if (sub !== 'export' && sub !== 'import') {
@@ -877,7 +1064,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/rpg3d', '/fps', '/minigame', '/minigameexport', '/exportrpg', '/rpg3dexport', '/rpgoverworld', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/dialogue', '/quest', '/inventory', '/combatanim', '/combat', '/equip', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]

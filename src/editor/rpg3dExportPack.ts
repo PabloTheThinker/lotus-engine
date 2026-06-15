@@ -1,4 +1,6 @@
-/** Wave 95 (v5.14–v5.18) — Full 3D RPG export pack (camera rig + inventory + dialogue + quests). */
+/** Wave 95 (v5.14–v5.18) — Full 3D RPG export pack (camera rig + inventory + dialogue + quests).
+ *  Wave 96 (v5.19–v5.23) — Enemy-tagged goblins with navmesh chase AI.
+ *  Wave 100 (v5.39–v5.43) — Crafting panel (C) + goblin loot on defeat. */
 
 import { captureExportScreenshot } from './captureExportScreenshot'
 import { buildPlayableHTML, type ExportOptions } from './exportPlayable'
@@ -12,6 +14,9 @@ import type { SerializedActor } from '../engine/types'
 import { AddActorCommand, runCommand } from './commands'
 import { buildSerializedActor } from './spawn'
 import { registerItem } from '../engine/rpgInventory'
+import { ensureDefaultEquipmentItems } from '../engine/rpgEquipment'
+import { ensureDefaultCraftingItems } from '../engine/rpgCrafting'
+import { ensureDefaultLootTables } from '../engine/rpgLoot'
 import {
   MINIGAME_PACK_ICON_B64,
   MINIGAME_PACK_ICON_DATA_URI,
@@ -28,6 +33,8 @@ export const RPG3D_HERB_ITEM_ID = 'healing_herb'
 export const RPG3D_DIALOGUE_VILLAGE_ELDER = 'village_elder'
 export const RPG3D_QUEST_FIND_HERBS = 'find_herbs'
 export const RPG3D_HERB_OBJECTIVE_ID = 'collect_herbs'
+export const RPG3D_GOBLIN_A_NAME = 'Rpg3dGoblinA'
+export const RPG3D_GOBLIN_B_NAME = 'Rpg3dGoblinB'
 
 /** Wave 95 — GameManager wires inventory, dialogue (village_elder), quest (find_herbs), RPG HUD. */
 export const RPG3D_GAME_MANAGER_SCRIPT = `// 3D RPG — inventory + dialogue + quest + HUD (wave 95)
@@ -37,6 +44,7 @@ export const RPG3D_GAME_MANAGER_SCRIPT = `// 3D RPG — inventory + dialogue + q
 // @export herbGoal = ${RPG3D_HERB_GOAL}
 // @export interactRadius = 2.8
 let _inventoryOpen = false
+let _craftingOpen = false
 let _elderTalked = false
 const _herbs = new Set()
 
@@ -44,7 +52,31 @@ function refreshInventoryPanel() {
   const items = []
   const n = api.getItemCount(vars.herbItemId)
   for (let i = 0; i < n; i++) items.push('Healing Herb')
-  api.emit('inventory_toggle', _inventoryOpen, items)
+  const potions = api.getItemCount('health_potion')
+  for (let i = 0; i < potions; i++) items.push('Health Potion')
+  const herbs = api.getItemCount('herb')
+  for (let i = 0; i < herbs; i++) items.push('Herb')
+  api.emit('inventory_toggle', _inventoryOpen, items, api.getEquipped())
+}
+
+function refreshCraftingPanel() {
+  const recipes = [
+    {
+      id: 'health_potion',
+      name: 'Health Potion',
+      inputs: '2× Herb',
+      output: '1× Health Potion',
+      canCraft: api.canCraft('health_potion'),
+    },
+    {
+      id: 'mana_potion',
+      name: 'Mana Potion',
+      inputs: '3× Herb',
+      output: '1× Mana Potion',
+      canCraft: api.canCraft('mana_potion'),
+    },
+  ]
+  api.emit('crafting_toggle', _craftingOpen, recipes)
 }
 
 function onBeginPlay() {
@@ -69,13 +101,29 @@ function onBeginPlay() {
     api.unlockAchievement('quest_complete')
     api.emit('game_won')
   })
-  api.log('3D RPG ready — Interact with elder, collect herbs, press I for inventory')
+  api.log('3D RPG ready — elder, herbs, I inventory, C crafting, F/LMB melee goblins for loot')
 }
 
 function onTick(_dt) {
+  if (api.actionJustPressed('Fire') || api.keyJustPressed('KeyF')) {
+    api.meleeAttack(2.2, 20)
+  }
+
   if (api.keyJustPressed('KeyI')) {
     _inventoryOpen = !_inventoryOpen
     refreshInventoryPanel()
+  }
+
+  if (api.keyJustPressed('KeyC')) {
+    _craftingOpen = !_craftingOpen
+    refreshCraftingPanel()
+  }
+
+  if (_craftingOpen && api.keyJustPressed('Enter')) {
+    if (api.canCraft('health_potion')) api.craft('health_potion')
+    else if (api.canCraft('mana_potion')) api.craft('mana_potion')
+    refreshCraftingPanel()
+    if (_inventoryOpen) refreshInventoryPanel()
   }
 
   if (!_elderTalked && api.actionJustPressed('Interact')) {
@@ -143,6 +191,31 @@ function buildRpgHerb(name: string, position: [number, number, number]): Seriali
   return empty
 }
 
+function buildRpgEnemy(name: string, position: [number, number, number]): SerializedActor {
+  const enemy = buildSerializedActor({ kind: 'mesh', geometry: 'capsule' }, position)
+  enemy.name = name
+  enemy.tags = ['Enemy', 'Goblin']
+  enemy.attributeSetId = 'default'
+  enemy.transform.scale = [0.55, 0.9, 0.55]
+  enemy.material = {
+    ...enemy.material!,
+    color: '#8b3a3a',
+    roughness: 0.7,
+    metalness: 0.05,
+    emissive: '#000000',
+    emissiveIntensity: 1,
+    wireframe: false,
+    opacity: 1,
+    transparent: false,
+  }
+  return enemy
+}
+
+const RPG3D_ENEMY_POSITIONS: [string, [number, number, number]][] = [
+  [RPG3D_GOBLIN_A_NAME, [-7, 0.9, -3]],
+  [RPG3D_GOBLIN_B_NAME, [6, 0.9, -4]],
+]
+
 function buildGameManager(): SerializedActor {
   const mgr = buildSerializedActor({ kind: 'empty' }, [0, 0, 0])
   mgr.name = RPG3D_MANAGER_NAME
@@ -166,6 +239,9 @@ export function attachRpg3dGamePack() {
         stackable: true,
         maxStack: 99,
       })
+      ensureDefaultEquipmentItems()
+      ensureDefaultCraftingItems()
+      ensureDefaultLootTables()
 
       if (!findActorByName(VILLAGE_ELDER_NAME)) {
         const elder = buildDialogueNpc(VILLAGE_ELDER_NAME, [2, 0.2, 2], RPG3D_DIALOGUE_VILLAGE_ELDER)
@@ -178,6 +254,13 @@ export function attachRpg3dGamePack() {
         const herb = buildRpgHerb(name, pos)
         added.push(herb)
         new AddActorCommand(herb).execute()
+      }
+
+      for (const [name, pos] of RPG3D_ENEMY_POSITIONS) {
+        if (findActorByName(name)) continue
+        const enemy = buildRpgEnemy(name, pos)
+        added.push(enemy)
+        new AddActorCommand(enemy).execute()
       }
 
       let manager = findActorByName(RPG3D_MANAGER_NAME)

@@ -675,6 +675,17 @@ function Label3DSection({ actor }: { actor: Actor }) {
   )
 }
 
+function CombatAnimHintSection() {
+  return (
+    <Section title="Combat Animation">
+      <div className="panel-empty" style={{ padding: '2px 0' }}>
+        Skinned mesh detected — import glTF clips or run /combatanim to attach Idle + Attack oneshot FSM.
+        lotus.anim.combatOneshot(actorId) plays the montage; api.meleeAttack triggers it during combat.
+      </div>
+    </Section>
+  )
+}
+
 function AnimationSection({ actor }: { actor: Actor }) {
   const touch = useEditor((s) => s.touch)
   const setBottomTab = useEditor((s) => s.setBottomTab)
@@ -691,6 +702,7 @@ function AnimationSection({ actor }: { actor: Actor }) {
     paramNames.push(actor.blendSpace2D.paramY)
   }
   const hasFsm = (actor.animStateMachine?.states.length ?? 0) > 0
+  const oneshotCount = actor.animStateMachine?.states.filter((s) => s.kind === 'oneshot').length ?? 0
   const hasBlend1d = (actor.blendSpace1D?.samples.length ?? 0) > 0
   const hasBlend2d = (actor.blendSpace2D?.samples.length ?? 0) > 0
   const setAnimParam = (name: string, value: number) => {
@@ -705,10 +717,17 @@ function AnimationSection({ actor }: { actor: Actor }) {
       {(hasFsm || hasBlend1d || hasBlend2d) && (
         <div className="panel-empty" style={{ padding: '2px 0' }}>
           {hasFsm && `FSM: ${actor.animStateMachine!.states.length} state(s)`}
+          {oneshotCount > 0 && ` · Oneshot: ${oneshotCount}`}
           {hasFsm && (hasBlend1d || hasBlend2d) && ' · '}
           {hasBlend1d && `Blend 1D: ${actor.blendSpace1D!.samples.length} sample(s)`}
           {hasBlend1d && hasBlend2d && ' · '}
           {hasBlend2d && `Blend 2D: ${actor.blendSpace2D!.samples.length} sample(s)`}
+        </div>
+      )}
+      {hasActorSkeleton(actor) && (
+        <div className="panel-empty" style={{ padding: '2px 0' }}>
+          Combat oneshot: run /combatanim or lotus.anim.combatOneshot(actorId) — meleeAttack auto-triggers Attack
+          montage when FSM has kind=oneshot state.
         </div>
       )}
       <label className="field">
@@ -3158,6 +3177,7 @@ export function Details() {
         {actor.waterProps && <WaterSection actor={actor} />}
         {actor.pcgProps && <PCGSection actor={actor} />}
         {hasActorSkeleton(actor) && <IkSection actor={actor} />}
+        {hasActorSkeleton(actor) && (actor.animations?.length ?? 0) === 0 && <CombatAnimHintSection />}
         {(actor.animations?.length ?? 0) > 0 && <AnimationSection actor={actor} />}
         {actor.physicsProps && actor.type !== 'ParticleEmitter' && <PhysicsSection actor={actor} />}
         {actor.particleProps && actor.particleSystem && <ParticlesSection actor={actor} />}

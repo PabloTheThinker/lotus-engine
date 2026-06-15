@@ -5,10 +5,12 @@ import {
   emptyAnimStateMachine,
   emptyBlendSpace1D,
   emptyBlendSpace2D,
+  type AnimNodeKind,
   type AnimStateMachine,
   type AnimTransition,
   type BlendSpace1D,
   type BlendSpace2D,
+  DEFAULT_COMBAT_ONESHOT_SEC,
 } from '../../engine/animStateMachine'
 import { keyableScriptExports } from '../../engine/sequencer'
 import { PropertyCommand, runCommand } from '../commands'
@@ -160,6 +162,7 @@ export function AnimStateEditor() {
         name,
         clipName: clips[0] ?? '',
         loop: true,
+        kind: 'state',
         x: 60 + (n % 4) * 180,
         y: 40 + Math.floor(n / 4) * 100,
       })
@@ -528,7 +531,7 @@ export function AnimStateEditor() {
           {sm.states.map((st) => (
             <div
               key={st.name}
-              className={`bp-node anim-node ${selState === st.name ? 'selected' : ''} ${sm.initialState === st.name ? 'initial' : ''}`}
+              className={`bp-node anim-node ${selState === st.name ? 'selected' : ''} ${sm.initialState === st.name ? 'initial' : ''} ${st.kind === 'oneshot' ? 'oneshot' : ''}`}
               style={{ left: st.x, top: st.y, width: NODE_W }}
               onMouseDown={(e) => {
                 if ((e.target as HTMLElement).closest('button, select, input')) return
@@ -538,8 +541,8 @@ export function AnimStateEditor() {
                 setSelTrans(null)
               }}
             >
-              <div className="bp-node-header" style={{ background: '#2a4a7a' }}>
-                <span>{st.name}</span>
+              <div className="bp-node-header" style={{ background: st.kind === 'oneshot' ? '#6a3a2a' : '#2a4a7a' }}>
+                <span>{st.name}{st.kind === 'oneshot' ? ' ⚡' : ''}</span>
                 <button type="button" onClick={() => removeState(st.name)} title="Remove state">
                   ✕
                 </button>
@@ -782,6 +785,29 @@ function FsmStateInspector({
         />
       </label>
       <label className="field">
+        <span>Kind</span>
+        <select
+          value={st.kind ?? 'state'}
+          onChange={(e) =>
+            onChange((g) => {
+              const n = g.states.find((s) => s.name === st.name)
+              if (!n) return
+              const kind = e.target.value as AnimNodeKind
+              n.kind = kind
+              if (kind === 'oneshot') {
+                n.loop = false
+                n.durationSec = n.durationSec ?? DEFAULT_COMBAT_ONESHOT_SEC
+              } else {
+                n.durationSec = undefined
+              }
+            })
+          }
+        >
+          <option value="state">state</option>
+          <option value="oneshot">oneshot (combat montage)</option>
+        </select>
+      </label>
+      <label className="field">
         <span>Clip</span>
         <select value={st.clipName} onChange={(e) => onChange((g) => { const n = g.states.find((s) => s.name === st.name); if (n) n.clipName = e.target.value })}>
           {clips.map((c) => (
@@ -789,10 +815,28 @@ function FsmStateInspector({
           ))}
         </select>
       </label>
-      <label className="field">
-        <input type="checkbox" checked={st.loop} onChange={(e) => onChange((g) => { const n = g.states.find((s) => s.name === st.name); if (n) n.loop = e.target.checked })} />
-        <span>Loop</span>
-      </label>
+      {(st.kind ?? 'state') === 'oneshot' ? (
+        <label className="field">
+          <span>Duration (sec)</span>
+          <input
+            type="number"
+            step={0.05}
+            min={0.05}
+            value={st.durationSec ?? DEFAULT_COMBAT_ONESHOT_SEC}
+            onChange={(e) =>
+              onChange((g) => {
+                const n = g.states.find((s) => s.name === st.name)
+                if (n) n.durationSec = Math.max(0.05, parseFloat(e.target.value) || DEFAULT_COMBAT_ONESHOT_SEC)
+              })
+            }
+          />
+        </label>
+      ) : (
+        <label className="field">
+          <input type="checkbox" checked={st.loop} onChange={(e) => onChange((g) => { const n = g.states.find((s) => s.name === st.name); if (n) n.loop = e.target.checked })} />
+          <span>Loop</span>
+        </label>
+      )}
       {sm.initialState !== st.name && (
         <button type="button" onClick={() => onSetInitial(st.name)}>Set as initial state</button>
       )}

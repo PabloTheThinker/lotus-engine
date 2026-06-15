@@ -4,6 +4,46 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 96–100: v5.19–v5.43 (3D RPG combat swarm)
+
+### Wave 96 (v5.19–v5.23) — Combat system lite
+- `rpgCombat.ts` — `dealDamage`, `isAlive`, melee hitbox + ranged raycast (Enemy-priority, matrix sync)
+- `rpgEnemyAi.ts` — chase `Player` on grid navmesh layer 0 within aggro range
+- Script API: `api.dealDamage`, `api.meleeAttack`, `api.rangedAttack`
+- Bridge: `lotus.rpg.combat` + `lotus.rpg.enemyAi` · `/combat` terminal demo
+- `rpg3dExportPack.ts` — Rpg3dGoblinA/B enemies + GameManager melee (F / Fire)
+
+### Wave 97 (v5.24–v5.28) — Equipment slots
+- `rpgEquipment.ts` — weapon/armor paper-doll + GAS stat modifiers; checkpoint persistence
+- `rpg3dHud.ts` — equipment row in inventory panel · `/equip iron_sword`
+
+### Wave 98 (v5.29–v5.33) — RPG overworld streaming
+- `rpgOverworldStarter.ts` — 2×2 cell greybox + `streamCell` assignment + interior level link
+- `rpgPortals.ts` — TriggerVolume `enter:Portal_*` → `changeScene`
+- `rpgOverworldExportPack.ts` — `/rpgoverworld` · `__LOTUS_RPG_OVERWORLD__`
+
+### Wave 99 (v5.34–v5.38) — Combat animation oneshot
+- `animStateMachine.ts` — oneshot FSM nodes; `triggerCombatOneshot` montage stub
+- `/combatanim` attaches Idle + Attack to PlayerStart (skips light selection)
+- `meleeAttack` auto-triggers Attack oneshot when FSM present
+
+### Wave 100 (v5.39–v5.43) — Crafting + loot
+- `rpgCrafting.ts` — recipes + `/craft` · C-key crafting HUD panel
+- `rpgLoot.ts` — goblin loot tables (tag-specific over `enemy_default`) on defeat
+- `rpg3dExportPack.ts` — goblin drops gold + herb on kill
+
+### Fixed
+- `/starter` removes stale PlayerStarts so `/combatanim` targets `StarterPlayerStart`
+- Ranged raycast skips non-damageable props and prefers `Enemy`-tagged targets
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 444 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 91–95: v4.94–v5.18 (3D RPG swarm)
 
 ### Wave 91 (v4.94–v4.98) — 3D RPG camera rig

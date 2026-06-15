@@ -174,6 +174,16 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 | 94 | v5.09–v5.13 | **RPG quests** — objectives, HUD tracker |
 | 95 | v5.14–v5.18 | **3D RPG export pack** — full HUD template; `/exportrpg` — **419 tests** |
 
+## Shipped (Waves 96–100, v5.19–v5.43) — 3D RPG combat
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 96 | v5.19–v5.23 | **Combat lite** — melee/ranged + nav chase AI; `/combat` |
+| 97 | v5.24–v5.28 | **Equipment** — weapon/armor slots + stat modifiers |
+| 98 | v5.29–v5.33 | **Overworld streaming** — 2×2 cells + interior portals |
+| 99 | v5.34–v5.38 | **Combat anim** — Attack oneshot FSM; `/combatanim` |
+| 100 | v5.39–v5.43 | **Crafting + loot** — recipes + goblin drops — **444 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -182,11 +192,11 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 
 ## Next priority queue (3D RPG + parity)
 
-1. **Combat system lite** — melee/ranged, damage, enemy AI chase on navmesh
-2. **Equipment slots** — weapon/armor + stat modifiers on paper-doll HUD
-3. **Scene streaming RPG** — multi-cell overworld + interior `changeScene` portals
-4. **Animation combat blend** — attack montage + AnimationTree OneShot stub
-5. **Crafting + loot tables** — recipe resources + drop rolls on enemy defeat
+1. **Combat polish** — hit reactions, i-frames, floating damage numbers
+2. **Equipment visuals** — socket-attached weapon mesh on paper-doll
+3. **Portal transitions** — fade/loading UX for overworld ↔ interior
+4. **Root motion stub** — attack oneshot nudges pawn forward
+5. **Economy / shops** — vendor NPC buy/sell on inventory gold
 
 ## Non-goals (honest skip)
 
@@ -197,5 +207,5 @@ Lotus will not clone every UE5/Godot editor feature. The goal is **the workflows
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **419** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **444** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

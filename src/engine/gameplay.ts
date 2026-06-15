@@ -299,6 +299,7 @@ export function raycastActors(
   origin: [number, number, number],
   dir: [number, number, number],
   maxDist = 1000,
+  accept?: (actor: Actor) => boolean,
 ): { point: [number, number, number]; actor: Actor; distance: number } | null {
   _ray.set(new THREE.Vector3(...origin), new THREE.Vector3(...dir).normalize())
   _ray.far = maxDist
@@ -313,7 +314,9 @@ export function raycastActors(
     while (cur) {
       const id = cur.userData.actorId as string | undefined
       if (id && actors.has(id)) {
-        return { point: [hit.point.x, hit.point.y, hit.point.z], actor: actors.get(id)!, distance: hit.distance }
+        const actor = actors.get(id)!
+        if (accept && !accept(actor)) break
+        return { point: [hit.point.x, hit.point.y, hit.point.z], actor, distance: hit.distance }
       }
       cur = cur.parent
     }

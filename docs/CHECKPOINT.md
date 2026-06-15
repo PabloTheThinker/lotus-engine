@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v5.18 (waves 91–95).** v0.33–v5.18 shipped; **build clean**, **`npm run test` — 419 passed**.
+- **Last clean commit: v5.43 (waves 96–100).** v0.33–v5.43 shipped; **build clean**, **`npm run test` — 444 passed**.
 - **Strategic expansion:** 3D RPG + Godot/Unreal-class workflows on three.js (camera, inventory, dialogue, quests, export pack) — see `docs/INDIE-GAME-ROADMAP.md`.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
@@ -520,13 +520,23 @@
 | 94 | v5.09–v5.13 | RPG quests — objectives, tracker; `/quest start` |
 | 95 | v5.14–v5.18 | 3D RPG export pack — HUD + elder + herbs quest; `/exportrpg` — 419 tests |
 
+## Shipped (v5.19–v5.43, Waves 96–100 — 3D RPG combat swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 96 | v5.19–v5.23 | Combat lite — melee/ranged, enemy nav chase; `/combat` |
+| 97 | v5.24–v5.28 | Equipment — paper-doll HUD + GAS modifiers; `/equip` |
+| 98 | v5.29–v5.33 | Overworld streaming — 2×2 cells + portals; `/rpgoverworld` |
+| 99 | v5.34–v5.38 | Combat anim oneshot — `/combatanim` + melee montage |
+| 100 | v5.39–v5.43 | Crafting + loot — `/craft`, goblin drops — 444 tests |
+
 ## Next up (3D RPG + engine parity)
 
-1. **Combat system lite** — melee/ranged hitboxes, damage, enemy AI on navmesh
-2. **Equipment slots** — weapon/armor paper-doll + stat modifiers
-3. **Scene streaming RPG** — multi-cell overworld + interior portals
-4. **Animation combat blend** — attack montage + root motion stub
-5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
+1. **Combat polish** — hit reactions, i-frames, damage numbers HUD
+2. **Equipment visuals** — attach weapon mesh to socket on paper-doll
+3. **Portal transitions** — fade + loading UX for overworld ↔ interior
+4. **Root motion stub** — oneshot attack drives pawn forward during montage
+5. **Economy / shops** — vendor NPC + buy/sell on inventory gold
 
 ## Gotchas carried forward
 
