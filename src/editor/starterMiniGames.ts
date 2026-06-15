@@ -19,6 +19,7 @@ export const MINIGAME_MANAGER_NAME = 'MiniGameManager'
 export const GOAL_ZONE_NAME = 'GoalZone'
 export const FPS_TARGET_TAG = 'Target'
 export const RPG_NPC_GOAL = 3
+export const PLATFORMER_COIN_GOAL = 10
 
 /** Optional countdown — 0 disables timeout. */
 export const MINIGAME_TIMEOUT_EXPORT = `// @export timeoutSeconds = 0`
@@ -33,8 +34,11 @@ function miniGameTimeoutBlock(): string {
 }
 
 /** v2.50 — reach GoalZone TriggerVolume → emit game_won. */
-export const PLATFORMER_MINIGAME_SCRIPT = `// platformer minigame — reach GoalZone
+export const PLATFORMER_MINIGAME_SCRIPT = `// platformer minigame — reach GoalZone + collect coins
+// @export coinGoal = ${PLATFORMER_COIN_GOAL}
+// @export collectRadius = 1.2
 ${MINIGAME_TIMEOUT_EXPORT}
+const _coins = new Set()
 function onBeginPlay() {
 ${miniGameTimeoutBlock()}
   api.on('enter:${GOAL_ZONE_NAME}', () => {
@@ -42,6 +46,22 @@ ${miniGameTimeoutBlock()}
     api.emit('game_won')
     api.unlockAchievement('platformer_win')
   })
+}
+function onTick(_dt) {
+  const p = api.pawnPosition()
+  if (!p) return
+  const r2 = vars.collectRadius * vars.collectRadius
+  for (const coin of api.getActorsByTag('Coin')) {
+    if (!coin.root.visible) continue
+    const cp = coin.root.getWorldPosition(new THREE.Vector3())
+    const dx = cp.x - p.x
+    const dz = cp.z - p.z
+    if (dx * dx + dz * dz > r2) continue
+    coin.root.visible = false
+    _coins.add(coin.name)
+    api.log('Coin collected (' + _coins.size + '/' + vars.coinGoal + ')')
+    api.setAchievementProgress('platformer_coins', _coins.size, vars.coinGoal)
+  }
 }
 `
 
@@ -72,6 +92,7 @@ function onTick(_dt) {
     npc.root.visible = false
     _collected.add(npc.name)
     api.log('Collected ' + npc.name + ' (' + _collected.size + '/' + vars.npcGoal + ')')
+    api.setAchievementProgress('rpg_collect', _collected.size, vars.npcGoal)
   }
   if (_collected.size >= vars.npcGoal) {
     api.emit('game_won')
@@ -100,6 +121,7 @@ function onTick(_dt) {
   hit.actor.root.visible = false
   _destroyed++
   api.log('Target destroyed (' + _destroyed + '/' + vars.targetsToWin + ')')
+  api.setAchievementProgress('fps_targets', _destroyed, vars.targetsToWin)
   if (_destroyed >= vars.targetsToWin) {
     api.emit('game_won')
     api.unlockAchievement('fps_win')
@@ -146,6 +168,26 @@ function buildExtraRpgNpc(name: string, position: [number, number, number]): Ser
   const empty = buildSerializedActor({ kind: 'empty' }, position)
   empty.name = name
   empty.tags = ['NPC']
+  return empty
+}
+
+const PLATFORMER_COIN_POSITIONS: [number, number, number][] = [
+  [-6, 1.2, 0],
+  [-4, 1.2, 0],
+  [-2, 1.6, 0],
+  [0, 2.0, 0],
+  [2, 2.4, 0],
+  [4, 2.4, 0],
+  [6, 1.6, 0],
+  [-1, 0.6, 0],
+  [1, 0.6, 0],
+  [3, 1.0, 0],
+]
+
+function buildPlatformerCoin(name: string, position: [number, number, number]): SerializedActor {
+  const empty = buildSerializedActor({ kind: 'empty' }, position)
+  empty.name = name
+  empty.tags = ['Coin']
   return empty
 }
 
@@ -196,6 +238,13 @@ export function attachMiniGameScripts(mode: MiniGameMode) {
           const goal = buildGoalZone()
           addedSerialized.push(goal)
           new AddActorCommand(goal).execute()
+        }
+        for (let i = 0; i < PLATFORMER_COIN_POSITIONS.length; i++) {
+          const name = `PlatformerCoin${String.fromCharCode(65 + i)}`
+          if (findActorByName(name)) continue
+          const coin = buildPlatformerCoin(name, PLATFORMER_COIN_POSITIONS[i])
+          addedSerialized.push(coin)
+          new AddActorCommand(coin).execute()
         }
       }
 

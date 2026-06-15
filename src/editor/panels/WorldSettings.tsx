@@ -28,7 +28,11 @@ import {
   lastAOMapBakeError,
 } from '../../engine/lightmapBake'
 import { bakeNavMesh, isRecastNavReady, lastBakeError, navMeshBaking, navMeshReady } from '../../engine/nav'
-import { exportCloudSaveManifest } from '../../engine/cloudSaveSync'
+import {
+  downloadCloudSaveJsonFile,
+  exportCloudSaveManifest,
+  importCloudSaveJson,
+} from '../../engine/cloudSaveSync'
 import { setSaveContext } from '../../engine/saveSystem'
 import { sanitizeLevelKey, world } from '../../engine/World'
 import { COLOR_GRADING_PRESET_IDS, COLOR_GRADING_PRESET_THUMBNAILS } from '../../engine/postStackColorGrading'
@@ -1605,7 +1609,57 @@ export function WorldSettings() {
         )}
         {env.saveSlotsEnabled && env.cloudSaveBackup && (
           <div className="panel-empty" style={{ padding: '2px 0' }} data-lotus-cloud-sync-hint>
-            Cross-device cloud sync stub — Escape save menu or copy manifest token for QR / another browser.{' '}
+            Cross-device cloud sync stub — Escape save menu, download JSON, or copy manifest token for QR / another
+            browser.{' '}
+            <button
+              type="button"
+              data-lotus-cloud-export
+              onClick={() => {
+                setSaveContext({
+                  levelName: world.levelName,
+                  enabled: true,
+                  cloudBackup: true,
+                  crossLevelSaves: env.crossLevelSaves === true,
+                })
+                void downloadCloudSaveJsonFile().then(() => {
+                  useEditor.getState().setStatus('Cloud saves JSON downloaded')
+                })
+              }}
+            >
+              Download cloud saves JSON
+            </button>{' '}
+            <label style={{ cursor: 'pointer' }}>
+              <input
+                type="file"
+                accept=".json,application/json"
+                data-lotus-cloud-import
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!file) return
+                  setSaveContext({
+                    levelName: world.levelName,
+                    enabled: true,
+                    cloudBackup: true,
+                    crossLevelSaves: env.crossLevelSaves === true,
+                  })
+                  void file.text().then(async (text) => {
+                    try {
+                      const result = await importCloudSaveJson(text)
+                      useEditor.getState().setStatus(
+                        `Cloud saves imported — ${result.merged} slot(s) merged (${result.skipped} skipped)`,
+                      )
+                    } catch (err) {
+                      useEditor.getState().setStatus(
+                        `Cloud save import failed: ${err instanceof Error ? err.message : String(err)}`,
+                      )
+                    }
+                  })
+                }}
+              />
+              Import cloud saves JSON
+            </label>{' '}
             <button
               type="button"
               onClick={() => {

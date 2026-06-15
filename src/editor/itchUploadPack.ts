@@ -1,5 +1,6 @@
 import { buildExportPackMeta, serializePackMetaForExport } from './exportPackMeta'
 import { buildReleaseNotes } from './itchReleaseNotes'
+import { buildItchEmbedWidget } from './itchEmbedWidget'
 import { buildPackChangelogDocument } from './packChangelogHtml'
 import { buildButlerPushCommand, storeLastItchZipName } from './itchButlerHint'
 import type { ExportOptions } from './exportPlayable'
@@ -18,6 +19,7 @@ export const ITCH_ZIP_ENTRY_NAMES = [
   'icon.png',
   'RELEASE_NOTES.md',
   'CHANGELOG.html',
+  'embed-widget.html',
 ] as const
 
 const CRC32_TABLE = (() => {
@@ -195,12 +197,14 @@ export function buildItchZipFiles(mode: MiniGameMode, opts: ExportOptions = {}):
   const meta = serializePackMetaForExport(buildExportPackMeta(mode))
   const releaseNotes = opts.packReleaseNotes ?? buildReleaseNotes(mode)
   const changelogHtml = buildPackChangelogDocument(mode)
+  const embedWidgetHtml = buildItchEmbedWidget(mode)
   return {
     'index.html': utf8Encode(html),
     'meta.json': utf8Encode(meta),
     'icon.png': base64ToBytes(MINIGAME_PACK_ICON_B64),
     'RELEASE_NOTES.md': utf8Encode(releaseNotes),
     'CHANGELOG.html': utf8Encode(changelogHtml),
+    'embed-widget.html': utf8Encode(embedWidgetHtml),
   }
 }
 

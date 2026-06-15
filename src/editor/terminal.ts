@@ -16,12 +16,14 @@ import {
   spawnIndieMpLobby,
   spawnIndieMpSpectator,
   spawnIndieMpTeamsDeathmatch,
+  spawnIndieMpCtf,
 } from './indieMpGameplay'
 import { spawnIndieMpTemplate } from './indieMpTemplate'
 import { exportMiniGamePreset } from './exportPlayable'
 import { buildExportPackMeta, type ItchVersionChannel } from './exportPackMeta'
 import { buildButlerPushCommand, storeLastItchZipName } from './itchButlerHint'
 import { buildReleaseNotes } from './itchReleaseNotes'
+import { buildItchEmbedWidgetSections, ITCH_EMBED_WIDGET_FILENAME } from './itchEmbedWidget'
 import { buildPackChangelogHtml } from './packChangelogHtml'
 import { exportItchUploadPack, itchPackZipFilename } from './itchUploadPack'
 import { exportMiniGamePack } from './miniGameExportPack'
@@ -40,7 +42,13 @@ import {
   spawnGridNavChaseAgent,
   spawnGridNavPatrolAgent,
 } from '../engine/gridNavAgents'
+import { gridNavPathFind, gridNavPathShowDebug } from '../engine/gridNavPathDebug'
 import { lastBakeError } from '../engine/nav'
+import {
+  exportCloudSaveJson,
+  importCloudSaveJson,
+} from '../engine/cloudSaveSync'
+import { setSaveContext } from '../engine/saveSystem'
 import { useEditor } from './store'
 
 const HISTORY_KEY = 'lotus-engine.terminal.history'
@@ -79,16 +87,21 @@ SLASH COMMANDS
   /itchpack <mode>        Download itch.io zip (index.html + meta.json + icon.png + RELEASE_NOTES.md + CHANGELOG.html)
   /releasenotes <mode>    Print itch.io release notes markdown (platformer|rpg|fps)
   /packchangelog <mode>   Print itch.io changelog HTML snippet (platformer|rpg|fps)
+  /itchembed <mode>       Print itch.io embed widget path + HTML snippet (platformer|rpg|fps)
   /butlerhint <mode> [ch] Print Butler CLI push command + pack meta (ch: html|beta|demo)
   /mpstarter         Greybox indie multiplayer scene (host + client spawns, sync crates)
   /mpdeathmatch      Indie MP deathmatch (targets, scoreboard, first to 3 wins)
   /mplobby           Indie MP lobby (room browser + ready-up before deathmatch)
   /mpspectator       Indie MP spectator arena (orbit host, no pawn spawn)
   /mpteams           Indie MP teams deathmatch (red vs blue, friendly fire off)
+  /mpctf             Indie MP capture-the-flag (teams template, flag pickup/capture)
   /mainmenu          Main menu → level select (Platformer, RPG, FPS, MP Deathmatch)
   /gridnavmesh [0-3] Bake Recast navmesh from grid tile layers (mask from foliage or layer arg)
   /gridnavagent [0-3] Spawn test crowd agent on grid navmesh layer (Play to tick)
   /gridnavai patrol|chase [0-3] Spawn grid nav agent with patrol or chase AI (tag: grid_nav_target)
+  /gridnavpath [0-3]   Bake grid navmesh layer and find test path [0,1,0] → [8,1,8] with debug overlay
+  /cloudsave export       Print full cloud save JSON (IndexedDB checkpoints)
+  /cloudsave import <json> Import cloud save JSON into IndexedDB (same level)
 
 JAVASCRIPT (world, api, THREE, editor helpers in scope)
   world.actors.size
@@ -379,6 +392,19 @@ function runSlash(parts: string[]): TerminalResult {
       }
       return { output: buildPackChangelogHtml(mode as 'platformer' | 'rpg' | 'fps'), error: null, level: 'log' }
     }
+    case '/itchembed': {
+      const mode = (args[0] ?? '').toLowerCase()
+      if (!['platformer', 'rpg', 'fps'].includes(mode)) {
+        return { output: null, error: 'Usage: /itchembed platformer|rpg|fps', level: 'error' }
+      }
+      const mgMode = mode as 'platformer' | 'rpg' | 'fps'
+      const snippet = buildItchEmbedWidgetSections(mgMode)
+      return {
+        output: `Widget file: ${ITCH_EMBED_WIDGET_FILENAME}\nEmbed snippet:\n${snippet}`,
+        error: null,
+        level: 'log',
+      }
+    }
     case '/butlerhint': {
       const mode = (args[0] ?? '').toLowerCase()
       if (!['platformer', 'rpg', 'fps'].includes(mode)) {
@@ -447,6 +473,17 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/mpctf': {
+      if (args.length) {
+        return { output: null, error: 'Usage: /mpctf', level: 'error' }
+      }
+      spawnIndieMpCtf()
+      return {
+        output: 'Indie MP CTF — grab enemy flag (E), return to your pad to score',
+        error: null,
+        level: 'log',
+      }
+    }
     case '/mainmenu': {
       if (args.length) {
         return { output: null, error: 'Usage: /mainmenu', level: 'error' }
@@ -506,6 +543,45 @@ function runSlash(parts: string[]): TerminalResult {
         level: 'log',
       }
     }
+    case '/cloudsave': {
+      const sub = args[0]?.toLowerCase()
+      if (sub !== 'export' && sub !== 'import') {
+        return { output: null, error: 'Usage: /cloudsave export|import [json]', level: 'error' }
+      }
+      const env = world.environment
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: env.saveSlotsEnabled === true,
+        cloudBackup: env.cloudSaveBackup === true,
+        crossLevelSaves: env.crossLevelSaves === true,
+      })
+      if (sub === 'export') {
+        if (args.length > 1) {
+          return { output: null, error: 'Usage: /cloudsave export', level: 'error' }
+        }
+        void exportCloudSaveJson()
+          .then((doc) => useEditor.getState().pushConsole('log', JSON.stringify(doc)))
+          .catch((e) =>
+            useEditor.getState().pushConsole('error', e instanceof Error ? e.message : String(e)),
+          )
+        return { output: 'Exporting cloud save JSON…', error: null, level: 'log' }
+      }
+      const raw = args.slice(1).join(' ').trim()
+      if (!raw) {
+        return { output: null, error: 'Usage: /cloudsave import <json>', level: 'error' }
+      }
+      void importCloudSaveJson(raw)
+        .then((result) =>
+          useEditor.getState().pushConsole(
+            'log',
+            `Cloud save import — ${result.merged} merged, ${result.skipped} skipped (${result.level})`,
+          ),
+        )
+        .catch((e) =>
+          useEditor.getState().pushConsole('error', e instanceof Error ? e.message : String(e)),
+        )
+      return { output: 'Importing cloud save JSON…', error: null, level: 'log' }
+    }
     case '/gridnavai': {
       const behavior = args[0]?.toLowerCase()
       if (behavior !== 'patrol' && behavior !== 'chase') {
@@ -538,6 +614,36 @@ function runSlash(parts: string[]): TerminalResult {
       })
       return {
         output: `Grid nav AI ${behavior} spawn started on layer ${layer} (${id})`,
+        error: null,
+        level: 'log',
+      }
+    }
+    case '/gridnavpath': {
+      let layer = 0
+      if (args.length > 1) {
+        return { output: null, error: 'Usage: /gridnavpath [0-3]', level: 'error' }
+      }
+      if (args[0] !== undefined) {
+        const parsed = parseInt(args[0], 10)
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 3) {
+          return { output: null, error: 'Usage: /gridnavpath [0-3]', level: 'error' }
+        }
+        layer = clampGridNavLayer(parsed)
+      }
+      const from: [number, number, number] = [0, 1, 0]
+      const to: [number, number, number] = [8, 1, 8]
+      gridNavPathShowDebug(true)
+      void gridNavPathFind(world.actors, layer, from, to).then((polyline) => {
+        const pts = polyline?.length ?? 0
+        useEditor.getState().setStatus(
+          polyline
+            ? `Grid nav path on layer ${layer}: ${pts} waypoints [0,1,0] → [8,1,8]`
+            : `Grid nav path failed on layer ${layer}: ${lastBakeError ?? 'no path'}`,
+        )
+        useEditor.getState().touch()
+      })
+      return {
+        output: `Grid nav path find started on layer ${layer} ([0,1,0] → [8,1,8])`,
         error: null,
         level: 'log',
       }
@@ -662,7 +768,7 @@ export function terminalCompletions(partial: string): string[] {
   ]
   const slashMatch = partial.match(/^(\/\w*)$/)
   if (slashMatch) {
-    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mainmenu', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/undo', '/redo', '/pos', '/tag', '/eval']
+    const cmds = ['/help', '/clear', '/ls', '/find', '/select', '/spawn', '/delete', '/play', '/stop', '/simulate', '/starter', '/platformer', '/rpg', '/fps', '/minigame', '/minigameexport', '/exportpack', '/exportpackmeta', '/itchpack', '/releasenotes', '/packchangelog', '/itchembed', '/butlerhint', '/mpstarter', '/mpdeathmatch', '/mplobby', '/mpspectator', '/mpteams', '/mpctf', '/mainmenu', '/gridnavmesh', '/gridnavagent', '/gridnavai', '/gridnavpath', '/cloudsave', '/undo', '/redo', '/pos', '/tag', '/eval']
     return cmds.filter((c) => c.startsWith(partial))
   }
   const all = [...builtins, ...pluginCmds, ...actorNames]
@@ -684,12 +790,15 @@ export function applyCompletion(input: string, completion: string): string {
   return prefix + completion
 }
 
-/** Programmatic entry — browser devtools & external tooling. */
-export function terminalExec(source: string): TerminalResult {
-  const result = executeTerminalLine(source)
+function pushTerminalResult(source: string, result: TerminalResult): TerminalResult {
   const push = useEditor.getState().pushConsole
   push('cmd', `> ${source}`)
   if (result.error) push('error', result.error)
   else if (result.output) push('log', result.output)
   return result
+}
+
+/** Programmatic entry — browser devtools & external tooling. */
+export function terminalExec(source: string): TerminalResult {
+  return pushTerminalResult(source, executeTerminalLine(source))
 }

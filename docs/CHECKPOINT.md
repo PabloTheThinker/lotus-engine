@@ -6,7 +6,7 @@
 
 - **Strategic focus: indie games like Godot** — web export moat, small node pack, `@export` scripting.
 - **Project renamed: Vektra Engine → Lotus Engine** (`Software/lotus-engine`, `lotus-engine` npm package).
-- **Last clean commit: v4.68 (waves 81–85).** v0.33–v4.68 shipped; **build clean**, **`npm run test` — 369 passed**.
+- **Last clean commit: v4.93 (waves 86–90).** v0.33–v4.93 shipped; **build clean**, **`npm run test` — 394 passed**.
 - Dev server `npm run dev`, relay :24690. Test harness: `@playwright/test` in-repo (`playwright.config.ts`) with `--enable-gpu --use-angle=gl-egl`.
 
 ## Shipped wave 3 (v0.44 → v0.48, commit `70c112b`)
@@ -499,12 +499,22 @@
 | 84 | v4.59–v4.63 | Cloud save sync stub — manifest + cross-device hint |
 | 85 | v4.64–v4.68 | Export achievements — localStorage trophies + HUD toasts — 369 tests |
 
+## Shipped (v4.69–v4.93, Waves 86–90 — indie swarm)
+
+| Wave | Ver | What |
+|---|---|---|
+| 86 | v4.69–v4.73 | Grid nav path debug — pathfind polyline; `/gridnavpath` |
+| 87 | v4.74–v4.78 | itch.io embed widget — `embed-widget.html` in zip; `/itchembed` |
+| 88 | v4.79–v4.83 | MP CTF — flag pickup/capture; `/mpctf` |
+| 89 | v4.84–v4.88 | Cloud save import/export — JSON download/upload |
+| 90 | v4.89–v4.93 | Achievement progress — partial unlock + HUD ring — 394 tests |
+
 ## Next up (indie roadmap)
 
-1. **Grid nav path debug** — path viz + `/gridnavpath` on baked layer
-2. **itch.io embed widget** — single-file changelog + achievements widget
-3. **MP CTF mode** — flag capture on teams template
-4. **Cloud save import/export** — download/upload JSON manifest file
+1. **Grid agent flee/wander** — extra AI behaviors on navmesh layer
+2. **itch.io page generator** — full itch description markdown from pack meta
+3. **MP CTF polish** — flag return-on-death + team pad visuals
+4. **Cloud save QR/deep link stub** — shareable import URL hint
 5. **Honest-skip**: Nanite, Lumen, MetaHuman, full Lightmass 🚫
 
 ## Gotchas carried forward

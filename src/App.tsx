@@ -19,6 +19,12 @@ import { captureExportScreenshot } from './editor/captureExportScreenshot'
 import { buildExportPackMeta } from './editor/exportPackMeta'
 import { buildButlerPushCommand } from './editor/itchButlerHint'
 import { buildReleaseNotes } from './editor/itchReleaseNotes'
+import {
+  buildItchEmbedWidget,
+  buildItchEmbedWidgetSections,
+  ITCH_EMBED_WIDGET_FILENAME,
+  renderAchievementsHtml,
+} from './editor/itchEmbedWidget'
 import { buildPackChangelogHtml, renderReleaseNotesHtml } from './editor/packChangelogHtml'
 import {
   buildItchZipBlob,
@@ -37,14 +43,17 @@ import {
 import {
   achievementsForPack,
   getAchievementPackId,
+  getAchievementProgress,
   isAchievementUnlocked,
   listUnlocked,
   setAchievementPackId,
+  setAchievementProgress,
   unlockAchievement,
 } from './editor/exportAchievements'
 import {
   enableMiniGameHud,
   hideMiniGameHud,
+  showAchievementProgressToast,
   showAchievementToast,
   showLoseOverlay,
   showWinOverlay,
@@ -81,21 +90,32 @@ import {
 import {
   MP_SCORE_SCRIPT,
   MP_SCOREBOARD_SCRIPT,
+  MP_CTF_SCRIPT,
+  MP_CTF_SCOREBOARD_SCRIPT,
   MP_TEAMS_SCORE_SCRIPT,
   MP_TEAMS_SCOREBOARD_SCRIPT,
   MP_TAG_TARGET,
   MP_SCORE_WIN,
   MP_TAG_RED,
   MP_TAG_BLUE,
+  MP_TAG_FLAG_RED,
+  MP_TAG_FLAG_BLUE,
   addMpScore,
   addMpTeamScore,
+  addMpCtfCapture,
+  addMpCtfPickup,
   applyMpScoreDelta,
   applyMpTeamScoreDelta,
   getMpScore,
   getMpPeerScores,
   getMpTeamScores,
+  getMpFlagCarrier,
+  getMpCtfState,
   mirrorMpPeerScores,
   mirrorMpTeamScores,
+  mirrorMpCtfState,
+  mpCtfCapture,
+  mpCtfPickup,
   mpTeamsGet,
   MP_LOBBY_SCRIPT,
   MP_SPECTATOR_SCRIPT,
@@ -104,6 +124,7 @@ import {
   spawnIndieMpLobby,
   spawnIndieMpSpectator,
   spawnIndieMpTeamsDeathmatch,
+  spawnIndieMpCtf,
 } from './editor/indieMpGameplay'
 import { configureIndieMpSettings, MP_HOST_SCRIPT, MP_SYNC_SCRIPT, MP_TAG_HOST, MP_TAG_SYNC, spawnIndieMpTemplate } from './editor/indieMpTemplate'
 import {
@@ -198,6 +219,12 @@ import {
   tickGridNavAgents,
   type GridNavBehavior,
 } from './engine/gridNavAgents'
+import {
+  gridNavPathClear,
+  gridNavPathFind,
+  gridNavPathLastPolyline,
+  gridNavPathShowDebug,
+} from './engine/gridNavPathDebug'
 import { getGamepadMoveAxis, pollGamepadInput, resetGamepadInput, shouldEnableGamepadControls } from './engine/gamepadInput'
 import {
   batteryHapticScale,
@@ -356,6 +383,8 @@ import {
   mpReplaySampleAt,
   mpReplaySeek,
   mpReportPlayerKill,
+  mpBroadcastFlagCapture,
+  mpBroadcastFlagPickup,
   mpBroadcastTeamAssign,
   mpBroadcastTeamScores,
 } from './engine/multiplayer'
@@ -421,7 +450,11 @@ import {
   listCloudSlots,
   restoreFromIndexedDB,
 } from './engine/cloudSaveStub'
-import { exportCloudSaveManifest } from './engine/cloudSaveSync'
+import {
+  exportCloudSaveJson,
+  exportCloudSaveManifest,
+  importCloudSaveJson,
+} from './engine/cloudSaveSync'
 import {
   getSaveLevelName,
   globalCheckpoint,
@@ -1007,6 +1040,18 @@ const lotusBridge = {
       packId: (packId?: string) =>
         packId !== undefined ? setAchievementPackId(packId) : getAchievementPackId(),
       showToast: (title: string, subtitle?: string, icon?: string) => showAchievementToast(title, subtitle, icon),
+      setProgress: (id: string, current: number, max?: number, packId?: string) =>
+        setAchievementProgress(id, current, max, packId).newlyUnlocked,
+      getProgress: (id: string, packId?: string) => getAchievementProgress(id, packId),
+      showProgressToast: (title: string, current: number, max: number, icon?: string) =>
+        showAchievementProgressToast(title, current, max, icon),
+    },
+    /** Wave 87 — itch.io embed widget (changelog + achievements) */
+    export: {
+      widgetFilename: () => ITCH_EMBED_WIDGET_FILENAME,
+      buildItchEmbedWidget: (packId: 'platformer' | 'rpg' | 'fps') => buildItchEmbedWidget(packId),
+      buildItchEmbedWidgetSections: (packId: 'platformer' | 'rpg' | 'fps') => buildItchEmbedWidgetSections(packId),
+      renderAchievementsHtml: (packId: 'platformer' | 'rpg' | 'fps') => renderAchievementsHtml(packId),
     },
     mp: {
       tagHost: MP_TAG_HOST,
@@ -1018,6 +1063,8 @@ const lotusBridge = {
       scoreboardScript: MP_SCOREBOARD_SCRIPT,
       teamsScoreScript: MP_TEAMS_SCORE_SCRIPT,
       teamsScoreboardScript: MP_TEAMS_SCOREBOARD_SCRIPT,
+      ctfScript: MP_CTF_SCRIPT,
+      ctfScoreboardScript: MP_CTF_SCOREBOARD_SCRIPT,
       winScore: MP_SCORE_WIN,
       getScore: (peerId?: string) => getMpScore(world.actors, peerId),
       getPeerScores: () => getMpPeerScores(world.actors),
@@ -1042,6 +1089,25 @@ const lotusBridge = {
         assign: (peerId: string) => mpBroadcastTeamAssign(peerId),
         getTeam: (peerId?: string) => mpTeamsGet(peerId ?? mpLocalId()),
         getTeamScores: () => getMpTeamScores(world.actors),
+      },
+      ctf: {
+        redFlagTag: MP_TAG_FLAG_RED,
+        blueFlagTag: MP_TAG_FLAG_BLUE,
+        getFlagCarrier: (flagTeam: 'red' | 'blue') => getMpFlagCarrier(world.actors, flagTeam),
+        getState: () => getMpCtfState(world.actors),
+        pickup: (flagTeam: 'red' | 'blue', peerId?: string) =>
+          addMpCtfPickup(world.actors, flagTeam, peerId),
+        captureFlag: (
+          flagTeam: 'red' | 'blue',
+          scoringTeam: 'red' | 'blue',
+          peerId?: string,
+        ) => addMpCtfCapture(world.actors, flagTeam, scoringTeam, peerId),
+        scores: () => getMpTeamScores(world.actors),
+        mirrorState: (state: ReturnType<typeof getMpCtfState>) => mirrorMpCtfState(world.actors, state),
+        applyPickup: (peerId: string, flagTeam: 'red' | 'blue') =>
+          mpCtfPickup(world.actors, peerId, flagTeam, undefined, mpBroadcastFlagPickup),
+        applyCapture: (peerId: string, flagTeam: 'red' | 'blue', scoringTeam: 'red' | 'blue') =>
+          mpCtfCapture(world.actors, peerId, flagTeam, scoringTeam, undefined, mpBroadcastFlagCapture),
       },
       lobbyScript: MP_LOBBY_SCRIPT,
       lobby: {
@@ -1102,6 +1168,7 @@ const lotusBridge = {
     spawnIndieMpTemplate,
     spawnIndieMpDeathmatch,
     spawnIndieMpTeamsDeathmatch,
+    spawnIndieMpCtf,
     spawnIndieMpLobby,
     spawnIndieMpSpectator,
     configureIndieMpSettings,
@@ -1249,6 +1316,17 @@ const lotusBridge = {
       getPosition: (id: string) => gridNavAgentGetPosition(id),
       clampLayer: (layer: number) => clampGridNavLayer(layer),
     },
+    /** Wave 86 — pathfind + debug polyline on baked grid navmesh layers */
+    navPath: {
+      find: (
+        layer: number,
+        from: [number, number, number],
+        to: [number, number, number],
+      ) => gridNavPathFind(world.actors, layer, from, to),
+      clear: () => gridNavPathClear(),
+      lastPolyline: () => gridNavPathLastPolyline(),
+      showDebug: (show: boolean) => gridNavPathShowDebug(show),
+    },
   },
   /** Wave 74 — adaptive haptics scale (perf gate + battery + intensity) */
   adaptiveHaptics: {
@@ -1294,6 +1372,9 @@ const lotusBridge = {
     buildReleaseNotes: (mode: 'platformer' | 'rpg' | 'fps') => buildReleaseNotes(mode),
     renderPackChangelogHtml: (mode: 'platformer' | 'rpg' | 'fps') => buildPackChangelogHtml(mode),
     renderReleaseNotesHtml: (markdown: string) => renderReleaseNotesHtml(markdown),
+    buildItchEmbedWidget: (mode: 'platformer' | 'rpg' | 'fps') => buildItchEmbedWidget(mode),
+    buildItchEmbedWidgetSections: (mode: 'platformer' | 'rpg' | 'fps') => buildItchEmbedWidgetSections(mode),
+    itchEmbedWidgetFilename: () => ITCH_EMBED_WIDGET_FILENAME,
     probePerfGate: probeExportPerfGate,
     schedulePerfProbe: scheduleExportPerfProbe,
   },
@@ -1403,6 +1484,24 @@ const lotusBridge = {
       })
       const manifest = await exportCloudSaveManifest()
       return manifest.crossDeviceHint
+    },
+    exportJson: async () => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+        crossLevelSaves: world.environment.crossLevelSaves === true,
+      })
+      return exportCloudSaveJson()
+    },
+    importJson: async (json: unknown) => {
+      setSaveContext({
+        levelName: world.levelName,
+        enabled: world.environment.saveSlotsEnabled === true,
+        cloudBackup: world.environment.cloudSaveBackup === true,
+        crossLevelSaves: world.environment.crossLevelSaves === true,
+      })
+      return importCloudSaveJson(json)
     },
     syncEnabled: () =>
       world.environment.saveSlotsEnabled === true && world.environment.cloudSaveBackup === true,

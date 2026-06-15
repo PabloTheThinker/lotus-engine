@@ -74,6 +74,18 @@ export const SAVE_MENU_OVERLAY_CSS = `
     font: inherit; cursor: pointer;
   }
   .lotus-save-menu-cloud-copy:hover { background: rgba(47, 128, 237, 0.32); }
+  .lotus-save-menu-cloud-transfer {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;
+  }
+  .lotus-save-menu-cloud-export,
+  .lotus-save-menu-cloud-import {
+    padding: 8px 10px; border: none; border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08); color: #d8e0ea;
+    font: inherit; cursor: pointer;
+  }
+  .lotus-save-menu-cloud-export:hover,
+  .lotus-save-menu-cloud-import:hover { background: rgba(255, 255, 255, 0.14); }
+  .lotus-save-menu-cloud-import input { display: none; }
   @keyframes lotus-save-menu-in {
     from { opacity: 0; }
     to { opacity: 1; }
@@ -89,6 +101,9 @@ export interface SaveMenuHandlers {
   /** Wave 84 — IndexedDB cloud manifest copy (cross-device stub). */
   cloudSyncEnabled?: boolean
   copyCloudManifest?: () => Promise<string | null>
+  /** Wave 89 — download / import full cloud save JSON. */
+  downloadCloudJson?: () => Promise<void>
+  importCloudJson?: (json: string) => Promise<{ merged: number; skipped: number }>
 }
 
 let overlayEl: HTMLElement | null = null
@@ -159,6 +174,18 @@ function wireMenuButtons(root: HTMLElement): void {
       void navigator.clipboard?.writeText(hint).catch(() => {})
     })
   })
+  root.querySelector<HTMLButtonElement>('[data-lotus-cloud-export]')?.addEventListener('click', (e) => {
+    e.preventDefault()
+    if (!handlers?.downloadCloudJson) return
+    void handlers.downloadCloudJson()
+  })
+  root.querySelector<HTMLInputElement>('[data-lotus-cloud-import]')?.addEventListener('change', function (this: HTMLInputElement) {
+    const file = this.files?.[0]
+    this.value = ''
+    if (!file || !handlers?.importCloudJson) return
+    const importCloud = handlers.importCloudJson
+    void file.text().then((text: string) => importCloud(text)).catch(() => {})
+  })
 }
 
 function buildMenuDOM(): HTMLElement {
@@ -178,13 +205,22 @@ function buildMenuDOM(): HTMLElement {
     </div>`
   }).join('')
 
-  const cloudSyncBlock =
-    handlers?.cloudSyncEnabled && handlers?.copyCloudManifest
-      ? `<div class="lotus-save-menu-cloud" data-lotus-cloud-sync-menu>
-      <div class="lotus-save-menu-cloud-hint">Cross-device stub — copy cloud save manifest token for QR / another browser</div>
+  const cloudTransferEnabled =
+    handlers?.cloudSyncEnabled &&
+    (handlers?.copyCloudManifest || handlers?.downloadCloudJson || handlers?.importCloudJson)
+  const cloudSyncBlock = cloudTransferEnabled
+    ? `<div class="lotus-save-menu-cloud" data-lotus-cloud-sync-menu>
+      <div class="lotus-save-menu-cloud-hint">Cross-device stub — download/import JSON or copy manifest token for QR / another browser</div>
+      <div class="lotus-save-menu-cloud-transfer">
+        <button type="button" class="lotus-save-menu-cloud-export" data-lotus-cloud-export>Download cloud saves JSON</button>
+        <label class="lotus-save-menu-cloud-import" data-lotus-cloud-import-label>
+          <input type="file" accept=".json,application/json" data-lotus-cloud-import />
+          Import cloud saves JSON
+        </label>
+      </div>
       <button type="button" class="lotus-save-menu-cloud-copy" data-copy-cloud-manifest>Copy cloud save manifest</button>
     </div>`
-      : ''
+    : ''
 
   root.innerHTML = `<div class="lotus-save-menu-panel">
     <div class="lotus-save-menu-title">PAUSED</div>

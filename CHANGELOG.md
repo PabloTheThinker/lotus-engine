@@ -4,6 +4,34 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Waves 86–90: v4.69–v4.93 (indie swarm)
+
+### Wave 86 (v4.69–v4.73) — Grid nav path debug
+- `gridNavPathDebug.ts` — pathfind polyline on baked layer; `/gridnavpath`; viewport debug line
+
+### Wave 87 (v4.74–v4.78) — itch.io embed widget
+- `itchEmbedWidget.ts` — `embed-widget.html` in itch zip; `/itchembed`; `__LOTUS_ITCH_EMBED_WIDGET__`
+
+### Wave 88 (v4.79–v4.83) — MP CTF mode
+- `mpCtf.ts` — flag pickup/capture on teams template; `/mpctf`; `flag_pickup` / `flag_capture` relay
+
+### Wave 89 (v4.84–v4.88) — Cloud save import/export
+- `cloudSaveSync.ts` — `exportCloudSaveJson()` / `importCloudSaveJson()`; World Settings + save menu transfer buttons
+
+### Wave 90 (v4.89–v4.93) — Achievement progress
+- `exportAchievements.ts` — partial unlock progress + HUD progress ring; `__LOTUS_ACHIEVEMENT_PROGRESS__`
+
+### Fixed
+- Terminal `runSlash` stays synchronous — `/cloudsave` fires async work without breaking `terminal.exec` smoke tests
+
+### Verification
+```bash
+cd "~/Vektra Industries/Software/lotus-engine"
+npm run build && npm run test   # 394 passed
+```
+
+---
+
 ## 2026-06-14 — Waves 81–85: v4.44–v4.68 (indie swarm)
 
 ### Wave 81 (v4.44–v4.48) — Grid agent AI behaviors

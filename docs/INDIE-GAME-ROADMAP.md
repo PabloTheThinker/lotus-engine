@@ -138,6 +138,16 @@
 | 84 | v4.59–v4.63 | **Cloud save sync stub** — manifest + cross-device hint |
 | 85 | v4.64–v4.68 | **Export achievements** — localStorage trophies + HUD toasts — **369 tests** |
 
+## Shipped (Waves 86–90, v4.69–v4.93)
+
+| Wave | Ver | Feature |
+|---|---|---|
+| 86 | v4.69–v4.73 | **Grid nav path debug** — pathfind polyline; `/gridnavpath` |
+| 87 | v4.74–v4.78 | **itch.io embed widget** — `embed-widget.html` in zip; `/itchembed` |
+| 88 | v4.79–v4.83 | **MP CTF** — flag pickup/capture; `/mpctf` |
+| 89 | v4.84–v4.88 | **Cloud save import/export** — JSON download/upload |
+| 90 | v4.89–v4.93 | **Achievement progress** — partial unlock + HUD ring — **394 tests** |
+
 ## Already in Lotus (indie-relevant)
 
 - Playable export, input map, signals (`api.emit` / `api.on`), tags (`getActorsByTag`)
@@ -146,11 +156,11 @@
 
 ## Next priority queue (Godot census order)
 
-1. **Grid nav path debug** — path viz + `/gridnavpath` on baked layer
-2. **itch.io embed widget** — single-file changelog + achievements widget
-3. **MP CTF mode** — flag capture on teams template
-4. **Cloud save import/export** — download/upload JSON manifest file
-5. **Achievement progress** — partial unlock tracking + HUD progress ring
+1. **Grid agent flee/wander** — extra AI behaviors on navmesh layer
+2. **itch.io page generator** — full itch description markdown from pack meta
+3. **MP CTF polish** — flag return-on-death + team pad visuals
+4. **Cloud save QR/deep link stub** — shareable import URL hint
+5. **Achievement leaderboard stub** — local high-score + trophy summary export
 
 ## Non-goals (honest skip)
 
@@ -161,5 +171,5 @@
 ## Success metrics
 
 - New indie dev ships a playable browser game in **under 2 hours** using Place Actors + scripts
-- **369** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
+- **394** automated smoke + relay tests; export perf gate green on mid-tier laptop GPU
 - Documentation reads like Godot docs, not UE release notes

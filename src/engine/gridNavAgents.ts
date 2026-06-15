@@ -57,6 +57,22 @@ export function snapGridNavPoint(layer: number, pos: [number, number, number]): 
   return pos
 }
 
+/** Detour path on a baked per-layer grid navmesh (used by gridNavPathDebug). */
+export function computeGridNavLayerPath(
+  layer: number,
+  from: [number, number, number],
+  to: [number, number, number],
+): [number, number, number][] | null {
+  const state = layerStates.get(clampGridNavLayer(layer))
+  if (!state?.ready) return null
+  const halfExtents = { x: 2, y: 4, z: 2 }
+  const start = { x: from[0], y: from[1], z: from[2] }
+  const end = { x: to[0], y: to[1], z: to[2] }
+  const { success, path } = state.navMeshQuery.computePath(start, end, { halfExtents })
+  if (!success || path.length < 2) return null
+  return path.map((p) => [p.x, p.y, p.z])
+}
+
 /** Bake and install a per-layer navmesh + crowd without touching the global navmesh. */
 export async function bakeGridNavLayer(actors: Map<string, Actor>, layer: number): Promise<boolean> {
   const L = clampGridNavLayer(layer)

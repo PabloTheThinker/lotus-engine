@@ -2787,9 +2787,10 @@ function FoliageSection({ actor }: { actor: Actor }) {
             </div>
           </label>
           <div className="panel-empty" style={{ padding: '2px 0', fontSize: '0.85em' }}>
-            Bake per layer with <code>/gridnavmesh [0-3]</code>, then spawn crowd agents via{' '}
-            <code>/gridnavagent [layer]</code>, <code>/gridnavai patrol|chase [layer]</code>, or{' '}
-            <code>gridMap.navAgents.spawnPatrol</code> / <code>spawnChase</code> during Play.
+            Bake per layer with <code>/gridnavmesh [0-3]</code>, debug paths via{' '}
+            <code>/gridnavpath [layer]</code> or <code>gridMap.navPath.find</code>, then spawn crowd
+            agents via <code>/gridnavagent [layer]</code>, <code>/gridnavai patrol|chase [layer]</code>,
+            or <code>gridMap.navAgents.spawnPatrol</code> / <code>spawnChase</code> during Play.
           </div>
           <Num
             label="Grid Brush"

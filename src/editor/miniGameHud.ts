@@ -3,6 +3,43 @@ import { MINIGAME_MANAGER_NAME } from './starterMiniGames'
 
 const OVERLAY_ID = 'lotus-minigame-overlay'
 
+export const ACHIEVEMENT_PROGRESS_TOAST_CSS = `
+  .lotus-achievement-progress-toast {
+    position: fixed; top: 18px; right: 18px; z-index: 30; pointer-events: none;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-radius: 10px;
+    background: rgba(13, 15, 18, 0.92); border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.42);
+    font: 600 13px system-ui, sans-serif; color: #e8edf4;
+    animation: lotus-ach-toast-in 0.32s ease-out, lotus-ach-toast-out 0.35s ease-in 2.65s forwards;
+  }
+  .lotus-achievement-progress-ring {
+    position: relative; width: 40px; height: 40px; flex-shrink: 0;
+  }
+  .lotus-achievement-progress-ring svg {
+    width: 40px; height: 40px; transform: rotate(-90deg);
+  }
+  .lotus-achievement-progress-ring-bg {
+    fill: none; stroke: rgba(255, 255, 255, 0.12); stroke-width: 4;
+  }
+  .lotus-achievement-progress-ring-fg {
+    fill: none; stroke: #f6d365; stroke-width: 4; stroke-linecap: round;
+    transition: stroke-dashoffset 0.25s ease-out;
+  }
+  .lotus-achievement-progress-ring-label {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800; color: #f6d365;
+  }
+  .lotus-achievement-progress-bar {
+    margin-top: 6px; height: 4px; border-radius: 2px;
+    background: rgba(255, 255, 255, 0.12); overflow: hidden;
+  }
+  .lotus-achievement-progress-bar-fill {
+    height: 100%; border-radius: 2px; background: linear-gradient(90deg, #f6d365, #fda085);
+    transition: width 0.25s ease-out;
+  }
+`
+
 export const ACHIEVEMENT_TOAST_CSS = `
   .lotus-achievement-toast {
     position: fixed; top: 18px; right: 18px; z-index: 30; pointer-events: none;
@@ -58,7 +95,9 @@ export const MINIGAME_OVERLAY_CSS = `
 
 let overlayRoot: HTMLElement | null = null
 let toastRoot: HTMLElement | null = null
+let progressToastRoot: HTMLElement | null = null
 let toastTimer: ReturnType<typeof setTimeout> | null = null
+let progressToastTimer: ReturnType<typeof setTimeout> | null = null
 let wired = false
 let achievementWired = false
 let hudEnabled = false
@@ -136,6 +175,61 @@ export function hideAchievementToast() {
   toastRoot = null
 }
 
+function progressRingSvg(current: number, max: number): string {
+  const pct = max > 0 ? Math.min(1, current / max) : 0
+  const r = 16
+  const c = 2 * Math.PI * r
+  const offset = c * (1 - pct)
+  return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <circle class="lotus-achievement-progress-ring-bg" cx="20" cy="20" r="${r}" />
+    <circle class="lotus-achievement-progress-ring-fg" cx="20" cy="20" r="${r}"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" />
+  </svg>
+    <div class="lotus-achievement-progress-ring-label">${current}/${max}</div>`
+}
+
+/** Wave 90 — progress ring/bar toast during PIE / export play. */
+export function showAchievementProgressToast(
+  title: string,
+  current: number,
+  max: number,
+  icon = '🏆',
+  parent?: HTMLElement,
+) {
+  if (progressToastTimer) {
+    clearTimeout(progressToastTimer)
+    progressToastTimer = null
+  }
+  progressToastRoot?.remove()
+  const host = achievementToastHost(parent)
+  const safeMax = Math.max(1, Math.floor(max))
+  const safeCurrent = Math.max(0, Math.min(Math.floor(current), safeMax))
+  const pct = safeMax > 0 ? Math.round((safeCurrent / safeMax) * 100) : 0
+  progressToastRoot = document.createElement('div')
+  progressToastRoot.className = 'lotus-achievement-progress-toast'
+  progressToastRoot.innerHTML = `<div class="lotus-achievement-progress-ring">${progressRingSvg(safeCurrent, safeMax)}</div>
+    <div>
+      <div class="lotus-achievement-toast-title">${icon} ${title}</div>
+      <div class="lotus-achievement-toast-sub">${safeCurrent} / ${safeMax}</div>
+      <div class="lotus-achievement-progress-bar"><div class="lotus-achievement-progress-bar-fill" style="width:${pct}%"></div></div>
+    </div>`
+  host.appendChild(progressToastRoot)
+  progressToastTimer = setTimeout(() => {
+    progressToastRoot?.remove()
+    progressToastRoot = null
+    progressToastTimer = null
+  }, 3200)
+}
+
+export function hideAchievementProgressToast() {
+  if (progressToastTimer) {
+    clearTimeout(progressToastTimer)
+    progressToastTimer = null
+  }
+  progressToastRoot?.remove()
+  progressToastRoot = null
+}
+
 function onAchievementUnlock(payload: unknown) {
   const ach =
     payload && typeof payload === 'object'
@@ -146,11 +240,23 @@ function onAchievementUnlock(payload: unknown) {
   showAchievementToast(title, subtitle, ach?.icon ?? '🏆')
 }
 
+function onAchievementProgress(payload: unknown) {
+  const row =
+    payload && typeof payload === 'object'
+      ? (payload as { title?: string; current?: number; max?: number; icon?: string })
+      : null
+  const title = row?.title?.trim() || 'Achievement Progress'
+  const current = Number(row?.current ?? 0)
+  const max = Number(row?.max ?? 1)
+  showAchievementProgressToast(title, current, max, row?.icon ?? '🏆')
+}
+
 /** Listen for achievement_unlock and show trophy toast. */
 export function wireAchievementToasts(api: Pick<ScriptApi, 'on'>) {
   if (achievementWired) return
   achievementWired = true
   api.on('achievement_unlock', onAchievementUnlock)
+  api.on('achievement_progress', onAchievementProgress)
 }
 
 /** Listen for game_won / game_lost and show overlays. */
@@ -167,6 +273,7 @@ export function unwireMiniGameHud() {
   achievementWired = false
   hideMiniGameHud()
   hideAchievementToast()
+  hideAchievementProgressToast()
 }
 
 export function hasMiniGameManager(actors: Iterable<{ name: string }>): boolean {

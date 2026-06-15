@@ -10,6 +10,15 @@ import {
   mirrorMpTeamScores,
 } from '../engine/mpGameplay'
 import {
+  MP_CTF_STATE_VAR,
+  MP_TAG_FLAG_BLUE,
+  MP_TAG_FLAG_RED,
+  mirrorMpCtfState,
+  mpCtfCapture,
+  mpCtfPickup,
+  type MpFlagTeam,
+} from '../engine/mpCtf'
+import {
   MP_TAG_BLUE,
   MP_TAG_RED,
   MP_TEAM_SCORES_VAR,
@@ -19,8 +28,14 @@ import {
 } from '../engine/mpTeams'
 import { mpKillcamOnGameWon, mpKillcamOnPlayerKilled } from '../engine/mpKillcam'
 import {
+  mpBroadcastFlagCapture,
+  mpBroadcastFlagPickup,
   mpBroadcastTeamScores,
   mpLobbyRoom,
+  mpSetFlagCaptureHandler,
+  mpSetFlagCaptureMirrorHandler,
+  mpSetFlagPickupHandler,
+  mpSetFlagPickupMirrorHandler,
   mpSetGameWonRelayHandler,
   mpSetLobbyRefreshHandler,
   mpSetLobbyStartHandler,
@@ -55,6 +70,18 @@ export {
   applyMpTeamScoreDelta,
 } from '../engine/mpGameplay'
 export { MP_TAG_RED, MP_TAG_BLUE, MP_TEAM_SCORES_VAR, mpTeamsAssign, mpTeamsGet, mpTeamsGetAll, mpTeamsAreFriendly } from '../engine/mpTeams'
+export {
+  MP_TAG_FLAG_RED,
+  MP_TAG_FLAG_BLUE,
+  MP_CTF_STATE_VAR,
+  getMpCtfState,
+  getMpFlagCarrier,
+  mirrorMpCtfState,
+  mpCtfPickup,
+  mpCtfCapture,
+  addMpCtfPickup,
+  addMpCtfCapture,
+} from '../engine/mpCtf'
 
 export const MP_LOBBY_MANAGER_NAME = 'MpLobbyManager'
 export const MP_SPECTATOR_MANAGER_NAME = 'MpSpectatorManager'
@@ -202,6 +229,102 @@ const MP_LOBBY_HUD_WIDGETS: HudWidget[] = [
     color: '#7c3aed',
   },
 ]
+
+/** CTF player script — Interact to grab enemy flag, capture at own base pad (Wave 88). */
+export const MP_CTF_SCRIPT = `// mp_ctf — capture the flag on teams template (host authoritative)
+function nearOwnBase(team, pos) {
+  const baseX = team === 'red' ? -6 : 6
+  return Math.abs(pos.x - baseX) < 3.5 && Math.abs(pos.z) < 3.5
+}
+function tryPickup() {
+  if (!api.actionJustPressed('Interact')) return
+  const pos = api.pawnPosition()
+  if (!pos) return
+  const team = api.mpGetTeam()
+  if (!team) return
+  const enemy = team === 'red' ? 'blue' : 'red'
+  const enemyTag = enemy === 'red' ? 'mp_flag_red' : 'mp_flag_blue'
+  const yaw = api.pawnYaw()
+  const dir = [-Math.sin(yaw), 0, -Math.cos(yaw)]
+  const origin = [pos.x, pos.y + 1, pos.z]
+  const hit = api.raycast(origin, dir, 3.5)
+  if (!hit || !hit.actor.tags.includes(enemyTag)) return
+  if (api.getMpFlagCarrier(enemy)) return
+  api.mpCtfPickup(enemy)
+}
+function tryCapture() {
+  const pos = api.pawnPosition()
+  if (!pos) return
+  const team = api.mpGetTeam()
+  if (!team) return
+  const enemy = team === 'red' ? 'blue' : 'red'
+  if (api.getMpFlagCarrier(enemy) !== api.mpLocalId()) return
+  if (!nearOwnBase(team, pos)) return
+  api.mpCtfCapture(enemy, team)
+}
+function onTick(_dt) {
+  if (!api.mpConnected()) return
+  tryPickup()
+  tryCapture()
+}
+`
+
+/** CTF scoreboard — team scores + flag carrier HUD; host owns ctfFlags scriptVar. */
+export const MP_CTF_SCOREBOARD_SCRIPT = `// mp_ctf_scoreboard — CTF team scores + flag state (Wave 88)
+// @export winScore = 3
+// @export teamScores = { red: 0, blue: 0 }
+// @export ctfFlags = { red: {}, blue: {} }
+function flagLabel(team) {
+  const carrier = api.getMpFlagCarrier(team)
+  return carrier ? carrier.slice(0, 4) : 'base'
+}
+function onBeginPlay() {
+  api.on('flag_capture', (carrier, flagTeam, scoringTeam) => {
+    api.log('CTF capture: ' + scoringTeam + ' scored with ' + flagTeam + ' flag (' + carrier.slice(0, 4) + ')')
+  })
+  api.on('mp_game_won', (winner, score) => {
+    api.log('MP CTF winner: ' + winner + ' (' + score + ')')
+  })
+  if (!api.mpIsHost()) return
+  actor.scriptVars = {
+    ...(actor.scriptVars ?? {}),
+    teamScores: { red: 0, blue: 0, ...(vars.teamScores || {}) },
+    ctfFlags: { red: {}, blue: {}, ...(vars.ctfFlags || {}) },
+  }
+}
+function onTick(_dt) {
+  let scores = { red: 0, blue: 0 } as { red: number; blue: number }
+  if (api.mpIsHost()) {
+    const raw = (actor.scriptVars?.teamScores ?? vars.teamScores ?? { red: 0, blue: 0 }) as {
+      red: number
+      blue: number
+    }
+    scores = { red: raw.red ?? 0, blue: raw.blue ?? 0 }
+    actor.scriptVars = { ...(actor.scriptVars ?? {}), teamScores: scores }
+  } else if (api.mpConnected()) {
+    scores = api.getMpTeamScores()
+  } else {
+    const raw = (actor.scriptVars?.teamScores ?? vars.teamScores ?? { red: 0, blue: 0 }) as {
+      red: number
+      blue: number
+    }
+    scores = { red: raw.red ?? 0, blue: raw.blue ?? 0 }
+  }
+  const cap = vars.winScore as number
+  const team = api.mpGetTeam()
+  const teamLabel = team ? team.toUpperCase() + ' ' : ''
+  api.hud.text(
+    'mp_ctf_hud',
+    teamLabel + 'R:' + scores.red + ' B:' + scores.blue + ' /' + cap,
+    { anchor: 'tr', x: 16, y: 16, size: 17, color: '#e8ecf0' },
+  )
+  api.hud.text(
+    'mp_ctf_flags',
+    'Flags R:' + flagLabel('red') + ' B:' + flagLabel('blue'),
+    { anchor: 'tr', x: 16, y: 42, size: 14, color: '#9aa4b2' },
+  )
+}
+`
 
 /** Team deathmatch score script — friendly fire off, awards team score. */
 export const MP_TEAMS_SCORE_SCRIPT = `// mp_teams_score — red/blue teams (host authoritative, friendly fire off)
@@ -378,6 +501,38 @@ function buildTeamsScoreboardActor() {
   return board
 }
 
+function buildCtfScoreboardActor() {
+  const board = buildSerializedActor({ kind: 'empty' }, [0, 2, 0])
+  board.name = MP_SCOREBOARD_NAME
+  board.script = MP_CTF_SCOREBOARD_SCRIPT
+  board.scriptVars = {
+    [MP_TEAM_SCORES_VAR]: { red: 0, blue: 0 },
+    [MP_CTF_STATE_VAR]: { red: {}, blue: {} },
+    winScore: MP_SCORE_WIN,
+  }
+  board.syncProperties = [MP_TEAM_SCORES_VAR, MP_CTF_STATE_VAR]
+  return board
+}
+
+function buildFlag(name: string, position: [number, number, number], team: MpFlagTeam, color: string) {
+  const flag = starterBox(name, position, [0.5, 1.6, 0.5], color)
+  flag.tags = team === 'red' ? [MP_TAG_FLAG_RED] : [MP_TAG_FLAG_BLUE]
+  flag.material!.emissive = color
+  flag.material!.emissiveIntensity = 0.55
+  return flag
+}
+
+function buildCtfSpawn(
+  name: string,
+  position: [number, number, number],
+  team: MpTeam,
+  color: string,
+) {
+  const spawn = buildTeamSpawn(name, position, team, color)
+  spawn.script = MP_CTF_SCRIPT
+  return spawn
+}
+
 function buildTeamSpawn(
   name: string,
   position: [number, number, number],
@@ -432,6 +587,29 @@ const MP_TEAMS_HUD_WIDGET: HudWidget = {
   size: 17,
   color: '#e8ecf0',
 }
+
+const MP_CTF_HUD_WIDGETS: HudWidget[] = [
+  {
+    id: 'mp_ctf_hud',
+    type: 'text',
+    text: 'CTF R:0 B:0',
+    anchor: 'tr',
+    x: 16,
+    y: 16,
+    size: 17,
+    color: '#e8ecf0',
+  },
+  {
+    id: 'mp_ctf_flags',
+    type: 'text',
+    text: 'Flags R:base B:base',
+    anchor: 'tr',
+    x: 16,
+    y: 42,
+    size: 14,
+    color: '#9aa4b2',
+  },
+]
 
 const MP_LOBBY_UNDO_NAMES = ['MpLobbyFloor', 'MpLobbyHost', 'MpLobbyClient', MP_LOBBY_MANAGER_NAME, 'MpLobbySun']
 
@@ -605,6 +783,83 @@ function transitionLobbyToDeathmatch() {
 /**
  * Indie MP teams deathmatch — red/blue spawns, team scoreboard, friendly fire off.
  */
+/**
+ * Indie MP capture-the-flag — teams template with red/blue flags at bases.
+ * Interact (E) to grab enemy flag; carry to own pad to score.
+ */
+export function spawnIndieMpCtf() {
+  const floor = starterBox('MpCtfFloor', [0, -0.1, 0], [20, 0.2, 20], '#4a5568')
+  floor.material!.roughness = 0.85
+
+  const redPad = starterBox('MpRedPad', [-6, 0.05, 0], [5, 0.1, 5], '#e5484d')
+  redPad.material!.emissive = '#e5484d'
+  redPad.material!.emissiveIntensity = 0.25
+
+  const bluePad = starterBox('MpBluePad', [6, 0.05, 0], [5, 0.1, 5], '#2f80ed')
+  bluePad.material!.emissive = '#2f80ed'
+  bluePad.material!.emissiveIntensity = 0.25
+
+  const redFlag = buildFlag('MpRedFlag', [-6, 0.9, -1.5], 'red', '#e5484d')
+  const blueFlag = buildFlag('MpBlueFlag', [6, 0.9, 1.5], 'blue', '#2f80ed')
+
+  const redHost = buildCtfSpawn('RedHostSpawn', [-6, 0.2, 0], 'red', '#e5484d')
+  const redClient = buildCtfSpawn('RedClientSpawn', [-4, 0.2, -2], 'red', '#e5484d')
+  const blueHost = buildCtfSpawn('BlueHostSpawn', [6, 0.2, 0], 'blue', '#2f80ed')
+  const blueClient = buildCtfSpawn('BlueClientSpawn', [4, 0.2, 2], 'blue', '#2f80ed')
+
+  const scoreboard = buildCtfScoreboardActor()
+  const sun = buildSerializedActor({ kind: 'light', type: 'DirectionalLight' }, [6, 12, 4])
+  sun.name = 'MpCtfSun'
+
+  const undoNames = [
+    'MpCtfFloor',
+    'MpRedPad',
+    'MpBluePad',
+    'MpRedFlag',
+    'MpBlueFlag',
+    'RedHostSpawn',
+    'RedClientSpawn',
+    'BlueHostSpawn',
+    'BlueClientSpawn',
+    MP_SCOREBOARD_NAME,
+    'MpCtfSun',
+  ]
+
+  runCommand({
+    label: 'Indie MP capture-the-flag',
+    execute() {
+      for (const sa of [
+        floor,
+        redPad,
+        bluePad,
+        redFlag,
+        blueFlag,
+        redHost,
+        redClient,
+        blueHost,
+        blueClient,
+        scoreboard,
+        sun,
+      ]) {
+        new AddActorCommand(sa).execute()
+      }
+      world.environment.useRapierCharacter = true
+      world.applyEnvironment()
+      const existing = new Set(world.hudWidgets.map((w) => w.id))
+      for (const w of MP_CTF_HUD_WIDGETS) {
+        if (!existing.has(w.id)) world.hudWidgets.push({ ...w })
+      }
+      useEditor.getState().setStatus('Indie MP CTF — grab enemy flag (E), return to your pad to score')
+      useEditor.getState().touch()
+    },
+    undo() {
+      removeActorsByName(undoNames)
+      world.hudWidgets = world.hudWidgets.filter((w) => !MP_CTF_HUD_WIDGETS.some((h) => h.id === w.id))
+      useEditor.getState().touch()
+    },
+  })
+}
+
 export function spawnIndieMpTeamsDeathmatch() {
   const floor = starterBox('MpTeamsFloor', [0, -0.1, 0], [20, 0.2, 20], '#4a5568')
   floor.material!.roughness = 0.85
@@ -758,6 +1013,34 @@ mpSetPeerScoresMirrorHandler((scores) => {
 /** Clients mirror host teamScores snapshots from the score relay (Wave 83). */
 mpSetTeamScoresMirrorHandler((scores) => {
   mirrorMpTeamScores(world.actors, scores)
+})
+
+/** Host applies CTF flag pickups requested by clients over the relay (Wave 88). */
+mpSetFlagPickupHandler((peerId, flagTeam) => {
+  mpCtfPickup(world.actors, peerId, flagTeam, relayPlaySignal, (pid, ft, state) =>
+    mpBroadcastFlagPickup(pid, ft, state),
+  )
+})
+
+/** Host applies CTF flag captures requested by clients over the relay (Wave 88). */
+mpSetFlagCaptureHandler((peerId, flagTeam, scoringTeam) => {
+  mpCtfCapture(world.actors, peerId, flagTeam, scoringTeam, relayPlaySignal, (carrierId, ft, st, state, scores, gameWon) =>
+    mpBroadcastFlagCapture(carrierId, ft, st, state, scores, gameWon),
+  )
+})
+
+/** Clients mirror host flag_pickup relay (Wave 88). */
+mpSetFlagPickupMirrorHandler((peerId, flagTeam, state) => {
+  mirrorMpCtfState(world.actors, state)
+  relayPlaySignal('flag_pickup', peerId, flagTeam)
+})
+
+/** Clients mirror host flag_capture relay + team scores (Wave 88). */
+mpSetFlagCaptureMirrorHandler((carrierId, flagTeam, scoringTeam, state, scores, gameWon) => {
+  mirrorMpCtfState(world.actors, state)
+  mirrorMpTeamScores(world.actors, scores)
+  relayPlaySignal('flag_capture', carrierId, flagTeam, scoringTeam, scores)
+  if (gameWon) relayPlaySignal('mp_game_won', gameWon.team, gameWon.score)
 })
 
 /** Clients apply host team_assign relay (Wave 83). */

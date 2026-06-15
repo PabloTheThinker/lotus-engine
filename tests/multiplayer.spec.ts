@@ -969,6 +969,136 @@ test('wave 78 multiplayer relay: player_killed triggers victim killcam', async (
   }
 })
 
+test('wave 88 multiplayer relay: host CTF capture syncs team score to client', async ({
+  browser,
+  relayAvailable,
+  relayUrl,
+}) => {
+  test.skip(!relayAvailable, 'relay unavailable (port bind or WebSocket failed)')
+
+  const MP_ROOM = 'e2e-wave88-ctf'
+  const contextA = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const contextB = await browser.newContext({ baseURL: test.info().project.use.baseURL })
+  const pageA = await contextA.newPage()
+  const pageB = await contextB.newPage()
+
+  try {
+    const mpInit = ({ url, room }: { url: string; room: string }) => {
+      localStorage.clear()
+      localStorage.setItem(
+        'lotus-engine.multiplayer',
+        JSON.stringify({ url, room, enabled: true, spectator: false }),
+      )
+    }
+    await pageA.addInitScript(mpInit, { url: relayUrl, room: MP_ROOM })
+    await pageB.addInitScript(mpInit, { url: relayUrl, room: MP_ROOM })
+    await pageA.goto('/')
+    await pageB.goto('/')
+    await pageA.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+    await pageB.waitForFunction(() => Boolean(window.lotus?.world?.actors?.size))
+
+    const spawnCtf = async (page: import('@playwright/test').Page) => {
+      await page.evaluate(() => {
+        const v = window.lotus! as typeof window.lotus & { indie: { spawnIndieMpCtf: () => void } }
+        v.indie.spawnIndieMpCtf()
+      })
+    }
+    await spawnCtf(pageA)
+    await spawnCtf(pageB)
+
+    await pageB.keyboard.press('Alt+KeyP')
+    await pageB.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.keyboard.press('Alt+KeyP')
+    await pageA.waitForFunction(() => window.lotus?.multiplayer?.connected?.() === true, { timeout: 15_000 })
+    await pageA.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+    await pageB.waitForFunction(() => (window.lotus?.multiplayer?.peerCount?.() ?? 0) >= 1, { timeout: 15_000 })
+
+    let hostPage: import('@playwright/test').Page | undefined
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const [aHost, bHost] = await Promise.all([
+        pageA.evaluate(() => window.lotus!.multiplayer.isHost()),
+        pageB.evaluate(() => window.lotus!.multiplayer.isHost()),
+      ])
+      if (aHost && !bHost) {
+        hostPage = pageA
+        break
+      }
+      if (!aHost && bHost) {
+        hostPage = pageB
+        break
+      }
+      await new Promise((r) => setTimeout(r, 250))
+    }
+    expect(hostPage, 'expected stable MP host election').toBeDefined()
+
+    const clientPage = hostPage === pageA ? pageB : pageA
+
+    const hostCapture = await hostPage!.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        multiplayer: { localId: () => string; connected: () => boolean; isHost: () => boolean }
+        indie: {
+          mp: {
+            ctf: {
+              applyPickup: (peer: string, flag: 'red' | 'blue') => boolean
+              applyCapture: (peer: string, flag: 'red' | 'blue', team: 'red' | 'blue') => boolean
+              scores: () => { red: number; blue: number }
+            }
+          }
+        }
+      }
+      const hostId = v.multiplayer.localId()
+      const picked = v.indie.mp.ctf.applyPickup(hostId, 'blue')
+      const captured = v.indie.mp.ctf.applyCapture(hostId, 'blue', 'red')
+      return {
+        connected: v.multiplayer.connected(),
+        isHost: v.multiplayer.isHost(),
+        picked,
+        captured,
+        scores: v.indie.mp.ctf.scores(),
+      }
+    })
+
+    expect(hostCapture.connected).toBe(true)
+    expect(hostCapture.isHost).toBe(true)
+    expect(hostCapture.picked).toBe(true)
+    expect(hostCapture.captured).toBe(true)
+    expect(hostCapture.scores.red).toBeGreaterThanOrEqual(1)
+
+    await clientPage.waitForFunction(
+      () => {
+        const scores = (
+          window.lotus! as typeof window.lotus & { indie: { mp: { ctf: { scores: () => { red: number } } } } }
+        ).indie.mp.ctf.scores()
+        return scores.red >= 1
+      },
+      { timeout: 15_000 },
+    )
+
+    const clientState = await clientPage.evaluate(() => {
+      const v = window.lotus! as typeof window.lotus & {
+        indie: {
+          mp: {
+            ctf: {
+              scores: () => { red: number; blue: number }
+              getFlagCarrier: (flag: 'red' | 'blue') => string | undefined
+            }
+          }
+        }
+      }
+      return {
+        scores: v.indie.mp.ctf.scores(),
+        blueCarrier: v.indie.mp.ctf.getFlagCarrier('blue'),
+      }
+    })
+
+    expect(clientState.scores.red).toBeGreaterThanOrEqual(1)
+    expect(clientState.blueCarrier).toBeUndefined()
+  } finally {
+    await contextA.close()
+    await contextB.close()
+  }
+})
+
 test('wave 83 multiplayer relay: team_assign syncs and team scores mirror to client', async ({
   browser,
   relayAvailable,

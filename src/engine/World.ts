@@ -27,6 +27,7 @@ import { buildPathCurve } from './path3d'
 import { resetBTs, runBTGraph, tickBTs } from './behaviorTree'
 import { compileBTGraph } from './btGraph'
 import { resetGridNavAgents, tickGridNavAgents } from './gridNavAgents'
+import { resetGridNavPathDebug } from './gridNavPathDebug'
 import { resetCrowd, tickCrowd } from './navCrowd'
 import { playMetaSound, registerSound, setReverbZone, setSoundAttenuationDefaults, stopAllSounds, type ReverbPreset } from './audio'
 import { mpConnected, mpIsHost } from './multiplayer'
@@ -253,6 +254,7 @@ export class World {
     resetBTs()
     resetCrowd()
     resetGridNavAgents()
+    resetGridNavPathDebug()
     this.lastCameraCut = null
     this.lastSeqTime = 0
     setDataStore(this.dataTables)
@@ -464,6 +466,7 @@ export class World {
     resetBTs()
     resetCrowd()
     resetGridNavAgents()
+    resetGridNavPathDebug()
     this.triggerState.clear()
     this.timerElapsed.clear()
     this.timerActive.clear()

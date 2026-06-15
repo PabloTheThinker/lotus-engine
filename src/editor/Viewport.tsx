@@ -64,6 +64,7 @@ import { mpSpectatorDefaultSpawn } from '../engine/mpSpectator'
 import { runConstructScript, setScriptLogSink } from '../engine/scripting'
 import { pushSample, latest } from '../engine/profiler'
 import { getNavMesh } from '../engine/nav'
+import { syncGridNavPathDebugOverlay } from '../engine/gridNavPathDebug'
 import { NavMeshHelper } from '@recast-navigation/three'
 import { applyActorStreamingVisibility, updateStreamingGridHelper } from '../engine/streaming'
 import { consoleState } from './consoleCommands'
@@ -78,7 +79,11 @@ import {
   toggleSaveMenu,
   unmountExportSaveMenu,
 } from './exportSaveMenu'
-import { exportCloudSaveManifest } from '../engine/cloudSaveSync'
+import {
+  downloadCloudSaveJsonFile,
+  exportCloudSaveManifest,
+  importCloudSaveJson,
+} from '../engine/cloudSaveSync'
 import { loadCheckpoint, listSlots, saveCheckpoint, setSaveContext } from '../engine/saveSystem'
 import { DeleteActorCommand, AddActorCommand, TransformCommand, redo, runCommand, undo } from './commands'
 import { assignMaterialAsset } from './materialCommands'
@@ -1712,6 +1717,29 @@ export function Viewport() {
                     return manifest.crossDeviceHint
                   }
                 : undefined,
+              downloadCloudJson: cloudSyncEnabled
+                ? async () => {
+                    setSaveContext({
+                      levelName: world.levelName,
+                      enabled: true,
+                      cloudBackup: true,
+                      crossLevelSaves: world.environment.crossLevelSaves === true,
+                    })
+                    await downloadCloudSaveJsonFile()
+                  }
+                : undefined,
+              importCloudJson: cloudSyncEnabled
+                ? async (json: string) => {
+                    setSaveContext({
+                      levelName: world.levelName,
+                      enabled: true,
+                      cloudBackup: true,
+                      crossLevelSaves: world.environment.crossLevelSaves === true,
+                    })
+                    const result = await importCloudSaveJson(json)
+                    return { merged: result.merged, skipped: result.skipped }
+                  }
+                : undefined,
             },
           })
         }
@@ -2001,6 +2029,9 @@ export function Viewport() {
           world.scene.add(navMeshHelper)
         }
       }
+
+      // Wave 86 — grid nav path debug polyline (editor-only)
+      if (!pathTraceActive) syncGridNavPathDebugOverlay(world.scene)
 
       // grid + distance streaming: hide actors outside camera cell radius / cull distance
       {

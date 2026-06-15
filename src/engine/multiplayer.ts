@@ -72,6 +72,7 @@ import {
   type MpTeam,
   type MpTeamScores,
 } from './mpTeams'
+import type { MpCtfState, MpFlagTeam } from './mpCtf'
 
 /**
  * Multiplayer — Godot MultiplayerSynchronizer / MultiplayerSpawner-lite over a
@@ -94,6 +95,8 @@ import {
  *   replay_sample  { t, id, offsetSec, bufferLength, samples } — host rewind snapshot
  *   player_killed  { t, id, killerId, victimId }              — deathmatch kill relay (Wave 78)
  *   team_assign    { t, id, peerId, team }                    — host assigns red/blue (Wave 83)
+ *   flag_pickup    { t, id, peerId, flagTeam, ctfFlags? }     — host authoritative CTF pickup (Wave 88)
+ *   flag_capture   { t, id, carrierId, flagTeam, scoringTeam, ctfFlags?, teamScores?, teamGameWon? } — CTF capture + score (Wave 88)
  *   list_rooms  { t }                         — query public room registry
  *   rooms       { t, rooms:[{room,peers}] }   — room list snapshot
  *   room_registry { t, rooms }                — broadcast when rooms change
@@ -138,6 +141,17 @@ let teamAssignMirrorHandler: ((peerId: string, team: MpTeam) => void) | null = n
 let gameWonRelayHandler: ((peerId: string, score: number) => void) | null = null
 let teamGameWonRelayHandler: ((team: MpTeam, score: number) => void) | null = null
 let playerKilledRelayHandler: ((killerId: string, victimId: string) => void) | null = null
+let flagPickupHandler: ((peerId: string, flagTeam: MpFlagTeam) => void) | null = null
+let flagCaptureHandler: ((peerId: string, flagTeam: MpFlagTeam, scoringTeam: MpTeam) => void) | null = null
+let flagPickupMirrorHandler: ((peerId: string, flagTeam: MpFlagTeam, state: MpCtfState) => void) | null = null
+let flagCaptureMirrorHandler: ((
+  carrierId: string,
+  flagTeam: MpFlagTeam,
+  scoringTeam: MpTeam,
+  state: MpCtfState,
+  scores: MpTeamScores,
+  gameWon?: { team: MpTeam; score: number },
+) => void) | null = null
 let lobbyStartHandler: (() => void) | null = null
 let lobbyRefreshHandler: (() => void) | null = null
 /** ids spawned by the network host (safe to despawn on disconnect) */
@@ -511,6 +525,39 @@ export function mpSetPlayerKilledRelayHandler(fn: ((killerId: string, victimId: 
   playerKilledRelayHandler = fn
 }
 
+/** Register host handler for client flag_pickup requests (Wave 88). */
+export function mpSetFlagPickupHandler(fn: ((peerId: string, flagTeam: MpFlagTeam) => void) | null) {
+  flagPickupHandler = fn
+}
+
+/** Register host handler for client flag_capture requests (Wave 88). */
+export function mpSetFlagCaptureHandler(
+  fn: ((peerId: string, flagTeam: MpFlagTeam, scoringTeam: MpTeam) => void) | null,
+) {
+  flagCaptureHandler = fn
+}
+
+/** Client mirror — host flag_pickup relay applied to local CTF state (Wave 88). */
+export function mpSetFlagPickupMirrorHandler(
+  fn: ((peerId: string, flagTeam: MpFlagTeam, state: MpCtfState) => void) | null,
+) {
+  flagPickupMirrorHandler = fn
+}
+
+/** Client mirror — host flag_capture relay applied to local CTF state + team scores (Wave 88). */
+export function mpSetFlagCaptureMirrorHandler(
+  fn: ((
+    carrierId: string,
+    flagTeam: MpFlagTeam,
+    scoringTeam: MpTeam,
+    state: MpCtfState,
+    scores: MpTeamScores,
+    gameWon?: { team: MpTeam; score: number },
+  ) => void) | null,
+) {
+  flagCaptureMirrorHandler = fn
+}
+
 /** Host broadcasts authoritative player_killed to the room. */
 export function mpBroadcastPlayerKilled(killerId: string, victimId: string) {
   if (!mpConnected() || !mpIsHost()) return
@@ -651,6 +698,48 @@ export function mpRequestTeamScoreDelta(delta: number, team: MpTeam, peerId?: st
   send({ t: 'score', id: peerId ?? localId, delta, team })
 }
 
+/** Host broadcasts authoritative flag pickup (Wave 88). */
+export function mpBroadcastFlagPickup(peerId: string, flagTeam: MpFlagTeam, ctfFlags: MpCtfState) {
+  if (!mpConnected() || !mpIsHost()) return
+  send({ t: 'flag_pickup', id: localId, peerId, flagTeam, ctfFlags })
+  flagPickupMirrorHandler?.(peerId, flagTeam, ctfFlags)
+}
+
+/** Host broadcasts authoritative flag capture + team score snapshot (Wave 88). */
+export function mpBroadcastFlagCapture(
+  carrierId: string,
+  flagTeam: MpFlagTeam,
+  scoringTeam: MpTeam,
+  ctfFlags: MpCtfState,
+  teamScores: MpTeamScores,
+  gameWon?: { team: MpTeam; score: number },
+) {
+  if (!mpConnected() || !mpIsHost()) return
+  send({
+    t: 'flag_capture',
+    id: localId,
+    carrierId,
+    flagTeam,
+    scoringTeam,
+    ctfFlags,
+    teamScores,
+    ...(gameWon ? { teamGameWon: [gameWon.team, gameWon.score] as [MpTeam, number] } : {}),
+  })
+  flagCaptureMirrorHandler?.(carrierId, flagTeam, scoringTeam, ctfFlags, teamScores, gameWon)
+}
+
+/** Client requests flag pickup — host applies via mpSetFlagPickupHandler (Wave 88). */
+export function mpRequestFlagPickup(flagTeam: MpFlagTeam, peerId?: string) {
+  if (!mpConnected() || mpIsHost()) return
+  send({ t: 'flag_pickup', id: peerId ?? localId, flagTeam })
+}
+
+/** Client requests flag capture — host applies via mpSetFlagCaptureHandler (Wave 88). */
+export function mpRequestFlagCapture(flagTeam: MpFlagTeam, scoringTeam: MpTeam, peerId?: string) {
+  if (!mpConnected() || mpIsHost()) return
+  send({ t: 'flag_capture', id: peerId ?? localId, flagTeam, scoringTeam })
+}
+
 /** Optional client input uplink (host may consume later). */
 export function mpSendInput(pawnPos: THREE.Vector3 | null, pawnYaw: number, actions?: string[]) {
   if (!mpConnected() || mpIsHost() || mpIsDedicatedServer() || mpSpectatorMode()) return
@@ -724,6 +813,10 @@ export function mpConnect(world: World, status: (msg: string) => void) {
       gameWon?: [string, number]
       killerId?: string
       victimId?: string
+      flagTeam?: MpFlagTeam
+      scoringTeam?: MpTeam
+      carrierId?: string
+      ctfFlags?: MpCtfState
       ready?: boolean
       offsetSec?: number
       bufferLength?: number
@@ -845,6 +938,53 @@ export function mpConnect(world: World, status: (msg: string) => void) {
     if (msg.t === 'team_assign' && isFromHost(msg.id) && msg.peerId && msg.team) {
       mpTeamsSet(msg.peerId, msg.team)
       teamAssignMirrorHandler?.(msg.peerId, msg.team)
+      return
+    }
+    if (msg.t === 'flag_pickup' && mpIsHost() && msg.id && msg.flagTeam) {
+      flagPickupHandler?.(msg.id, msg.flagTeam)
+      return
+    }
+    if (
+      msg.t === 'flag_pickup' &&
+      !mpIsHost() &&
+      isFromHost(msg.id) &&
+      msg.peerId &&
+      msg.flagTeam &&
+      msg.ctfFlags
+    ) {
+      flagPickupMirrorHandler?.(msg.peerId, msg.flagTeam, msg.ctfFlags)
+      return
+    }
+    if (
+      msg.t === 'flag_capture' &&
+      mpIsHost() &&
+      msg.id &&
+      msg.flagTeam &&
+      msg.scoringTeam
+    ) {
+      flagCaptureHandler?.(msg.id, msg.flagTeam, msg.scoringTeam)
+      return
+    }
+    if (
+      msg.t === 'flag_capture' &&
+      !mpIsHost() &&
+      isFromHost(msg.id) &&
+      msg.carrierId &&
+      msg.flagTeam &&
+      msg.scoringTeam &&
+      msg.ctfFlags &&
+      msg.teamScores
+    ) {
+      flagCaptureMirrorHandler?.(
+        msg.carrierId,
+        msg.flagTeam,
+        msg.scoringTeam,
+        msg.ctfFlags,
+        msg.teamScores,
+        Array.isArray(msg.teamGameWon) && msg.teamGameWon.length >= 2
+          ? { team: msg.teamGameWon[0], score: Number(msg.teamGameWon[1]) }
+          : undefined,
+      )
       return
     }
     if (

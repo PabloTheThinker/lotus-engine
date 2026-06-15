@@ -11,6 +11,7 @@ import { crowdAddAgent, crowdGetPosition, crowdRemoveAgent, crowdSetTarget, init
 import { characterIsOnFloor, isCharacterControllerReady, moveAndSlide } from './characterController'
 import { playMetaSound, playSound } from './audio'
 import type { Actor } from './Actor'
+import { addMpCtfCapture, addMpCtfPickup, getMpFlagCarrier } from './mpCtf'
 import { addMpScore, addMpTeamScore, getMpPeerScores, getMpScore, getMpTeamScores } from './mpGameplay'
 import { mpTeamsAreFriendly, mpTeamsGet } from './mpTeams'
 import {
@@ -33,7 +34,11 @@ import {
   mpSpectatorEnable,
   mpSpectatorPeers,
 } from './multiplayer'
-import { unlockAchievement } from '../editor/exportAchievements'
+import {
+  getAchievementProgress,
+  setAchievementProgress,
+  unlockAchievement,
+} from '../editor/exportAchievements'
 import { isSaveEnabled, loadCheckpoint, listSlots, saveCheckpoint } from './saveSystem'
 
 /**
@@ -220,6 +225,12 @@ export interface ScriptApi {
   mpGetTeam: (peerId?: string) => 'red' | 'blue' | undefined
   /** Wave 83 — friendly fire off when peers share a team */
   mpTeamsAreFriendly: (peerA: string, peerB: string) => boolean
+  /** Wave 88 — peer carrying a flag (undefined = at base) */
+  getMpFlagCarrier: (flagTeam: 'red' | 'blue') => string | undefined
+  /** Wave 88 — pick up enemy flag (host authoritative) */
+  mpCtfPickup: (flagTeam: 'red' | 'blue') => boolean
+  /** Wave 88 — capture enemy flag at own base (host authoritative) */
+  mpCtfCapture: (flagTeam: 'red' | 'blue', scoringTeam: 'red' | 'blue') => boolean
   /** Wave 78 — report deathmatch kill; host rebroadcasts player_killed relay */
   mpReportPlayerKill: (victimId: string) => boolean
   /** Wave 65 — save checkpoint JSON to a named slot (localStorage) */
@@ -230,6 +241,10 @@ export interface ScriptApi {
   listSaveSlots: () => string[]
   /** Wave 85 — unlock export-pack trophy (localStorage lotus-engine.achievements.{packId}) */
   unlockAchievement: (id: string) => boolean
+  /** Wave 90 — partial achievement progress counter (unlocks when current >= max) */
+  setAchievementProgress: (id: string, current: number, max?: number) => boolean
+  /** Wave 90 — read achievement progress counter */
+  getAchievementProgress: (id: string) => { current: number; max: number } | null
 }
 
 // per-actor blackboards + level data store (set by World)
@@ -427,6 +442,31 @@ export function makeScriptApi(
     },
     mpGetTeam: (peerId) => mpTeamsGet(peerId ?? mpLocalId()),
     mpTeamsAreFriendly,
+    getMpFlagCarrier: (flagTeam) => getMpFlagCarrier(actors, flagTeam),
+    mpCtfPickup: (flagTeam) => {
+      const emit = (signal: string, ...args: unknown[]) => {
+        for (const h of signalHandlers.get(signal) ?? []) {
+          try {
+            h(...args)
+          } catch (err) {
+            logSink('error', `signal "${signal}" handler: ${(err as Error).message}`)
+          }
+        }
+      }
+      return addMpCtfPickup(actors, flagTeam, undefined, emit)
+    },
+    mpCtfCapture: (flagTeam, scoringTeam) => {
+      const emit = (signal: string, ...args: unknown[]) => {
+        for (const h of signalHandlers.get(signal) ?? []) {
+          try {
+            h(...args)
+          } catch (err) {
+            logSink('error', `signal "${signal}" handler: ${(err as Error).message}`)
+          }
+        }
+      }
+      return addMpCtfCapture(actors, flagTeam, scoringTeam, undefined, emit)
+    },
     mpReportPlayerKill: (victimId) => mpReportPlayerKill(victimId),
     saveGame: (slot, data) => {
       if (!isSaveEnabled()) return false
@@ -448,6 +488,21 @@ export function makeScriptApi(
       }
       return result.newlyUnlocked
     },
+    setAchievementProgress: (id, current, max) => {
+      const result = setAchievementProgress(id, current, max)
+      if (result.achievement) {
+        api.emit('achievement_progress', {
+          ...result.achievement,
+          current: result.current,
+          max: result.max,
+        })
+        if (result.newlyUnlocked) {
+          api.emit('achievement_unlock', result.achievement)
+        }
+      }
+      return result.newlyUnlocked
+    },
+    getAchievementProgress: (id) => getAchievementProgress(id),
   }
   return api
 }

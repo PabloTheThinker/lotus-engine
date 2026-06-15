@@ -95,6 +95,19 @@ export interface CloudManifestSlot {
   savedAt: number
 }
 
+export interface CloudCheckpointEntry {
+  slot: string
+  savedAt: number
+  data: unknown
+}
+
+interface CloudCheckpointRow {
+  savedAt?: number
+  level?: string
+  slot?: string
+  data?: unknown
+}
+
 /** List cloud backup slots with savedAt timestamps for manifest / cross-device hint. */
 export async function listCloudManifestSlots(): Promise<CloudManifestSlot[]> {
   const level = sanitizeLevelName(levelName)
@@ -113,6 +126,70 @@ export async function listCloudManifestSlots(): Promise<CloudManifestSlot[]> {
   } catch {
     return []
   }
+}
+
+/** List full checkpoint rows (slot + savedAt + data) for the active level. */
+export async function listCloudCheckpointEntries(): Promise<CloudCheckpointEntry[]> {
+  const level = sanitizeLevelName(levelName)
+  try {
+    const db = await openDb()
+    const rows = await new Promise<CloudCheckpointRow[]>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly')
+      const req = tx.objectStore(STORE).getAll()
+      req.onsuccess = () => resolve((req.result ?? []) as CloudCheckpointRow[])
+      req.onerror = () => reject(req.error ?? new Error('IDB getAll failed'))
+    })
+    return rows
+      .filter((r) => r.level === level && r.slot && r.data !== undefined)
+      .map((r) => ({
+        slot: String(r.slot),
+        savedAt: r.savedAt ?? 0,
+        data: r.data,
+      }))
+      .sort((a, b) => a.slot.localeCompare(b.slot))
+  } catch {
+    return []
+  }
+}
+
+/** Put a checkpoint row preserving savedAt (import / merge). */
+export async function putCloudCheckpoint(entry: CloudCheckpointEntry): Promise<boolean> {
+  try {
+    const db = await openDb()
+    const payload = {
+      savedAt: entry.savedAt,
+      level: sanitizeLevelName(levelName),
+      slot: sanitizeSlot(entry.slot),
+      data: entry.data,
+    }
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      tx.objectStore(STORE).put(payload, cloudKey(entry.slot))
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('IDB put failed'))
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Merge imported checkpoint rows into IndexedDB for the active level. */
+export async function mergeCloudCheckpoints(
+  entries: CloudCheckpointEntry[],
+): Promise<{ merged: number; skipped: number }> {
+  let merged = 0
+  let skipped = 0
+  for (const entry of entries) {
+    if (!entry?.slot || entry.data === undefined) {
+      skipped++
+      continue
+    }
+    const ok = await putCloudCheckpoint(entry)
+    if (ok) merged++
+    else skipped++
+  }
+  return { merged, skipped }
 }
 
 /** List slot ids with cloud backup data for the active level. */

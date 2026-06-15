@@ -99,10 +99,638 @@ function isExportOverlayReady(): boolean {
   return /Click to play|click canvas|Touch stick|WASD/i.test(t)
 }
 
+test('wave 89 exportCloudSaveJson includes IndexedDB checkpoint data in entries', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      save: {
+        backupToCloud: (slot: string, data: unknown) => Promise<boolean>
+        exportJson: () => Promise<{
+          version: number
+          level: string
+          entries: { slot: string; savedAt: number; data: unknown }[]
+        }>
+      }
+    }
+    v.world.levelName = 'Wave89Export'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    await v.save.backupToCloud('xfer-a', { hp: 89, flag: true })
+    const doc = await v.save.exportJson()
+    return {
+      version: doc.version,
+      level: doc.level,
+      entry: doc.entries.find((e) => e.slot === 'xfer-a'),
+    }
+  })
+
+  expect(result.version).toBe(2)
+  expect(result.level).toBe('Wave89Export')
+  expect(result.entry?.data).toEqual({ hp: 89, flag: true })
+  expect((result.entry?.savedAt ?? 0) > 0).toBe(true)
+})
+
+test('wave 89 importCloudSaveJson validates schema and merges slots into IndexedDB', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { levelName: string; environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      save: {
+        exportJson: () => Promise<{ version: number; level: string; entries: unknown[] }>
+        importJson: (json: unknown) => Promise<{ merged: number; skipped: number }>
+        restoreFromCloud: (slot: string) => Promise<unknown | null>
+        backupToCloud: (slot: string, data: unknown) => Promise<boolean>
+      }
+    }
+    v.world.levelName = 'Wave89Import'
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    await v.save.backupToCloud('seed-slot', { coins: 1 })
+    const exported = await v.save.exportJson()
+    const badVersion = await v.save.importJson({ ...exported, version: 99 }).catch((e: Error) => e.message)
+    const mismatch = await v.save
+      .importJson({ ...exported, level: 'OtherLevel' })
+      .catch((e: Error) => e.message)
+    const imported = await v.save.importJson(exported)
+    const restored = await v.save.restoreFromCloud('seed-slot')
+    return { badVersion, mismatch, imported, restored }
+  })
+
+  expect(result.badVersion).toContain('Unsupported cloud save JSON version')
+  expect(result.mismatch).toContain('Level mismatch')
+  expect(result.imported.merged).toBeGreaterThan(0)
+  expect(result.restored).toEqual({ coins: 1 })
+})
+
+test('wave 89 lotus.save bridge exposes exportJson and importJson', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const s = (window.lotus! as typeof window.lotus).save as Record<string, unknown>
+    return {
+      exportJson: typeof s.exportJson === 'function',
+      importJson: typeof s.importJson === 'function',
+    }
+  })
+
+  expect(result.exportJson).toBe(true)
+  expect(result.importJson).toBe(true)
+})
+
+test('wave 89 World Settings shows download/import cloud saves buttons', async ({ page }) => {
+  await bootEditor(page)
+
+  await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      useEditor: { getState: () => { touch: () => void } }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    v.useEditor.getState().touch()
+  })
+
+  await page.locator('details.world-settings > summary').click()
+  await expect(page.locator('[data-lotus-cloud-export]')).toContainText('Download cloud saves JSON')
+  await expect(page.locator('[data-lotus-cloud-import]')).toHaveCount(1)
+})
+
+test('wave 89 export runtime mirrors exportCloudSaveJson importCloudSaveJson and save menu transfer buttons', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      world: { environment: { saveSlotsEnabled?: boolean; cloudSaveBackup?: boolean } }
+      export: { buildPlayableHTML: () => string }
+    }
+    v.world.environment.saveSlotsEnabled = true
+    v.world.environment.cloudSaveBackup = true
+    const html = v.export.buildPlayableHTML()
+    return {
+      exportJsonFn: html.includes('exportCloudSaveJson'),
+      importJsonFn: html.includes('importExportCloudSaveJson'),
+      exportBtn: html.includes('data-lotus-cloud-export'),
+      importInput: html.includes('data-lotus-cloud-import'),
+      bridgeExportJson: html.includes('exportJson: exportCloudSaveJson'),
+      bridgeImportJson: html.includes('importJson: importExportCloudSaveJson'),
+      menuTransfer: html.includes('lotus-save-menu-cloud-transfer'),
+    }
+  })
+
+  expect(result.exportJsonFn).toBe(true)
+  expect(result.importJsonFn).toBe(true)
+  expect(result.exportBtn).toBe(true)
+  expect(result.importInput).toBe(true)
+  expect(result.bridgeExportJson).toBe(true)
+  expect(result.bridgeImportJson).toBe(true)
+  expect(result.menuTransfer).toBe(true)
+})
+
+test('wave 88 indie MP CTF template spawns flags and scoreboard', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpCtf: () => void
+        mp: { ctfScript: string; ctfScoreboardScript: string }
+      }
+      world: {
+        actors: {
+          values: () => IterableIterator<{ name: string; tags?: string[]; syncProperties?: string[] }>
+        }
+        hudWidgets: { id: string }[]
+      }
+    }
+    v.indie.spawnIndieMpCtf()
+    const actors = [...v.world.actors.values()]
+    const redFlag = actors.find((a) => a.name === 'MpRedFlag')
+    const blueFlag = actors.find((a) => a.name === 'MpBlueFlag')
+    const board = actors.find((a) => a.name === 'MpScoreboard')
+    return {
+      floor: actors.some((a) => a.name === 'MpCtfFloor'),
+      redPad: actors.some((a) => a.name === 'MpRedPad'),
+      bluePad: actors.some((a) => a.name === 'MpBluePad'),
+      redTags: redFlag?.tags ?? [],
+      blueTags: blueFlag?.tags ?? [],
+      sync: board?.syncProperties ?? [],
+      hud: v.world.hudWidgets.some((w) => w.id === 'mp_ctf_hud'),
+      flagsHud: v.world.hudWidgets.some((w) => w.id === 'mp_ctf_flags'),
+      ctfScript: v.indie.mp.ctfScript,
+      boardScript: v.indie.mp.ctfScoreboardScript,
+    }
+  })
+
+  expect(result.floor).toBe(true)
+  expect(result.redPad).toBe(true)
+  expect(result.bluePad).toBe(true)
+  expect(result.redTags).toContain('mp_flag_red')
+  expect(result.blueTags).toContain('mp_flag_blue')
+  expect(result.sync).toContain('teamScores')
+  expect(result.sync).toContain('ctfFlags')
+  expect(result.hud).toBe(true)
+  expect(result.flagsHud).toBe(true)
+  expect(result.ctfScript).toMatch(/mpCtfPickup/)
+  expect(result.ctfScript).toMatch(/mpCtfCapture/)
+  expect(result.boardScript).toMatch(/getMpFlagCarrier/)
+})
+
+test('wave 88 indie.mp.ctf bridge APIs expose carrier capture and scores', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpCtf: () => void
+        mp: {
+          ctf: {
+            redFlagTag: string
+            blueFlagTag: string
+            pickup: (flag: 'red' | 'blue', peer?: string) => boolean
+            getFlagCarrier: (flag: 'red' | 'blue') => string | undefined
+            captureFlag: (flag: 'red' | 'blue', team: 'red' | 'blue', peer?: string) => boolean
+            scores: () => { red: number; blue: number }
+            applyPickup: (peer: string, flag: 'red' | 'blue') => boolean
+            applyCapture: (peer: string, flag: 'red' | 'blue', team: 'red' | 'blue') => boolean
+          }
+        }
+      }
+    }
+    v.indie.spawnIndieMpCtf()
+    const ctf = v.indie.mp.ctf
+    ctf.applyPickup('peer-red', 'blue')
+    ctf.applyCapture('peer-red', 'blue', 'red')
+    return {
+      redFlagTag: ctf.redFlagTag,
+      blueFlagTag: ctf.blueFlagTag,
+      carrier: ctf.getFlagCarrier('blue'),
+      scores: ctf.scores(),
+    }
+  })
+
+  expect(result.redFlagTag).toBe('mp_flag_red')
+  expect(result.blueFlagTag).toBe('mp_flag_blue')
+  expect(result.carrier).toBeUndefined()
+  expect(result.scores.red).toBe(1)
+  expect(result.scores.blue).toBe(0)
+})
+
+test('wave 88 /mpctf terminal command spawns CTF arena', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (s: string) => { output: string | null } }
+      world: { actors: { values: () => IterableIterator<{ name: string; tags?: string[] }> } }
+    }
+    const out = v.terminal.exec('/mpctf')
+    const actors = [...v.world.actors.values()]
+    const redFlag = actors.find((a) => a.name === 'MpRedFlag')
+    const blueFlag = actors.find((a) => a.name === 'MpBlueFlag')
+    return {
+      output: out.output ?? '',
+      redTags: redFlag?.tags ?? [],
+      blueTags: blueFlag?.tags ?? [],
+    }
+  })
+
+  expect(result.output).toMatch(/CTF/i)
+  expect(result.redTags).toContain('mp_flag_red')
+  expect(result.blueTags).toContain('mp_flag_blue')
+})
+
+test('wave 88 CTF capture applies team score delta and clears carrier', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        spawnIndieMpCtf: () => void
+        mp: {
+          ctf: {
+            applyPickup: (peer: string, flag: 'red' | 'blue') => boolean
+            applyCapture: (peer: string, flag: 'red' | 'blue', team: 'red' | 'blue') => boolean
+            getFlagCarrier: (flag: 'red' | 'blue') => string | undefined
+            scores: () => { red: number; blue: number }
+          }
+          ctfScript: string
+          ctfScoreboardScript: string
+        }
+      }
+    }
+    v.indie.spawnIndieMpCtf()
+    const ctf = v.indie.mp.ctf
+    ctf.applyPickup('carrier-a', 'blue')
+    const carrying = ctf.getFlagCarrier('blue')
+    ctf.applyCapture('carrier-a', 'blue', 'red')
+    return {
+      carrying,
+      carrierAfter: ctf.getFlagCarrier('blue'),
+      scores: ctf.scores(),
+      ctfScript: v.indie.mp.ctfScript,
+      boardScript: v.indie.mp.ctfScoreboardScript,
+    }
+  })
+
+  expect(result.carrying).toBe('carrier-a')
+  expect(result.carrierAfter).toBeUndefined()
+  expect(result.scores.red).toBe(1)
+  expect(result.ctfScript).toMatch(/flag_capture|mpCtfCapture/)
+  expect(result.boardScript).toMatch(/flag_capture/)
+})
+
+test('wave 87 buildItchEmbedWidget returns self-contained HTML with changelog and achievements', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        export: {
+          buildItchEmbedWidget: (m: 'platformer') => string
+          buildItchEmbedWidgetSections: (m: 'platformer') => string
+        }
+      }
+    }
+    const doc = v.indie.export.buildItchEmbedWidget('platformer')
+    const sections = v.indie.export.buildItchEmbedWidgetSections('platformer')
+    return {
+      hasDoctype: doc.includes('<!doctype html>'),
+      hasChangelog: doc.includes('lotus-pack-changelog'),
+      hasAchievements: doc.includes('lotus-pack-achievements'),
+      hasTitle: doc.includes('Lotus Platformer Pack'),
+      hasTrophy: doc.includes('Goal Getter'),
+      sectionsInDoc: doc.includes(sections),
+      sectionsHasBoth:
+        sections.includes('lotus-pack-changelog') && sections.includes('lotus-pack-achievements'),
+    }
+  })
+
+  expect(result.hasDoctype).toBe(true)
+  expect(result.hasChangelog).toBe(true)
+  expect(result.hasAchievements).toBe(true)
+  expect(result.hasTitle).toBe(true)
+  expect(result.hasTrophy).toBe(true)
+  expect(result.sectionsInDoc).toBe(true)
+  expect(result.sectionsHasBoth).toBe(true)
+})
+
+test('wave 87 buildItchZip includes embed-widget.html sidecar with changelog and trophies', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      export: {
+        buildItchZip: (m: 'rpg') => Blob
+        listItchZipEntries: (b: Blob) => Promise<string[]>
+        readItchZipEntry: (b: Blob, n: string) => Promise<string | null>
+        buildItchEmbedWidget: (m: 'rpg') => string
+      }
+    }
+    const blob = v.export.buildItchZip('rpg')
+    const entries = await v.export.listItchZipEntries(blob)
+    const widgetRaw = await v.export.readItchZipEntry(blob, 'embed-widget.html')
+    const expected = v.export.buildItchEmbedWidget('rpg')
+    return {
+      entries,
+      hasWidget: entries.includes('embed-widget.html'),
+      widgetRaw,
+      hasDoctype: widgetRaw?.includes('<!doctype html>') ?? false,
+      hasChangelog: widgetRaw?.includes('lotus-pack-changelog') ?? false,
+      hasAchievements: widgetRaw?.includes('lotus-pack-achievements') ?? false,
+      hasRpgTitle: widgetRaw?.includes('Lotus RPG Pack') ?? false,
+      hasQuestTrophy: widgetRaw?.includes('Quest Complete') ?? false,
+      match: widgetRaw === expected,
+    }
+  })
+
+  expect(result.hasWidget).toBe(true)
+  expect(result.entries).toEqual(
+    expect.arrayContaining([
+      'index.html',
+      'meta.json',
+      'icon.png',
+      'RELEASE_NOTES.md',
+      'CHANGELOG.html',
+      'embed-widget.html',
+    ]),
+  )
+  expect(result.hasDoctype).toBe(true)
+  expect(result.hasChangelog).toBe(true)
+  expect(result.hasAchievements).toBe(true)
+  expect(result.hasRpgTitle).toBe(true)
+  expect(result.hasQuestTrophy).toBe(true)
+  expect(result.match).toBe(true)
+})
+
+test('wave 87 buildPackHTML embeds __LOTUS_ITCH_EMBED_WIDGET__ with platformer changelog and trophies', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'platformer') => void
+          buildPackHTML: (m: 'platformer') => string
+        }
+        export: {
+          buildItchEmbedWidgetSections: (m: 'platformer') => string
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const expected = v.indie.export.buildItchEmbedWidgetSections('platformer')
+    const marker = 'window.__LOTUS_ITCH_EMBED_WIDGET__ = '
+    const idx = html.indexOf(marker)
+    let embedded = ''
+    if (idx >= 0) {
+      const rest = html.slice(idx + marker.length)
+      const end = rest.indexOf('; window.')
+      const jsonStr = end >= 0 ? rest.slice(0, end) : rest.split(';')[0]
+      embedded = JSON.parse(jsonStr) as string
+    }
+    return {
+      hasTag: html.includes('__LOTUS_ITCH_EMBED_WIDGET__'),
+      embedded,
+      expected,
+      match: embedded === expected,
+      hasChangelog: embedded.includes('lotus-pack-changelog'),
+      hasAchievements: embedded.includes('lotus-pack-achievements'),
+      hasTrophy: embedded.includes('Goal Getter'),
+    }
+  })
+
+  expect(result.hasTag).toBe(true)
+  expect(result.match).toBe(true)
+  expect(result.hasChangelog).toBe(true)
+  expect(result.hasAchievements).toBe(true)
+  expect(result.hasTrophy).toBe(true)
+})
+
+test('wave 87 /itchembed platformer terminal prints widget path and embed snippet', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output: string | null; error: string | null } | undefined }
+      indie: {
+        export: {
+          widgetFilename: () => string
+          buildItchEmbedWidgetSections: (m: 'platformer') => string
+        }
+      }
+    }
+    const out = v.terminal.exec('/itchembed platformer')
+    const expected = v.indie.export.buildItchEmbedWidgetSections('platformer')
+    const filename = v.indie.export.widgetFilename()
+    return {
+      error: out?.error,
+      output: out?.output ?? '',
+      filename,
+      hasPath: out?.output?.includes(`Widget file: ${filename}`) ?? false,
+      hasSnippetLabel: out?.output?.includes('Embed snippet:') ?? false,
+      hasSnippet: out?.output?.includes(expected) ?? false,
+      hasChangelog: out?.output?.includes('lotus-pack-changelog') ?? false,
+      hasAchievements: out?.output?.includes('lotus-pack-achievements') ?? false,
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.hasPath).toBe(true)
+  expect(result.hasSnippetLabel).toBe(true)
+  expect(result.hasSnippet).toBe(true)
+  expect(result.hasChangelog).toBe(true)
+  expect(result.hasAchievements).toBe(true)
+})
+
+test('wave 87 indie.export.buildItchEmbedWidget bridge exposes widget helpers', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const exp = (window.lotus! as typeof window.lotus).indie.export as Record<string, unknown>
+    const widget =
+      typeof exp.buildItchEmbedWidget === 'function'
+        ? (exp.buildItchEmbedWidget as (m: 'fps') => string)('fps')
+        : ''
+    return {
+      buildItchEmbedWidget: typeof exp.buildItchEmbedWidget === 'function',
+      buildItchEmbedWidgetSections: typeof exp.buildItchEmbedWidgetSections === 'function',
+      renderAchievementsHtml: typeof exp.renderAchievementsHtml === 'function',
+      widgetFilename: typeof exp.widgetFilename === 'function',
+      hasSharpshooter: widget.includes('Sharpshooter'),
+      hasFpsChangelog: widget.includes('Lotus FPS Pack'),
+    }
+  })
+
+  expect(result.buildItchEmbedWidget).toBe(true)
+  expect(result.buildItchEmbedWidgetSections).toBe(true)
+  expect(result.renderAchievementsHtml).toBe(true)
+  expect(result.widgetFilename).toBe(true)
+  expect(result.hasSharpshooter).toBe(true)
+  expect(result.hasFpsChangelog).toBe(true)
+})
+
 test('build passes', () => {
   expect(() => {
     execSync('npm run build', { cwd: root, stdio: 'pipe', encoding: 'utf8' })
   }).not.toThrow()
+})
+
+test('wave 90 exportAchievements setAchievementProgress unlocks at max + localStorage progress', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const ach = (window.lotus! as typeof window.lotus).indie.achievements as {
+      packId: (pack?: string) => string | null
+      setProgress: (id: string, current: number, max?: number, pack?: string) => boolean
+      getProgress: (id: string, pack?: string) => { current: number; max: number } | null
+      unlocked: (id?: string, pack?: string) => boolean | string[]
+    }
+    ach.packId('platformer')
+    localStorage.removeItem('lotus-engine.achievements.platformer')
+    localStorage.removeItem('lotus-engine.achievements.progress.platformer')
+    const partial = ach.setProgress('platformer_coins', 4, 10, 'platformer')
+    const mid = ach.getProgress('platformer_coins', 'platformer')
+    const unlockedMid = ach.unlocked('platformer_coins', 'platformer') as boolean
+    const complete = ach.setProgress('platformer_coins', 10, 10, 'platformer')
+    const done = ach.getProgress('platformer_coins', 'platformer')
+    const unlockedDone = ach.unlocked('platformer_coins', 'platformer') as boolean
+    const progressKey = localStorage.getItem('lotus-engine.achievements.progress.platformer')
+    return {
+      partial,
+      mid,
+      unlockedMid,
+      complete,
+      done,
+      unlockedDone,
+      progressKey,
+    }
+  })
+
+  expect(result.partial).toBe(false)
+  expect(result.mid).toEqual({ current: 4, max: 10 })
+  expect(result.unlockedMid).toBe(false)
+  expect(result.complete).toBe(true)
+  expect(result.done).toEqual({ current: 10, max: 10 })
+  expect(result.unlockedDone).toBe(true)
+  expect(result.progressKey).toContain('platformer_coins')
+})
+
+test('wave 90 indie.achievements bridge exposes setProgress getProgress showProgressToast', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const ach = (window.lotus! as typeof window.lotus).indie.achievements as Record<string, unknown>
+    return {
+      setProgress: typeof ach.setProgress === 'function',
+      getProgress: typeof ach.getProgress === 'function',
+      showProgressToast: typeof ach.showProgressToast === 'function',
+    }
+  })
+
+  expect(result.setProgress).toBe(true)
+  expect(result.getProgress).toBe(true)
+  expect(result.showProgressToast).toBe(true)
+})
+
+test('wave 90 buildPackHTML embeds __LOTUS_ACHIEVEMENT_PROGRESS__ with platformer coin defaults', async ({
+  page,
+}) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: {
+        minigame: {
+          spawnMiniGame: (m: 'platformer') => void
+          buildPackHTML: (m: 'platformer') => string
+        }
+      }
+    }
+    v.indie.minigame.spawnMiniGame('platformer')
+    const html = v.indie.minigame.buildPackHTML('platformer')
+    const marker = 'window.__LOTUS_ACHIEVEMENT_PROGRESS__ = '
+    const idx = html.indexOf(marker)
+    let parsed: { packId?: string; defaults?: Record<string, { max: number }> } | null = null
+    if (idx >= 0) {
+      const rest = html.slice(idx + marker.length)
+      const end = rest.indexOf('; window.')
+      const jsonStr = end >= 0 ? rest.slice(0, end) : rest.split(';')[0]
+      parsed = JSON.parse(jsonStr)
+    }
+    return {
+      hasTag: html.includes('__LOTUS_ACHIEVEMENT_PROGRESS__'),
+      progressCss: html.includes('lotus-achievement-progress-toast'),
+      packId: parsed?.packId,
+      coinMax: parsed?.defaults?.platformer_coins?.max,
+      runtimeSetProgress: html.includes('setAchievementProgress'),
+    }
+  })
+
+  expect(result.hasTag).toBe(true)
+  expect(result.progressCss).toBe(true)
+  expect(result.packId).toBe('platformer')
+  expect(result.coinMax).toBe(10)
+  expect(result.runtimeSetProgress).toBe(true)
+})
+
+test('wave 90 mini-game scripts call setAchievementProgress on score/kills', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const m = (window.lotus! as typeof window.lotus).indie.minigame as {
+      platformerScript: string
+      rpgScript: string
+      fpsScript: string
+    }
+    return {
+      platformer: m.platformerScript.includes("api.setAchievementProgress('platformer_coins'"),
+      rpg: m.rpgScript.includes("api.setAchievementProgress('rpg_collect'"),
+      fps: m.fpsScript.includes("api.setAchievementProgress('fps_targets'"),
+      coinGoal: m.platformerScript.includes('coinGoal'),
+    }
+  })
+
+  expect(result.platformer).toBe(true)
+  expect(result.rpg).toBe(true)
+  expect(result.fps).toBe(true)
+  expect(result.coinGoal).toBe(true)
+})
+
+test('wave 90 miniGameHud progress toast renders via indie.achievements.showProgressToast', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const ach = (window.lotus! as typeof window.lotus).indie.achievements as {
+      showProgressToast: (t: string, c: number, m: number, i?: string) => void
+    }
+    ach.showProgressToast('Coin Collector', 4, 10, '🪙')
+    const toast = document.querySelector('.lotus-achievement-progress-toast')
+    return {
+      toast: !!toast,
+      title: toast?.querySelector('.lotus-achievement-toast-title')?.textContent ?? '',
+      sub: toast?.querySelector('.lotus-achievement-toast-sub')?.textContent ?? '',
+      ring: !!toast?.querySelector('.lotus-achievement-progress-ring'),
+      bar: !!toast?.querySelector('.lotus-achievement-progress-bar-fill'),
+    }
+  })
+
+  expect(result.toast).toBe(true)
+  expect(result.title).toContain('Coin Collector')
+  expect(result.sub).toBe('4 / 10')
+  expect(result.ring).toBe(true)
+  expect(result.bar).toBe(true)
 })
 
 test('editor page loads', async ({ page }) => {
@@ -6268,7 +6896,14 @@ test('wave 62 export.buildItchZip returns PK zip with index.html meta.json icon.
 
   expect(result.pk).toBe(true)
   expect(result.type).toBe('application/zip')
-  expect(result.entries).toEqual(['CHANGELOG.html', 'RELEASE_NOTES.md', 'icon.png', 'index.html', 'meta.json'])
+  expect(result.entries).toEqual([
+    'CHANGELOG.html',
+    'RELEASE_NOTES.md',
+    'embed-widget.html',
+    'icon.png',
+    'index.html',
+    'meta.json',
+  ])
 })
 
 test('wave 62 export.itchZipFilename uses {genre}-lotus-pack.zip pattern', async ({ page }) => {
@@ -8171,9 +8806,9 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
       hasTitle: notes.includes('# Lotus Platformer Pack'),
       hasBlurb: notes.includes('Jump to the goal'),
       hasWhatsNew: notes.includes("## What's new"),
-      hasWavesHeader: notes.includes('Waves 76–80'),
-      hasWave77: notes.includes('Wave 77'),
-      hasReleaseNotesFeature: notes.includes('itch.io release notes'),
+      hasWavesHeader: notes.includes('Waves 86–90'),
+      hasWave87: notes.includes('Wave 87'),
+      hasReleaseNotesFeature: notes.includes('itch.io embed widget'),
     }
   })
 
@@ -8181,7 +8816,7 @@ test('wave 77 buildReleaseNotes returns markdown with pack title and latest CHAN
   expect(result.hasBlurb).toBe(true)
   expect(result.hasWhatsNew).toBe(true)
   expect(result.hasWavesHeader).toBe(true)
-  expect(result.hasWave77).toBe(true)
+  expect(result.hasWave87).toBe(true)
   expect(result.hasReleaseNotesFeature).toBe(true)
 })
 
@@ -8242,13 +8877,13 @@ test('wave 77 buildPackHTML embeds __LOTUS_PACK_RELEASE_NOTES__ with platformer 
       embedded,
       expected,
       match: embedded === expected,
-      hasWave77: embedded.includes('Wave 77'),
+      hasWave87: embedded.includes('Wave 87'),
     }
   })
 
   expect(result.hasTag).toBe(true)
   expect(result.match).toBe(true)
-  expect(result.hasWave77).toBe(true)
+  expect(result.hasWave87).toBe(true)
 })
 
 test('wave 77 buildItchZip includes RELEASE_NOTES.md with genre markdown', async ({ page }) => {
@@ -8299,14 +8934,14 @@ test('wave 77 /releasenotes platformer terminal prints release notes markdown', 
       expected,
       match: out?.output === expected,
       hasTitle: out?.output?.includes('# Lotus Platformer Pack') ?? false,
-      hasWave77: out?.output?.includes('Wave 77') ?? false,
+      hasWave87: out?.output?.includes('Wave 87') ?? false,
     }
   })
 
   expect(result.error).toBeNull()
   expect(result.match).toBe(true)
   expect(result.hasTitle).toBe(true)
-  expect(result.hasWave77).toBe(true)
+  expect(result.hasWave87).toBe(true)
 })
 
 test('wave 78 indie.mp.killcam bridge exposes trigger, active, durationSec', async ({ page }) => {
@@ -8785,6 +9420,162 @@ test('wave 84 save menu includes Copy cloud save manifest button when cloud sync
   expect(result.hintCss).toBe(true)
 })
 
+test('wave 86 gridMap.navPath bridge exposes find, clear, lastPolyline, showDebug', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const navPath = (window.lotus! as typeof window.lotus).gridMap.navPath as Record<string, unknown>
+    return {
+      hasFind: typeof navPath.find === 'function',
+      hasClear: typeof navPath.clear === 'function',
+      hasLastPolyline: typeof navPath.lastPolyline === 'function',
+      hasShowDebug: typeof navPath.showDebug === 'function',
+    }
+  })
+
+  expect(result.hasFind).toBe(true)
+  expect(result.hasClear).toBe(true)
+  expect(result.hasLastPolyline).toBe(true)
+  expect(result.hasShowDebug).toBe(true)
+})
+
+test('wave 86 gridMap.navPath.find bakes layer navmesh and stores polyline with >= 2 waypoints', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        navPath: {
+          find: (
+            layer: number,
+            from: [number, number, number],
+            to: [number, number, number],
+          ) => Promise<[number, number, number][] | null>
+          lastPolyline: () => [number, number, number][] | null
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 0, 1, 0, 0)
+    v.gridMap.paintLayer(props, 0, 2, 0, 0)
+    v.gridMap.paintLayer(props, 0, 0, 0, 1)
+    v.gridMap.paintLayer(props, 0, 1, 0, 1)
+    v.gridMap.rebuildFoliageColliders(actor)
+    const polyline = await v.gridMap.navPath.find(0, [0, 1, 0], [8, 1, 8])
+    const cached = v.gridMap.navPath.lastPolyline()
+    return {
+      ok: true,
+      found: polyline !== null,
+      pointCount: polyline?.length ?? 0,
+      cachedCount: cached?.length ?? 0,
+      sameLength: polyline?.length === cached?.length,
+    }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.found).toBe(true)
+  expect(result.pointCount).toBeGreaterThanOrEqual(2)
+  expect(result.cachedCount).toBeGreaterThanOrEqual(2)
+  expect(result.sameLength).toBe(true)
+})
+
+test('wave 86 gridMap.navPath.clear resets lastPolyline after find', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        navPath: {
+          find: (
+            layer: number,
+            from: [number, number, number],
+            to: [number, number, number],
+          ) => Promise<[number, number, number][] | null>
+          clear: () => void
+          lastPolyline: () => [number, number, number][] | null
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.paintLayer(props, 0, 1, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    await v.gridMap.navPath.find(0, [0, 1, 0], [4, 1, 4])
+    const before = v.gridMap.navPath.lastPolyline()
+    v.gridMap.navPath.clear()
+    const after = v.gridMap.navPath.lastPolyline()
+    return { ok: true, hadPath: before !== null, cleared: after === null }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.hadPath).toBe(true)
+  expect(result.cleared).toBe(true)
+})
+
+test('wave 86 /gridnavpath [layer] terminal bakes layer and starts origin-to-waypoint path find', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(() => {
+    const v = window.lotus! as typeof window.lotus & {
+      terminal: { exec: (cmd: string) => { output?: string | null; error?: string | null } }
+    }
+    const out = v.terminal.exec('/gridnavpath 2')
+    return {
+      error: out.error,
+      output: out.output ?? '',
+    }
+  })
+
+  expect(result.error).toBeNull()
+  expect(result.output).toMatch(/Grid nav path find started on layer 2/)
+  expect(result.output).toMatch(/\[0,1,0\].*\[8,1,8\]/)
+})
+
+test('wave 86 gridMap.navPath.showDebug toggles debug visibility flag', async ({ page }) => {
+  await bootEditor(page)
+
+  const result = await page.evaluate(async () => {
+    const v = window.lotus! as typeof window.lotus & {
+      indie: { spawn: (p: { kind: 'gridmap' }, pos: [number, number, number]) => import('../src/engine/Actor').Actor | null }
+      gridMap: {
+        paintLayer: (props: import('../src/engine/types').FoliageProps, layer: number, cx: number, cy: number, cz: number) => boolean
+        rebuildFoliageColliders: (actor: import('../src/engine/Actor').Actor) => void
+        navPath: {
+          find: (
+            layer: number,
+            from: [number, number, number],
+            to: [number, number, number],
+          ) => Promise<[number, number, number][] | null>
+          showDebug: (show: boolean) => void
+        }
+      }
+    }
+    const actor = v.indie.spawn({ kind: 'gridmap' }, [0, 0, 0])
+    if (!actor?.foliageProps) return { ok: false }
+    const props = actor.foliageProps
+    v.gridMap.paintLayer(props, 0, 0, 0, 0)
+    v.gridMap.rebuildFoliageColliders(actor)
+    v.gridMap.navPath.showDebug(false)
+    await v.gridMap.navPath.find(0, [0, 1, 0], [2, 1, 2])
+    v.gridMap.navPath.showDebug(true)
+    return { ok: true, toggled: true }
+  })
+
+  expect(result.ok).toBe(true)
+  expect(result.toggled).toBe(true)
+})
+
 test('wave 81 gridMap.navAgents bridge exposes setBehavior, getBehavior, spawnPatrol, spawnChase', async ({ page }) => {
   await bootEditor(page)
 
@@ -8930,7 +9721,7 @@ test('wave 82 renderPackChangelogHtml returns styled section with pack title and
       hasStyle: html.includes('.lotus-pack-changelog'),
       hasTitle: html.includes('Lotus Platformer Pack'),
       hasWhatsNew: html.includes("What's new"),
-      hasWaves: html.includes('Waves 76–80'),
+      hasWaves: html.includes('Waves 86–90'),
       notesHasTitle: notes.includes('# Lotus Platformer Pack'),
     }
   })
@@ -9017,7 +9808,14 @@ test('wave 82 buildItchZip includes CHANGELOG.html sidecar with lotus-pack-chang
 
   expect(result.hasChangelog).toBe(true)
   expect(result.entries).toEqual(
-    expect.arrayContaining(['index.html', 'meta.json', 'icon.png', 'RELEASE_NOTES.md', 'CHANGELOG.html']),
+    expect.arrayContaining([
+      'index.html',
+      'meta.json',
+      'icon.png',
+      'RELEASE_NOTES.md',
+      'CHANGELOG.html',
+      'embed-widget.html',
+    ]),
   )
   expect(result.hasDoctype).toBe(true)
   expect(result.hasSection).toBe(true)
@@ -9111,7 +9909,7 @@ test('wave 85 exportAchievements ACHIEVEMENTS per genre + unlockAchievement list
     }
   })
 
-  expect(result.count).toBe(1)
+  expect(result.count).toBe(2)
   expect(result.id).toBe('platformer_win')
   expect(result.first).toBe(true)
   expect(result.second).toBe(false)

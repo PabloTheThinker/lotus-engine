@@ -123,7 +123,9 @@ const MINIGAME_ENABLED = window.__LOTUS_MINIGAME__ === true || window.__LOTUS_MI
 const MINIGAME_PRESET = window.__LOTUS_MINIGAME_PRESET__ ?? null
 const MINIGAME_PACK = window.__LOTUS_MINIGAME_PACK__ ?? null
 const ACHIEVEMENTS_DEF = window.__LOTUS_ACHIEVEMENTS__ ?? null
+const ACHIEVEMENT_PROGRESS_DEF = window.__LOTUS_ACHIEVEMENT_PROGRESS__ ?? null
 const ACHIEVEMENT_STORAGE_PREFIX = 'lotus-engine.achievements'
+const ACHIEVEMENT_PROGRESS_STORAGE_PREFIX = 'lotus-engine.achievements.progress'
 const PACK_CHANGELOG_HTML = window.__LOTUS_PACK_CHANGELOG_HTML__ ?? null
 const PACK_CHANGELOG_BOOT =
   window.__LOTUS_PACK_CHANGELOG_BOOT__ === true || window.__LOTUS_PACK_CHANGELOG_BOOT__ === 'true'
@@ -789,6 +791,44 @@ function showMiniGameOverlay(kind, title, color) {
 
 let achievementToastEl = null
 let achievementToastTimer = null
+let achievementProgressToastEl = null
+let achievementProgressToastTimer = null
+function progressRingSvg(current, max) {
+  const pct = max > 0 ? Math.min(1, current / max) : 0
+  const r = 16
+  const c = 2 * Math.PI * r
+  const offset = c * (1 - pct)
+  return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <circle class="lotus-achievement-progress-ring-bg" cx="20" cy="20" r="${r}" />
+    <circle class="lotus-achievement-progress-ring-fg" cx="20" cy="20" r="${r}"
+      stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}" />
+  </svg>
+    <div class="lotus-achievement-progress-ring-label">${current}/${max}</div>`
+}
+function showAchievementProgressToast(title, current, max, icon = '🏆') {
+  if (achievementProgressToastTimer) {
+    clearTimeout(achievementProgressToastTimer)
+    achievementProgressToastTimer = null
+  }
+  achievementProgressToastEl?.remove()
+  const safeMax = Math.max(1, Math.floor(max))
+  const safeCurrent = Math.max(0, Math.min(Math.floor(current), safeMax))
+  const pct = safeMax > 0 ? Math.round((safeCurrent / safeMax) * 100) : 0
+  achievementProgressToastEl = document.createElement('div')
+  achievementProgressToastEl.className = 'lotus-achievement-progress-toast'
+  achievementProgressToastEl.innerHTML = `<div class="lotus-achievement-progress-ring">${progressRingSvg(safeCurrent, safeMax)}</div>
+    <div>
+      <div class="lotus-achievement-toast-title">${icon} ${title}</div>
+      <div class="lotus-achievement-toast-sub">${safeCurrent} / ${safeMax}</div>
+      <div class="lotus-achievement-progress-bar"><div class="lotus-achievement-progress-bar-fill" style="width:${pct}%"></div></div>
+    </div>`
+  document.body.appendChild(achievementProgressToastEl)
+  achievementProgressToastTimer = setTimeout(() => {
+    achievementProgressToastEl?.remove()
+    achievementProgressToastEl = null
+    achievementProgressToastTimer = null
+  }, 3200)
+}
 function showAchievementToast(title, subtitle, icon = '🏆') {
   if (achievementToastTimer) {
     clearTimeout(achievementToastTimer)
@@ -813,6 +853,11 @@ function showAchievementToast(title, subtitle, icon = '🏆') {
 function achievementStorageKey(packId) {
   const safe = String(packId ?? '').trim().toLowerCase().replace(/[^\w.-]+/g, '_').slice(0, 32)
   return `${ACHIEVEMENT_STORAGE_PREFIX}.${safe || 'pack'}`
+}
+
+function achievementProgressStorageKey(packId) {
+  const safe = String(packId ?? '').trim().toLowerCase().replace(/[^\w.-]+/g, '_').slice(0, 32)
+  return `${ACHIEVEMENT_PROGRESS_STORAGE_PREFIX}.${safe || 'pack'}`
 }
 
 function exportAchievementPackId() {
@@ -859,6 +904,69 @@ function exportUnlockAchievement(id) {
   return true
 }
 
+function exportReadProgressMap(packId) {
+  try {
+    const raw = localStorage.getItem(achievementProgressStorageKey(packId))
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const out = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      const current = Number(value.current)
+      const max = Number(value.max)
+      if (!Number.isFinite(current) || !Number.isFinite(max) || max <= 0) continue
+      out[key] = { current: Math.max(0, current), max }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function exportWriteProgressMap(packId, progress) {
+  localStorage.setItem(achievementProgressStorageKey(packId), JSON.stringify(progress))
+}
+
+function exportResolveProgressMax(achievement, maxArg, stored) {
+  if (typeof maxArg === 'number' && Number.isFinite(maxArg) && maxArg > 0) return Math.floor(maxArg)
+  if (stored && stored.max > 0) return stored.max
+  const defMax = ACHIEVEMENT_PROGRESS_DEF?.defaults?.[achievement.id]?.max
+  if (typeof defMax === 'number' && defMax > 0) return defMax
+  if (typeof achievement.progressMax === 'number' && achievement.progressMax > 0) return achievement.progressMax
+  return 1
+}
+
+function exportGetAchievementProgress(id) {
+  const packId = exportAchievementPackId()
+  const achievement = exportFindAchievement(id)
+  if (!packId || !achievement) return null
+  const stored = exportReadProgressMap(packId)[achievement.id]
+  if (stored) return { ...stored }
+  const defMax = ACHIEVEMENT_PROGRESS_DEF?.defaults?.[achievement.id]?.max ?? achievement.progressMax
+  if (typeof defMax === 'number' && defMax > 0) return { current: 0, max: defMax }
+  return null
+}
+
+function exportSetAchievementProgress(id, current, max) {
+  const packId = exportAchievementPackId()
+  const achievement = exportFindAchievement(id)
+  if (!packId || !achievement) return false
+  const progressMap = exportReadProgressMap(packId)
+  const stored = progressMap[achievement.id] ?? null
+  const resolvedMax = exportResolveProgressMax(achievement, max, stored)
+  const resolvedCurrent = Math.max(0, Math.min(Math.floor(current), resolvedMax))
+  progressMap[achievement.id] = { current: resolvedCurrent, max: resolvedMax }
+  exportWriteProgressMap(packId, progressMap)
+  api.emit('achievement_progress', {
+    ...achievement,
+    current: resolvedCurrent,
+    max: resolvedMax,
+  })
+  if (resolvedCurrent >= resolvedMax) return exportUnlockAchievement(achievement.id)
+  return false
+}
+
 function wireExportMiniGameHud() {
   api.on('game_won', () => showMiniGameOverlay('win', 'YOU WIN!', '#46a758'))
   api.on('game_lost', () => showMiniGameOverlay('lose', 'GAME OVER', '#e5484d'))
@@ -866,6 +974,12 @@ function wireExportMiniGameHud() {
     const title = ach?.title ?? 'Achievement Unlocked'
     const subtitle = ach?.description ?? ''
     showAchievementToast(title, subtitle, ach?.icon ?? '🏆')
+  })
+  api.on('achievement_progress', (ach) => {
+    const title = ach?.title ?? 'Achievement Progress'
+    const current = Number(ach?.current ?? 0)
+    const max = Number(ach?.max ?? 1)
+    showAchievementProgressToast(title, current, max, ach?.icon ?? '🏆')
   })
 }
 
@@ -2031,7 +2145,14 @@ function initExportSaveMenu() {
   saveMenuRoot.setAttribute('aria-label', 'Pause — Save / Load')
   const cloudSyncBlock = CLOUD_SYNC_ENABLED
     ? `<div class="lotus-save-menu-cloud" data-lotus-cloud-sync-menu>
-      <div class="lotus-save-menu-cloud-hint">Cross-device stub — copy cloud save manifest token for QR / another browser</div>
+      <div class="lotus-save-menu-cloud-hint">Cross-device stub — download/import JSON or copy manifest token for QR / another browser</div>
+      <div class="lotus-save-menu-cloud-transfer">
+        <button type="button" class="lotus-save-menu-cloud-export" data-lotus-cloud-export>Download cloud saves JSON</button>
+        <label class="lotus-save-menu-cloud-import" data-lotus-cloud-import-label>
+          <input type="file" accept=".json,application/json" data-lotus-cloud-import />
+          Import cloud saves JSON
+        </label>
+      </div>
       <button type="button" class="lotus-save-menu-cloud-copy" data-copy-cloud-manifest>Copy cloud save manifest</button>
     </div>`
     : ''
@@ -2068,6 +2189,17 @@ function initExportSaveMenu() {
       if (!hint) return
       void navigator.clipboard?.writeText(hint).catch(() => {})
     })
+  })
+  saveMenuRoot.querySelector('[data-lotus-cloud-export]')?.addEventListener('click', (e) => {
+    e.preventDefault()
+    void downloadExportCloudSaveJson()
+  })
+  saveMenuRoot.querySelector('[data-lotus-cloud-import]')?.addEventListener('change', (e) => {
+    const input = e.currentTarget
+    const file = input.files?.[0]
+    input.value = ''
+    if (!file) return
+    void file.text().then((text) => importExportCloudSaveJson(text)).catch(() => {})
   })
   addEventListener('keydown', (e) => {
     if (!SAVES_ENABLED || !SAVE_MENU_ENABLED) return
@@ -2316,6 +2448,149 @@ async function exportCloudSaveManifest() {
   }
 }
 
+// ---- Wave 89 — cloud save JSON import/export (mirrors cloudSaveSync.ts) ----
+const CLOUD_SAVE_JSON_VERSION = 2
+
+function validateExportCloudSaveJson(json) {
+  let doc = json
+  if (typeof json === 'string') {
+    try {
+      doc = JSON.parse(json)
+    } catch {
+      throw new Error('Invalid JSON')
+    }
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    throw new Error('Cloud save JSON must be an object')
+  }
+  if (doc.version !== CLOUD_SAVE_JSON_VERSION) {
+    throw new Error(`Unsupported cloud save JSON version (expected ${CLOUD_SAVE_JSON_VERSION})`)
+  }
+  const level = String(doc.level ?? '').trim()
+  if (!level) throw new Error('Cloud save JSON missing level')
+  if (!Array.isArray(doc.entries)) throw new Error('Cloud save JSON missing entries array')
+  const entries = []
+  for (const row of doc.entries) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+      throw new Error('Cloud save entry must be an object')
+    }
+    const slot = String(row.slot ?? '').trim()
+    if (!slot) throw new Error('Cloud save entry missing slot')
+    const savedAt = Number(row.savedAt)
+    if (!Number.isFinite(savedAt)) throw new Error(`Cloud save entry "${slot}" missing savedAt`)
+    if (!('data' in row)) throw new Error(`Cloud save entry "${slot}" missing data`)
+    entries.push({ slot, savedAt, data: row.data })
+  }
+  const slots = entries.map((e) => ({ slot: e.slot, savedAt: e.savedAt }))
+  return {
+    version: CLOUD_SAVE_JSON_VERSION,
+    level,
+    generatedAt: Number.isFinite(Number(doc.generatedAt)) ? Number(doc.generatedAt) : Date.now(),
+    entries,
+    crossDeviceHint:
+      typeof doc.crossDeviceHint === 'string'
+        ? doc.crossDeviceHint
+        : buildExportCrossDeviceHint(level, slots),
+  }
+}
+
+async function exportListCloudCheckpointEntries() {
+  if (!CLOUD_SYNC_ENABLED) return []
+  const level = exportCloudSyncLevelKey()
+  try {
+    const db = await openCloudDb()
+    const rows = await new Promise((resolve, reject) => {
+      const tx = db.transaction(CLOUD_STORE, 'readonly')
+      const req = tx.objectStore(CLOUD_STORE).getAll()
+      req.onsuccess = () => resolve(req.result ?? [])
+      req.onerror = () => reject(req.error ?? new Error('IDB getAll failed'))
+    })
+    return rows
+      .filter((r) => r?.level === level && r?.slot && r?.data !== undefined)
+      .map((r) => ({ slot: String(r.slot), savedAt: r.savedAt ?? 0, data: r.data }))
+      .sort((a, b) => a.slot.localeCompare(b.slot))
+  } catch {
+    return []
+  }
+}
+
+async function putExportCloudCheckpoint(entry) {
+  if (!CLOUD_SAVES_ENABLED) return false
+  try {
+    const db = await openCloudDb()
+    const payload = {
+      savedAt: entry.savedAt,
+      level: exportCloudSyncLevelKey(),
+      slot: sanitizeSaveSlot(entry.slot),
+      data: entry.data,
+    }
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(CLOUD_STORE, 'readwrite')
+      tx.objectStore(CLOUD_STORE).put(payload, cloudSaveKey(entry.slot))
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('IDB put failed'))
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function mergeExportCloudCheckpoints(entries) {
+  let merged = 0
+  let skipped = 0
+  for (const entry of entries ?? []) {
+    if (!entry?.slot || entry.data === undefined) {
+      skipped++
+      continue
+    }
+    const ok = await putExportCloudCheckpoint(entry)
+    if (ok) merged++
+    else skipped++
+  }
+  return { merged, skipped }
+}
+
+async function exportCloudSaveJson() {
+  if (!CLOUD_SYNC_ENABLED) return null
+  const level = exportCloudSyncLevelKey()
+  const entries = await exportListCloudCheckpointEntries()
+  const slots = entries.map((e) => ({ slot: e.slot, savedAt: e.savedAt }))
+  return {
+    version: CLOUD_SAVE_JSON_VERSION,
+    level,
+    generatedAt: Date.now(),
+    entries,
+    crossDeviceHint: buildExportCrossDeviceHint(level, slots),
+  }
+}
+
+async function importExportCloudSaveJson(json) {
+  if (!CLOUD_SYNC_ENABLED) throw new Error('Cloud sync disabled')
+  const doc = validateExportCloudSaveJson(json)
+  const active = exportCloudSyncLevelKey()
+  const incoming = sanitizeSaveLevelName(doc.level)
+  if (incoming !== active) {
+    throw new Error(`Level mismatch: export is "${doc.level}", active is "${saveLevelName}"`)
+  }
+  const { merged, skipped } = await mergeExportCloudCheckpoints(doc.entries)
+  return { merged, skipped, level: doc.level }
+}
+
+async function downloadExportCloudSaveJson() {
+  const doc = await exportCloudSaveJson()
+  if (!doc) return null
+  const name = `lotus-cloud-saves-${sanitizeSaveLevelName(doc.level) || 'untitled'}.json`
+  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  URL.revokeObjectURL(url)
+  return doc
+}
+
 // ---- scripts & behaviors ----
 const api = {
   log: (...a) => console.log('[lotus]', ...a),
@@ -2391,6 +2666,8 @@ const api = {
   loadGame: (slot) => exportLoadCheckpoint(slot),
   listSaveSlots: () => exportListSaveSlots(),
   unlockAchievement: (id) => exportUnlockAchievement(id),
+  setAchievementProgress: (id, current, max) => exportSetAchievementProgress(id, current, max),
+  getAchievementProgress: (id) => exportGetAchievementProgress(id),
 }
 function compileScripts() {
   ticks = []
@@ -2682,6 +2959,8 @@ async function boot() {
       listCloudManifest: exportListCloudManifest,
       exportCloudManifest: exportCloudSaveManifest,
       crossDeviceHint: async () => (await exportCloudSaveManifest())?.crossDeviceHint ?? '',
+      exportJson: exportCloudSaveJson,
+      importJson: importExportCloudSaveJson,
       syncEnabled: () => CLOUD_SYNC_ENABLED,
     }
   }
@@ -2691,6 +2970,8 @@ async function boot() {
       list: () => ACHIEVEMENTS_DEF.achievements ?? [],
       unlocked: () => exportListUnlockedAchievements(),
       unlock: (id) => exportUnlockAchievement(id),
+      setProgress: (id, current, max) => exportSetAchievementProgress(id, current, max),
+      getProgress: (id) => exportGetAchievementProgress(id),
     }
   }
   if (SAVES_ENABLED) {
@@ -2736,6 +3017,8 @@ async function boot() {
       listCloudManifest: exportListCloudManifest,
       exportCloudManifest: exportCloudSaveManifest,
       crossDeviceHint: async () => (await exportCloudSaveManifest())?.crossDeviceHint ?? '',
+      exportJson: exportCloudSaveJson,
+      importJson: importExportCloudSaveJson,
       syncEnabled: () => CLOUD_SYNC_ENABLED,
     }
   }
