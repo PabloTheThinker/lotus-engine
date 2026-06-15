@@ -4,6 +4,24 @@ Notable changes to Lotus Engine. Newest entries first.
 
 ---
 
+## 2026-06-14 — Public GitHub release
+
+### Added
+- `README.md` — quickstart, architecture, `window.lotus` API overview, docs links
+- `LICENSE` — MIT
+
+### Changed
+- `package.json` — `"private": false` for public npm semantics
+- Remote → `https://github.com/PabloTheThinker/lotus-engine` (public; formerly `vektra-engine`)
+
+### Verification
+```bash
+git push -u origin master   # 53 commits published
+gh repo view PabloTheThinker/lotus-engine
+```
+
+---
+
 ## 2026-06-14 — Waves 111–115: v5.94–v6.18 (three.js engine core swarm)
 
 > Strategic refocus: engine core first; RPG modules optional.
